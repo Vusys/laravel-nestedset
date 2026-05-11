@@ -1,0 +1,13 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - src
+        - tests
+    level: 9
+    ignoreErrors:
+        # env() is legitimate in test bootstrap code — config caching does not apply to tests.
+        - identifier: larastan.noEnvCallsOutsideOfConfig
+          paths:
+              - tests/
