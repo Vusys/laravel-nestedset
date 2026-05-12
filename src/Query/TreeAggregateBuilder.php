@@ -348,9 +348,14 @@ final class TreeAggregateBuilder
             }
         }
 
-        $totalRowsUpdated = 0;
+        $toUpdate = [];
 
         foreach ($rows as $row) {
+            $id = $row['id'] ?? null;
+            if (! is_int($id) && ! is_string($id)) {
+                continue;
+            }
+
             $updates = [];
 
             foreach ($definitions as $definition) {
@@ -365,26 +370,97 @@ final class TreeAggregateBuilder
                 }
             }
 
-            if ($updates === []) {
-                continue;
+            if ($updates !== []) {
+                $toUpdate[] = ['id' => $id, 'updates' => $updates];
             }
-
-            $id = $row['id'] ?? null;
-            if ($id === null) {
-                continue;
-            }
-
-            $connection->table($table)
-                ->where('id', '=', $id)
-                ->update($updates);
-
-            $totalRowsUpdated++;
         }
+
+        $totalRowsUpdated = self::bulkWriteRecomputedValues(
+            connection: $connection,
+            table: $table,
+            toUpdate: $toUpdate,
+        );
 
         return new AggregateFixResult(
             totalRowsUpdated: $totalRowsUpdated,
             perColumn: $perColumn,
         );
+    }
+
+    /**
+     * Writes a set of per-row column updates as chunked bulk
+     * `UPDATE … SET col = CASE id WHEN … END WHERE id IN (…)`
+     * statements. One statement per chunk, one CASE expression per
+     * column being updated in the chunk. Replaces what used to be
+     * N per-row UPDATE round-trips — for a fully-drifted 10K-row
+     * tree, that's 10K → ~20 round-trips.
+     *
+     * NULL values are emitted as literal SQL NULL in the WHEN-THEN
+     * branch (CASE values are positional, not parameterised, since
+     * Laravel's `update()` doesn't accept CASE syntax in the SET).
+     *
+     * @param  list<array{id: int|string, updates: array<string, mixed>}>  $toUpdate
+     * @param  int<1, max>  $chunkSize
+     */
+    private static function bulkWriteRecomputedValues(
+        Connection $connection,
+        string $table,
+        array $toUpdate,
+        int $chunkSize = 500,
+    ): int {
+        if ($toUpdate === []) {
+            return 0;
+        }
+
+        $touched = 0;
+
+        foreach (array_chunk($toUpdate, $chunkSize) as $chunk) {
+            // Collect every column that appears in at least one row's
+            // updates — the SET clause needs a CASE expression per
+            // such column.
+            $columnsInChunk = [];
+            foreach ($chunk as $row) {
+                foreach (array_keys($row['updates']) as $col) {
+                    $columnsInChunk[$col] = true;
+                }
+            }
+            $columnsInChunk = array_keys($columnsInChunk);
+
+            if ($columnsInChunk === []) {
+                continue;
+            }
+
+            $sets = [];
+            $bindings = [];
+
+            foreach ($columnsInChunk as $col) {
+                $caseSql = 'CASE id';
+                foreach ($chunk as $row) {
+                    if (! array_key_exists($col, $row['updates'])) {
+                        continue;
+                    }
+
+                    $caseSql .= ' WHEN ? THEN ?';
+                    $bindings[] = $row['id'];
+                    $bindings[] = $row['updates'][$col];
+                }
+                $caseSql .= " ELSE {$col} END";
+                $sets[] = "{$col} = ({$caseSql})";
+            }
+
+            $ids = array_column($chunk, 'id');
+            $idPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+            foreach ($ids as $id) {
+                $bindings[] = $id;
+            }
+
+            $sql = "UPDATE {$table} SET ".implode(', ', $sets)
+                ." WHERE id IN ({$idPlaceholders})";
+
+            $touched += $connection->update($sql, $bindings);
+        }
+
+        return $touched;
     }
 
     /**
