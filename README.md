@@ -1,5 +1,14 @@
 # vusys/laravel-nestedset
 
+[![Tests](https://github.com/Vusys/laravel-vusys-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-vusys-nestedset/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/Vusys/laravel-vusys-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-vusys-nestedset)
+[![PHP](https://img.shields.io/badge/php-%5E8.3-777BB4?logo=php&logoColor=white)](composer.json)
+[![Laravel](https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel)](composer.json)
+[![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](phpstan.neon)
+[![Rector](https://img.shields.io/badge/Rector-passing-brightgreen.svg)](rector.php)
+[![Code Style: Pint](https://img.shields.io/badge/code%20style-Laravel%20Pint-FF2D20.svg?logo=laravel)](https://github.com/laravel/pint)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A modern Laravel implementation of the nested-set model for hierarchical
 data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations,
 multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit.
