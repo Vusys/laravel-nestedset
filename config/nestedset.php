@@ -62,4 +62,20 @@ return [
 
     'aggregate_locking' => 'auto',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Queue defaults for asynchronous aggregate repair
+    |--------------------------------------------------------------------------
+    | Routing used by Model::queueFixAggregates() when the caller doesn't
+    | pass an explicit override. Null on either key falls back to Laravel's
+    | default queue connection / queue name. Override per-environment via
+    | .env (NESTEDSET_QUEUE_CONNECTION / NESTEDSET_QUEUE) without touching
+    | code.
+    */
+
+    'queue' => [
+        'connection' => env('NESTEDSET_QUEUE_CONNECTION'),
+        'queue' => env('NESTEDSET_QUEUE'),
+    ],
+
 ];
