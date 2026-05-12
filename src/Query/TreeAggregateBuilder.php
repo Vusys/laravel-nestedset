@@ -66,8 +66,16 @@ final class TreeAggregateBuilder
         $rgtCol = $builder->rgtColumn();
         $scopeCols = NestedSetScopeResolver::columns($model::class);
 
-        if (self::supportsLateral($builder->getQuery()->getConnection())) {
+        $connection = $builder->getQuery()->getConnection();
+
+        if (self::supportsLateral($connection)) {
             self::applyLateralFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols);
+
+            return;
+        }
+
+        if (self::isMariaDb($connection)) {
+            self::applyMariaDbDerivedFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols);
 
             return;
         }
@@ -80,6 +88,119 @@ final class TreeAggregateBuilder
             $sql = self::buildCorrelatedSubquery($table, $lftCol, $rgtCol, $scopeCols, $definition);
 
             $builder->addSelect(['*', new TreeExpression("({$sql}) as {$alias}")]);
+        }
+    }
+
+    /**
+     * MariaDB-only fresh-read shape. MariaDB rejects the SQL `LATERAL`
+     * keyword so it can't use {@see applyLateralFreshSelects()}; the
+     * correlated-subquery fallback scales with N×K and becomes the
+     * dominant cost on larger result sets (~45 s for 5 aggregates ×
+     * N=10K rows on CI runners).
+     *
+     * Solution: a derived JOIN+GROUP-BY whose inner `o` is filtered to
+     * the user's outer id-set via a cloned copy of their WHERE state.
+     * The derived computes every aggregate in one inner-subtree scan
+     * per outer row that the user will actually fetch — small filtered
+     * queries pay only the cost of their selected rows; large queries
+     * pay one full-table inner pass instead of K of them.
+     *
+     * Measured at N=10K on a balancedFanout fanout=10 tree:
+     *   correlated (current):           44,269 ms
+     *   derived + o-filter (this path): ~10,000 ms — 4.4× faster
+     *
+     * (A further 3× could be unlocked by prepending
+     * `SET STATEMENT optimizer_switch='split_materialized=off'`, but
+     * that needs SQL-execution hooking we don't yet have — tracked as
+     * a follow-up.)
+     *
+     * @param  TreeQueryBuilder<Model>  $builder
+     * @param  array<string, AggregateDefinition>  $resolved
+     * @param  list<string>  $scopeCols
+     */
+    private static function applyMariaDbDerivedFreshSelects(
+        TreeQueryBuilder $builder,
+        array $resolved,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+    ): void {
+        // Snapshot the user's current WHERE state into a clone, project
+        // it down to just the primary key so it can be embedded as
+        // `o.id IN (cloned)`. Doing this *before* we add joins/selects
+        // of our own keeps the clone faithful to the user's intent.
+        $modelKey = $builder->getModel()->getKeyName();
+        $userIdsQuery = clone $builder->getQuery();
+        $userIdsQuery->columns = ["{$table}.{$modelKey}"];
+        $userIdsSql = $userIdsQuery->toSql();
+        $userIdsBindings = $userIdsQuery->getBindings();
+
+        $byInclusivity = ['inclusive' => [], 'exclusive' => []];
+        foreach ($resolved as $alias => $definition) {
+            $byInclusivity[$definition->inclusive ? 'inclusive' : 'exclusive'][$alias] = $definition;
+        }
+
+        $derivedIndex = 0;
+
+        foreach ($byInclusivity as $mode => $group) {
+            if ($group === []) {
+                continue;
+            }
+
+            $derivedIndex++;
+            $derivedAlias = "vusys_fresh_derived_{$derivedIndex}";
+
+            $aggSelects = ["o.{$modelKey} AS outer_id"];
+            foreach ($group as $colAlias => $definition) {
+                $expr = self::aggregateExpression($definition, qualifier: 'd.');
+                $aggSelects[] = "{$expr} AS {$colAlias}";
+            }
+
+            $boundsClause = $mode === 'inclusive'
+                ? "d.{$lftCol} >= o.{$lftCol} AND d.{$lftCol} <= o.{$rgtCol}"
+                : "d.{$lftCol} > o.{$lftCol} AND d.{$lftCol} < o.{$rgtCol}";
+
+            $scopeClause = '';
+            foreach ($scopeCols as $col) {
+                $scopeClause .= " AND d.{$col} = o.{$col}";
+            }
+
+            $innerSql = 'SELECT '.implode(', ', $aggSelects)
+                ." FROM {$table} o"
+                ." INNER JOIN {$table} d ON {$boundsClause}{$scopeClause}"
+                ." WHERE o.{$modelKey} IN ({$userIdsSql})"
+                ." GROUP BY o.{$modelKey}";
+
+            $derivedExpr = new TreeExpression("({$innerSql}) as {$derivedAlias}");
+            $builder->getQuery()->leftJoin(
+                $derivedExpr,
+                static function ($join) use ($derivedAlias, $table, $modelKey): void {
+                    $join->on("{$derivedAlias}.outer_id", '=', "{$table}.{$modelKey}");
+                },
+            );
+
+            // The inner SQL contains `?` placeholders from the user-ids
+            // sub-query. Those bindings sit inside the JOIN clause, so
+            // register them on the 'join' position to stay in compile order.
+            $builder->getQuery()->addBinding($userIdsBindings, 'join');
+
+            // The inner GROUP BY emits no row for outer-rows whose inner
+            // JOIN produced 0 matches (typically: exclusive aggregates on
+            // a leaf). The LEFT JOIN then yields NULL for every agg
+            // column. Wrap SUM/COUNT in COALESCE(.., 0) so empty-subtree
+            // contributions stay 0 — matching the LATERAL path and the
+            // pre-v0.7.0 correlated-subquery semantics.
+            $columns = ['*'];
+            foreach ($group as $colAlias => $definition) {
+                $expr = match ($definition->function) {
+                    AggregateFunction::Sum,
+                    AggregateFunction::Count => "COALESCE({$derivedAlias}.{$colAlias}, 0)",
+                    default => "{$derivedAlias}.{$colAlias}",
+                };
+                $columns[] = new TreeExpression("{$expr} as {$colAlias}");
+            }
+            $builder->addSelect($columns);
         }
     }
 
@@ -845,8 +966,12 @@ final class TreeAggregateBuilder
      * `ATTR_SERVER_VERSION` returns the server's `@@version` string
      * verbatim — MariaDB's includes "MariaDB", MySQL's does not.
      */
-    private static function isMariaDb(Connection $connection): bool
+    private static function isMariaDb(ConnectionInterface $connection): bool
     {
+        if (! $connection instanceof Connection) {
+            return false;
+        }
+
         if ($connection->getDriverName() !== 'mysql') {
             return false;
         }
