@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Query;
 
+use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
@@ -241,5 +243,251 @@ final class TreeAggregateBuilder
         }
 
         return $definition->source;
+    }
+
+    // ----------------------------------------------------------------
+    // Phase H: integrity tooling
+    // ----------------------------------------------------------------
+
+    /**
+     * Returns per-column counts of rows where the stored aggregate
+     * value disagrees with the freshly-computed value over the source.
+     * Internal AVG companions are excluded from the report — they're a
+     * maintenance implementation detail, not part of the user-facing
+     * surface — but `fixAggregates()` still repairs them when present.
+     *
+     * @param  array<string, mixed>  $scope
+     * @param  list<AggregateDefinition>  $definitions
+     * @return array<string, int>
+     */
+    public static function aggregateErrors(
+        Connection $connection,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scope,
+        array $definitions,
+        ?int $rootId = null,
+    ): array {
+        $userFacing = array_values(array_filter(
+            $definitions,
+            static fn (AggregateDefinition $d): bool => ! $d->isInternal(),
+        ));
+
+        if ($userFacing === []) {
+            return [];
+        }
+
+        $rows = self::selectStoredAndComputed(
+            connection: $connection,
+            table: $table,
+            lftCol: $lftCol,
+            rgtCol: $rgtCol,
+            scope: $scope,
+            definitions: $userFacing,
+            rootId: $rootId,
+        );
+
+        $errors = [];
+
+        foreach ($userFacing as $definition) {
+            $errors[$definition->column] = 0;
+        }
+
+        foreach ($rows as $row) {
+            foreach ($userFacing as $definition) {
+                $stored = $row[self::storedAlias($definition->column)] ?? null;
+                $computed = $row[self::computedAlias($definition->column)] ?? null;
+
+                if (! self::aggregatesEqual($stored, $computed)) {
+                    $errors[$definition->column]++;
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Repairs every aggregate column over the scope (or rooted subtree)
+     * by overwriting stored values with the freshly-computed value from
+     * the source column. Operates on all definitions including internal
+     * AVG companions — drift in either user-facing or internal columns
+     * gets corrected.
+     *
+     * @param  array<string, mixed>  $scope
+     * @param  list<AggregateDefinition>  $definitions
+     */
+    public static function fixAggregates(
+        Connection $connection,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scope,
+        array $definitions,
+        ?int $rootId = null,
+    ): AggregateFixResult {
+        if ($definitions === []) {
+            return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
+        }
+
+        $rows = self::selectStoredAndComputed(
+            connection: $connection,
+            table: $table,
+            lftCol: $lftCol,
+            rgtCol: $rgtCol,
+            scope: $scope,
+            definitions: $definitions,
+            rootId: $rootId,
+        );
+
+        $perColumn = [];
+        foreach ($definitions as $definition) {
+            if (! $definition->isInternal()) {
+                $perColumn[$definition->column] = 0;
+            }
+        }
+
+        $totalRowsUpdated = 0;
+
+        foreach ($rows as $row) {
+            $updates = [];
+
+            foreach ($definitions as $definition) {
+                $stored = $row[self::storedAlias($definition->column)] ?? null;
+                $computed = $row[self::computedAlias($definition->column)] ?? null;
+
+                if (! self::aggregatesEqual($stored, $computed)) {
+                    $updates[$definition->column] = $computed;
+                    if (! $definition->isInternal()) {
+                        $perColumn[$definition->column] = ($perColumn[$definition->column] ?? 0) + 1;
+                    }
+                }
+            }
+
+            if ($updates === []) {
+                continue;
+            }
+
+            $id = $row['id'] ?? null;
+            if ($id === null) {
+                continue;
+            }
+
+            $connection->table($table)
+                ->where('id', '=', $id)
+                ->update($updates);
+
+            $totalRowsUpdated++;
+        }
+
+        return new AggregateFixResult(
+            totalRowsUpdated: $totalRowsUpdated,
+            perColumn: $perColumn,
+        );
+    }
+
+    /**
+     * Single SELECT that returns each row's id, every aggregate column's
+     * stored value, and the freshly-computed value via correlated
+     * subquery. Powers both {@see aggregateErrors()} and
+     * {@see fixAggregates()}.
+     *
+     * @param  array<string, mixed>  $scope
+     * @param  list<AggregateDefinition>  $definitions
+     * @return list<array<string, mixed>>
+     */
+    private static function selectStoredAndComputed(
+        Connection $connection,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scope,
+        array $definitions,
+        ?int $rootId,
+    ): array {
+        $selects = ['outer_a.id AS id'];
+
+        foreach ($definitions as $definition) {
+            $boundsClause = $definition->inclusive
+                ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}"
+                : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}";
+
+            $scopeJoin = '';
+            foreach (array_keys($scope) as $col) {
+                $scopeJoin .= " AND inner_a.{$col} = outer_a.{$col}";
+            }
+
+            $innerExpr = self::aggregateExpression($definition, qualifier: 'inner_a.');
+            $computedAlias = self::computedAlias($definition->column);
+            $storedAlias = self::storedAlias($definition->column);
+
+            $selects[] = "(SELECT {$innerExpr} FROM {$table} AS inner_a "
+                ."WHERE {$boundsClause}{$scopeJoin}) AS {$computedAlias}";
+            $selects[] = "outer_a.{$definition->column} AS {$storedAlias}";
+        }
+
+        $where = '1 = 1';
+        $bindings = [];
+
+        foreach ($scope as $col => $value) {
+            $where .= " AND outer_a.{$col} = ?";
+            $bindings[] = $value;
+        }
+
+        if ($rootId !== null) {
+            // Constrain to the rooted subtree (inclusive). The subqueries
+            // look up the root's bounds once per row; OK for repair-only
+            // use even though it's correlated.
+            $where .= " AND outer_a.{$lftCol} >= "
+                ."(SELECT {$lftCol} FROM {$table} WHERE id = ?)";
+            $where .= " AND outer_a.{$rgtCol} <= "
+                ."(SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $bindings[] = $rootId;
+            $bindings[] = $rootId;
+        }
+
+        $sql = 'SELECT '.implode(', ', $selects)
+            ." FROM {$table} AS outer_a WHERE {$where}";
+
+        $rows = $connection->select($sql, $bindings);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[] = (array) $row;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Tolerant numeric equality. Both sides may arrive as int, float,
+     * decimal-string (PostgreSQL), or null. Sub-cent precision drift on
+     * AVG is considered equal so a recomputed 56.2500 doesn't disagree
+     * with a stored 56.25.
+     */
+    private static function aggregatesEqual(mixed $a, mixed $b): bool
+    {
+        if ($a === null && $b === null) {
+            return true;
+        }
+        if ($a === null || $b === null) {
+            return false;
+        }
+        if (! is_numeric($a) || ! is_numeric($b)) {
+            return $a === $b;
+        }
+
+        return abs((float) $a - (float) $b) < 0.0001;
+    }
+
+    private static function computedAlias(string $column): string
+    {
+        return 'computed_'.$column;
+    }
+
+    private static function storedAlias(string $column): string
+    {
+        return 'stored_'.$column;
     }
 }
