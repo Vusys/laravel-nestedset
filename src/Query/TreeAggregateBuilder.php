@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
@@ -65,11 +66,156 @@ final class TreeAggregateBuilder
         $rgtCol = $builder->rgtColumn();
         $scopeCols = NestedSetScopeResolver::columns($model::class);
 
+        if (self::supportsLateral($builder->getQuery()->getConnection())) {
+            self::applyLateralFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols);
+
+            return;
+        }
+
+        // Fallback: K correlated sub-queries (one per declared aggregate).
+        // SQLite stays on this path — it parses LATERAL but the planner
+        // doesn't pick a meaningfully different plan, and the correlated
+        // shape is already fast there.
         foreach ($resolved as $alias => $definition) {
             $sql = self::buildCorrelatedSubquery($table, $lftCol, $rgtCol, $scopeCols, $definition);
 
             $builder->addSelect(['*', new TreeExpression("({$sql}) as {$alias}")]);
         }
+    }
+
+    /**
+     * LATERAL-JOIN shape: one `LEFT JOIN LATERAL (… GROUP-less SELECT …) ON TRUE`
+     * per inclusivity group. The single sub-query computes every aggregate
+     * for that inclusivity in one inner-subtree scan, instead of K separate
+     * correlated sub-queries that each rescan.
+     *
+     * For N result rows × K aggregates this drops inner scans from N×K to N
+     * — pays off most on backends where each scan is heavy (MySQL: ~80s for
+     * 5 aggregates at N=10K with the correlated shape).
+     *
+     * @param  TreeQueryBuilder<Model>  $builder
+     * @param  array<string, AggregateDefinition>  $resolved
+     * @param  list<string>  $scopeCols
+     */
+    private static function applyLateralFreshSelects(
+        TreeQueryBuilder $builder,
+        array $resolved,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+    ): void {
+        $byInclusivity = ['inclusive' => [], 'exclusive' => []];
+        foreach ($resolved as $alias => $definition) {
+            $byInclusivity[$definition->inclusive ? 'inclusive' : 'exclusive'][$alias] = $definition;
+        }
+
+        $query = $builder->getQuery();
+        $lateralIndex = 0;
+
+        foreach ($byInclusivity as $mode => $group) {
+            if ($group === []) {
+                continue;
+            }
+
+            $lateralIndex++;
+            $lateralAlias = "vusys_fresh_lat_{$lateralIndex}";
+
+            $aggSelects = [];
+            foreach ($group as $colAlias => $definition) {
+                $expr = self::aggregateExpression($definition, qualifier: 'd.');
+                $aggSelects[] = "{$expr} AS {$colAlias}";
+            }
+
+            $boundsClause = $mode === 'inclusive'
+                ? "d.{$lftCol} >= {$table}.{$lftCol} AND d.{$rgtCol} <= {$table}.{$rgtCol}"
+                : "d.{$lftCol} > {$table}.{$lftCol} AND d.{$rgtCol} < {$table}.{$rgtCol}";
+
+            $scopeClause = '';
+            foreach ($scopeCols as $col) {
+                $scopeClause .= " AND d.{$col} = {$table}.{$col}";
+            }
+
+            $innerSql = 'SELECT '.implode(', ', $aggSelects)
+                ." FROM {$table} d"
+                ." WHERE {$boundsClause}{$scopeClause}";
+
+            // LEFT JOIN LATERAL needs an ON clause; `ON TRUE` is the
+            // canonical form (the LATERAL itself constrains rows). Use
+            // Builder::leftJoin with a closure that adds `whereRaw('true')`
+            // — Laravel's docblock for join() accepts Expression as the
+            // table, unlike JoinClause's constructor which is typed
+            // `string` only.
+            $lateralExpr = new TreeExpression("LATERAL ({$innerSql}) as {$lateralAlias}");
+            $query->leftJoin($lateralExpr, static function ($join): void {
+                $join->whereRaw('true');
+            });
+
+            $columns = ['*'];
+            foreach (array_keys($group) as $colAlias) {
+                $columns[] = "{$lateralAlias}.{$colAlias} as {$colAlias}";
+            }
+            $builder->addSelect($columns);
+        }
+    }
+
+    /**
+     * Returns true on backends that support the SQL `LEFT JOIN LATERAL`
+     * keyword:
+     *   - PostgreSQL: all supported versions
+     *   - MySQL 8.0.14+
+     *
+     * MariaDB shows "LATERAL DERIVED" in EXPLAIN output but that's the
+     * planner's internal split_materialized optimisation — the SQL
+     * keyword `LATERAL` is rejected as a syntax error. MariaDB stays on
+     * the correlated-subquery fallback.
+     *
+     * SQLite parses but doesn't optimise LATERAL meaningfully, and the
+     * correlated shape is already fast on its in-memory engine; it stays
+     * on the fallback path too.
+     */
+    private static function supportsLateral(ConnectionInterface $connection): bool
+    {
+        if (! $connection instanceof Connection) {
+            return false;
+        }
+
+        $driver = $connection->getDriverName();
+
+        if ($driver === 'pgsql') {
+            return true;
+        }
+
+        if ($driver !== 'mysql') {
+            return false;
+        }
+
+        try {
+            $version = $connection->getPdo()->getAttribute(\PDO::ATTR_SERVER_VERSION);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (! is_string($version)) {
+            return false;
+        }
+
+        // MariaDB returns its version string with "MariaDB" in it; the
+        // SQL `LATERAL` keyword is not supported there.
+        if (stripos($version, 'mariadb') !== false) {
+            return false;
+        }
+
+        if (! preg_match('/(\d+)\.(\d+)(?:\.(\d+))?/', $version, $m)) {
+            return false;
+        }
+
+        $major = (int) $m[1];
+        $minor = (int) $m[2];
+        $patch = (int) ($m[3] ?? 0);
+
+        // MySQL 8.0.14+ added LATERAL.
+        return ($major > 8) || ($major === 8 && ($minor > 0 || $patch >= 14));
     }
 
     /**
