@@ -348,9 +348,14 @@ final class TreeAggregateBuilder
             }
         }
 
-        $totalRowsUpdated = 0;
+        $toUpdate = [];
 
         foreach ($rows as $row) {
+            $id = $row['id'] ?? null;
+            if (! is_int($id) && ! is_string($id)) {
+                continue;
+            }
+
             $updates = [];
 
             foreach ($definitions as $definition) {
@@ -365,21 +370,16 @@ final class TreeAggregateBuilder
                 }
             }
 
-            if ($updates === []) {
-                continue;
+            if ($updates !== []) {
+                $toUpdate[] = ['id' => $id, 'updates' => $updates];
             }
-
-            $id = $row['id'] ?? null;
-            if ($id === null) {
-                continue;
-            }
-
-            $connection->table($table)
-                ->where('id', '=', $id)
-                ->update($updates);
-
-            $totalRowsUpdated++;
         }
+
+        $totalRowsUpdated = self::bulkWriteRecomputedValues(
+            connection: $connection,
+            table: $table,
+            toUpdate: $toUpdate,
+        );
 
         return new AggregateFixResult(
             totalRowsUpdated: $totalRowsUpdated,
@@ -388,10 +388,93 @@ final class TreeAggregateBuilder
     }
 
     /**
-     * Single SELECT that returns each row's id, every aggregate column's
-     * stored value, and the freshly-computed value via correlated
-     * subquery. Powers both {@see aggregateErrors()} and
-     * {@see fixAggregates()}.
+     * Writes a set of per-row column updates as chunked bulk
+     * `UPDATE … SET col = CASE id WHEN … END WHERE id IN (…)`
+     * statements. One statement per chunk, one CASE expression per
+     * column being updated in the chunk. Replaces what used to be
+     * N per-row UPDATE round-trips — for a fully-drifted 10K-row
+     * tree, that's 10K → ~20 round-trips.
+     *
+     * NULL values are emitted as literal SQL NULL in the WHEN-THEN
+     * branch (CASE values are positional, not parameterised, since
+     * Laravel's `update()` doesn't accept CASE syntax in the SET).
+     *
+     * @param  list<array{id: int|string, updates: array<string, mixed>}>  $toUpdate
+     * @param  int<1, max>  $chunkSize
+     */
+    private static function bulkWriteRecomputedValues(
+        Connection $connection,
+        string $table,
+        array $toUpdate,
+        int $chunkSize = 500,
+    ): int {
+        if ($toUpdate === []) {
+            return 0;
+        }
+
+        $touched = 0;
+
+        foreach (array_chunk($toUpdate, $chunkSize) as $chunk) {
+            // Collect every column that appears in at least one row's
+            // updates — the SET clause needs a CASE expression per
+            // such column.
+            $columnsInChunk = [];
+            foreach ($chunk as $row) {
+                foreach (array_keys($row['updates']) as $col) {
+                    $columnsInChunk[$col] = true;
+                }
+            }
+            $columnsInChunk = array_keys($columnsInChunk);
+
+            if ($columnsInChunk === []) {
+                continue;
+            }
+
+            $sets = [];
+            $bindings = [];
+
+            foreach ($columnsInChunk as $col) {
+                $caseSql = 'CASE id';
+                foreach ($chunk as $row) {
+                    if (! array_key_exists($col, $row['updates'])) {
+                        continue;
+                    }
+
+                    $caseSql .= ' WHEN ? THEN ?';
+                    $bindings[] = $row['id'];
+                    $bindings[] = $row['updates'][$col];
+                }
+                $caseSql .= " ELSE {$col} END";
+                $sets[] = "{$col} = ({$caseSql})";
+            }
+
+            $ids = array_column($chunk, 'id');
+            $idPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+            foreach ($ids as $id) {
+                $bindings[] = $id;
+            }
+
+            $sql = "UPDATE {$table} SET ".implode(', ', $sets)
+                ." WHERE id IN ({$idPlaceholders})";
+
+            $touched += $connection->update($sql, $bindings);
+        }
+
+        return $touched;
+    }
+
+    /**
+     * Returns each row's id, every aggregate column's stored value,
+     * and the freshly-computed value. Powers both
+     * {@see aggregateErrors()} and {@see fixAggregates()}.
+     *
+     * Implementation: groups definitions by inclusivity and issues
+     * one self-JOIN + GROUP BY per inclusivity group, then merges
+     * results by id. For N=10K with five inclusive aggregates this
+     * is a single JOIN producing O(N log N) rows on a balanced
+     * tree — orders of magnitude faster than the N × K correlated
+     * subqueries the earlier implementation used (which MySQL /
+     * MariaDB planners couldn't optimise efficiently).
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
@@ -406,25 +489,86 @@ final class TreeAggregateBuilder
         array $definitions,
         ?int $rootId,
     ): array {
-        $selects = ['outer_a.id AS id'];
+        if ($definitions === []) {
+            return [];
+        }
 
+        $byInclusivity = ['inclusive' => [], 'exclusive' => []];
         foreach ($definitions as $definition) {
-            $boundsClause = $definition->inclusive
-                ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}"
-                : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}";
+            $byInclusivity[$definition->inclusive ? 'inclusive' : 'exclusive'][] = $definition;
+        }
 
-            $scopeJoin = '';
-            foreach (array_keys($scope) as $col) {
-                $scopeJoin .= " AND inner_a.{$col} = outer_a.{$col}";
+        $combined = [];
+
+        foreach ($byInclusivity as $mode => $group) {
+            if ($group === []) {
+                continue;
             }
 
-            $innerExpr = self::aggregateExpression($definition, qualifier: 'inner_a.');
-            $computedAlias = self::computedAlias($definition->column);
-            $storedAlias = self::storedAlias($definition->column);
+            $rows = self::groupedAggregateQuery(
+                connection: $connection,
+                table: $table,
+                lftCol: $lftCol,
+                rgtCol: $rgtCol,
+                scope: $scope,
+                definitions: $group,
+                inclusive: $mode === 'inclusive',
+                rootId: $rootId,
+            );
 
-            $selects[] = "(SELECT {$innerExpr} FROM {$table} AS inner_a "
-                ."WHERE {$boundsClause}{$scopeJoin}) AS {$computedAlias}";
-            $selects[] = "outer_a.{$definition->column} AS {$storedAlias}";
+            foreach ($rows as $row) {
+                $id = $row['id'] ?? null;
+                if (! is_int($id) && ! is_string($id)) {
+                    continue;
+                }
+                $combined[$id] = isset($combined[$id])
+                    ? [...$combined[$id], ...$row]
+                    : $row;
+            }
+        }
+
+        return array_values($combined);
+    }
+
+    /**
+     * One self-JOIN + GROUP BY that computes every aggregate in
+     * `$definitions` for every outer row in scope, in a single
+     * statement. All definitions must share the same inclusivity.
+     *
+     * @param  array<string, mixed>  $scope
+     * @param  list<AggregateDefinition>  $definitions
+     * @return list<array<string, mixed>>
+     */
+    private static function groupedAggregateQuery(
+        Connection $connection,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scope,
+        array $definitions,
+        bool $inclusive,
+        ?int $rootId,
+    ): array {
+        $selects = ['outer_a.id AS id'];
+        $groupBys = ['outer_a.id'];
+
+        foreach ($definitions as $definition) {
+            $innerExpr = self::aggregateExpression($definition, qualifier: 'inner_a.');
+            $selects[] = "{$innerExpr} AS ".self::computedAlias($definition->column);
+            $selects[] = "outer_a.{$definition->column} AS ".self::storedAlias($definition->column);
+
+            // Add stored columns to GROUP BY so MySQL ONLY_FULL_GROUP_BY
+            // and PostgreSQL's strict grouping accept the SELECT.
+            $groupBys[] = "outer_a.{$definition->column}";
+        }
+
+        $joinClause = $inclusive
+            ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}"
+            : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}";
+
+        $scopeJoinExtra = '';
+        foreach (array_keys($scope) as $col) {
+            $scopeJoinExtra .= " AND inner_a.{$col} = outer_a.{$col}";
         }
 
         $where = '1 = 1';
@@ -436,9 +580,6 @@ final class TreeAggregateBuilder
         }
 
         if ($rootId !== null) {
-            // Constrain to the rooted subtree (inclusive). The subqueries
-            // look up the root's bounds once per row; OK for repair-only
-            // use even though it's correlated.
             $where .= " AND outer_a.{$lftCol} >= "
                 ."(SELECT {$lftCol} FROM {$table} WHERE id = ?)";
             $where .= " AND outer_a.{$rgtCol} <= "
@@ -448,7 +589,11 @@ final class TreeAggregateBuilder
         }
 
         $sql = 'SELECT '.implode(', ', $selects)
-            ." FROM {$table} AS outer_a WHERE {$where}";
+            ." FROM {$table} AS outer_a"
+            ." LEFT JOIN {$table} AS inner_a"
+            ." ON {$joinClause}{$scopeJoinExtra}"
+            ." WHERE {$where}"
+            .' GROUP BY '.implode(', ', $groupBys);
 
         $rows = $connection->select($sql, $bindings);
 

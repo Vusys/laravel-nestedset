@@ -40,7 +40,10 @@ final class NestedSetServiceProvider extends ServiceProvider
             return is_string($value) ? $value : $default;
         };
 
-        Blueprint::macro('nestedSet', function () use ($col): void {
+        Blueprint::macro('nestedSet', function (
+            string|array $scope = [],
+            string|array $cover = [],
+        ) use ($col): void {
             /** @var Blueprint $this */
             $lft = $col('lft', Columns::LFT);
             $rgt = $col('rgt', Columns::RGT);
@@ -52,17 +55,32 @@ final class NestedSetServiceProvider extends ServiceProvider
             $this->unsignedBigInteger($parentId)->nullable();
             $this->unsignedInteger($depth)->default(0);
 
-            $this->index([$lft, $rgt, $parentId]);
+            $this->index(NestedSetServiceProvider::nestedSetIndexColumns(
+                lft: $lft,
+                rgt: $rgt,
+                parentId: $parentId,
+                scope: $scope,
+                cover: $cover,
+            ));
         });
 
-        Blueprint::macro('dropNestedSet', function () use ($col): void {
+        Blueprint::macro('dropNestedSet', function (
+            string|array $scope = [],
+            string|array $cover = [],
+        ) use ($col): void {
             /** @var Blueprint $this */
             $lft = $col('lft', Columns::LFT);
             $rgt = $col('rgt', Columns::RGT);
             $parentId = $col('parent_id', Columns::PARENT_ID);
             $depth = $col('depth', Columns::DEPTH);
 
-            $this->dropIndex([$lft, $rgt, $parentId]);
+            $this->dropIndex(NestedSetServiceProvider::nestedSetIndexColumns(
+                lft: $lft,
+                rgt: $rgt,
+                parentId: $parentId,
+                scope: $scope,
+                cover: $cover,
+            ));
             $this->dropColumn([$lft, $rgt, $parentId, $depth]);
         });
 
@@ -113,5 +131,51 @@ final class NestedSetServiceProvider extends ServiceProvider
             /** @var Blueprint $this */
             $this->dropColumn($column);
         });
+    }
+
+    /**
+     * Compose the composite-index column list for the `nestedSet()`
+     * Blueprint macro. Order matters — scope columns first (so a
+     * scoped query lands in its own index slice), then the bounds,
+     * then any covering columns appended to the leaves.
+     *
+     * For SUM / COUNT / AVG subtree subqueries (`fixAggregates` and
+     * `withFreshAggregates`), the relevant query is
+     * `WHERE inner.lft >= outer.lft AND inner.rgt <= outer.rgt`.
+     * Including the source column at the tail of the composite turns
+     * those subqueries into covering scans on every backend the
+     * package supports — no heap visits per inner row.
+     *
+     * @param  string|array<int|string, string>  $scope
+     * @param  string|array<int|string, string>  $cover
+     * @return list<string>
+     */
+    public static function nestedSetIndexColumns(
+        string $lft,
+        string $rgt,
+        string $parentId,
+        string|array $scope = [],
+        string|array $cover = [],
+    ): array {
+        return [
+            ...self::toColumnList($scope),
+            $lft,
+            $rgt,
+            $parentId,
+            ...self::toColumnList($cover),
+        ];
+    }
+
+    /**
+     * @param  string|array<int|string, string>  $columns
+     * @return list<string>
+     */
+    private static function toColumnList(string|array $columns): array
+    {
+        if (is_string($columns)) {
+            return $columns === '' ? [] : [$columns];
+        }
+
+        return array_values($columns);
     }
 }

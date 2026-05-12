@@ -15,7 +15,10 @@ return new class extends Migration
             $table->string('name');
             $table->unsignedInteger('tickets')->default(0);
 
-            $table->nestedSet();
+            // `cover: ['tickets']` appends the source column to the
+            // composite index leaves so subtree-aggregate subqueries
+            // can do index-only scans.
+            $table->nestedSet(cover: ['tickets']);
 
             // SUM / COUNT — non-null, default 0
             $table->nestedSetAggregate('tickets_total');

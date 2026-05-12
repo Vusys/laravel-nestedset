@@ -226,6 +226,31 @@ final class TreeShapes
         }
 
         self::syncSequence($table);
+        self::refreshStatistics($table);
+    }
+
+    /**
+     * After a bulk seed the query planner's statistics are stale —
+     * PostgreSQL auto-vacuums eventually but not within a benchmark
+     * run; MySQL/MariaDB only re-analyse based on row-change ratios
+     * that bulk inserts can sit under; SQLite never auto-analyses.
+     *
+     * Production tables typically have current stats so the planner
+     * picks the right index; benchmarking against stale stats
+     * understates the package's real-world performance. Force a
+     * refresh so the measurement reflects the realistic case.
+     */
+    private static function refreshStatistics(string $table): void
+    {
+        $connection = DB::connection();
+        $driver = $connection->getDriverName();
+
+        match ($driver) {
+            'pgsql' => $connection->statement("ANALYZE \"{$table}\""),
+            'mysql', 'mariadb' => $connection->statement("ANALYZE TABLE `{$table}`"),
+            'sqlite' => $connection->statement("ANALYZE \"{$table}\""),
+            default => null,
+        };
     }
 
     /**
