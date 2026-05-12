@@ -7,6 +7,7 @@ namespace Vusys\NestedSet;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
@@ -30,6 +31,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  */
 trait NodeTrait
 {
+    use HasNestedSetAggregates;
     use HasNodeInspection;
     use HasSoftDeleteTree;
     use HasTreeMutation;
@@ -143,7 +145,7 @@ trait NodeTrait
     /**
      * Narrowed return type (TreeQueryBuilder rather than the base
      * Eloquent Builder) so Larastan can resolve tree-specific methods —
-     * whereDescendantOf, withDepth, defaultOrder, etc. — on
+     * whereDescendantOf, withDepth, withFreshAggregates, etc. — on
      * `Model::query()` results. Returning the base Builder causes
      * Larastan to forward calls to it and miss every package method
      * that does not happen to match its `where*` dynamic-where pattern.
