@@ -56,7 +56,41 @@ final class MysqlFixAggregatesInvestigationTest extends PerformanceTestCase
         fwrite(STDOUT, "\n--- Derived table, full 7 agg, BETWEEN on lft only ---\n");
         $this->timeAndExplain('derived_full_between_lft', $derivedBetweenSql, $driver);
 
+        // ------------------------------------------------------------------
+        // MariaDB-specific candidates. The v0.5.0 derived form regresses on
+        // MariaDB because its planner picks "split_materialized" / LATERAL
+        // DERIVED: the derived sub-query is re-executed once per outer row
+        // instead of being materialised once.
+        // ------------------------------------------------------------------
+        $isMariaDb = stripos($this->serverVersion(), 'mariadb') !== false;
+        if ($isMariaDb) {
+            // Candidate F: same derived shape but session-toggle off the
+            // split_materialized optimization that lateralizes our derived.
+            DB::statement("SET SESSION optimizer_switch='split_materialized=off'");
+            fwrite(STDOUT, "\n--- MariaDB: derived BETWEEN with split_materialized=off ---\n");
+            $this->timeAndExplain('derived_split_off', $derivedBetweenSql, $driver);
+
+            // Candidate G: also turn off derived_merge (more aggressive)
+            DB::statement("SET SESSION optimizer_switch='derived_merge=off,split_materialized=off'");
+            fwrite(STDOUT, "\n--- MariaDB: derived BETWEEN, derived_merge=off + split_materialized=off ---\n");
+            $this->timeAndExplain('derived_no_merge', $derivedBetweenSql, $driver);
+
+            // Reset
+            DB::statement('SET SESSION optimizer_switch=DEFAULT');
+
+            // Candidate H: explicit temp-table materialisation in two stmts.
+            fwrite(STDOUT, "\n--- MariaDB: explicit temp-table materialisation ---\n");
+            $this->timeTwoStatementTempTable('temp_table_explicit', $driver);
+        }
+
         $this->addToAssertionCount(1);
+    }
+
+    private function serverVersion(): string
+    {
+        $rows = DB::select('SELECT VERSION() AS v');
+
+        return isset($rows[0]) ? (string) ((array) $rows[0])['v'] : '';
     }
 
     private function dumpIndexes(string $driver): void
@@ -95,7 +129,14 @@ final class MysqlFixAggregatesInvestigationTest extends PerformanceTestCase
 
         fwrite(STDOUT, sprintf("  [%s] %d rows, %.1f ms\n", $label, count($rows), $elapsedMs));
 
-        if ($driver === 'mysql' || $driver === 'mariadb') {
+        // EXPLAIN ANALYZE syntax differs across backends:
+        //   MySQL 8.0.18+: `EXPLAIN ANALYZE <stmt>`
+        //   MariaDB 10.1+: `ANALYZE <stmt>` (no EXPLAIN prefix; or FORMAT=JSON)
+        //   PostgreSQL:    `EXPLAIN (ANALYZE, BUFFERS) <stmt>`
+        $version = $this->serverVersion();
+        if ($driver === 'mysql' && stripos($version, 'mariadb') !== false) {
+            $plan = DB::select('ANALYZE '.$sql);
+        } elseif ($driver === 'mysql' || $driver === 'mariadb') {
             $plan = DB::select('EXPLAIN ANALYZE '.$sql);
         } elseif ($driver === 'pgsql') {
             $plan = DB::select('EXPLAIN (ANALYZE, BUFFERS) '.$sql);
@@ -145,6 +186,44 @@ final class MysqlFixAggregatesInvestigationTest extends PerformanceTestCase
             .' GROUP BY outer_a.id, outer_a.tickets_total, outer_a.tickets_count_all,'
             .' outer_a.tickets_avg, outer_a.tickets_min, outer_a.tickets_max,'
             .' outer_a.tickets_avg__sum, outer_a.tickets_avg__count';
+    }
+
+    private function timeTwoStatementTempTable(string $label, string $driver): void
+    {
+        // Create the aggregate-only result as a session temp table, then
+        // SELECT the join. This forces a single materialisation up-front
+        // and a single index-lookup pass on the outer join.
+        DB::statement('DROP TEMPORARY TABLE IF EXISTS agg_temp');
+        $t0 = microtime(true);
+        DB::statement(
+            'CREATE TEMPORARY TABLE agg_temp AS '
+            .' SELECT o.id AS outer_id,'
+            .' COALESCE(SUM(i.tickets), 0) AS computed_tickets_total,'
+            .' COUNT(i.tickets) AS computed_tickets_count_all,'
+            .' AVG(i.tickets) AS computed_tickets_avg,'
+            .' MIN(i.tickets) AS computed_tickets_min,'
+            .' MAX(i.tickets) AS computed_tickets_max,'
+            .' COALESCE(SUM(i.tickets), 0) AS computed_tickets_avg__sum,'
+            .' COUNT(i.tickets) AS computed_tickets_avg__count'
+            .' FROM areas o INNER JOIN areas i ON i.lft BETWEEN o.lft AND o.rgt'
+            .' GROUP BY o.id'
+        );
+        DB::statement('CREATE INDEX agg_temp_outer_id ON agg_temp(outer_id)');
+        $rows = DB::select(
+            'SELECT outer_a.id AS id, agg.computed_tickets_total,'
+            .' outer_a.tickets_total AS stored_tickets_total,'
+            .' agg.computed_tickets_count_all, outer_a.tickets_count_all AS stored_tickets_count_all,'
+            .' agg.computed_tickets_avg, outer_a.tickets_avg AS stored_tickets_avg,'
+            .' agg.computed_tickets_min, outer_a.tickets_min AS stored_tickets_min,'
+            .' agg.computed_tickets_max, outer_a.tickets_max AS stored_tickets_max,'
+            .' agg.computed_tickets_avg__sum, outer_a.tickets_avg__sum AS stored_tickets_avg__sum,'
+            .' agg.computed_tickets_avg__count, outer_a.tickets_avg__count AS stored_tickets_avg__count'
+            .' FROM areas AS outer_a LEFT JOIN agg_temp agg ON agg.outer_id = outer_a.id'
+        );
+        $elapsedMs = (microtime(true) - $t0) * 1000;
+        DB::statement('DROP TEMPORARY TABLE agg_temp');
+        fwrite(STDOUT, sprintf("  [%s] %d rows, %.1f ms (create+index+select)\n",
+            $label, count($rows), $elapsedMs));
     }
 
     private function derivedFullShape(string $joinPredicate): string
