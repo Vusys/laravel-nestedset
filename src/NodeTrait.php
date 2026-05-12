@@ -354,6 +354,117 @@ trait NodeTrait
     }
 
     /**
+     * Bulk-inserts a tree of nodes in one operation, bypassing the per-row
+     * appendToNode → makeGap → INSERT cycle which scales O(N²) for large
+     * seeds. The input is a nested array; each entry is a row of user
+     * attributes plus an optional `children` key whose value is another
+     * nested array.
+     *
+     * Example:
+     *
+     *     Area::bulkInsertTree([
+     *         ['name' => 'Engineering', 'tickets' => 0, 'children' => [
+     *             ['name' => 'Backend', 'tickets' => 5],
+     *             ['name' => 'Frontend', 'tickets' => 3, 'children' => [
+     *                 ['name' => 'Web', 'tickets' => 2],
+     *             ]],
+     *         ]],
+     *     ], appendTo: $root);
+     *
+     * Caveats:
+     *
+     *  - **Bypasses Eloquent events.** `saving`/`created`/`saved` do not
+     *    fire. Mutators, casts, and mass-assignment guards are not
+     *    consulted. Aggregate maintenance is invoked at the end of the
+     *    call as a single `fixAggregates()` pass scoped to the affected
+     *    subtree.
+     *
+     *  - **Reserved attributes.** Rows must not contain `lft`, `rgt`,
+     *    `depth`, `parent_id`, or the model's primary key — the package
+     *    computes those. Passing them throws.
+     *
+     *  - **Transactional.** Wrapped in the connection's transaction so a
+     *    failure rolls back the whole operation. On nested-transaction
+     *    backends only an outer rollback is guaranteed.
+     *
+     *  - **Scoped models** are not yet supported by this v1 of the API.
+     *
+     * Returns the ids assigned to inserted nodes in DFS pre-order
+     * (matching the order of the input).
+     *
+     * @param  list<array<string, mixed>>  $tree
+     * @return list<int>
+     *
+     * @throws ScopeViolationException If the model has scope columns.
+     */
+    public static function bulkInsertTree(array $tree, ?HasNestedSet $appendTo = null): array
+    {
+        if ($tree === []) {
+            return [];
+        }
+
+        $scopeColumns = NestedSetScopeResolver::columns(static::class);
+        if ($scopeColumns !== []) {
+            throw new ScopeViolationException(sprintf(
+                '%s declares a scope (%s); bulkInsertTree() does not yet support scoped models.',
+                static::class,
+                implode(', ', $scopeColumns),
+            ));
+        }
+
+        $instance = new static;
+
+        $builder = new Query\TreeBulkInsertBuilder(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            depthCol: $instance->getDepthName(),
+            parentIdCol: $instance->getParentIdName(),
+            keyName: $instance->getKeyName(),
+            scope: $appendTo instanceof Model
+                ? NestedSetScopeResolver::valuesFor($appendTo)
+                : [],
+        );
+
+        return $instance->getConnection()->transaction(function () use ($builder, $tree, $appendTo): array {
+            $insertedIds = $builder->insertTree(
+                tree: $tree,
+                anchorRgt: $appendTo?->getRgt(),
+                anchorDepth: $appendTo?->getDepth() !== null ? $appendTo->getDepth() + 1 : 0,
+                anchorParentId: $appendTo instanceof Model
+                    ? self::numericKey($appendTo)
+                    : null,
+            );
+
+            // Refresh the anchor's bounds in memory — its rgt has shifted
+            // by the gap we just opened, and aggregate maintenance below
+            // wants the new value.
+            if ($appendTo instanceof Model) {
+                $appendTo->refresh();
+            }
+
+            // Rebuild aggregates for the affected portion of the tree.
+            // When appending under a parent: anchor the fix at $appendTo
+            // so the rebuild only scans its (now-larger) subtree.
+            // For new roots: full-table rebuild is required because we
+            // don't know which ancestors to scope to.
+            if (AggregateRegistry::for(static::class) !== []) {
+                self::fixAggregates($appendTo);
+            }
+
+            return $insertedIds;
+        });
+    }
+
+    private static function numericKey(Model $model): ?int
+    {
+        $key = $model->getKey();
+
+        return is_numeric($key) ? (int) $key : null;
+    }
+
+    /**
      * Internal helper: enforce the scope-anchor requirement that
      * `repairBuilder()` applies to tree repair, but return the model
      * instance + null result when the class has no aggregate
