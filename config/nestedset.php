@@ -31,4 +31,35 @@ return [
 
     'auto_transaction' => true,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Aggregate locking
+    |--------------------------------------------------------------------------
+    | Controls whether the aggregate maintenance path issues
+    | `SELECT ... FOR UPDATE` on the ancestor chain before recomputing
+    | MIN/MAX columns.
+    |
+    |   'auto'   (default) — locks the ancestor chain only on the
+    |                        recompute path (MIN, MAX, fixAggregates).
+    |                        Delta-only updates (SUM, COUNT, AVG) rely on
+    |                        the engine's single-statement row locks,
+    |                        which are sufficient under default isolation
+    |                        on all supported backends. This is the right
+    |                        setting for nearly every application.
+    |
+    |   'always' — locks the ancestor chain before every aggregate
+    |              maintenance UPDATE, including deltas. Choose this if
+    |              you run with non-default isolation levels (e.g.
+    |              REPEATABLE READ on PostgreSQL) or have seen drift
+    |              under concurrent load.
+    |
+    |   'never'  — issues no explicit locks. Marginally faster on the
+    |              recompute path; relies entirely on the engine's
+    |              UPDATE-time row locks. Can produce drift on
+    |              PostgreSQL READ COMMITTED with concurrent recomputes
+    |              against overlapping subtrees.
+    */
+
+    'aggregate_locking' => 'auto',
+
 ];
