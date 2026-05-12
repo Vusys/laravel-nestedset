@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\PendingOperation;
 use Vusys\NestedSet\Position;
@@ -28,6 +29,14 @@ trait HasTreeMutation
 {
     protected ?PendingOperation $vusysPending = null;
 
+    /**
+     * Queue this node to become the last child of $parent on the next save().
+     *
+     * @throws ScopeViolationException
+     *                                 When $parent belongs to a different scope (multi-tree models).
+     * @throws LogicException
+     *                        When $parent is in this node's own subtree (would create a cycle).
+     */
     public function appendToNode(HasNestedSet $parent): static
     {
         $this->vusysPending = new PendingOperation('appendTo', $parent);
@@ -35,6 +44,12 @@ trait HasTreeMutation
         return $this;
     }
 
+    /**
+     * Queue this node to become the first child of $parent on the next save().
+     *
+     * @throws ScopeViolationException
+     * @throws LogicException
+     */
     public function prependToNode(HasNestedSet $parent): static
     {
         $this->vusysPending = new PendingOperation('prependTo', $parent);
@@ -42,6 +57,12 @@ trait HasTreeMutation
         return $this;
     }
 
+    /**
+     * Queue this node to become an immediate left-sibling of $sibling.
+     *
+     * @throws ScopeViolationException
+     * @throws LogicException
+     */
     public function insertBeforeNode(HasNestedSet $sibling): static
     {
         $this->vusysPending = new PendingOperation('sibling', $sibling, Position::Before);
@@ -49,6 +70,12 @@ trait HasTreeMutation
         return $this;
     }
 
+    /**
+     * Queue this node to become an immediate right-sibling of $sibling.
+     *
+     * @throws ScopeViolationException
+     * @throws LogicException
+     */
     public function insertAfterNode(HasNestedSet $sibling): static
     {
         $this->vusysPending = new PendingOperation('sibling', $sibling, Position::After);
@@ -56,6 +83,10 @@ trait HasTreeMutation
         return $this;
     }
 
+    /**
+     * Queue this node to become a top-level root (parent_id = null,
+     * depth = 0) on the next save().
+     */
     public function makeRoot(): static
     {
         $this->vusysPending = new PendingOperation('root');
@@ -63,6 +94,9 @@ trait HasTreeMutation
         return $this;
     }
 
+    /**
+     * Shorthand for `$this->makeRoot()->save()`. Returns the result of save().
+     */
     public function saveAsRoot(): bool
     {
         return $this->makeRoot()->save();

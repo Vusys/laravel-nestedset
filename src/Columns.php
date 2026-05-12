@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet;
 
+/**
+ * Default column names for the four nested-set values.
+ *
+ * Used as fallbacks when no `config('nestedset.columns.*')` override is
+ * present. To change column names project-wide, edit the published
+ * config file rather than these constants.
+ */
 final class Columns
 {
     const string LFT = 'lft';

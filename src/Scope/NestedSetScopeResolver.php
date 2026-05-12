@@ -34,7 +34,7 @@ final class NestedSetScopeResolver
             $instance = $attributes[0]->newInstance();
             $columns = $instance->columns;
 
-            return is_array($columns) ? array_values($columns) : [$columns];
+            return is_array($columns) ? $columns : [$columns];
         }
 
         if (method_exists($class, 'getScopeAttributes')) {
