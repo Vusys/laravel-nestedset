@@ -224,5 +224,35 @@ final class TreeShapes
         foreach (array_chunk($enriched, 500) as $chunk) {
             DB::table($table)->insert($chunk);
         }
+
+        self::syncSequence($table);
+    }
+
+    /**
+     * Raw bulk inserts with explicit `id` values leave PostgreSQL's
+     * SEQUENCE untouched — subsequent Eloquent INSERTs pull id=1 and
+     * collide with the seeded rows. MySQL/MariaDB auto-increment
+     * silently advances past explicit ids, and SQLite uses ROWID so
+     * the issue doesn't arise. PG needs an explicit `setval`.
+     */
+    private static function syncSequence(string $table): void
+    {
+        $connection = DB::connection();
+
+        if ($connection->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $rawMax = DB::table($table)->max('id');
+        $maxId = is_numeric($rawMax) ? (int) $rawMax : 0;
+
+        if ($maxId === 0) {
+            return;
+        }
+
+        $connection->statement(
+            "SELECT setval(pg_get_serial_sequence(?, 'id'), ?)",
+            [$table, $maxId],
+        );
     }
 }

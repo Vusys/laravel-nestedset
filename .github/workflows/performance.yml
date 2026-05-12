@@ -135,6 +135,9 @@ jobs:
           DB_PASSWORD: ${{ matrix.db_password }}
           PERF_SCALE_MAX: ${{ github.event.inputs.scale || '10000' }}
         run: |
+          # pipefail so phpunit's exit code propagates through tee.
+          # Without it, tee's exit code (always 0) masks test failures.
+          set -o pipefail
           vendor/bin/phpunit --testsuite Performance --testdox 2>&1 | tee perf-output.txt
 
       - name: Upload raw results
@@ -160,6 +163,7 @@ jobs:
       - name: Post PR comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           {
@@ -172,7 +176,7 @@ jobs:
               echo "<details><summary><strong>$backend</strong></summary>"
               echo
               echo '```'
-              cat "$dir/perf-output.txt" 2>/dev/null | grep -E '\[.*\]|ms' | head -100 || echo "(no output)"
+              grep -E '\[.*\]|ms' "$dir/perf-output.txt" 2>/dev/null | head -100 || echo "(no output)"
               echo '```'
               echo
               echo '</details>'
@@ -185,6 +189,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           gh pr edit "$PR_NUMBER" --remove-label run-perf || true
