@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Schema;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Vusys\NestedSet\NestedSetServiceProvider;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class BlueprintMacroTest extends TestCase
@@ -70,6 +71,47 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse(Schema::hasColumn($this->table, 'rgt'));
         $this->assertFalse(Schema::hasColumn($this->table, 'parent_id'));
         $this->assertFalse(Schema::hasColumn($this->table, 'depth'));
+    }
+
+    public function test_nested_set_index_columns_helper_default(): void
+    {
+        $cols = NestedSetServiceProvider::nestedSetIndexColumns(
+            lft: 'lft',
+            rgt: 'rgt',
+            parentId: 'parent_id',
+        );
+
+        $this->assertSame(['lft', 'rgt', 'parent_id'], $cols);
+    }
+
+    public function test_nested_set_index_columns_helper_with_scope_and_cover(): void
+    {
+        $cols = NestedSetServiceProvider::nestedSetIndexColumns(
+            lft: 'lft',
+            rgt: 'rgt',
+            parentId: 'parent_id',
+            scope: ['tenant_id', 'site_id'],
+            cover: ['tickets'],
+        );
+
+        $this->assertSame(
+            ['tenant_id', 'site_id', 'lft', 'rgt', 'parent_id', 'tickets'],
+            $cols,
+            'scope columns lead, cover columns trail',
+        );
+    }
+
+    public function test_nested_set_index_columns_helper_accepts_strings(): void
+    {
+        $cols = NestedSetServiceProvider::nestedSetIndexColumns(
+            lft: 'lft',
+            rgt: 'rgt',
+            parentId: 'parent_id',
+            scope: 'tenant_id',
+            cover: 'tickets',
+        );
+
+        $this->assertSame(['tenant_id', 'lft', 'rgt', 'parent_id', 'tickets'], $cols);
     }
 
     public function test_nested_set_macro_respects_custom_column_names(): void
