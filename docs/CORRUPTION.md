@@ -328,7 +328,12 @@ In order of impact:
    invariant. The corruption taxonomy above is almost entirely
    reachable only by bypassing this surface.
 2. **For bulk loads, do one of:**
-   - Let Eloquent handle every row (slow but always correct).
+   - **Wrap in `Model::withDeferredAggregateMaintenance(Closure)`**
+     when the loop goes through Eloquent (so events, mutators, casts
+     still fire). The per-row aggregate maintenance defers, one
+     `fixAggregates` runs at the end — no per-save ancestor UPDATEs.
+   - Let Eloquent handle every row without the wrapper — always
+     correct, but every save touches the ancestor chain.
    - Build the table with raw INSERTs and run `fixTree()` once at
      the end — `parent_id` is the only column you need to get
      right; everything else will be rebuilt.
