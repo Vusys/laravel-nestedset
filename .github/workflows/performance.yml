@@ -1,0 +1,190 @@
+name: Performance
+
+# Opt-in: either the workflow_dispatch button in the Actions UI, or
+# applying the `run-perf` label to a pull request.
+on:
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: 'Max tree size (rows). 1000 / 10000 / 50000 / 100000'
+        required: false
+        default: '10000'
+      database:
+        description: 'Single database to run against, or all'
+        required: false
+        default: 'all'
+        type: choice
+        options: [all, sqlite, mysql, mariadb, pgsql]
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    # Only run when the trigger meets the opt-in criteria: a manual
+    # dispatch, OR a PR labeled `run-perf`.
+    if: |
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && github.event.label.name == 'run-perf')
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Single PHP / Laravel combo for perf — we're measuring SQL
+        # cost, not framework cost. Matrix expands across DBs only.
+        php: ['8.4']
+        laravel: ['13.0']
+        db: [sqlite, mysql, mariadb, pgsql]
+        include:
+          - { laravel: '13.0', testbench: '11.0' }
+          - { db: sqlite,  db_connection: sqlite }
+          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+
+    name: "perf / ${{ matrix.db }}"
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:lts
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Skip if database not requested
+        if: github.event.inputs.database != 'all' && github.event.inputs.database != '' && github.event.inputs.database != matrix.db
+        run: |
+          echo "Skipping ${{ matrix.db }} — workflow input requested ${{ github.event.inputs.database }} only."
+          exit 0
+
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, pdo_mysql, pdo_pgsql, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-perf-php${{ matrix.php }}-laravel${{ matrix.laravel }}-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-perf-php${{ matrix.php }}-laravel${{ matrix.laravel }}-
+
+      - name: Pin matrix versions
+        run: |
+          composer remove --dev --no-update larastan/larastan rector/rector driftingly/rector-laravel laravel/pint
+          composer require --dev --no-update \
+            "laravel/framework:^${{ matrix.laravel }}" \
+            "orchestra/testbench:^${{ matrix.testbench }}"
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run benchmarks
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+          PERF_SCALE_MAX: ${{ github.event.inputs.scale || '10000' }}
+        run: |
+          vendor/bin/phpunit --testsuite Performance --testdox 2>&1 | tee perf-output.txt
+
+      - name: Upload raw results
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-${{ matrix.db }}-${{ github.run_id }}
+          path: perf-output.txt
+          if-no-files-found: warn
+
+  comment-on-pr:
+    name: Post results on PR
+    needs: benchmark
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all benchmark outputs
+        uses: actions/download-artifact@v4
+        with:
+          path: perf-results
+          pattern: perf-*
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "## Performance benchmark results"
+            echo
+            echo "Triggered by \`run-perf\` label on this PR."
+            echo
+            for dir in perf-results/perf-*/; do
+              backend=$(basename "$dir" | sed 's/perf-\([^-]*\).*/\1/')
+              echo "<details><summary><strong>$backend</strong></summary>"
+              echo
+              echo '```'
+              cat "$dir/perf-output.txt" 2>/dev/null | grep -E '\[.*\]|ms' | head -100 || echo "(no output)"
+              echo '```'
+              echo
+              echo '</details>'
+              echo
+            done
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --body-file comment.md
+
+      - name: Remove run-perf label
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR_NUMBER" --remove-label run-perf || true
