@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Columns;
 use Vusys\NestedSet\NodeBounds;
 
@@ -189,5 +190,34 @@ class TreeQueryBuilder extends Builder
     public function descendantsOf(NodeBounds $bounds): static
     {
         return $this->whereDescendantOf($bounds);
+    }
+
+    /**
+     * Adds correlated-subquery SELECT columns that return freshly-
+     * computed aggregate values alongside any stored ones. See
+     * {@see TreeAggregateBuilder::applyFreshSelects()} for accepted
+     * `$columns` shapes.
+     *
+     * Passing `null` or omitting the argument selects every user-facing
+     * declared aggregate on the model. Useful for drift detection:
+     *
+     *     foreach (Area::query()->withFreshAggregates()->get() as $area) {
+     *         if ($area->tickets_total !== $area->tickets_total_fresh) {
+     *             // stored value disagrees with the source-of-truth
+     *         }
+     *     }
+     *
+     * Implementation note: fresh selects alias to the same column name
+     * as the stored one, overlaying it in the returned model attributes.
+     * To preserve the stored value alongside the fresh one, pass an
+     * ad-hoc Aggregate keyed by a distinct alias.
+     *
+     * @param  array<int|string, string|Aggregate>|null  $columns
+     */
+    public function withFreshAggregates(?array $columns = null): static
+    {
+        TreeAggregateBuilder::applyFreshSelects($this, $columns);
+
+        return $this;
     }
 }

@@ -1,0 +1,129 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Vusys\NestedSet\Tests\Unit;
+
+use Attribute;
+use PHPUnit\Framework\TestCase;
+use ReflectionClass;
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Attributes\NestedSetAggregate;
+use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+
+final class NestedSetAggregateTest extends TestCase
+{
+    public function test_sum_declaration_produces_a_sum_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'tickets_total', sum: 'tickets'))
+            ->toDefinition();
+
+        $this->assertSame('tickets_total', $definition->column);
+        $this->assertSame(AggregateFunction::Sum, $definition->function);
+        $this->assertSame('tickets', $definition->source);
+        $this->assertTrue($definition->inclusive);
+    }
+
+    public function test_count_true_produces_a_count_star_definition_with_null_source(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'tickets_count', count: true))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::Count, $definition->function);
+        $this->assertNull($definition->source);
+    }
+
+    public function test_avg_declaration_produces_an_avg_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'tickets_avg', avg: 'tickets'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::Avg, $definition->function);
+        $this->assertSame('tickets', $definition->source);
+    }
+
+    public function test_min_declaration_produces_a_min_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'tickets_min', min: 'tickets'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::Min, $definition->function);
+        $this->assertSame('tickets', $definition->source);
+    }
+
+    public function test_max_declaration_produces_a_max_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'tickets_max', max: 'tickets'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::Max, $definition->function);
+        $this->assertSame('tickets', $definition->source);
+    }
+
+    public function test_exclusive_flag_propagates_to_definition(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'descendants_total',
+            sum: 'tickets',
+            exclusive: true,
+        ))->toDefinition();
+
+        $this->assertFalse($definition->inclusive);
+    }
+
+    public function test_rejects_declaration_with_no_function(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('no aggregate function declared');
+
+        (new NestedSetAggregate(column: 'tickets_total'))->toDefinition();
+    }
+
+    public function test_rejects_declaration_with_two_functions_at_once(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('multiple aggregate functions declared');
+
+        (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            max: 'tickets',
+        ))->toDefinition();
+    }
+
+    public function test_rejects_declaration_with_three_functions_at_once(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+
+        (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            count: true,
+            avg: 'tickets',
+        ))->toDefinition();
+    }
+
+    public function test_rejects_empty_column_name(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('`column` must not be empty');
+
+        (new NestedSetAggregate(column: '', sum: 'tickets'))->toDefinition();
+    }
+
+    public function test_is_declared_as_a_repeatable_class_level_attribute(): void
+    {
+        $reflection = new ReflectionClass(NestedSetAggregate::class);
+        $attributes = $reflection->getAttributes(Attribute::class);
+
+        $this->assertCount(1, $attributes);
+
+        /** @var Attribute $attr */
+        $attr = $attributes[0]->newInstance();
+
+        $this->assertSame(
+            Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE,
+            $attr->flags,
+        );
+    }
+}

@@ -6,9 +6,20 @@ namespace Vusys\NestedSet;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
+use InvalidArgumentException;
 
 final class NestedSetServiceProvider extends ServiceProvider
 {
+    /**
+     * Type families accepted by the `nestedSetAggregate()` Blueprint
+     * macro. Each maps to a specific column shape; see {@see boot()}.
+     */
+    public const string AGGREGATE_TYPE_SUM_COUNT = 'sum_count';
+
+    public const string AGGREGATE_TYPE_AVG = 'avg';
+
+    public const string AGGREGATE_TYPE_MIN_MAX = 'min_max';
+
     #[\Override]
     public function register(): void
     {
@@ -53,6 +64,54 @@ final class NestedSetServiceProvider extends ServiceProvider
 
             $this->dropIndex([$lft, $rgt, $parentId]);
             $this->dropColumn([$lft, $rgt, $parentId, $depth]);
+        });
+
+        Blueprint::macro('nestedSetAggregate', function (
+            string $column,
+            string $type = NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+        ): void {
+            /** @var Blueprint $this */
+            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT) {
+                // SUM / COUNT — non-null, default 0. Signed bigInteger
+                // (not unsigned) so MariaDB strict mode doesn't reject
+                // delta-subtraction expressions whose intermediate
+                // type would be unsigned-minus-int. Range is still
+                // 9.2 quintillion — ample for SUM over deep subtrees.
+                $this->bigInteger($column)->default(0);
+
+                return;
+            }
+
+            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_AVG) {
+                // AVG — nullable decimal. Null indicates "no rows contributed"
+                // (empty subtree under exclusive semantics, or after every
+                // descendant has been deleted).
+                $this->decimal($column, 12, 4)->nullable();
+
+                return;
+            }
+
+            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_MIN_MAX) {
+                // MIN / MAX — nullable signed big int. Signed because the
+                // source column may legitimately hold negative values, and
+                // empty subtrees yield NULL rather than 0.
+                $this->bigInteger($column)->nullable();
+
+                return;
+            }
+
+            throw new InvalidArgumentException(sprintf(
+                'nestedSetAggregate: unknown type "%s". Use "%s", "%s", or "%s".',
+                $type,
+                NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+                NestedSetServiceProvider::AGGREGATE_TYPE_AVG,
+                NestedSetServiceProvider::AGGREGATE_TYPE_MIN_MAX,
+            ));
+        });
+
+        Blueprint::macro('dropNestedSetAggregate', function (string $column): void {
+            /** @var Blueprint $this */
+            $this->dropColumn($column);
         });
     }
 }

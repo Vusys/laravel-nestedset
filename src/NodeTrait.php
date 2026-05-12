@@ -7,6 +7,9 @@ namespace Vusys\NestedSet;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Aggregates\AggregateFixResult;
+use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
@@ -30,21 +33,68 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  */
 trait NodeTrait
 {
+    use HasNestedSetAggregates;
     use HasNodeInspection;
     use HasSoftDeleteTree;
     use HasTreeMutation;
     use HasTreeRelations;
 
     /**
-     * Wires the model's `saving` event so any operation queued by
-     * appendToNode/etc. is dispatched right before Eloquent issues the
-     * INSERT or UPDATE — preserving Laravel's auto-boot convention.
+     * Wires every Eloquent lifecycle event the package consumes.
+     *
+     *  - `saving`  → callPendingAction (Path A move/insert dispatch)
+     *                and captureAggregateDeltas (Path B source-column
+     *                dirty-tracking; existing models only).
+     *  - `saved`   → applyAggregateDeltas (issues the captured UPDATE).
+     *  - `created` → applyAggregateOnCreate (push fresh node's
+     *                contribution to ancestors; skipped when the node
+     *                has not been placed in the tree yet, see
+     *                {@see HasNestedSetAggregates::isPlacedInTree()}).
+     *  - `deleted` → applyAggregateOnDelete (subtract stored subtree
+     *                contribution from ancestors). Fires for both hard
+     *                and soft deletes; HasSoftDeleteTree's separate
+     *                `deleted` listener cascades the timestamp to
+     *                descendants.
      */
     public static function bootNodeTrait(): void
     {
         static::saving(static function (Model $node): void {
-            if ($node instanceof HasNestedSet && method_exists($node, 'callPendingAction')) {
+            if (! $node instanceof HasNestedSet) {
+                return;
+            }
+            if (method_exists($node, 'callPendingAction')) {
                 $node->callPendingAction();
+            }
+            if (method_exists($node, 'captureAggregateDeltas')) {
+                $node->captureAggregateDeltas();
+            }
+        });
+
+        static::saved(static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateDeltas')) {
+                $node->applyAggregateDeltas();
+            }
+        });
+
+        static::created(static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnCreate')) {
+                $node->applyAggregateOnCreate();
+            }
+        });
+
+        static::deleted(static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnDelete')) {
+                $node->applyAggregateOnDelete();
+            }
+        });
+
+        // Restored — soft-delete only. Aggregates were decremented by
+        // applyAggregateOnDelete; add them back. HasSoftDeleteTree's
+        // separate `restored` listener cascades timestamps to
+        // descendants in parallel.
+        static::registerModelEvent('restored', static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnRestore')) {
+                $node->applyAggregateOnRestore();
             }
         });
     }
@@ -143,7 +193,7 @@ trait NodeTrait
     /**
      * Narrowed return type (TreeQueryBuilder rather than the base
      * Eloquent Builder) so Larastan can resolve tree-specific methods —
-     * whereDescendantOf, withDepth, defaultOrder, etc. — on
+     * whereDescendantOf, withDepth, withFreshAggregates, etc. — on
      * `Model::query()` results. Returning the base Builder causes
      * Larastan to forward calls to it and miss every package method
      * that does not happen to match its `where*` dynamic-where pattern.
@@ -222,7 +272,142 @@ trait NodeTrait
             $rootId = is_numeric($key) ? (int) $key : null;
         }
 
-        return $builder->fixTree($rootId);
+        $treeResult = $builder->fixTree($rootId);
+
+        // Phase H: after the structural repair, rebuild aggregate
+        // columns. lft/rgt may have been rewritten, so any previous
+        // aggregate maintenance based on the old layout is suspect.
+        $aggregatesFixed = self::runFixAggregates($anchor, $rootId);
+
+        if (! $aggregatesFixed instanceof AggregateFixResult) {
+            return $treeResult;
+        }
+
+        return new TreeFixResult(
+            nodesUpdated: $treeResult->nodesUpdated,
+            errors: $treeResult->errors,
+            aggregatesFixed: $aggregatesFixed,
+        );
+    }
+
+    /**
+     * Returns per-column counts of stored aggregate columns that
+     * disagree with their freshly-computed values over the source.
+     * Empty array on a model with no aggregate declarations.
+     *
+     * @return array<string, int>
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function aggregateErrors(?HasNestedSet $anchor = null): array
+    {
+        $instance = self::aggregateAnchorOrFail($anchor);
+        $rootId = self::anchorRootId($anchor);
+
+        return Query\TreeAggregateBuilder::aggregateErrors(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $anchor instanceof Model
+                ? NestedSetScopeResolver::valuesFor($anchor)
+                : [],
+            definitions: AggregateRegistry::for(static::class),
+            rootId: $rootId,
+        );
+    }
+
+    /**
+     * True when any declared aggregate column has at least one row
+     * whose stored value disagrees with the freshly-computed value.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function aggregatesAreBroken(?HasNestedSet $anchor = null): bool
+    {
+        return array_sum(self::aggregateErrors($anchor)) > 0;
+    }
+
+    /**
+     * Recomputes every declared aggregate column (including internal
+     * AVG companions) from the source data and overwrites stored
+     * values that have drifted. Returns a structured count per column.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function fixAggregates(?HasNestedSet $anchor = null): AggregateFixResult
+    {
+        $instance = self::aggregateAnchorOrFail($anchor);
+        $rootId = self::anchorRootId($anchor);
+
+        return Query\TreeAggregateBuilder::fixAggregates(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $anchor instanceof Model
+                ? NestedSetScopeResolver::valuesFor($anchor)
+                : [],
+            definitions: AggregateRegistry::for(static::class),
+            rootId: $rootId,
+        );
+    }
+
+    /**
+     * Internal helper: enforce the scope-anchor requirement that
+     * `repairBuilder()` applies to tree repair, but return the model
+     * instance + null result when the class has no aggregate
+     * declarations (so fixTree() can skip the aggregate pass cleanly).
+     */
+    private static function runFixAggregates(
+        ?HasNestedSet $anchor,
+        ?int $rootId,
+    ): ?AggregateFixResult {
+        $definitions = AggregateRegistry::for(static::class);
+
+        if ($definitions === []) {
+            return null;
+        }
+
+        $instance = new static;
+
+        return Query\TreeAggregateBuilder::fixAggregates(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $anchor instanceof Model
+                ? NestedSetScopeResolver::valuesFor($anchor)
+                : [],
+            definitions: $definitions,
+            rootId: $rootId,
+        );
+    }
+
+    private static function aggregateAnchorOrFail(?HasNestedSet $anchor): self
+    {
+        $scopeColumns = NestedSetScopeResolver::columns(static::class);
+
+        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
+            throw new ScopeViolationException(sprintf(
+                '%s declares a scope (%s); pass an anchor node to scope this operation.',
+                static::class,
+                implode(', ', $scopeColumns),
+            ));
+        }
+
+        return new static;
+    }
+
+    private static function anchorRootId(?HasNestedSet $anchor): ?int
+    {
+        if (! $anchor instanceof Model) {
+            return null;
+        }
+
+        $key = $anchor->getKey();
+
+        return is_numeric($key) ? (int) $key : null;
     }
 
     private static function repairBuilder(?HasNestedSet $anchor): TreeRepairBuilder

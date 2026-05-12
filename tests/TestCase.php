@@ -39,6 +39,27 @@ abstract class TestCase extends OrchestraTestCase
     protected bool $allowBrokenTreeAtTearDown = false;
 
     /**
+     * Persistent backends (MySQL / MariaDB / PostgreSQL) keep the
+     * connection across tests in the same class instance — without a
+     * RefreshDatabase trait, rows pile up. SQLite is per-test-connection
+     * fresh so the issue is invisible there. Truncate the fixture tables
+     * at the start of every test so each one starts from a clean slate
+     * regardless of backend.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $tables = ['areas', 'categories', 'menu_items', 'menus'];
+
+        foreach ($tables as $table) {
+            if (DB::connection()->getSchemaBuilder()->hasTable($table)) {
+                DB::table($table)->delete();
+            }
+        }
+    }
+
+    /**
      * Hardening: every test ends with a tree-integrity check on each
      * nested-set fixture. Catches regressions where a mutation looks
      * locally correct in an assertion but leaves the tree corrupt.
