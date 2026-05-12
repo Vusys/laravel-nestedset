@@ -35,6 +35,18 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 trait HasNestedSetAggregates
 {
     /**
+     * Per-class reentrancy depth for {@see self::withDeferredAggregateMaintenance()}.
+     * When > 0, every lifecycle handler in this trait becomes a no-op;
+     * the wrapper fires one `fixAggregates()` at the outermost exit
+     * (success or failure) to repair the cumulative drift in one pass.
+     *
+     * A `private static` property on a trait gives every using class
+     * its own counter — so deferring maintenance on `Area` doesn't
+     * affect `Category::create()` etc.
+     */
+    private static int $vusysDeferredDepth = 0;
+
+    /**
      * Source-column deltas captured in `saving` and applied in `saved`.
      * Keyed by aggregate column name (the SUM column receiving the delta).
      *
@@ -133,6 +145,10 @@ trait HasNestedSetAggregates
      */
     public function captureAggregateDeltas(): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         $this->vusysCapturedAggregateDeltas = [];
         $this->vusysCapturedExtremes = [];
         $this->vusysCapturedRecomputes = [];
@@ -207,6 +223,10 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateDeltas(): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         $deltas = $this->vusysCapturedAggregateDeltas;
         $extremes = $this->vusysCapturedExtremes;
         $recomputes = $this->vusysCapturedRecomputes;
@@ -300,6 +320,10 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateOnCreate(): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         if (! $this->isPlacedInTree()) {
             return;
         }
@@ -373,6 +397,10 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateOnDelete(): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         if (! $this->isPlacedInTree()) {
             return;
         }
@@ -444,6 +472,10 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateBeforeMove(NodeBounds $from, string $action): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         [$sumCountDeltas, $minMaxByFunction] = $this->collectMoveSubtreeContribution();
 
         if ($sumCountDeltas === [] && $minMaxByFunction === []) {
@@ -487,6 +519,10 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateAfterMove(NodeBounds $from, NodeBounds $to, string $action): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         [$sumCountDeltas, , $candidateExtremes] = $this->collectMoveSubtreeContribution();
 
         if ($sumCountDeltas === [] && $candidateExtremes === []) {
@@ -608,6 +644,10 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateOnRestore(): void
     {
+        if (self::$vusysDeferredDepth > 0) {
+            return;
+        }
+
         if (! $this->isPlacedInTree()) {
             return;
         }
@@ -955,6 +995,88 @@ trait HasNestedSetAggregates
         $nextAfterId = count($ids) === $chunkSize ? end($ids) : null;
 
         return ['result' => $result, 'nextAfterId' => $nextAfterId];
+    }
+
+    /**
+     * Runs `$work` with per-row aggregate maintenance suspended, then
+     * fires one `fixAggregates($anchor)` at the outermost exit to
+     * repair the cumulative drift in a single pass.
+     *
+     * Compared to the unwrapped path:
+     *
+     *  - Every Eloquent event (`saving`/`created`/`saved`/`deleted` etc.)
+     *    still fires per row, so observers, mutators, casts, and
+     *    mass-assignment guards behave exactly as they would outside
+     *    the block. Only the trait's *aggregate-column* side-effects
+     *    are deferred.
+     *  - The wrapper is re-entrant — nested calls share one deferral
+     *    counter, and only the outermost call triggers the final fix.
+     *  - Failure-safe — if `$work` throws, the deferral counter is
+     *    still decremented in `finally` and the repair still fires
+     *    before the exception propagates. Leaving the table half-
+     *    repaired would be worse than spending the fix cost.
+     *
+     * The trade-off: every save inside the closure pays no
+     * aggregate-maintenance cost, but the final `fixAggregates`
+     * touches every row whose stored aggregates may have drifted.
+     * Worthwhile when the closure does many small mutations
+     * (N × `appendToNode->save()`, a CSV import through Eloquent,
+     * a re-parent script). For one or two saves the unwrapped path
+     * is cheaper.
+     *
+     * ```php
+     * Area::withDeferredAggregateMaintenance(function () use ($csv, $parent) {
+     *     foreach ($csv as $row) {
+     *         $area = new Area($row);
+     *         $area->appendToNode($parent)->save();  // events fire,
+     *     }                                           // aggregates skipped
+     * }, $rootAnchor);                                // one fixAggregates($root) at end
+     * ```
+     *
+     * @template T
+     *
+     * @param  \Closure(): T  $work
+     * @return T
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function withDeferredAggregateMaintenance(
+        \Closure $work,
+        ?HasNestedSet $anchor = null,
+    ): mixed {
+        // Validate the anchor upfront — scoped models need one for the
+        // final fixAggregates call, and a synchronous failure here is
+        // friendlier than running the entire closure and only failing
+        // at the repair pass.
+        self::vusysAggregateAnchorOrFail($anchor);
+
+        self::$vusysDeferredDepth++;
+
+        try {
+            return $work();
+        } finally {
+            self::$vusysDeferredDepth--;
+
+            // Repair only at the outermost exit — nested calls share
+            // the same counter and rely on the outer wrapper to fix.
+            if (self::$vusysDeferredDepth === 0) {
+                // If $work threw, this fires before the exception
+                // propagates. Swallow any secondary error so the
+                // original throwable wins — losing the original would
+                // hide the actual bug.
+                try {
+                    self::fixAggregates($anchor);
+                } catch (\Throwable $secondary) {
+                    // Best effort. The caller can re-run fixAggregates
+                    // themselves once they've handled the primary error.
+                    error_log(sprintf(
+                        'withDeferredAggregateMaintenance: secondary error in fixAggregates after closure failure — %s: %s',
+                        $secondary::class,
+                        $secondary->getMessage(),
+                    ));
+                }
+            }
+        }
     }
 
     /**
