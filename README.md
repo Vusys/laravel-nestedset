@@ -315,6 +315,22 @@ MenuItem::isBroken($anyNodeFromThatMenu);   // OK — scoped to that menu
 MenuItem::fixTree($anchor);                 // repair one menu's tree
 ```
 
+### What gets corrupted, what's auto-fixable, and how to avoid it
+
+The package treats **`parent_id` as the source of truth**. `fixTree()` rebuilds `lft`/`rgt`/`depth` from a `parent_id` walk, so as long as `parent_id` describes the tree you actually want, every other column is recoverable.
+
+| Corruption | Detected by `countErrors()`? | Repaired by `fixTree()`? | Typical cause |
+| --- | --- | --- | --- |
+| `invalid_bounds` (`lft >= rgt`) | ✅ | ✅ | Raw `UPDATE` on `lft`/`rgt`; crashed transaction. |
+| `duplicate_lft` / `duplicate_rgt` | ✅ | ✅ | Concurrent gap-shifts without locking; partial migration. |
+| `orphans` (`parent_id` → missing row) | ✅ | ❌ — detected but not auto-repaired | Hard `DELETE` of a parent without cascading. |
+| `parent_id` cycles | ❌ — not surfaced by `countErrors()` | ❌ — cycle members are silently skipped | Raw `UPDATE` on `parent_id` that bypassed Eloquent guards. |
+| Aggregate drift (stored `tickets_total` ≠ computed) | ✅ via `aggregateErrors()` | ✅ via `fixAggregates()` | Raw `UPDATE` on the source column. |
+
+**Best practice in one rule:** mutate trees only through Eloquent on a `NodeTrait` model. Every `appendToNode`/`prependToNode`/`insertBeforeNode`/`insertAfterNode`/`makeRoot`/`delete`/`forceDelete`/`restore` call is wrapped in a transaction and maintains every invariant. Most of the corruption categories above are reachable only by bypassing that surface.
+
+See [CORRUPTION.md](CORRUPTION.md) for the full taxonomy with worked recovery recipes, diagnostic SQL for finding cycles, and `tests/Feature/Corruption/` for executable examples of every category.
+
 ---
 
 ## Precalculated aggregate columns
