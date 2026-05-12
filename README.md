@@ -369,6 +369,28 @@ Area::queueFixAggregates(chunkSize: 1_000);
 
 Each chunk runs one chunked `fixAggregates` constrained to its outer-id slice, so total work scales linearly in `chunkSize` regardless of total table size. The chain terminates automatically when a chunk returns fewer rows than `chunkSize` — no completion handler to register, no manual cursor to track. Combine with a smaller chunk size to keep individual jobs well under your worker's `--timeout`.
 
+#### Sync chunked repair with progress
+
+When you'd rather drive the loop yourself — e.g. a CLI command streaming progress to stdout — pass the same `chunkSize` to the synchronous `fixAggregates()` plus an `onChunk` callback:
+
+```php
+$result = Area::fixAggregates(
+    chunkSize: 1_000,
+    onChunk: function ($chunkResult, int $chunkIndex, ?int $cursor) {
+        $this->output->writeln(sprintf(
+            'Chunk %d: %d rows updated (cursor=%s)',
+            $chunkIndex,
+            $chunkResult->totalRowsUpdated,
+            $cursor ?? 'end',
+        ));
+    },
+);
+
+// $result is the merged total across every chunk.
+```
+
+The callback receives the per-chunk `AggregateFixResult`, the zero-based chunk index, and the cursor (last id processed, or `null` on the final chunk). Each chunk is independently atomic at the database level — if the process is killed mid-loop you can re-run and the remaining drift will be detected and repaired on the next pass.
+
 ---
 
 ## Precalculated aggregate columns

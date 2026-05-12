@@ -268,9 +268,19 @@ Area::queueFixAggregates();           // unscoped
 Area::queueFixAggregates($anchor);    // scoped
 ```
 
-The dispatched job calls the same `fixAggregates` under the hood — see
+For an offline command that wants to stream progress instead, pass
+`chunkSize` (and optionally `onChunk`) to the synchronous method:
+
+```php
+Area::fixAggregates(
+    chunkSize: 1_000,
+    onChunk: fn ($r, $i, $cur) => $this->output->writeln("chunk {$i}: {$r->totalRowsUpdated}"),
+);
+```
+
+Both paths share the same underlying chunking machinery; see
 [`README.md` § Queueable aggregate repair](../README.md#queueable-aggregate-repair)
-for routing options.
+for routing options on the queued form.
 
 Idempotent: running it twice in a row, the second invocation finds
 zero drift and updates nothing. Safe to call after every batch
