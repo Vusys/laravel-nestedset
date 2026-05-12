@@ -67,10 +67,19 @@ final class DeltaMaintenance
         array $avgs = [],
         array $extremes = [],
     ): int {
-        $setExpressions = self::buildDeltaSetClauses($deltas);
+        // Order matters on MySQL / MariaDB: SET clauses are evaluated
+        // left-to-right with each prior assignment visible to later
+        // ones. The AVG formula references the SUM and COUNT
+        // companions, which are themselves being delta-updated in this
+        // same statement — so we must emit AVG FIRST while those
+        // columns still hold their pre-update values. Adding the delta
+        // inside the AVG expression then produces the correct new
+        // value. PostgreSQL and SQLite evaluate all SET clauses
+        // against pre-update values regardless of order, so the same
+        // ordering is correct for them.
         $setExpressions = array_merge(
-            $setExpressions,
             self::buildAvgSetClauses($deltas, $avgs),
+            self::buildDeltaSetClauses($deltas),
             self::buildExtremeSetClauses($extremes),
         );
 

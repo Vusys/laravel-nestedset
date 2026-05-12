@@ -72,9 +72,12 @@ final class NestedSetServiceProvider extends ServiceProvider
         ): void {
             /** @var Blueprint $this */
             if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT) {
-                // SUM / COUNT — non-null, default 0. Unsigned big int gives
-                // ~18 quintillion of headroom for SUM over deep subtrees.
-                $this->unsignedBigInteger($column)->default(0);
+                // SUM / COUNT — non-null, default 0. Signed bigInteger
+                // (not unsigned) so MariaDB strict mode doesn't reject
+                // delta-subtraction expressions whose intermediate
+                // type would be unsigned-minus-int. Range is still
+                // 9.2 quintillion — ample for SUM over deep subtrees.
+                $this->bigInteger($column)->default(0);
 
                 return;
             }
