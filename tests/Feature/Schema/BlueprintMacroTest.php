@@ -135,7 +135,7 @@ final class BlueprintMacroTest extends TestCase
         $column = $this->columnByName('tickets_avg');
 
         $this->assertTrue($column['nullable'], 'avg column must be nullable');
-        $this->assertNull($column['default']);
+        $this->assertDefaultIsNull($column['default']);
     }
 
     public function test_nested_set_aggregate_min_max_type_creates_nullable_column_with_no_default(): void
@@ -148,7 +148,7 @@ final class BlueprintMacroTest extends TestCase
         $column = $this->columnByName('tickets_max');
 
         $this->assertTrue($column['nullable'], 'min/max column must be nullable');
-        $this->assertNull($column['default']);
+        $this->assertDefaultIsNull($column['default']);
     }
 
     public function test_nested_set_aggregate_rejects_unknown_type(): void
@@ -214,6 +214,20 @@ final class BlueprintMacroTest extends TestCase
         }
 
         $this->assertSame(0, (int) trim((string) $default, "'\""));
+    }
+
+    /**
+     * MariaDB's information_schema reports columns with no default as
+     * the literal string `NULL`; SQLite and PostgreSQL return PHP null.
+     * Treat either as "no default" so the same test passes everywhere.
+     */
+    private function assertDefaultIsNull(mixed $default): void
+    {
+        if ($default === null) {
+            return;
+        }
+
+        $this->assertSame('NULL', $default, 'expected null default (or MariaDB literal NULL)');
     }
 
     /**
