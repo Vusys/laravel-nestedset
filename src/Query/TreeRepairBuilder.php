@@ -137,15 +137,7 @@ final readonly class TreeRepairBuilder
         }
 
         $this->connection->transaction(function () use ($positions): void {
-            foreach ($positions as $id => $pos) {
-                $this->connection->table($this->table)
-                    ->where('id', $id)
-                    ->update([
-                        $this->lft => $pos['lft'],
-                        $this->rgt => $pos['rgt'],
-                        $this->depth => $pos['depth'],
-                    ]);
-            }
+            $this->bulkWritePositions($positions);
         });
     }
 
@@ -208,16 +200,87 @@ final readonly class TreeRepairBuilder
         $walk($rootId, $startDepth);
 
         $this->connection->transaction(function () use ($positions): void {
-            foreach ($positions as $id => $pos) {
-                $this->connection->table($this->table)
-                    ->where('id', $id)
-                    ->update([
-                        $this->lft => $pos['lft'],
-                        $this->rgt => $pos['rgt'],
-                        $this->depth => $pos['depth'],
-                    ]);
-            }
+            $this->bulkWritePositions($positions);
         });
+    }
+
+    /**
+     * Writes the rebuilt lft/rgt/depth values as chunked bulk UPDATEs
+     * — one `UPDATE … SET col = CASE id WHEN … END WHERE id IN (…)`
+     * per chunk, three CASE expressions (lft / rgt / depth) per
+     * statement. Replaces the per-row UPDATE loop this method used
+     * to run, which was the dominant cost on large rebuilds —
+     * 10K rows = 10K round-trips, multi-second wall-clock on every
+     * backend. With chunkSize=500 a 10K rebuild becomes ~20 UPDATEs.
+     *
+     * Same pattern Phase Q applied to TreeAggregateBuilder; the only
+     * difference is the columns being CASE-d.
+     *
+     * @param  array<int, array{lft: int, rgt: int, depth: int}>  $positions
+     * @param  int<1, max>  $chunkSize
+     */
+    private function bulkWritePositions(array $positions, int $chunkSize = 500): void
+    {
+        if ($positions === []) {
+            return;
+        }
+
+        /** @var list<int> $ids */
+        $ids = array_keys($positions);
+
+        foreach (array_chunk($ids, $chunkSize) as $idChunk) {
+            $lftCase = 'CASE id';
+            $rgtCase = 'CASE id';
+            $depthCase = 'CASE id';
+            $lftBindings = [];
+            $rgtBindings = [];
+            $depthBindings = [];
+
+            foreach ($idChunk as $id) {
+                $pos = $positions[$id];
+                $lftCase .= ' WHEN ? THEN ?';
+                $rgtCase .= ' WHEN ? THEN ?';
+                $depthCase .= ' WHEN ? THEN ?';
+                $lftBindings[] = $id;
+                $lftBindings[] = $pos['lft'];
+                $rgtBindings[] = $id;
+                $rgtBindings[] = $pos['rgt'];
+                $depthBindings[] = $id;
+                $depthBindings[] = $pos['depth'];
+            }
+            $lftCase .= " ELSE {$this->lft} END";
+            $rgtCase .= " ELSE {$this->rgt} END";
+            $depthCase .= " ELSE {$this->depth} END";
+
+            $idPlaceholders = implode(', ', array_fill(0, count($idChunk), '?'));
+            $idBindings = $idChunk;
+
+            // Scope predicates (`tenant_id = ?` etc.) live alongside the
+            // id-IN list — keeps the update inside the scope this
+            // builder was constructed for.
+            $scopeClause = '';
+            $scopeBindings = [];
+            foreach ($this->scope as $col => $value) {
+                $scopeClause .= " AND {$col} = ?";
+                $scopeBindings[] = $value;
+            }
+
+            $sql = "UPDATE {$this->table} "
+                ."SET {$this->lft} = ({$lftCase}), "
+                ."{$this->rgt} = ({$rgtCase}), "
+                ."{$this->depth} = ({$depthCase}) "
+                ."WHERE id IN ({$idPlaceholders}){$scopeClause}";
+
+            $bindings = [
+                ...$lftBindings,
+                ...$rgtBindings,
+                ...$depthBindings,
+                ...$idBindings,
+                ...$scopeBindings,
+            ];
+
+            $this->connection->update($sql, $bindings);
+        }
     }
 
     /**
