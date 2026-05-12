@@ -80,7 +80,7 @@ final class MysqlFixAggregatesInvestigationTest extends PerformanceTestCase
 
             // Candidate H: explicit temp-table materialisation in two stmts.
             fwrite(STDOUT, "\n--- MariaDB: explicit temp-table materialisation ---\n");
-            $this->timeTwoStatementTempTable('temp_table_explicit', $driver);
+            $this->timeTwoStatementTempTable('temp_table_explicit');
         }
 
         $this->addToAssertionCount(1);
@@ -188,7 +188,7 @@ final class MysqlFixAggregatesInvestigationTest extends PerformanceTestCase
             .' outer_a.tickets_avg__sum, outer_a.tickets_avg__count';
     }
 
-    private function timeTwoStatementTempTable(string $label, string $driver): void
+    private function timeTwoStatementTempTable(string $label): void
     {
         // Create the aggregate-only result as a session temp table, then
         // SELECT the join. This forces a single materialisation up-front
