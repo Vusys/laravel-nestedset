@@ -83,6 +83,64 @@ final class AggregateRegistry
     }
 
     /**
+     * For each inclusive AVG declaration on $class, returns the
+     * column names of its companion SUM and COUNT definitions over
+     * the same source. The result is consumed by Phase E maintenance
+     * to write `avg = (sum + Δsum) / NULLIF(count + Δcount, 0)` in the
+     * same UPDATE as the companion deltas.
+     *
+     * Companions are matched by source-column equality so user-declared
+     * SUM/COUNT (e.g. `Aggregate::count('tickets')`) and auto-promoted
+     * internal companions are treated uniformly. AVG declarations that
+     * lack a matching pair are skipped — that state is unreachable when
+     * declarations come through the registry's auto-promotion, but the
+     * skip keeps the helper robust against direct
+     * {@see AggregateDefinition} construction in tests.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return array<string, array{sum: string, count: string}>
+     */
+    public static function avgCompanionsFor(string $class): array
+    {
+        $definitions = self::for($class);
+        $bySource = self::indexBySource($definitions);
+
+        $result = [];
+
+        foreach ($definitions as $definition) {
+            if ($definition->function !== AggregateFunction::Avg) {
+                continue;
+            }
+            if (! $definition->inclusive) {
+                // Phase E covers inclusive AVG only; exclusive arrives in Phase G.
+                continue;
+            }
+            if ($definition->source === null) {
+                continue;
+            }
+
+            $companions = $bySource[$definition->source] ?? [];
+            $sumColumn = null;
+            $countColumn = null;
+
+            foreach ($companions as $companion) {
+                if ($companion->function === AggregateFunction::Sum && $sumColumn === null) {
+                    $sumColumn = $companion->column;
+                }
+                if ($companion->function === AggregateFunction::Count && $countColumn === null) {
+                    $countColumn = $companion->column;
+                }
+            }
+
+            if ($sumColumn !== null && $countColumn !== null) {
+                $result[$definition->column] = ['sum' => $sumColumn, 'count' => $countColumn];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * @param  class-string<Model&HasNestedSet>  $class
      * @return list<AggregateDefinition>
      */

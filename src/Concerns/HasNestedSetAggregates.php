@@ -168,6 +168,7 @@ trait HasNestedSetAggregates
             deltas: $deltas,
             includeSelf: true,
             scope: NestedSetScopeResolver::valuesFor($this),
+            avgs: AggregateRegistry::avgCompanionsFor(static::class),
         );
     }
 
@@ -221,6 +222,7 @@ trait HasNestedSetAggregates
             deltas: $deltas,
             includeSelf: true,
             scope: NestedSetScopeResolver::valuesFor($this),
+            avgs: AggregateRegistry::avgCompanionsFor(static::class),
         );
     }
 
@@ -274,6 +276,7 @@ trait HasNestedSetAggregates
             deltas: $deltas,
             includeSelf: false,
             scope: NestedSetScopeResolver::valuesFor($this),
+            avgs: AggregateRegistry::avgCompanionsFor(static::class),
         );
     }
 
