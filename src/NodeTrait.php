@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
@@ -141,9 +141,22 @@ trait NodeTrait
     // ----------------------------------------------------------------
 
     /**
-     * @param  \Illuminate\Database\Query\Builder  $query
+     * Narrowed return type (TreeQueryBuilder rather than the base
+     * Eloquent Builder) so Larastan can resolve tree-specific methods —
+     * whereDescendantOf, withDepth, defaultOrder, etc. — on
+     * `Model::query()` results. Returning the base Builder causes
+     * Larastan to forward calls to it and miss every package method
+     * that does not happen to match its `where*` dynamic-where pattern.
+     *
+     * Generic parameter is left open ({@see Model}) because
+     * `new TreeQueryBuilder($query)` cannot bind the template to the
+     * concrete subclass — Larastan resolves per-model methods through
+     * its own builder-helper machinery instead.
+     *
+     * @param  Builder  $query
+     * @return TreeQueryBuilder<Model>
      */
-    public function newEloquentBuilder($query): Builder
+    public function newEloquentBuilder($query): TreeQueryBuilder
     {
         return new TreeQueryBuilder($query);
     }
