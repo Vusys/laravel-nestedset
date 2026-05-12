@@ -116,13 +116,24 @@ trait HasTreeMutation
             NestedSetScopeResolver::assertSameScope($this, $target);
         }
 
-        match ($op->action) {
-            'appendTo' => $this->actAppendTo($this->requireModelNode($op)),
-            'prependTo' => $this->actPrependTo($this->requireModelNode($op)),
-            'sibling' => $this->actSibling($this->requireModelNode($op), $op->position),
-            'root' => $this->actMakeRoot(),
-            default => throw new LogicException("Unknown pending action: {$op->action}"),
+        $work = function () use ($op): void {
+            match ($op->action) {
+                'appendTo' => $this->actAppendTo($this->requireModelNode($op)),
+                'prependTo' => $this->actPrependTo($this->requireModelNode($op)),
+                'sibling' => $this->actSibling($this->requireModelNode($op), $op->position),
+                'root' => $this->actMakeRoot(),
+                default => throw new LogicException("Unknown pending action: {$op->action}"),
+            };
         };
+
+        if (config('nestedset.auto_transaction', true)) {
+            // Wrap makeGap-then-set-attrs (or moveNode-then-getPlainNodeData)
+            // so a thrown exception between the two halves rolls back the
+            // gap rather than leaving the tree corrupt.
+            $this->getConnection()->transaction($work);
+        } else {
+            $work();
+        }
 
         $this->markMoved();
     }
@@ -205,7 +216,10 @@ trait HasTreeMutation
             return;
         }
 
-        $from = $this->getBounds();
+        // Read $from from the DB rather than $this — the in-memory model may
+        // be stale (e.g. saved before later sibling inserts shifted its rgt),
+        // and feeding moveNode an out-of-date bound corrupts the tree.
+        $from = $mutator->getNodeData($this->intKey($this));
         $depthDelta = $newDepth - $from->depth;
 
         $mutator->moveNode($from, $position, $depthDelta);

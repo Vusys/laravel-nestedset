@@ -26,6 +26,9 @@ final class TreeMutationBuilderTest extends TestCase
 {
     private TreeMutationBuilder $mutator;
 
+    /** This suite exercises raw builder ops that don't reconcile the tree. */
+    protected bool $allowBrokenTreeAtTearDown = true;
+
     protected function setUp(): void
     {
         parent::setUp();

@@ -43,4 +43,29 @@ final class TransactionTest extends TestCase
         $this->assertEquals($snapshot, $after, 'Transaction rollback should restore the tree');
         $this->assertFalse(Category::isBroken());
     }
+
+    public function test_auto_transaction_rolls_back_on_insert_failure(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+        $rootBefore = $root->refresh();
+
+        // Cause the INSERT to fail by violating a NOT NULL on `name` via raw.
+        try {
+            DB::transaction(function () use ($rootBefore): never {
+                // Simulate a downstream failure after the gap is opened.
+                $b = new Category(['name' => 'B']);
+                $b->appendToNode($rootBefore)->save();
+                throw new RuntimeException('failure after gap');
+            });
+        } catch (RuntimeException) {
+            // expected
+        }
+
+        // The gap should NOT remain — outer transaction rolled it back.
+        $rootAfter = Category::query()->findOrFail(1);
+        $this->assertSame($rootBefore->lft, $rootAfter->lft);
+        $this->assertSame($rootBefore->rgt, $rootAfter->rgt);
+        $this->assertFalse(Category::isBroken());
+    }
 }
