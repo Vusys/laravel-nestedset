@@ -39,7 +39,7 @@ trait HasTreeRepair
      */
     public static function isBroken(?HasNestedSet $anchor = null): bool
     {
-        return self::vusysRepairBuilder($anchor)->isBroken();
+        return self::repairBuilder($anchor)->isBroken();
     }
 
     /**
@@ -53,7 +53,7 @@ trait HasTreeRepair
      */
     public static function countErrors(?HasNestedSet $anchor = null): array
     {
-        return self::vusysRepairBuilder($anchor)->countErrors();
+        return self::repairBuilder($anchor)->countErrors();
     }
 
     /**
@@ -71,7 +71,7 @@ trait HasTreeRepair
      */
     public static function fixTree(?HasNestedSet $anchor = null): TreeFixResult
     {
-        $builder = self::vusysRepairBuilder($anchor);
+        $builder = self::repairBuilder($anchor);
 
         $rootId = null;
         if ($anchor instanceof Model) {
@@ -87,7 +87,7 @@ trait HasTreeRepair
         // lives on HasNestedSetAggregates; trait-private methods are
         // visible to any other method of the using class, including
         // methods composed in from sibling traits.
-        $aggregatesFixed = self::vusysRunFixAggregates($anchor, $rootId);
+        $aggregatesFixed = self::runFixAggregates($anchor, $rootId);
 
         if ($aggregatesFixed === null) {
             return $treeResult;
@@ -100,7 +100,7 @@ trait HasTreeRepair
         );
     }
 
-    private static function vusysRepairBuilder(?HasNestedSet $anchor): TreeRepairBuilder
+    private static function repairBuilder(?HasNestedSet $anchor): TreeRepairBuilder
     {
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
 

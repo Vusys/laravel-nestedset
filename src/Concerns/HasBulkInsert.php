@@ -105,7 +105,7 @@ trait HasBulkInsert
             : [];
 
         // 1. DFS walk → flat plan with relative lft/rgt/depth.
-        $plan = self::vusysBulkInsertPlan($tree, $reservedCols);
+        $plan = self::bulkInsertPlan($tree, $reservedCols);
 
         $totalNodes = count($plan);
         $gapSize = 2 * $totalNodes;
@@ -119,7 +119,7 @@ trait HasBulkInsert
         }
 
         $connection = $instance->getConnection();
-        $mutator = self::vusysBulkInsertMutator($instance, $scopeValues);
+        $mutator = self::bulkInsertMutator($instance, $scopeValues);
 
         return self::withDeferredAggregateMaintenance(
             fn (): array => $connection->transaction(static function () use (
@@ -196,7 +196,7 @@ trait HasBulkInsert
      *     parentPlanIndex: int|null,
      * }>
      */
-    private static function vusysBulkInsertPlan(array $tree, array $reservedCols): array
+    private static function bulkInsertPlan(array $tree, array $reservedCols): array
     {
         /** @var list<array{attributes: array<string, mixed>, lft: int, rgt: int, depth: int, parentPlanIndex: int|null}> $plan */
         $plan = [];
@@ -283,7 +283,7 @@ trait HasBulkInsert
      *
      * @param  array<string, mixed>  $scopeValues
      */
-    private static function vusysBulkInsertMutator(Model $instance, array $scopeValues): TreeMutationBuilder
+    private static function bulkInsertMutator(Model $instance, array $scopeValues): TreeMutationBuilder
     {
         /** @var Model&HasNestedSet $instance */
         return new TreeMutationBuilder(

@@ -27,7 +27,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  */
 trait HasTreeMutation
 {
-    protected ?PendingOperation $vusysPending = null;
+    protected ?PendingOperation $pending = null;
 
     /**
      * Queue this node to become the last child of $parent on the next save().
@@ -39,7 +39,7 @@ trait HasTreeMutation
      */
     public function appendToNode(HasNestedSet $parent): static
     {
-        $this->vusysPending = new PendingOperation('appendTo', $parent);
+        $this->pending = new PendingOperation('appendTo', $parent);
 
         return $this;
     }
@@ -52,7 +52,7 @@ trait HasTreeMutation
      */
     public function prependToNode(HasNestedSet $parent): static
     {
-        $this->vusysPending = new PendingOperation('prependTo', $parent);
+        $this->pending = new PendingOperation('prependTo', $parent);
 
         return $this;
     }
@@ -65,7 +65,7 @@ trait HasTreeMutation
      */
     public function insertBeforeNode(HasNestedSet $sibling): static
     {
-        $this->vusysPending = new PendingOperation('sibling', $sibling, Position::Before);
+        $this->pending = new PendingOperation('sibling', $sibling, Position::Before);
 
         return $this;
     }
@@ -78,7 +78,7 @@ trait HasTreeMutation
      */
     public function insertAfterNode(HasNestedSet $sibling): static
     {
-        $this->vusysPending = new PendingOperation('sibling', $sibling, Position::After);
+        $this->pending = new PendingOperation('sibling', $sibling, Position::After);
 
         return $this;
     }
@@ -89,7 +89,7 @@ trait HasTreeMutation
      */
     public function makeRoot(): static
     {
-        $this->vusysPending = new PendingOperation('root');
+        $this->pending = new PendingOperation('root');
 
         return $this;
     }
@@ -138,12 +138,12 @@ trait HasTreeMutation
      */
     public function callPendingAction(): void
     {
-        if ($this->vusysPending === null) {
+        if ($this->pending === null) {
             return;
         }
 
-        $op = $this->vusysPending;
-        $this->vusysPending = null;
+        $op = $this->pending;
+        $this->pending = null;
 
         if ($op->node !== null) {
             $target = $this->requireModelNode($op);
