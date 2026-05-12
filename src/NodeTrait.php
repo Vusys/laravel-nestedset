@@ -35,6 +35,11 @@ trait NodeTrait
     use HasTreeMutation;
     use HasTreeRelations;
 
+    /**
+     * Wires the model's `saving` event so any operation queued by
+     * appendToNode/etc. is dispatched right before Eloquent issues the
+     * INSERT or UPDATE — preserving Laravel's auto-boot convention.
+     */
     public static function bootNodeTrait(): void
     {
         static::saving(static function (Model $node): void {
@@ -171,13 +176,28 @@ trait NodeTrait
     }
 
     /**
+     * Returns per-category counts of nested-set invariant violations.
+     * Pass an $anchor for scoped models (required when the class declares
+     * #[NestedSetScope] or getScopeAttributes()).
+     *
      * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int}
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
      */
     public static function countErrors(?HasNestedSet $anchor = null): array
     {
         return self::repairBuilder($anchor)->countErrors();
     }
 
+    /**
+     * Rebuilds lft/rgt/depth from parent_id (the column we treat as
+     * authoritative for parent/child relationships) and returns a result
+     * summary. On a scoped model, $anchor is required and the repair stays
+     * inside that one tree; passing $anchor on an unscoped model is
+     * permitted and scopes the rebuild to that anchor's subtree.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
     public static function fixTree(?HasNestedSet $anchor = null): TreeFixResult
     {
         $builder = self::repairBuilder($anchor);
