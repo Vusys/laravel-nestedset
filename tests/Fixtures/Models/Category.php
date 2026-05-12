@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeBounds;
+use Vusys\NestedSet\NodeCollection;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Relations\AncestorsRelation;
 use Vusys\NestedSet\Relations\DescendantsRelation;
@@ -121,5 +122,18 @@ final class Category extends Model implements HasNestedSet
         $builder = new TreeQueryBuilder($query);
 
         return $builder;
+    }
+
+    /**
+     * @param  array<int, self>  $models
+     * @return NodeCollection<int, self>
+     */
+    #[\Override]
+    public function newCollection(array $models = []): Collection
+    {
+        /** @var NodeCollection<int, self> $collection */
+        $collection = new NodeCollection($models);
+
+        return $collection;
     }
 }
