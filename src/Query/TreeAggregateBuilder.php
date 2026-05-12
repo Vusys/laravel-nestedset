@@ -639,6 +639,18 @@ final class TreeAggregateBuilder
             .') AS agg ON agg.outer_id = outer_a.id'
             ." WHERE {$outerWhere}";
 
+        // MariaDB's planner converts our derived table into a LATERAL
+        // DERIVED via the `split_materialized` optimization — it
+        // re-executes the sub-query once per outer row instead of
+        // materializing it once, making the derived shape ~3× slower than
+        // the non-derived form. Disable that optimization for this single
+        // statement so the derived gets materialized once. MySQL has no
+        // `split_materialized` flag (it already materializes once for
+        // free), so this only fires on MariaDB.
+        if (self::isMariaDb($connection)) {
+            $sql = "SET STATEMENT optimizer_switch='split_materialized=off' FOR ".$sql;
+        }
+
         $rows = $connection->select($sql, $bindings);
 
         $result = [];
@@ -678,5 +690,27 @@ final class TreeAggregateBuilder
     private static function storedAlias(string $column): string
     {
         return 'stored_'.$column;
+    }
+
+    /**
+     * Laravel reports both MariaDB and MySQL under the `mysql` driver
+     * name; we need to distinguish them because their planners pick
+     * different execution strategies for the same SQL. PDO's
+     * `ATTR_SERVER_VERSION` returns the server's `@@version` string
+     * verbatim — MariaDB's includes "MariaDB", MySQL's does not.
+     */
+    private static function isMariaDb(Connection $connection): bool
+    {
+        if ($connection->getDriverName() !== 'mysql') {
+            return false;
+        }
+
+        try {
+            $version = $connection->getPdo()->getAttribute(\PDO::ATTR_SERVER_VERSION);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return is_string($version) && stripos($version, 'mariadb') !== false;
     }
 }
