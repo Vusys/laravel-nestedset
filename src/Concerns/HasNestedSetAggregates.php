@@ -12,6 +12,7 @@ use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -427,6 +428,257 @@ trait HasNestedSetAggregates
         if ($minMaxRecomputes !== []) {
             $this->applyCapturedRecomputes($minMaxRecomputes, $scope);
         }
+    }
+
+    /**
+     * Path A "before-move" hook: the OLD ancestor chain loses this
+     * subtree's contribution. Runs while pre-move bounds are still
+     * accurate — bounds-based WHERE clauses match the correct
+     * ancestors.
+     *
+     * Called from {@see HasTreeMutation::onBeforePendingAction()}
+     * inside the move's auto-transaction.
+     */
+    public function applyAggregateBeforeMove(NodeBounds $from, string $action): void
+    {
+        [$sumCountDeltas, $minMaxByFunction] = $this->collectMoveSubtreeContribution();
+
+        if ($sumCountDeltas === [] && $minMaxByFunction === []) {
+            return;
+        }
+
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        if ($sumCountDeltas !== []) {
+            $negative = array_map(static fn (int $v): int => -$v, $sumCountDeltas);
+            DeltaMaintenance::apply(
+                connection: $this->getConnection(),
+                table: $this->getTable(),
+                lftCol: $this->getLftName(),
+                rgtCol: $this->getRgtName(),
+                bounds: $from,
+                deltas: $negative,
+                includeSelf: false,
+                scope: $scope,
+                avgs: AggregateRegistry::avgCompanionsFor(static::class),
+            );
+        }
+
+        if ($minMaxByFunction !== []) {
+            // Exclude self's pre-move subtree from the inner MIN/MAX
+            // scan. The move SQL hasn't run yet, so A1's rows are still
+            // physically present; we have to logically exclude them so
+            // the recompute reflects the post-move ancestor state.
+            $this->applyMoveRecomputes($from, $minMaxByFunction, $scope, excludeBounds: $from);
+        }
+    }
+
+    /**
+     * Path A "after-move" hook: the NEW ancestor chain gains this
+     * subtree's contribution. Runs after the structural SQL has
+     * shifted bounds — the new bounds are in place so bounds-based
+     * WHEREs match the correct ancestors.
+     *
+     * Called from {@see HasTreeMutation::onAfterPendingAction()}
+     * inside the move's auto-transaction.
+     */
+    public function applyAggregateAfterMove(NodeBounds $from, NodeBounds $to, string $action): void
+    {
+        [$sumCountDeltas, , $candidateExtremes] = $this->collectMoveSubtreeContribution();
+
+        if ($sumCountDeltas === [] && $candidateExtremes === []) {
+            return;
+        }
+
+        DeltaMaintenance::apply(
+            connection: $this->getConnection(),
+            table: $this->getTable(),
+            lftCol: $this->getLftName(),
+            rgtCol: $this->getRgtName(),
+            bounds: $to,
+            deltas: $sumCountDeltas,
+            includeSelf: false,
+            scope: NestedSetScopeResolver::valuesFor($this),
+            avgs: AggregateRegistry::avgCompanionsFor(static::class),
+            extremes: $candidateExtremes,
+        );
+    }
+
+    /**
+     * Walks the registry and collects what each aggregate path needs
+     * from this node's stored values for a move:
+     *
+     *   [0] SUM/COUNT deltas (positive — caller negates for old chain)
+     *   [1] MIN/MAX recompute specs (filter by self's stored extremum)
+     *   [2] MIN/MAX cheap-delta candidates (extend new chain)
+     *
+     * Same data is read by both before- and after-move hooks; this
+     * helper keeps them in sync.
+     *
+     * @return array{0: array<string, int>, 1: array<string, array{function: AggregateFunction, source: string, filterValue: int}>, 2: array<string, array{function: AggregateFunction, value: int}>}
+     */
+    private function collectMoveSubtreeContribution(): array
+    {
+        $sumCount = [];
+        $minMaxRecomputes = [];
+        $extremes = [];
+
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition->inclusive) {
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::Sum
+                || $definition->function === AggregateFunction::Count) {
+                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                if ($value !== 0) {
+                    $sumCount[$definition->column] = $value;
+                }
+
+                continue;
+            }
+
+            if (($definition->function === AggregateFunction::Max
+                || $definition->function === AggregateFunction::Min)
+                && $definition->source !== null
+            ) {
+                $stored = self::vusysNumeric($this->getAttribute($definition->column));
+                $minMaxRecomputes[$definition->column] = [
+                    'function' => $definition->function,
+                    'source' => $definition->source,
+                    'filterValue' => $stored,
+                ];
+                $extremes[$definition->column] = [
+                    'function' => $definition->function,
+                    'value' => $stored,
+                ];
+            }
+        }
+
+        return [$sumCount, $minMaxRecomputes, $extremes];
+    }
+
+    /**
+     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int}>  $minMaxByFunction
+     * @param  array<string, mixed>  $scope
+     */
+    private function applyMoveRecomputes(
+        NodeBounds $bounds,
+        array $minMaxByFunction,
+        array $scope,
+        ?NodeBounds $excludeBounds = null,
+    ): void {
+        $columns = [];
+        $filterEquals = [];
+
+        foreach ($minMaxByFunction as $aggregateColumn => $spec) {
+            $columns[] = [
+                'column' => $aggregateColumn,
+                'function' => $spec['function'],
+                'source' => $spec['source'],
+                'inclusive' => true,
+            ];
+            $filterEquals[$aggregateColumn] = $spec['filterValue'];
+        }
+
+        RecomputeMaintenance::apply(
+            connection: $this->getConnection(),
+            table: $this->getTable(),
+            lftCol: $this->getLftName(),
+            rgtCol: $this->getRgtName(),
+            bounds: $bounds,
+            columns: $columns,
+            scope: $scope,
+            filterEquals: $filterEquals,
+            locking: self::vusysAggregateLockingMode(),
+            excludeBounds: $excludeBounds,
+        );
+    }
+
+    /**
+     * `restored` hook (soft delete only): the subtree's stored
+     * aggregates were left intact during the cascade soft-delete, but
+     * the ancestor chain's aggregates were decremented by
+     * {@see applyAggregateOnDelete()}. On restore we add them back —
+     * SUM/COUNT via delta, MIN/MAX via cheap-delta with the stored
+     * subtree extremum as the candidate.
+     */
+    public function applyAggregateOnRestore(): void
+    {
+        if (! $this->isPlacedInTree()) {
+            return;
+        }
+
+        $deltas = [];
+        $extremes = [];
+
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition->inclusive) {
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::Sum
+                || $definition->function === AggregateFunction::Count) {
+                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                if ($value !== 0) {
+                    $deltas[$definition->column] = $value;
+                }
+
+                continue;
+            }
+
+            if (($definition->function === AggregateFunction::Max
+                || $definition->function === AggregateFunction::Min)
+                && $definition->source !== null
+            ) {
+                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                $extremes[$definition->column] = [
+                    'function' => $definition->function,
+                    'value' => $value,
+                ];
+            }
+        }
+
+        if ($deltas === [] && $extremes === []) {
+            return;
+        }
+
+        DeltaMaintenance::apply(
+            connection: $this->getConnection(),
+            table: $this->getTable(),
+            lftCol: $this->getLftName(),
+            rgtCol: $this->getRgtName(),
+            bounds: $this->getBounds(),
+            deltas: $deltas,
+            includeSelf: false,
+            scope: NestedSetScopeResolver::valuesFor($this),
+            avgs: AggregateRegistry::avgCompanionsFor(static::class),
+            extremes: $extremes,
+        );
+    }
+
+    /**
+     * Overrides {@see Model::replicate()} so cloned models never
+     * inherit the source's stored aggregate values. Aggregate columns
+     * on the clone reset to the function's "empty" element (0 for
+     * SUM / COUNT, NULL for AVG / MIN / MAX); on subsequent placement
+     * the regular maintenance path computes correct values.
+     *
+     * @param  list<string>|null  $except
+     */
+    public function replicate(?array $except = null): static
+    {
+        /** @var static $clone */
+        $clone = parent::replicate($except);
+
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            $clone->setAttribute(
+                $definition->column,
+                $definition->function->nullableOnEmpty() ? null : 0,
+            );
+        }
+
+        return $clone;
     }
 
     private function resolveAggregateDefinition(string $column): AggregateDefinition
