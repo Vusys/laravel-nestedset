@@ -776,10 +776,37 @@ trait HasNestedSetAggregates
      * AVG companions) from the source data and overwrites stored
      * values that have drifted. Returns a structured count per column.
      *
+     * Pass `chunkSize` to process the repair as a synchronous cursor
+     * loop — useful for CLI commands where you want to stream progress
+     * to stdout. `onChunk` is invoked once per slice with the per-chunk
+     * result, the zero-based chunk index, and the cursor (last id
+     * processed). The returned `AggregateFixResult` is the merged
+     * total across every chunk.
+     *
+     * ```php
+     * Area::fixAggregates(
+     *     chunkSize: 1_000,
+     *     onChunk: function (AggregateFixResult $chunk, int $i, ?int $cursor) {
+     *         echo "Chunk {$i}: {$chunk->totalRowsUpdated} rows updated (cursor={$cursor})\n";
+     *     },
+     * );
+     * ```
+     *
+     * For the *async* counterpart that hands chunking to a queue worker,
+     * see {@see self::queueFixAggregates()} with the same `chunkSize`
+     * argument.
+     *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */
-    public static function fixAggregates(?HasNestedSet $anchor = null): AggregateFixResult
-    {
+    public static function fixAggregates(
+        ?HasNestedSet $anchor = null,
+        ?int $chunkSize = null,
+        ?\Closure $onChunk = null,
+    ): AggregateFixResult {
+        if ($chunkSize !== null && $chunkSize > 0) {
+            return self::vusysFixAggregatesChunked($anchor, $chunkSize, $onChunk);
+        }
+
         $instance = self::vusysAggregateAnchorOrFail($anchor);
         $rootId = self::vusysAnchorRootId($anchor);
 
@@ -793,6 +820,56 @@ trait HasNestedSetAggregates
                 : [],
             definitions: AggregateRegistry::for(static::class),
             rootId: $rootId,
+        );
+    }
+
+    /**
+     * Synchronous chunk-loop counterpart to {@see self::fixAggregates()}.
+     * Drives `fixAggregatesChunk` from cursor=null until it returns
+     * nextAfterId=null, accumulating per-chunk results into one combined
+     * AggregateFixResult.
+     */
+    private static function vusysFixAggregatesChunked(
+        ?HasNestedSet $anchor,
+        int $chunkSize,
+        ?\Closure $onChunk,
+    ): AggregateFixResult {
+        $totalRows = 0;
+        /** @var array<string, int> $perColumn */
+        $perColumn = [];
+
+        $cursor = null;
+        $chunkIndex = 0;
+        $safety = 0;
+
+        do {
+            $chunk = self::fixAggregatesChunk($anchor, $cursor, $chunkSize);
+            $result = $chunk['result'];
+
+            $totalRows += $result->totalRowsUpdated;
+            foreach ($result->perColumn as $column => $count) {
+                $perColumn[$column] = ($perColumn[$column] ?? 0) + $count;
+            }
+
+            $cursor = $chunk['nextAfterId'];
+
+            if ($onChunk instanceof \Closure) {
+                $onChunk($result, $chunkIndex, $cursor);
+            }
+
+            $chunkIndex++;
+
+            // Defensive bound — a non-progressing cursor in a buggy
+            // backend would otherwise spin forever. Capped at one
+            // million chunks (way above realistic table sizes).
+            if (++$safety > 1_000_000) {
+                throw new \RuntimeException('fixAggregates(chunkSize: …): chunk loop exceeded 1,000,000 iterations.');
+            }
+        } while ($cursor !== null);
+
+        return new AggregateFixResult(
+            totalRowsUpdated: $totalRows,
+            perColumn: $perColumn,
         );
     }
 
