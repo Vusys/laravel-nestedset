@@ -6,6 +6,8 @@ parameters:
         - src
         - tests
     level: 9
+    bootstrapFiles:
+        - phpstan-bootstrap.php
     ignoreErrors:
         # env() is legitimate in test bootstrap code — config caching does not apply to tests.
         - identifier: larastan.noEnvCallsOutsideOfConfig

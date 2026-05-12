@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests;
 
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use Vusys\NestedSet\NestedSetServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
@@ -45,5 +46,11 @@ abstract class TestCase extends OrchestraTestCase
     protected function defineDatabaseMigrations(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/Fixtures/Migrations');
+    }
+
+    /** @return list<class-string> */
+    protected function getPackageProviders($app): array
+    {
+        return [NestedSetServiceProvider::class];
     }
 }

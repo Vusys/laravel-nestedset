@@ -13,14 +13,9 @@ return new class extends Migration
         Schema::create('categories', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
-            $table->unsignedBigInteger('lft')->default(0);
-            $table->unsignedBigInteger('rgt')->default(0);
-            $table->unsignedBigInteger('parent_id')->nullable();
-            $table->unsignedInteger('depth')->default(0);
+            $table->nestedSet();
             $table->softDeletes();
             $table->timestamps();
-
-            $table->index(['lft', 'rgt', 'parent_id']);
         });
     }
 
