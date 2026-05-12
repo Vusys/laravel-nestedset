@@ -167,9 +167,17 @@ final class TreeShapes
         // model — for scoped models the bounds-offsetting wouldn't be
         // necessary, but the package currently treats unscoped
         // multi-root tables as a forest in one lft/rgt space.
+        //
+        // Start the offsets at the existing MAX so this method composes
+        // safely with itself — e.g. `fragmentedForest()` calls it
+        // multiple times into the same table. With offsets starting at
+        // 0 the second call would collide on id=1.
+        $rawMaxId = DB::table($table)->max('id');
+        $idOffset = is_numeric($rawMaxId) ? (int) $rawMaxId : 0;
+        $rawMaxRgt = DB::table($table)->max('rgt');
+        $boundsOffset = is_numeric($rawMaxRgt) ? (int) $rawMaxRgt : 0;
+
         $rootIds = [];
-        $idOffset = 0;
-        $boundsOffset = 0;
 
         for ($t = 0; $t < $treeCount; $t++) {
             $structure = self::buildBalancedStructure($nodesPerTree, $fanout);
