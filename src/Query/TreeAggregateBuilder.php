@@ -531,9 +531,36 @@ final class TreeAggregateBuilder
     }
 
     /**
-     * One self-JOIN + GROUP BY that computes every aggregate in
-     * `$definitions` for every outer row in scope, in a single
-     * statement. All definitions must share the same inclusivity.
+     * Single SELECT that returns one row per outer node with that node's
+     * stored aggregate values alongside the freshly-computed ones.
+     *
+     * The query is shaped in two stages:
+     *
+     *   1. A derived sub-query computes the aggregates per outer-id only
+     *      — no stored columns are dragged into the GROUP BY. The join
+     *      predicate keys on `lft` alone (`i.lft BETWEEN o.lft AND o.rgt`
+     *      for inclusive; the strict open interval for exclusive) which
+     *      is equivalent to the standard two-column descendant predicate
+     *      for any well-formed nested-set tree but lets the planner use
+     *      a single-column range scan.
+     *
+     *   2. The outer query joins the derived table back to the source
+     *      table to fetch each row's stored value for comparison.
+     *
+     * The derived shape exists primarily to coax MySQL / MariaDB's
+     * planner into a hash-join + filter + aggregate plan, which it picks
+     * for the wrapped sub-query but not for the same logical SQL written
+     * as one statement (it instead picks a nested-loop with
+     * temporary-table aggregate, ~6× slower at N=10K). PostgreSQL and
+     * SQLite are unaffected — their planners pick the same physical plan
+     * either way.
+     *
+     * For exclusive aggregates, leaves have no descendants so the inner
+     * INNER JOIN drops them entirely. The outer LEFT JOIN brings them
+     * back with all-NULL aggregate columns; SUM and COUNT are wrapped at
+     * the outer in `COALESCE(.., 0)` so empty-subtree contributions
+     * report 0 — matching the semantics the original single-statement
+     * shape produced via SUM(NULL) inside COALESCE.
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
@@ -549,51 +576,68 @@ final class TreeAggregateBuilder
         bool $inclusive,
         ?int $rootId,
     ): array {
-        $selects = ['outer_a.id AS id'];
-        $groupBys = ['outer_a.id'];
+        $outerSelects = ['outer_a.id AS id'];
+        $aggSelects = ['o.id AS outer_id'];
 
         foreach ($definitions as $definition) {
-            $innerExpr = self::aggregateExpression($definition, qualifier: 'inner_a.');
-            $selects[] = "{$innerExpr} AS ".self::computedAlias($definition->column);
-            $selects[] = "outer_a.{$definition->column} AS ".self::storedAlias($definition->column);
+            $innerExpr = self::aggregateExpression($definition, qualifier: 'i.');
+            $computedAlias = self::computedAlias($definition->column);
+            $aggSelects[] = "{$innerExpr} AS {$computedAlias}";
 
-            // Add stored columns to GROUP BY so MySQL ONLY_FULL_GROUP_BY
-            // and PostgreSQL's strict grouping accept the SELECT.
-            $groupBys[] = "outer_a.{$definition->column}";
+            $outerComputed = match ($definition->function) {
+                AggregateFunction::Sum,
+                AggregateFunction::Count => "COALESCE(agg.{$computedAlias}, 0)",
+                default => "agg.{$computedAlias}",
+            };
+            $outerSelects[] = "{$outerComputed} AS {$computedAlias}";
+            $outerSelects[] = "outer_a.{$definition->column} AS ".self::storedAlias($definition->column);
         }
 
         $joinClause = $inclusive
-            ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}"
-            : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}";
+            ? "i.{$lftCol} >= o.{$lftCol} AND i.{$lftCol} <= o.{$rgtCol}"
+            : "i.{$lftCol} > o.{$lftCol} AND i.{$lftCol} < o.{$rgtCol}";
 
         $scopeJoinExtra = '';
         foreach (array_keys($scope) as $col) {
-            $scopeJoinExtra .= " AND inner_a.{$col} = outer_a.{$col}";
+            $scopeJoinExtra .= " AND i.{$col} = o.{$col}";
         }
 
-        $where = '1 = 1';
         $bindings = [];
 
+        $innerWhere = '1 = 1';
         foreach ($scope as $col => $value) {
-            $where .= " AND outer_a.{$col} = ?";
+            $innerWhere .= " AND o.{$col} = ?";
             $bindings[] = $value;
         }
-
         if ($rootId !== null) {
-            $where .= " AND outer_a.{$lftCol} >= "
-                ."(SELECT {$lftCol} FROM {$table} WHERE id = ?)";
-            $where .= " AND outer_a.{$rgtCol} <= "
-                ."(SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $innerWhere .= " AND o.{$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
+            $innerWhere .= " AND o.{$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
         }
 
-        $sql = 'SELECT '.implode(', ', $selects)
+        $outerWhere = '1 = 1';
+        foreach ($scope as $col => $value) {
+            $outerWhere .= " AND outer_a.{$col} = ?";
+            $bindings[] = $value;
+        }
+        if ($rootId !== null) {
+            $outerWhere .= " AND outer_a.{$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
+            $outerWhere .= " AND outer_a.{$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $bindings[] = $rootId;
+            $bindings[] = $rootId;
+        }
+
+        $sql = 'SELECT '.implode(', ', $outerSelects)
             ." FROM {$table} AS outer_a"
-            ." LEFT JOIN {$table} AS inner_a"
-            ." ON {$joinClause}{$scopeJoinExtra}"
-            ." WHERE {$where}"
-            .' GROUP BY '.implode(', ', $groupBys);
+            .' LEFT JOIN ('
+            .'SELECT '.implode(', ', $aggSelects)
+            ." FROM {$table} AS o"
+            ." INNER JOIN {$table} AS i ON {$joinClause}{$scopeJoinExtra}"
+            ." WHERE {$innerWhere}"
+            .' GROUP BY o.id'
+            .') AS agg ON agg.outer_id = outer_a.id'
+            ." WHERE {$outerWhere}";
 
         $rows = $connection->select($sql, $bindings);
 
