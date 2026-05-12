@@ -331,6 +331,32 @@ The package treats **`parent_id` as the source of truth**. `fixTree()` rebuilds 
 
 See [`docs/CORRUPTION.md`](docs/CORRUPTION.md) for the full taxonomy with worked recovery recipes, diagnostic SQL for finding cycles, and `tests/Feature/Corruption/` for executable examples of every category.
 
+### Queueable aggregate repair
+
+`fixAggregates()` is fast on most trees but a heavily-drifted 1M-row table still measures in tens of seconds — not the kind of work you want on the synchronous response path. `queueFixAggregates()` hands it to a worker instead:
+
+```php
+// Fire and forget — uses Laravel's default queue connection / queue name.
+Area::queueFixAggregates();
+
+// Scoped models: anchor required (same rule as the sync method).
+MenuItem::queueFixAggregates($anchor);
+
+// Per-call routing overrides (also configurable globally — see below).
+Area::queueFixAggregates(onConnection: 'redis', onQueue: 'aggregates-low');
+```
+
+Defaults come from `config/nestedset.php`:
+
+```php
+'queue' => [
+    'connection' => env('NESTEDSET_QUEUE_CONNECTION'),  // null → default connection
+    'queue' => env('NESTEDSET_QUEUE'),                   // null → default queue
+],
+```
+
+The dispatched `Vusys\NestedSet\Jobs\FixAggregatesJob` carries the model class and an optional anchor id; its `handle()` just calls the same `Model::fixAggregates($anchor)` you'd call synchronously, so it inherits every Phase K+ optimisation automatically. The job is **idempotent** — a second run on a clean tree finds zero drift and writes nothing — so dispatching defensively after a batch operation is safe.
+
 ---
 
 ## Precalculated aggregate columns

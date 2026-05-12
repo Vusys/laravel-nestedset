@@ -354,6 +354,67 @@ trait NodeTrait
     }
 
     /**
+     * Dispatches a {@see Jobs\FixAggregatesJob} to repair stored aggregate
+     * columns asynchronously. Useful when the synchronous path would take
+     * too long for a web request — e.g. a heavily-drifted 1M-row tree —
+     * and you'd rather hand the work to a worker.
+     *
+     * Routing defaults come from `config('nestedset.queue.connection')`
+     * and `config('nestedset.queue.queue')`; both `null` (the default)
+     * uses Laravel's default queue. Per-call `onConnection` /
+     * `onQueue` overrides take precedence.
+     *
+     * Idempotent — a second dispatch on a clean tree finds zero drift
+     * and writes nothing. Safe to fire defensively after batch work.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function queueFixAggregates(
+        ?HasNestedSet $anchor = null,
+        ?string $onConnection = null,
+        ?string $onQueue = null,
+    ): Jobs\FixAggregatesJob {
+        // Fail fast at dispatch time — without this the job would be
+        // enqueued, picked up, then throw inside the worker for the
+        // exact same reason. Catching here gives a synchronous stack
+        // trace and avoids a poisoned queue entry.
+        $scopeColumns = NestedSetScopeResolver::columns(static::class);
+        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
+            throw new ScopeViolationException(sprintf(
+                '%s declares a scope (%s); pass an anchor node to queueFixAggregates() so the job knows which tree to repair.',
+                static::class,
+                implode(', ', $scopeColumns),
+            ));
+        }
+
+        $job = new Jobs\FixAggregatesJob(static::class, self::anchorRootId($anchor));
+
+        // Apply config defaults; per-call args win. Both null leaves the
+        // job on Laravel's default queue/connection.
+        $configConnection = config('nestedset.queue.connection');
+        $connection = $onConnection ?? (is_string($configConnection) ? $configConnection : null);
+        if ($connection !== null) {
+            $job->onConnection($connection);
+        }
+
+        $configQueue = config('nestedset.queue.queue');
+        $queue = $onQueue ?? (is_string($configQueue) ? $configQueue : null);
+        if ($queue !== null) {
+            $job->onQueue($queue);
+        }
+
+        // Dispatch eagerly via the global helper rather than returning
+        // a PendingDispatch — PendingDispatch fires its dispatch in
+        // __destruct, which can run after the test framework has torn
+        // down the container. Eager dispatch also gives callers a
+        // simple "did it queue?" check via the returned job instance
+        // (its queue/connection properties are set).
+        dispatch($job);
+
+        return $job;
+    }
+
+    /**
      * Internal helper: enforce the scope-anchor requirement that
      * `repairBuilder()` applies to tree repair, but return the model
      * instance + null result when the class has no aggregate
