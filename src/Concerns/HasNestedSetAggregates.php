@@ -9,6 +9,7 @@ use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
+use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeTrait;
@@ -36,6 +37,27 @@ trait HasNestedSetAggregates
      * @var array<string, int>
      */
     private array $vusysCapturedAggregateDeltas = [];
+
+    /**
+     * Cheap-delta MIN/MAX candidates captured in `saving` (extension or
+     * insert direction — i.e. the new value can only extend the
+     * extremum, never invalidate it). Applied alongside Phase D's
+     * deltas as `CASE WHEN ... THEN candidate ELSE stored END`.
+     *
+     * @var array<string, array{function: AggregateFunction, value: int}>
+     */
+    private array $vusysCapturedExtremes = [];
+
+    /**
+     * Recompute candidates captured in `saving` (lost-holder direction
+     * — the change may have invalidated the stored extremum on some
+     * ancestor). Applied via {@see RecomputeMaintenance} after the
+     * delta UPDATE commits, filtered by `stored = previous_value` so
+     * unaffected ancestors are skipped.
+     *
+     * @var array<string, array{function: AggregateFunction, source: string, filterValue: int}>
+     */
+    private array $vusysCapturedRecomputes = [];
 
     /**
      * The user-facing aggregate definitions declared on this model.
@@ -108,34 +130,69 @@ trait HasNestedSetAggregates
     public function captureAggregateDeltas(): void
     {
         $this->vusysCapturedAggregateDeltas = [];
+        $this->vusysCapturedExtremes = [];
+        $this->vusysCapturedRecomputes = [];
 
         if (! $this->exists) {
             return;
         }
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
-            if ($definition->function !== AggregateFunction::Sum) {
-                continue;
-            }
-
             if ($definition->source === null) {
                 continue;
             }
-
             if (! $this->isDirty($definition->source)) {
                 continue;
             }
 
             $new = self::vusysNumeric($this->getAttribute($definition->source));
             $old = self::vusysNumeric($this->getOriginal($definition->source));
-
             $delta = $new - $old;
 
             if ($delta === 0) {
                 continue;
             }
 
-            $this->vusysCapturedAggregateDeltas[$definition->column] = $delta;
+            if ($definition->function === AggregateFunction::Sum) {
+                $this->vusysCapturedAggregateDeltas[$definition->column] = $delta;
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::Max) {
+                if ($delta > 0) {
+                    // New value is larger — max can only stay or rise. Cheap delta.
+                    $this->vusysCapturedExtremes[$definition->column] = [
+                        'function' => AggregateFunction::Max,
+                        'value' => $new,
+                    ];
+                } else {
+                    // New value is smaller — old may have been the holder; recompute
+                    // ancestors whose stored_max equals the old value.
+                    $this->vusysCapturedRecomputes[$definition->column] = [
+                        'function' => AggregateFunction::Max,
+                        'source' => $definition->source,
+                        'filterValue' => $old,
+                    ];
+                }
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::Min) {
+                if ($delta < 0) {
+                    $this->vusysCapturedExtremes[$definition->column] = [
+                        'function' => AggregateFunction::Min,
+                        'value' => $new,
+                    ];
+                } else {
+                    $this->vusysCapturedRecomputes[$definition->column] = [
+                        'function' => AggregateFunction::Min,
+                        'source' => $definition->source,
+                        'filterValue' => $old,
+                    ];
+                }
+            }
         }
     }
 
@@ -146,18 +203,25 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateDeltas(): void
     {
-        if ($this->vusysCapturedAggregateDeltas === []) {
+        $deltas = $this->vusysCapturedAggregateDeltas;
+        $extremes = $this->vusysCapturedExtremes;
+        $recomputes = $this->vusysCapturedRecomputes;
+
+        $this->vusysCapturedAggregateDeltas = [];
+        $this->vusysCapturedExtremes = [];
+        $this->vusysCapturedRecomputes = [];
+
+        if ($deltas === [] && $extremes === [] && $recomputes === []) {
             return;
         }
-
-        $deltas = $this->vusysCapturedAggregateDeltas;
-        $this->vusysCapturedAggregateDeltas = [];
 
         if (! $this->isPlacedInTree()) {
             // Defensive: existing-model updates on unplaced rows
             // (lft/rgt = 0) shouldn't propagate to every other row.
             return;
         }
+
+        $scope = NestedSetScopeResolver::valuesFor($this);
 
         DeltaMaintenance::apply(
             connection: $this->getConnection(),
@@ -167,9 +231,60 @@ trait HasNestedSetAggregates
             bounds: $this->getBounds(),
             deltas: $deltas,
             includeSelf: true,
-            scope: NestedSetScopeResolver::valuesFor($this),
+            scope: $scope,
             avgs: AggregateRegistry::avgCompanionsFor(static::class),
+            extremes: $extremes,
         );
+
+        if ($recomputes !== []) {
+            $this->applyCapturedRecomputes($recomputes, $scope);
+        }
+    }
+
+    /**
+     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int}>  $recomputes
+     * @param  array<string, mixed>  $scope
+     */
+    private function applyCapturedRecomputes(array $recomputes, array $scope): void
+    {
+        $columns = [];
+        $filterEquals = [];
+
+        foreach ($recomputes as $aggregateColumn => $spec) {
+            $columns[] = [
+                'column' => $aggregateColumn,
+                'function' => $spec['function'],
+                'source' => $spec['source'],
+                'inclusive' => true,
+            ];
+            $filterEquals[$aggregateColumn] = $spec['filterValue'];
+        }
+
+        RecomputeMaintenance::apply(
+            connection: $this->getConnection(),
+            table: $this->getTable(),
+            lftCol: $this->getLftName(),
+            rgtCol: $this->getRgtName(),
+            bounds: $this->getBounds(),
+            columns: $columns,
+            scope: $scope,
+            filterEquals: $filterEquals,
+            locking: self::vusysAggregateLockingMode(),
+        );
+    }
+
+    /**
+     * @return 'always'|'auto'|'never'
+     */
+    private static function vusysAggregateLockingMode(): string
+    {
+        $value = config('nestedset.aggregate_locking', 'auto');
+
+        return match ($value) {
+            'always' => 'always',
+            'never' => 'never',
+            default => 'auto',
+        };
     }
 
     /**
@@ -186,12 +301,12 @@ trait HasNestedSetAggregates
         }
 
         $deltas = [];
+        $extremes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition->inclusive) {
                 // Exclusive aggregates have different self-handling;
-                // Phase D handles inclusive only. Exclusive support
-                // arrives in Phase G.
+                // inclusive-only for now. Exclusive support arrives in Phase G.
                 continue;
             }
 
@@ -206,10 +321,23 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Count) {
                 $deltas[$definition->column] = 1;
+
+                continue;
+            }
+
+            if (($definition->function === AggregateFunction::Max
+                || $definition->function === AggregateFunction::Min)
+                && $definition->source !== null
+            ) {
+                $value = self::vusysNumeric($this->getAttribute($definition->source));
+                $extremes[$definition->column] = [
+                    'function' => $definition->function,
+                    'value' => $value,
+                ];
             }
         }
 
-        if ($deltas === []) {
+        if ($deltas === [] && $extremes === []) {
             return;
         }
 
@@ -223,6 +351,7 @@ trait HasNestedSetAggregates
             includeSelf: true,
             scope: NestedSetScopeResolver::valuesFor($this),
             avgs: AggregateRegistry::avgCompanionsFor(static::class),
+            extremes: $extremes,
         );
     }
 
@@ -245,39 +374,59 @@ trait HasNestedSetAggregates
         }
 
         $deltas = [];
+        $minMaxRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition->inclusive) {
                 continue;
             }
 
-            if ($definition->function !== AggregateFunction::Sum
-                && $definition->function !== AggregateFunction::Count) {
-                // MIN/MAX/AVG: Phase F/E. Don't touch their stored values here.
+            if ($definition->function === AggregateFunction::Sum
+                || $definition->function === AggregateFunction::Count) {
+                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                if ($value !== 0) {
+                    $deltas[$definition->column] = -$value;
+                }
+
                 continue;
             }
 
-            $value = self::vusysNumeric($this->getAttribute($definition->column));
-            if ($value !== 0) {
-                $deltas[$definition->column] = -$value;
+            if (($definition->function === AggregateFunction::Max
+                || $definition->function === AggregateFunction::Min)
+                && $definition->source !== null
+            ) {
+                // Cheap-skip: only recompute ancestors whose stored extremum
+                // matches this node's stored extremum. Other ancestors held
+                // their MIN/MAX from somewhere else; the deletion can't have
+                // affected them.
+                $stored = self::vusysNumeric($this->getAttribute($definition->column));
+                $minMaxRecomputes[$definition->column] = [
+                    'function' => $definition->function,
+                    'source' => $definition->source,
+                    'filterValue' => $stored,
+                ];
             }
         }
 
-        if ($deltas === []) {
-            return;
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        if ($deltas !== []) {
+            DeltaMaintenance::apply(
+                connection: $this->getConnection(),
+                table: $this->getTable(),
+                lftCol: $this->getLftName(),
+                rgtCol: $this->getRgtName(),
+                bounds: $this->getBounds(),
+                deltas: $deltas,
+                includeSelf: false,
+                scope: $scope,
+                avgs: AggregateRegistry::avgCompanionsFor(static::class),
+            );
         }
 
-        DeltaMaintenance::apply(
-            connection: $this->getConnection(),
-            table: $this->getTable(),
-            lftCol: $this->getLftName(),
-            rgtCol: $this->getRgtName(),
-            bounds: $this->getBounds(),
-            deltas: $deltas,
-            includeSelf: false,
-            scope: NestedSetScopeResolver::valuesFor($this),
-            avgs: AggregateRegistry::avgCompanionsFor(static::class),
-        );
+        if ($minMaxRecomputes !== []) {
+            $this->applyCapturedRecomputes($minMaxRecomputes, $scope);
+        }
     }
 
     private function resolveAggregateDefinition(string $column): AggregateDefinition

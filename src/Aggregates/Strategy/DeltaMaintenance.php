@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
+use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\TreeExpression;
 
@@ -32,17 +33,26 @@ final class DeltaMaintenance
      * Applies a set of deltas to the ancestor chain (and optionally
      * self) of $bounds inside $scope. Negative deltas are supported.
      *
-     * When `$avgs` is non-empty, additional SET clauses are appended that
-     * recompute each AVG display column as
+     * When `$avgs` is non-empty, additional SET clauses are appended
+     * that recompute each AVG display column as
      * `(sum_col + Δ_sum) / NULLIF(count_col + Δ_count, 0)` using OLD
      * companion values + the same deltas being applied — the formula
      * therefore stays correct regardless of whether the database
      * evaluates SET clauses left-to-right (MySQL/MariaDB) or against
      * pre-statement values (PostgreSQL).
      *
+     * When `$extremes` is non-empty, additional SET clauses extend
+     * MIN/MAX columns via `CASE WHEN col IS NULL OR candidate {</|>} col
+     * THEN candidate ELSE col END`. Phase F's cheap-delta path uses
+     * this when the change can only extend the extremum (insert, or
+     * source-update where new is more extreme than old).
+     *
      * @param  array<string, int>  $deltas  column => signed integer delta
      * @param  array<string, array{sum: string, count: string}>  $avgs
      *                                                                  avg_display_col => {sum companion, count companion}
+     * @param  array<string, array{function: AggregateFunction, value: int}>  $extremes
+     *                                                                                   cheap-delta candidates: aggregate column =>
+     *                                                                                   {function: Min|Max, value: candidate}.
      * @param  array<string, mixed>  $scope  column => value, applied as equality WHEREs
      */
     public static function apply(
@@ -55,11 +65,13 @@ final class DeltaMaintenance
         bool $includeSelf,
         array $scope = [],
         array $avgs = [],
+        array $extremes = [],
     ): int {
         $setExpressions = self::buildDeltaSetClauses($deltas);
         $setExpressions = array_merge(
             $setExpressions,
             self::buildAvgSetClauses($deltas, $avgs),
+            self::buildExtremeSetClauses($extremes),
         );
 
         if ($setExpressions === []) {
@@ -146,5 +158,31 @@ final class DeltaMaintenance
         $abs = abs($delta);
 
         return "{$column} {$sign} {$abs}";
+    }
+
+    /**
+     * Builds cheap-delta MIN/MAX SET clauses. Each clause expresses
+     * "if the candidate is more extreme than the stored value (or the
+     * stored value is NULL), use the candidate; otherwise keep stored".
+     * Portable across SQLite / MySQL / MariaDB / PostgreSQL — no LEAST
+     * / GREATEST dependency.
+     *
+     * @param  array<string, array{function: AggregateFunction, value: int}>  $extremes
+     * @return array<string, TreeExpression>
+     */
+    private static function buildExtremeSetClauses(array $extremes): array
+    {
+        $clauses = [];
+
+        foreach ($extremes as $column => $spec) {
+            $value = $spec['value'];
+            $operator = $spec['function'] === AggregateFunction::Max ? '>' : '<';
+
+            $clauses[$column] = new TreeExpression(
+                "CASE WHEN {$column} IS NULL OR {$value} {$operator} {$column} THEN {$value} ELSE {$column} END",
+            );
+        }
+
+        return $clauses;
     }
 }
