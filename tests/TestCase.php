@@ -4,11 +4,31 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests;
 
+use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use stdClass;
 use Vusys\NestedSet\NestedSetServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
+    /**
+     * Fetch a row by id and fail the test if it's missing.
+     *
+     * Why: PHPStan widens `DB::first()` to `stdClass|null` and refuses to let
+     * tests dereference fields without proving non-null. `fail()` is `never`,
+     * so this narrows correctly without `assert()` or type casts.
+     */
+    protected function rowById(string $table, int $id): stdClass
+    {
+        $row = DB::table($table)->where('id', $id)->first();
+
+        if ($row === null) {
+            $this->fail("Row {$id} not found in {$table}");
+        }
+
+        return $row;
+    }
+
     protected function defineEnvironment($app): void
     {
         $connection = env('DB_CONNECTION', 'sqlite');
