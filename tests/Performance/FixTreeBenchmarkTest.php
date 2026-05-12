@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Performance;
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
+use Vusys\NestedSet\TreeFixResult;
 
 /**
  * `fixTree` benchmarks: the structural-repair counterpart to
@@ -32,7 +33,7 @@ final class FixTreeBenchmarkTest extends PerformanceTestCase
 
             $this->bench(
                 "fixTree on balanced fanout (drifted), N={$scale}",
-                fn () => Area::fixTree(),
+                fn (): TreeFixResult => Area::fixTree(),
             );
         }
 
@@ -54,7 +55,7 @@ final class FixTreeBenchmarkTest extends PerformanceTestCase
 
             $this->bench(
                 "fixTree on deep chain (drifted), N={$scale}",
-                fn () => Area::fixTree(),
+                fn (): TreeFixResult => Area::fixTree(),
             );
         }
 
