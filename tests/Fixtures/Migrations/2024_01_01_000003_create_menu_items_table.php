@@ -14,12 +14,10 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->unsignedBigInteger('menu_id');
-            $table->unsignedBigInteger('lft')->default(0);
-            $table->unsignedBigInteger('rgt')->default(0);
-            $table->unsignedBigInteger('parent_id')->nullable();
-            $table->unsignedInteger('depth')->default(0);
+            $table->nestedSet();
             $table->timestamps();
 
+            // Scoped index: menu_id partitions the tree, so we need it leading the index.
             $table->index(['menu_id', 'lft', 'rgt', 'parent_id']);
             $table->foreign('menu_id')->references('id')->on('menus')->cascadeOnDelete();
         });
