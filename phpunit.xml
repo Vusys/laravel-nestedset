@@ -2,10 +2,20 @@
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
-         colors="true">
+         colors="true"
+         defaultTestSuite="Package">
+    <!--
+        Performance is opt-in:
+        run via `vendor/bin/phpunit  testsuite Performance`.
+        Plain `vendor/bin/phpunit` runs Package only.
+    -->
     <testsuites>
         <testsuite name="Package">
             <directory>tests</directory>
+            <exclude>tests/Performance</exclude>
+        </testsuite>
+        <testsuite name="Performance">
+            <directory>tests/Performance</directory>
         </testsuite>
     </testsuites>
     <source>
