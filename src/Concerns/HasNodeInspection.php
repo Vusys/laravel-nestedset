@@ -18,7 +18,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
  */
 trait HasNodeInspection
 {
-    private bool $vusysNodeMoved = false;
+    private bool $nodeMoved = false;
 
     public function isRoot(): bool
     {
@@ -80,12 +80,12 @@ trait HasNodeInspection
      */
     public function hasMoved(): bool
     {
-        return $this->vusysNodeMoved;
+        return $this->nodeMoved;
     }
 
     /** @internal */
     public function markMoved(bool $moved = true): void
     {
-        $this->vusysNodeMoved = $moved;
+        $this->nodeMoved = $moved;
     }
 }
