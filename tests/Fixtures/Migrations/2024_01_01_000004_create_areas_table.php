@@ -17,23 +17,21 @@ return new class extends Migration
 
             $table->nestedSet();
 
-            // SUM / COUNT: non-null, default 0
-            $table->unsignedBigInteger('tickets_total')->default(0);
-            $table->unsignedBigInteger('tickets_count_all')->default(0);
+            // SUM / COUNT — non-null, default 0
+            $table->nestedSetAggregate('tickets_total');
+            $table->nestedSetAggregate('tickets_count_all');
 
-            // AVG: nullable decimal — divide-by-zero on empty subtree yields NULL
-            $table->decimal('tickets_avg', 12, 4)->nullable();
+            // AVG — nullable decimal; null on empty subtree
+            $table->nestedSetAggregate('tickets_avg', type: 'avg');
 
-            // MIN / MAX: nullable; empty subtree has no extremum
-            $table->integer('tickets_min')->nullable();
-            $table->integer('tickets_max')->nullable();
+            // MIN / MAX — nullable; empty subtree yields NULL
+            $table->nestedSetAggregate('tickets_min', type: 'min_max');
+            $table->nestedSetAggregate('tickets_max', type: 'min_max');
 
             // Internal AVG companions — written by Phase E maintenance.
-            // Phase B never reads these from a fresh query (AVG is computed
-            // directly from the source column) but they exist now so the
-            // migration is forward-compatible.
-            $table->unsignedBigInteger('tickets_avg__sum')->default(0);
-            $table->unsignedBigInteger('tickets_avg__count')->default(0);
+            // Reserved here so the migration is forward-compatible.
+            $table->nestedSetAggregate('tickets_avg__sum');
+            $table->nestedSetAggregate('tickets_avg__count');
 
             $table->timestamps();
         });
