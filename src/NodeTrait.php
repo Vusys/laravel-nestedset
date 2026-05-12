@@ -7,18 +7,14 @@ namespace Vusys\NestedSet;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
-use Vusys\NestedSet\Aggregates\AggregateFixResult;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Concerns\HasTreeRelations;
+use Vusys\NestedSet\Concerns\HasTreeRepair;
 use Vusys\NestedSet\Contracts\HasNestedSet;
-use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
-use Vusys\NestedSet\Query\TreeRepairBuilder;
-use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * Adds the full nested-set API to an Eloquent model.
@@ -38,6 +34,7 @@ trait NodeTrait
     use HasSoftDeleteTree;
     use HasTreeMutation;
     use HasTreeRelations;
+    use HasTreeRepair;
 
     /**
      * Wires every Eloquent lifecycle event the package consumes.
@@ -218,223 +215,5 @@ trait NodeTrait
     public function newCollection(array $models = []): EloquentCollection
     {
         return new NodeCollection($models);
-    }
-
-    // ----------------------------------------------------------------
-    // Tree repair — class-level entry points
-    // ----------------------------------------------------------------
-
-    /**
-     * Validate the tree. Returns false when every node satisfies the
-     * nested-set invariants.
-     *
-     * On scoped models (e.g. MenuItem with #[NestedSetScope('menu_id')])
-     * an $anchor is required so the check stays within one tree —
-     * walking the whole table is rarely what you want and is rejected
-     * to prevent footguns.
-     */
-    public static function isBroken(?HasNestedSet $anchor = null): bool
-    {
-        return self::repairBuilder($anchor)->isBroken();
-    }
-
-    /**
-     * Returns per-category counts of nested-set invariant violations.
-     * Pass an $anchor for scoped models (required when the class declares
-     * #[NestedSetScope] or getScopeAttributes()).
-     *
-     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int}
-     *
-     * @throws ScopeViolationException When called without an anchor on a scoped model.
-     */
-    public static function countErrors(?HasNestedSet $anchor = null): array
-    {
-        return self::repairBuilder($anchor)->countErrors();
-    }
-
-    /**
-     * Rebuilds lft/rgt/depth from parent_id (the column we treat as
-     * authoritative for parent/child relationships) and returns a result
-     * summary. On a scoped model, $anchor is required and the repair stays
-     * inside that one tree; passing $anchor on an unscoped model is
-     * permitted and scopes the rebuild to that anchor's subtree.
-     *
-     * @throws ScopeViolationException When called without an anchor on a scoped model.
-     */
-    public static function fixTree(?HasNestedSet $anchor = null): TreeFixResult
-    {
-        $builder = self::repairBuilder($anchor);
-
-        $rootId = null;
-
-        if ($anchor instanceof Model) {
-            $key = $anchor->getKey();
-            $rootId = is_numeric($key) ? (int) $key : null;
-        }
-
-        $treeResult = $builder->fixTree($rootId);
-
-        // Phase H: after the structural repair, rebuild aggregate
-        // columns. lft/rgt may have been rewritten, so any previous
-        // aggregate maintenance based on the old layout is suspect.
-        $aggregatesFixed = self::runFixAggregates($anchor, $rootId);
-
-        if (! $aggregatesFixed instanceof AggregateFixResult) {
-            return $treeResult;
-        }
-
-        return new TreeFixResult(
-            nodesUpdated: $treeResult->nodesUpdated,
-            errors: $treeResult->errors,
-            aggregatesFixed: $aggregatesFixed,
-        );
-    }
-
-    /**
-     * Returns per-column counts of stored aggregate columns that
-     * disagree with their freshly-computed values over the source.
-     * Empty array on a model with no aggregate declarations.
-     *
-     * @return array<string, int>
-     *
-     * @throws ScopeViolationException When called without an anchor on a scoped model.
-     */
-    public static function aggregateErrors(?HasNestedSet $anchor = null): array
-    {
-        $instance = self::aggregateAnchorOrFail($anchor);
-        $rootId = self::anchorRootId($anchor);
-
-        return Query\TreeAggregateBuilder::aggregateErrors(
-            connection: $instance->getConnection(),
-            table: $instance->getTable(),
-            lftCol: $instance->getLftName(),
-            rgtCol: $instance->getRgtName(),
-            scope: $anchor instanceof Model
-                ? NestedSetScopeResolver::valuesFor($anchor)
-                : [],
-            definitions: AggregateRegistry::for(static::class),
-            rootId: $rootId,
-        );
-    }
-
-    /**
-     * True when any declared aggregate column has at least one row
-     * whose stored value disagrees with the freshly-computed value.
-     *
-     * @throws ScopeViolationException When called without an anchor on a scoped model.
-     */
-    public static function aggregatesAreBroken(?HasNestedSet $anchor = null): bool
-    {
-        return array_sum(self::aggregateErrors($anchor)) > 0;
-    }
-
-    /**
-     * Recomputes every declared aggregate column (including internal
-     * AVG companions) from the source data and overwrites stored
-     * values that have drifted. Returns a structured count per column.
-     *
-     * @throws ScopeViolationException When called without an anchor on a scoped model.
-     */
-    public static function fixAggregates(?HasNestedSet $anchor = null): AggregateFixResult
-    {
-        $instance = self::aggregateAnchorOrFail($anchor);
-        $rootId = self::anchorRootId($anchor);
-
-        return Query\TreeAggregateBuilder::fixAggregates(
-            connection: $instance->getConnection(),
-            table: $instance->getTable(),
-            lftCol: $instance->getLftName(),
-            rgtCol: $instance->getRgtName(),
-            scope: $anchor instanceof Model
-                ? NestedSetScopeResolver::valuesFor($anchor)
-                : [],
-            definitions: AggregateRegistry::for(static::class),
-            rootId: $rootId,
-        );
-    }
-
-    /**
-     * Internal helper: enforce the scope-anchor requirement that
-     * `repairBuilder()` applies to tree repair, but return the model
-     * instance + null result when the class has no aggregate
-     * declarations (so fixTree() can skip the aggregate pass cleanly).
-     */
-    private static function runFixAggregates(
-        ?HasNestedSet $anchor,
-        ?int $rootId,
-    ): ?AggregateFixResult {
-        $definitions = AggregateRegistry::for(static::class);
-
-        if ($definitions === []) {
-            return null;
-        }
-
-        $instance = new static;
-
-        return Query\TreeAggregateBuilder::fixAggregates(
-            connection: $instance->getConnection(),
-            table: $instance->getTable(),
-            lftCol: $instance->getLftName(),
-            rgtCol: $instance->getRgtName(),
-            scope: $anchor instanceof Model
-                ? NestedSetScopeResolver::valuesFor($anchor)
-                : [],
-            definitions: $definitions,
-            rootId: $rootId,
-        );
-    }
-
-    private static function aggregateAnchorOrFail(?HasNestedSet $anchor): self
-    {
-        $scopeColumns = NestedSetScopeResolver::columns(static::class);
-
-        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
-            throw new ScopeViolationException(sprintf(
-                '%s declares a scope (%s); pass an anchor node to scope this operation.',
-                static::class,
-                implode(', ', $scopeColumns),
-            ));
-        }
-
-        return new static;
-    }
-
-    private static function anchorRootId(?HasNestedSet $anchor): ?int
-    {
-        if (! $anchor instanceof Model) {
-            return null;
-        }
-
-        $key = $anchor->getKey();
-
-        return is_numeric($key) ? (int) $key : null;
-    }
-
-    private static function repairBuilder(?HasNestedSet $anchor): TreeRepairBuilder
-    {
-        $scopeColumns = NestedSetScopeResolver::columns(static::class);
-
-        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
-            throw new ScopeViolationException(sprintf(
-                '%s declares a scope (%s); pass an anchor node to scope this operation.',
-                static::class,
-                implode(', ', $scopeColumns),
-            ));
-        }
-
-        $instance = new static;
-        $scope = $anchor instanceof HasNestedSet && $anchor instanceof Model
-            ? NestedSetScopeResolver::valuesFor($anchor)
-            : [];
-
-        return new TreeRepairBuilder(
-            connection: $instance->getConnection(),
-            table: $instance->getTable(),
-            lft: $instance->getLftName(),
-            rgt: $instance->getRgtName(),
-            parentId: $instance->getParentIdName(),
-            depth: $instance->getDepthName(),
-            scope: $scope,
-        );
     }
 }

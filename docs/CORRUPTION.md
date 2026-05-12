@@ -260,6 +260,18 @@ Area::fixAggregates($root);     // single subtree
 4. Returns an `AggregateFixResult` with per-column counts of rows
    updated.
 
+For large drifted trees where the synchronous wait would block a
+web request, dispatch the same work to a queue:
+
+```php
+Area::queueFixAggregates();           // unscoped
+Area::queueFixAggregates($anchor);    // scoped
+```
+
+The dispatched job calls the same `fixAggregates` under the hood — see
+[`README.md` § Queueable aggregate repair](../README.md#queueable-aggregate-repair)
+for routing options.
+
 Idempotent: running it twice in a row, the second invocation finds
 zero drift and updates nothing. Safe to call after every batch
 operation as belt-and-braces.
