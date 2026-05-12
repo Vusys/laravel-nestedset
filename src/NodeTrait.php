@@ -354,6 +354,90 @@ trait NodeTrait
     }
 
     /**
+     * Repairs a single chunk of stored aggregate columns and returns the
+     * cursor to feed into the next chunk (or null if this was the last).
+     *
+     * The chunk is defined as "up to `$chunkSize` rows whose id is
+     * strictly greater than `$afterId`, ordered by id". Each chunk runs
+     * one (chunked) fixAggregates call constrained to those outer ids,
+     * so total work scales linearly in chunkSize regardless of total
+     * table size.
+     *
+     * Used by {@see Jobs\FixAggregatesJob} to break a long-running
+     * repair into a series of short, self-re-dispatching jobs.
+     *
+     * @return array{result: AggregateFixResult, nextAfterId: int|null}
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function fixAggregatesChunk(
+        ?HasNestedSet $anchor,
+        ?int $afterId,
+        int $chunkSize,
+    ): array {
+        $instance = self::aggregateAnchorOrFail($anchor);
+        $rootId = self::anchorRootId($anchor);
+
+        if ($chunkSize <= 0) {
+            throw new \InvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
+        }
+
+        $key = $instance->getKeyName();
+        $scope = $anchor instanceof Model
+            ? NestedSetScopeResolver::valuesFor($anchor)
+            : [];
+
+        // Fetch the next chunk of outer ids in a single bounded query
+        // — `WHERE id > X ORDER BY id LIMIT N`. Scope-and-rooted in the
+        // same shape fixAggregates uses so we don't process rows outside
+        // the anchor's subtree.
+        $query = $instance->getConnection()
+            ->table($instance->getTable())
+            ->select($key)
+            ->orderBy($key)
+            ->limit($chunkSize);
+
+        if ($afterId !== null) {
+            $query->where($key, '>', $afterId);
+        }
+        foreach ($scope as $col => $value) {
+            $query->where($col, '=', $value);
+        }
+        if ($rootId !== null) {
+            $rootRow = $instance->getConnection()
+                ->table($instance->getTable())
+                ->where('id', $rootId)
+                ->first([$instance->getLftName(), $instance->getRgtName()]);
+            if ($rootRow !== null) {
+                $query->where($instance->getLftName(), '>=', $rootRow->{$instance->getLftName()})
+                    ->where($instance->getRgtName(), '<=', $rootRow->{$instance->getRgtName()});
+            }
+        }
+
+        $ids = array_values(array_map(
+            static fn (\stdClass $row): int => (int) ($row->{$instance->getKeyName()} ?? 0),
+            $query->get()->all(),
+        ));
+
+        $result = Query\TreeAggregateBuilder::fixAggregates(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $scope,
+            definitions: AggregateRegistry::for(static::class),
+            rootId: $rootId,
+            outerIds: $ids,
+        );
+
+        // A short final chunk (fewer rows than asked for) means we've
+        // reached the end of the table — no further dispatch needed.
+        $nextAfterId = count($ids) === $chunkSize ? end($ids) : null;
+
+        return ['result' => $result, 'nextAfterId' => $nextAfterId];
+    }
+
+    /**
      * Dispatches a {@see Jobs\FixAggregatesJob} to repair stored aggregate
      * columns asynchronously. Useful when the synchronous path would take
      * too long for a web request — e.g. a heavily-drifted 1M-row tree —
@@ -373,6 +457,7 @@ trait NodeTrait
         ?HasNestedSet $anchor = null,
         ?string $onConnection = null,
         ?string $onQueue = null,
+        ?int $chunkSize = null,
     ): Jobs\FixAggregatesJob {
         // Fail fast at dispatch time — without this the job would be
         // enqueued, picked up, then throw inside the worker for the
@@ -387,7 +472,11 @@ trait NodeTrait
             ));
         }
 
-        $job = new Jobs\FixAggregatesJob(static::class, self::anchorRootId($anchor));
+        $job = new Jobs\FixAggregatesJob(
+            modelClass: static::class,
+            anchorId: self::anchorRootId($anchor),
+            chunkSize: $chunkSize !== null && $chunkSize > 0 ? $chunkSize : null,
+        );
 
         // Apply config defaults; per-call args win. Both null leaves the
         // job on Laravel's default queue/connection.

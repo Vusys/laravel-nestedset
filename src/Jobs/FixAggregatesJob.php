@@ -38,10 +38,23 @@ final class FixAggregatesJob implements ShouldQueue
 
     /**
      * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  int|null  $chunkSize  When > 0, process up to this many
+     *                               outer rows per dispatch and
+     *                               re-queue this job with an advanced
+     *                               cursor until the table is covered.
+     *                               null/0 disables chunking — the
+     *                               whole repair runs in one job (the
+     *                               original Phase N behaviour).
+     * @param  int|null  $cursorAfterId  Internal: process rows whose id
+     *                                   is strictly greater than this.
+     *                                   Set by the re-dispatch path; not
+     *                                   typically passed by callers.
      */
     public function __construct(
         public readonly string $modelClass,
         public readonly ?int $anchorId = null,
+        public readonly ?int $chunkSize = null,
+        public readonly ?int $cursorAfterId = null,
     ) {}
 
     public function handle(): AggregateFixResult
@@ -75,6 +88,10 @@ final class FixAggregatesJob implements ShouldQueue
             ));
         }
 
+        if ($this->chunkSize !== null && $this->chunkSize > 0) {
+            return $this->handleChunked($modelClass, $anchor);
+        }
+
         $result = $modelClass::fixAggregates($anchor);
 
         if (! $result instanceof AggregateFixResult) {
@@ -86,6 +103,47 @@ final class FixAggregatesJob implements ShouldQueue
         }
 
         return $result;
+    }
+
+    /**
+     * Chunked path: process one slice and (if more remains) re-dispatch
+     * this same job with an advanced cursor. The total work is the same
+     * as the single-shot path, but each individual job runs in bounded
+     * time — friendlier for queue workers with timeouts and easier to
+     * observe via `php artisan queue:work` output.
+     */
+    private function handleChunked(string $modelClass, ?HasNestedSet $anchor): AggregateFixResult
+    {
+        if (! method_exists($modelClass, 'fixAggregatesChunk')) {
+            throw new \RuntimeException(sprintf(
+                'FixAggregatesJob: %s has no static fixAggregatesChunk() method — does it use NodeTrait?',
+                $modelClass,
+            ));
+        }
+
+        /** @var array{result: AggregateFixResult, nextAfterId: int|null} $chunk */
+        $chunk = $modelClass::fixAggregatesChunk($anchor, $this->cursorAfterId, $this->chunkSize ?? 0);
+
+        if ($chunk['nextAfterId'] !== null) {
+            // More chunks remain — schedule the next one. Inherit the
+            // same queue/connection routing as this job so the chain
+            // stays on the configured worker.
+            $next = new self(
+                modelClass: $this->modelClass,
+                anchorId: $this->anchorId,
+                chunkSize: $this->chunkSize,
+                cursorAfterId: $chunk['nextAfterId'],
+            );
+            if (is_string($this->connection)) {
+                $next->onConnection($this->connection);
+            }
+            if (is_string($this->queue)) {
+                $next->onQueue($this->queue);
+            }
+            dispatch($next);
+        }
+
+        return $chunk['result'];
     }
 
     /**

@@ -124,4 +124,102 @@ final class QueueFixAggregatesTest extends TestCase
         $second = (new FixAggregatesJob(modelClass: Area::class))->handle();
         $this->assertSame(0, $second->totalRowsUpdated, 'second run still zero — idempotent');
     }
+
+    // ----------------------------------------------------------------
+    // Self-redispatching chunked path
+    // ----------------------------------------------------------------
+
+    /**
+     * Build a small tree with $count nodes via the standard appendToNode
+     * path. Each node has tickets=1 so aggregate drift is easy to spot.
+     */
+    private function seedAreaTree(int $count): void
+    {
+        $root = new Area(['name' => 'r', 'tickets' => 1]);
+        $root->saveAsRoot();
+        $parent = $root->refresh();
+        for ($i = 1; $i < $count; $i++) {
+            $child = new Area(['name' => "n{$i}", 'tickets' => 1]);
+            $child->appendToNode($parent)->save();
+            $parent = $child->refresh();
+        }
+    }
+
+    public function test_chunked_job_dispatches_a_followup_when_more_rows_remain(): void
+    {
+        Queue::fake();
+
+        $this->seedAreaTree(5); // chunkSize=2 → at least one follow-up dispatch
+
+        $job = new FixAggregatesJob(modelClass: Area::class, chunkSize: 2);
+        $job->handle();
+
+        Queue::assertPushed(FixAggregatesJob::class, fn (FixAggregatesJob $next): bool => $next->modelClass === Area::class
+            && $next->chunkSize === 2
+            && $next->cursorAfterId !== null);
+    }
+
+    public function test_chunked_job_stops_when_the_last_chunk_is_short(): void
+    {
+        Queue::fake();
+
+        $this->seedAreaTree(3); // 3 nodes < chunkSize=5 → first chunk is the last
+
+        $job = new FixAggregatesJob(modelClass: Area::class, chunkSize: 5);
+        $job->handle();
+
+        Queue::assertNotPushed(FixAggregatesJob::class);
+    }
+
+    public function test_chunked_redispatch_inherits_queue_and_connection(): void
+    {
+        Queue::fake();
+
+        $this->seedAreaTree(4);
+
+        $job = new FixAggregatesJob(modelClass: Area::class, chunkSize: 2);
+        $job->onConnection('redis')->onQueue('aggregates-low');
+        $job->handle();
+
+        Queue::assertPushed(FixAggregatesJob::class, fn (FixAggregatesJob $next): bool => $next->connection === 'redis' && $next->queue === 'aggregates-low');
+    }
+
+    public function test_chunked_end_to_end_repairs_a_drifted_tree(): void
+    {
+        // No Queue::fake() — drive the chunk walk manually so we
+        // exercise the real recursion logic without needing a worker.
+        $this->seedAreaTree(6);
+        DB::table('areas')->update([
+            'tickets_total' => 0,
+            'tickets_count_all' => 0,
+            'tickets_avg' => null,
+            'tickets_min' => null,
+            'tickets_max' => null,
+            'tickets_avg__sum' => 0,
+            'tickets_avg__count' => 0,
+        ]);
+        $this->assertTrue(Area::aggregatesAreBroken());
+
+        $cursor = null;
+        $passes = 0;
+        do {
+            $passes++;
+            $chunk = Area::fixAggregatesChunk(anchor: null, afterId: $cursor, chunkSize: 2);
+            $cursor = $chunk['nextAfterId'];
+            $this->assertLessThan(20, $passes, 'guard against infinite loop in chunk walk');
+        } while ($cursor !== null);
+
+        $this->assertFalse(Area::aggregatesAreBroken(), 'all aggregates repaired across chunks');
+        $this->assertGreaterThanOrEqual(3, $passes, 'multiple chunks were required (6 rows / chunk=2)');
+    }
+
+    public function test_queue_fix_aggregates_chunk_size_param_carries_to_job(): void
+    {
+        Queue::fake();
+
+        $job = Area::queueFixAggregates(chunkSize: 500);
+
+        $this->assertSame(500, $job->chunkSize);
+        Queue::assertPushed(FixAggregatesJob::class, fn (FixAggregatesJob $j): bool => $j->chunkSize === 500);
+    }
 }

@@ -585,6 +585,14 @@ final class TreeAggregateBuilder
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
      */
+    /**
+     * @param  array<string, mixed>  $scope
+     * @param  list<AggregateDefinition>  $definitions
+     * @param  list<int>|null  $outerIds  When non-null, restricts the
+     *                                    repair to this subset of outer
+     *                                    rows. Used by the chunked /
+     *                                    self-redispatching queue job.
+     */
     public static function fixAggregates(
         Connection $connection,
         string $table,
@@ -593,9 +601,24 @@ final class TreeAggregateBuilder
         array $scope,
         array $definitions,
         ?int $rootId = null,
+        ?array $outerIds = null,
     ): AggregateFixResult {
         if ($definitions === []) {
             return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
+        }
+
+        // An empty (but non-null) outerIds list means "this chunk has
+        // no rows" — short-circuit, otherwise the SQL becomes `id IN ()`
+        // which is a syntax error.
+        if ($outerIds !== null && $outerIds === []) {
+            $perColumn = [];
+            foreach ($definitions as $definition) {
+                if (! $definition->isInternal()) {
+                    $perColumn[$definition->column] = 0;
+                }
+            }
+
+            return new AggregateFixResult(totalRowsUpdated: 0, perColumn: $perColumn);
         }
 
         $rows = self::selectStoredAndComputed(
@@ -606,6 +629,7 @@ final class TreeAggregateBuilder
             scope: $scope,
             definitions: $definitions,
             rootId: $rootId,
+            outerIds: $outerIds,
         );
 
         $perColumn = [];
@@ -745,6 +769,7 @@ final class TreeAggregateBuilder
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
+     * @param  list<int>|null  $outerIds
      * @return list<array<string, mixed>>
      */
     private static function selectStoredAndComputed(
@@ -755,6 +780,7 @@ final class TreeAggregateBuilder
         array $scope,
         array $definitions,
         ?int $rootId,
+        ?array $outerIds = null,
     ): array {
         if ($definitions === []) {
             return [];
@@ -781,6 +807,7 @@ final class TreeAggregateBuilder
                 definitions: $group,
                 inclusive: $mode === 'inclusive',
                 rootId: $rootId,
+                outerIds: $outerIds,
             );
 
             foreach ($rows as $row) {
@@ -831,6 +858,7 @@ final class TreeAggregateBuilder
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
+     * @param  list<int>|null  $outerIds
      * @return list<array<string, mixed>>
      */
     private static function groupedAggregateQuery(
@@ -842,6 +870,7 @@ final class TreeAggregateBuilder
         array $definitions,
         bool $inclusive,
         ?int $rootId,
+        ?array $outerIds = null,
     ): array {
         $outerSelects = ['outer_a.id AS id'];
         $aggSelects = ['o.id AS outer_id'];
@@ -883,6 +912,17 @@ final class TreeAggregateBuilder
             $bindings[] = $rootId;
         }
 
+        // Chunked-job path: limit both the inner aggregation and the
+        // outer SELECT to the supplied id set so we only do work for
+        // rows in this chunk.
+        if ($outerIds !== null) {
+            $placeholders = implode(', ', array_fill(0, count($outerIds), '?'));
+            $innerWhere .= " AND o.id IN ({$placeholders})";
+            foreach ($outerIds as $id) {
+                $bindings[] = $id;
+            }
+        }
+
         $outerWhere = '1 = 1';
         foreach ($scope as $col => $value) {
             $outerWhere .= " AND outer_a.{$col} = ?";
@@ -893,6 +933,13 @@ final class TreeAggregateBuilder
             $outerWhere .= " AND outer_a.{$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
+        }
+        if ($outerIds !== null) {
+            $placeholders = implode(', ', array_fill(0, count($outerIds), '?'));
+            $outerWhere .= " AND outer_a.id IN ({$placeholders})";
+            foreach ($outerIds as $id) {
+                $bindings[] = $id;
+            }
         }
 
         $sql = 'SELECT '.implode(', ', $outerSelects)
