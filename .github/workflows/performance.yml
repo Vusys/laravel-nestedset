@@ -25,10 +25,12 @@ permissions:
 jobs:
   benchmark:
     # Only run when the trigger meets the opt-in criteria: a manual
-    # dispatch, OR a PR labeled `run-perf`.
+    # dispatch, OR a PR labeled `run-perf` (representative shapes)
+    # or `run-pathological` (deliberately stressful shapes). The
+    # latter sets PATHOLOGICAL=1 below so the gated test class runs.
     if: |
       github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'pull_request' && github.event.label.name == 'run-perf')
+      || (github.event_name == 'pull_request' && (github.event.label.name == 'run-perf' || github.event.label.name == 'run-pathological'))
 
     runs-on: ubuntu-latest
 
@@ -134,6 +136,11 @@ jobs:
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
           PERF_SCALE_MAX: ${{ github.event.inputs.scale || '10000' }}
+          # `run-pathological` label flips on the gated test class
+          # (PathologicalShapesBenchmarkTest). `run-perf` and
+          # workflow_dispatch leave it unset, so only the standard
+          # representative benchmarks run.
+          PATHOLOGICAL: ${{ github.event.label.name == 'run-pathological' && '1' || '' }}
         run: |
           # pipefail so phpunit's exit code propagates through tee.
           # Without it, tee's exit code (always 0) masks test failures.

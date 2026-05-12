@@ -196,6 +196,132 @@ final class TreeShapes
     }
 
     /**
+     * Wide-shallow: one root with $directChildren leaf children all at
+     * depth 1. Worst case for any operation that groups by parent_id
+     * (the root has N children), for sibling reordering, and for the
+     * MIN/MAX recompute walking the full sibling set. Best case for
+     * depth-bounded operations (everything's at depth ≤ 1).
+     *
+     * Total nodes = 1 (root) + $directChildren.
+     *
+     * @return int the root id
+     */
+    public static function wideShallow(string $table, int $directChildren, int $ticketsPerNode = 10): int
+    {
+        $rows = [];
+        $rows[] = [
+            'id' => 1,
+            'name' => 'root',
+            'tickets' => $ticketsPerNode,
+            'lft' => 1,
+            'rgt' => 2 * ($directChildren + 1),
+            'depth' => 0,
+            'parent_id' => null,
+        ];
+        for ($i = 0; $i < $directChildren; $i++) {
+            $rows[] = [
+                'id' => $i + 2,
+                'name' => "c{$i}",
+                'tickets' => $ticketsPerNode,
+                'lft' => 2 + 2 * $i,
+                'rgt' => 3 + 2 * $i,
+                'depth' => 1,
+                'parent_id' => 1,
+            ];
+        }
+
+        self::bulkInsertWithAggregates($table, $rows, $ticketsPerNode);
+
+        return 1;
+    }
+
+    /**
+     * Left-leaning binary: every non-leaf has exactly two children
+     * (left, right). The right child is always a leaf; the left child
+     * is the next non-leaf. Net effect — half the tree is one long
+     * chain on the left side, plus N/2 small siblings hanging off it.
+     *
+     * Combines depth pressure (the spine is ~N/2 deep) with sibling
+     * width pressure (every spine node has a real sibling to consider
+     * in extremum queries).
+     *
+     * @return int the root id
+     */
+    public static function leftLeaning(string $table, int $nodes, int $ticketsPerNode = 10): int
+    {
+        // Build parallel lists (id-indexed) for parent, depth, children.
+        // Keeping each property in its own narrow-typed array lets the
+        // type system reason about every access, where one mixed-shape
+        // associative array would land on `mixed` for every read.
+        /** @var array<int, int|null> $parent */
+        $parent = [1 => null];
+        /** @var array<int, int> $depth */
+        $depth = [1 => 0];
+        /** @var array<int, list<int>> $children */
+        $children = [1 => []];
+
+        $spineHead = 1;
+        $nextId = 2;
+        while ($nextId <= $nodes) {
+            $leftId = $nextId++;
+            $parent[$leftId] = $spineHead;
+            $depth[$leftId] = $depth[$spineHead] + 1;
+            $children[$leftId] = [];
+            $children[$spineHead][] = $leftId;
+
+            if ($nextId > $nodes) {
+                break;
+            }
+
+            $rightId = $nextId++;
+            $parent[$rightId] = $spineHead;
+            $depth[$rightId] = $depth[$spineHead] + 1;
+            $children[$rightId] = [];
+            $children[$spineHead][] = $rightId;
+
+            // Continue down the left child.
+            $spineHead = $leftId;
+        }
+
+        $structure = [];
+        foreach ($parent as $id => $parentId) {
+            $structure[] = [
+                'id' => $id,
+                'parent_id' => $parentId,
+                'depth' => $depth[$id],
+                'children' => $children[$id],
+            ];
+        }
+
+        $rows = self::assignBoundsDfs($structure, $ticketsPerNode);
+        self::bulkInsertWithAggregates($table, $rows, $ticketsPerNode);
+
+        return 1;
+    }
+
+    /**
+     * Fragmented forest: many singletons + a few small trees + one
+     * larger tree, sharing one table. Tests that forest-traversal
+     * code paths don't degrade when scope/tree size varies wildly.
+     *
+     * Returns the root id of the largest tree (useful for anchored
+     * tests).
+     */
+    public static function fragmentedForest(string $table, int $ticketsPerNode = 10): int
+    {
+        // 100 singletons.
+        $rootIds = self::flatRoots($table, treeCount: 100, nodesPerTree: 1, fanout: 1, ticketsPerNode: $ticketsPerNode);
+
+        // 10 small trees (100 nodes each).
+        self::flatRoots($table, treeCount: 10, nodesPerTree: 100, fanout: 10, ticketsPerNode: $ticketsPerNode);
+
+        // 1 larger tree (1000 nodes).
+        $largeRoots = self::flatRoots($table, treeCount: 1, nodesPerTree: 1000, fanout: 10, ticketsPerNode: $ticketsPerNode);
+
+        return $largeRoots[0] ?? ($rootIds[0] ?? 1);
+    }
+
+    /**
      * @param  list<array{id: int, name: string, tickets: int, lft: int, rgt: int, depth: int, parent_id: ?int}>  $rows
      */
     private static function bulkInsertWithAggregates(
