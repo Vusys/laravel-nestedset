@@ -106,17 +106,17 @@ trait NodeTrait
 
     public function getLft(): int
     {
-        return $this->vusysIntAttr($this->getLftName());
+        return $this->intAttr($this->getLftName());
     }
 
     public function getRgt(): int
     {
-        return $this->vusysIntAttr($this->getRgtName());
+        return $this->intAttr($this->getRgtName());
     }
 
     public function getDepth(): int
     {
-        return $this->vusysIntAttr($this->getDepthName());
+        return $this->intAttr($this->getDepthName());
     }
 
     public function getParentId(): ?int
@@ -127,7 +127,7 @@ trait NodeTrait
             return null;
         }
 
-        return $this->vusysIntAttr($this->getParentIdName());
+        return $this->intAttr($this->getParentIdName());
     }
 
     /**
@@ -135,7 +135,7 @@ trait NodeTrait
      * guarantee this in practice) and returns it as int — narrows mixed
      * for the type system without an unchecked cast.
      */
-    private function vusysIntAttr(string $name): int
+    private function intAttr(string $name): int
     {
         $v = $this->getAttribute($name);
 

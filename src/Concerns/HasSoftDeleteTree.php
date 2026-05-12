@@ -26,7 +26,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  */
 trait HasSoftDeleteTree
 {
-    private ?string $vusysRestoreMarker = null;
+    private ?string $restoreMarker = null;
 
     public static function bootHasSoftDeleteTree(): void
     {
@@ -141,14 +141,14 @@ trait HasSoftDeleteTree
     /** @internal */
     public function setRestoreMarker(?string $marker): void
     {
-        $this->vusysRestoreMarker = $marker;
+        $this->restoreMarker = $marker;
     }
 
     /** @internal */
     public function takeRestoreMarker(): ?string
     {
-        $marker = $this->vusysRestoreMarker;
-        $this->vusysRestoreMarker = null;
+        $marker = $this->restoreMarker;
+        $this->restoreMarker = null;
 
         return $marker;
     }

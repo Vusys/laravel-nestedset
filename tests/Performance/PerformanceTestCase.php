@@ -27,7 +27,7 @@ abstract class PerformanceTestCase extends TestCase
     protected bool $allowBrokenTreeAtTearDown = true;
 
     /** @var list<Benchmark> */
-    private array $vusysBenchmarks = [];
+    private array $benchmarks = [];
 
     /**
      * Read the desired top scale from the PERF_SCALE_MAX env var.
@@ -64,7 +64,7 @@ abstract class PerformanceTestCase extends TestCase
     protected function bench(string $label, callable $operation): Benchmark
     {
         $result = Benchmark::run($label, $operation);
-        $this->vusysBenchmarks[] = $result;
+        $this->benchmarks[] = $result;
 
         return $result;
     }
@@ -77,16 +77,16 @@ abstract class PerformanceTestCase extends TestCase
      */
     protected function assertBenchmarksRan(): void
     {
-        $this->assertGreaterThan(0, count($this->vusysBenchmarks), 'expected at least one benchmark to have run');
+        $this->assertGreaterThan(0, count($this->benchmarks), 'expected at least one benchmark to have run');
     }
 
     protected function tearDown(): void
     {
-        if ($this->vusysBenchmarks !== []) {
+        if ($this->benchmarks !== []) {
             $driver = (string) env('DB_CONNECTION', 'sqlite');
 
             fwrite(STDOUT, "\n[".strtoupper($driver).'] '.static::class."\n");
-            foreach ($this->vusysBenchmarks as $b) {
+            foreach ($this->benchmarks as $b) {
                 fwrite(STDOUT, '  '.$b->toLine()."\n");
             }
         }

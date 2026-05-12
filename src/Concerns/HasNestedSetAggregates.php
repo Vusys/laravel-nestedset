@@ -44,7 +44,7 @@ trait HasNestedSetAggregates
      * its own counter — so deferring maintenance on `Area` doesn't
      * affect `Category::create()` etc.
      */
-    private static int $vusysDeferredDepth = 0;
+    private static int $deferredDepth = 0;
 
     /**
      * Source-column deltas captured in `saving` and applied in `saved`.
@@ -52,7 +52,7 @@ trait HasNestedSetAggregates
      *
      * @var array<string, int>
      */
-    private array $vusysCapturedAggregateDeltas = [];
+    private array $capturedAggregateDeltas = [];
 
     /**
      * Cheap-delta MIN/MAX candidates captured in `saving` (extension or
@@ -62,7 +62,7 @@ trait HasNestedSetAggregates
      *
      * @var array<string, array{function: AggregateFunction, value: int}>
      */
-    private array $vusysCapturedExtremes = [];
+    private array $capturedExtremes = [];
 
     /**
      * Recompute candidates captured in `saving` (lost-holder direction
@@ -73,7 +73,7 @@ trait HasNestedSetAggregates
      *
      * @var array<string, array{function: AggregateFunction, source: string, filterValue: int}>
      */
-    private array $vusysCapturedRecomputes = [];
+    private array $capturedRecomputes = [];
 
     /**
      * The user-facing aggregate definitions declared on this model.
@@ -122,8 +122,8 @@ trait HasNestedSetAggregates
      */
     public function isPlacedInTree(): bool
     {
-        $lft = self::vusysNumeric($this->getAttribute($this->getLftName()));
-        $rgt = self::vusysNumeric($this->getAttribute($this->getRgtName()));
+        $lft = self::numeric($this->getAttribute($this->getLftName()));
+        $rgt = self::numeric($this->getAttribute($this->getRgtName()));
 
         return $lft > 0 && $rgt > $lft;
     }
@@ -145,13 +145,13 @@ trait HasNestedSetAggregates
      */
     public function captureAggregateDeltas(): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
-        $this->vusysCapturedAggregateDeltas = [];
-        $this->vusysCapturedExtremes = [];
-        $this->vusysCapturedRecomputes = [];
+        $this->capturedAggregateDeltas = [];
+        $this->capturedExtremes = [];
+        $this->capturedRecomputes = [];
 
         if (! $this->exists) {
             return;
@@ -165,8 +165,8 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            $new = self::vusysNumeric($this->getAttribute($definition->source));
-            $old = self::vusysNumeric($this->getOriginal($definition->source));
+            $new = self::numeric($this->getAttribute($definition->source));
+            $old = self::numeric($this->getOriginal($definition->source));
             $delta = $new - $old;
 
             if ($delta === 0) {
@@ -174,7 +174,7 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Sum) {
-                $this->vusysCapturedAggregateDeltas[$definition->column] = $delta;
+                $this->capturedAggregateDeltas[$definition->column] = $delta;
 
                 continue;
             }
@@ -182,14 +182,14 @@ trait HasNestedSetAggregates
             if ($definition->function === AggregateFunction::Max) {
                 if ($delta > 0) {
                     // New value is larger — max can only stay or rise. Cheap delta.
-                    $this->vusysCapturedExtremes[$definition->column] = [
+                    $this->capturedExtremes[$definition->column] = [
                         'function' => AggregateFunction::Max,
                         'value' => $new,
                     ];
                 } else {
                     // New value is smaller — old may have been the holder; recompute
                     // ancestors whose stored_max equals the old value.
-                    $this->vusysCapturedRecomputes[$definition->column] = [
+                    $this->capturedRecomputes[$definition->column] = [
                         'function' => AggregateFunction::Max,
                         'source' => $definition->source,
                         'filterValue' => $old,
@@ -201,12 +201,12 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Min) {
                 if ($delta < 0) {
-                    $this->vusysCapturedExtremes[$definition->column] = [
+                    $this->capturedExtremes[$definition->column] = [
                         'function' => AggregateFunction::Min,
                         'value' => $new,
                     ];
                 } else {
-                    $this->vusysCapturedRecomputes[$definition->column] = [
+                    $this->capturedRecomputes[$definition->column] = [
                         'function' => AggregateFunction::Min,
                         'source' => $definition->source,
                         'filterValue' => $old,
@@ -223,17 +223,17 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateDeltas(): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
-        $deltas = $this->vusysCapturedAggregateDeltas;
-        $extremes = $this->vusysCapturedExtremes;
-        $recomputes = $this->vusysCapturedRecomputes;
+        $deltas = $this->capturedAggregateDeltas;
+        $extremes = $this->capturedExtremes;
+        $recomputes = $this->capturedRecomputes;
 
-        $this->vusysCapturedAggregateDeltas = [];
-        $this->vusysCapturedExtremes = [];
-        $this->vusysCapturedRecomputes = [];
+        $this->capturedAggregateDeltas = [];
+        $this->capturedExtremes = [];
+        $this->capturedRecomputes = [];
 
         if ($deltas === [] && $extremes === [] && $recomputes === []) {
             return;
@@ -293,14 +293,14 @@ trait HasNestedSetAggregates
             columns: $columns,
             scope: $scope,
             filterEquals: $filterEquals,
-            locking: self::vusysAggregateLockingMode(),
+            locking: self::aggregateLockingMode(),
         );
     }
 
     /**
      * @return 'always'|'auto'|'never'
      */
-    private static function vusysAggregateLockingMode(): string
+    private static function aggregateLockingMode(): string
     {
         $value = config('nestedset.aggregate_locking', 'auto');
 
@@ -320,7 +320,7 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateOnCreate(): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
@@ -339,7 +339,7 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Sum && $definition->source !== null) {
-                $value = self::vusysNumeric($this->getAttribute($definition->source));
+                $value = self::numeric($this->getAttribute($definition->source));
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
                 }
@@ -357,7 +357,7 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $value = self::vusysNumeric($this->getAttribute($definition->source));
+                $value = self::numeric($this->getAttribute($definition->source));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
@@ -397,7 +397,7 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateOnDelete(): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
@@ -415,7 +415,7 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                $value = self::numeric($this->getAttribute($definition->column));
                 if ($value !== 0) {
                     $deltas[$definition->column] = -$value;
                 }
@@ -431,7 +431,7 @@ trait HasNestedSetAggregates
                 // matches this node's stored extremum. Other ancestors held
                 // their MIN/MAX from somewhere else; the deletion can't have
                 // affected them.
-                $stored = self::vusysNumeric($this->getAttribute($definition->column));
+                $stored = self::numeric($this->getAttribute($definition->column));
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
@@ -472,7 +472,7 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateBeforeMove(NodeBounds $from, string $action): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
@@ -519,7 +519,7 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateAfterMove(NodeBounds $from, NodeBounds $to, string $action): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
@@ -569,7 +569,7 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                $value = self::numeric($this->getAttribute($definition->column));
                 if ($value !== 0) {
                     $sumCount[$definition->column] = $value;
                 }
@@ -581,7 +581,7 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $stored = self::vusysNumeric($this->getAttribute($definition->column));
+                $stored = self::numeric($this->getAttribute($definition->column));
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
@@ -629,7 +629,7 @@ trait HasNestedSetAggregates
             columns: $columns,
             scope: $scope,
             filterEquals: $filterEquals,
-            locking: self::vusysAggregateLockingMode(),
+            locking: self::aggregateLockingMode(),
             excludeBounds: $excludeBounds,
         );
     }
@@ -644,7 +644,7 @@ trait HasNestedSetAggregates
      */
     public function applyAggregateOnRestore(): void
     {
-        if (self::$vusysDeferredDepth > 0) {
+        if (self::$deferredDepth > 0) {
             return;
         }
 
@@ -662,7 +662,7 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                $value = self::numeric($this->getAttribute($definition->column));
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
                 }
@@ -674,7 +674,7 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $value = self::vusysNumeric($this->getAttribute($definition->column));
+                $value = self::numeric($this->getAttribute($definition->column));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
@@ -743,11 +743,11 @@ trait HasNestedSetAggregates
     /**
      * Narrows a value that we expect to be numeric (the model's casts
      * usually guarantee this) to int, returning 0 for null. Mirrors
-     * {@see NodeTrait::vusysIntAttr()} but tolerant of
+     * {@see NodeTrait::intAttr()} but tolerant of
      * null so unset/never-saved attributes default to zero rather than
      * throwing.
      */
-    private static function vusysNumeric(mixed $value): int
+    private static function numeric(mixed $value): int
     {
         if ($value === null) {
             return 0;
@@ -784,8 +784,8 @@ trait HasNestedSetAggregates
      */
     public static function aggregateErrors(?HasNestedSet $anchor = null): array
     {
-        $instance = self::vusysAggregateAnchorOrFail($anchor);
-        $rootId = self::vusysAnchorRootId($anchor);
+        $instance = self::aggregateAnchorOrFail($anchor);
+        $rootId = self::anchorRootId($anchor);
 
         return TreeAggregateBuilder::aggregateErrors(
             connection: $instance->getConnection(),
@@ -844,11 +844,11 @@ trait HasNestedSetAggregates
         ?\Closure $onChunk = null,
     ): AggregateFixResult {
         if ($chunkSize !== null && $chunkSize > 0) {
-            return self::vusysFixAggregatesChunked($anchor, $chunkSize, $onChunk);
+            return self::fixAggregatesChunked($anchor, $chunkSize, $onChunk);
         }
 
-        $instance = self::vusysAggregateAnchorOrFail($anchor);
-        $rootId = self::vusysAnchorRootId($anchor);
+        $instance = self::aggregateAnchorOrFail($anchor);
+        $rootId = self::anchorRootId($anchor);
 
         return TreeAggregateBuilder::fixAggregates(
             connection: $instance->getConnection(),
@@ -869,7 +869,7 @@ trait HasNestedSetAggregates
      * nextAfterId=null, accumulating per-chunk results into one combined
      * AggregateFixResult.
      */
-    private static function vusysFixAggregatesChunked(
+    private static function fixAggregatesChunked(
         ?HasNestedSet $anchor,
         int $chunkSize,
         ?\Closure $onChunk,
@@ -935,8 +935,8 @@ trait HasNestedSetAggregates
         ?int $afterId,
         int $chunkSize,
     ): array {
-        $instance = self::vusysAggregateAnchorOrFail($anchor);
-        $rootId = self::vusysAnchorRootId($anchor);
+        $instance = self::aggregateAnchorOrFail($anchor);
+        $rootId = self::anchorRootId($anchor);
 
         if ($chunkSize <= 0) {
             throw new \InvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
@@ -1048,18 +1048,18 @@ trait HasNestedSetAggregates
         // final fixAggregates call, and a synchronous failure here is
         // friendlier than running the entire closure and only failing
         // at the repair pass.
-        self::vusysAggregateAnchorOrFail($anchor);
+        self::aggregateAnchorOrFail($anchor);
 
-        self::$vusysDeferredDepth++;
+        self::$deferredDepth++;
 
         try {
             return $work();
         } finally {
-            self::$vusysDeferredDepth--;
+            self::$deferredDepth--;
 
             // Repair only at the outermost exit — nested calls share
             // the same counter and rely on the outer wrapper to fix.
-            if (self::$vusysDeferredDepth === 0) {
+            if (self::$deferredDepth === 0) {
                 // If $work threw, this fires before the exception
                 // propagates. Swallow any secondary error so the
                 // original throwable wins — losing the original would
@@ -1121,7 +1121,7 @@ trait HasNestedSetAggregates
 
         $job = new FixAggregatesJob(
             modelClass: static::class,
-            anchorId: self::vusysAnchorRootId($anchor),
+            anchorId: self::anchorRootId($anchor),
             chunkSize: $chunkSize !== null && $chunkSize > 0 ? $chunkSize : null,
         );
 
@@ -1156,7 +1156,7 @@ trait HasNestedSetAggregates
      * Cross-trait access works because both traits flatten into the
      * same using class, where private methods are mutually visible.
      */
-    private static function vusysRunFixAggregates(
+    private static function runFixAggregates(
         ?HasNestedSet $anchor,
         ?int $rootId,
     ): ?AggregateFixResult {
@@ -1181,7 +1181,7 @@ trait HasNestedSetAggregates
         );
     }
 
-    private static function vusysAggregateAnchorOrFail(?HasNestedSet $anchor): self
+    private static function aggregateAnchorOrFail(?HasNestedSet $anchor): self
     {
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
 
@@ -1196,7 +1196,7 @@ trait HasNestedSetAggregates
         return new static;
     }
 
-    private static function vusysAnchorRootId(?HasNestedSet $anchor): ?int
+    private static function anchorRootId(?HasNestedSet $anchor): ?int
     {
         if (! $anchor instanceof Model) {
             return null;
