@@ -545,8 +545,8 @@ the stored values current.
   but if you have a deep, wide tree with hot MIN/MAX columns, expect
   occasional spikes.
 
-For SQL examples, lifecycle attachment points, and the full design
-rationale, see `AGGREGATES.md` in the package's workspace root.
+See `tests/Feature/Aggregates/` for executable examples of every
+maintenance path.
 
 ---
 

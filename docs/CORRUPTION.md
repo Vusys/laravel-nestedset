@@ -77,8 +77,7 @@ accidentally counting errors across every tenant's tree at once.
 
 The structural check is fast — index range scans plus a `GROUP BY` for
 the duplicate counts. The aggregate-drift check is the same cost as one
-`withFreshAggregates` pass — see the package's workspace `PERFORMANCE.md`
-for the SQL shape and per-backend timings.
+`withFreshAggregates` pass.
 
 > **Cycles are not currently surfaced by `countErrors()`.** They appear
 > indirectly as "rows you couldn't see in the tree after a repair" —
