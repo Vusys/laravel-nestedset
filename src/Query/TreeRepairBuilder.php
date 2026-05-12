@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
+use Illuminate\Database\Query\Builder;
 use Vusys\NestedSet\TreeFixResult;
 
 /**
@@ -13,9 +14,17 @@ use Vusys\NestedSet\TreeFixResult;
  * Repair operations rebuild lft/rgt/depth values from the parent_id
  * column, which is always kept consistent. fixTree() targets a single
  * root subtree; rebuildTree() rebuilds all roots.
+ *
+ * Scope: when $scope is non-empty (i.e. the model declares
+ * #[NestedSetScope] or getScopeAttributes()), every internal query is
+ * constrained to those [column => value] pairs and full-table operations
+ * refuse to run without an explicit root.
  */
 final readonly class TreeRepairBuilder
 {
+    /**
+     * @param  array<string, mixed>  $scope
+     */
     public function __construct(
         private Connection $connection,
         private string $table,
@@ -23,6 +32,7 @@ final readonly class TreeRepairBuilder
         private string $rgt,
         private string $parentId,
         private string $depth,
+        private array $scope = [],
     ) {}
 
     // ----------------------------------------------------------------
@@ -36,29 +46,25 @@ final readonly class TreeRepairBuilder
      */
     public function countErrors(): array
     {
-        $invalidBounds = (int) $this->connection->table($this->table)
+        $invalidBounds = (int) $this->scoped()
             ->whereColumn($this->lft, '>=', $this->rgt)
             ->count();
 
-        $duplicateLft = (int) $this->connection->table($this->table)
+        $duplicateLft = (int) $this->scoped()
             ->select($this->lft)
-            ->groupBy($this->lft)
+            ->groupBy(array_merge(array_keys($this->scope), [$this->lft]))
             ->havingRaw('COUNT(*) > 1')
             ->count();
 
-        $duplicateRgt = (int) $this->connection->table($this->table)
+        $duplicateRgt = (int) $this->scoped()
             ->select($this->rgt)
-            ->groupBy($this->rgt)
+            ->groupBy(array_merge(array_keys($this->scope), [$this->rgt]))
             ->havingRaw('COUNT(*) > 1')
             ->count();
 
-        // Orphan: non-null parent_id references an id that does not exist.
-        $tableName = $this->table;
-        $orphans = (int) $this->connection->table("{$tableName} as child")
-            ->leftJoin("{$tableName} as parent", 'parent.id', '=', "child.{$this->parentId}")
-            ->whereNotNull("child.{$this->parentId}")
-            ->whereNull('parent.id')
-            ->count();
+        // Orphan: non-null parent_id references an id that does not exist
+        // (within the same scope).
+        $orphans = (int) $this->orphanQuery()->count();
 
         return [
             'invalid_bounds' => $invalidBounds,
@@ -83,18 +89,20 @@ final readonly class TreeRepairBuilder
     // ----------------------------------------------------------------
 
     /**
-     * Rebuilds lft/rgt/depth values for all nodes in the table by
-     * walking the tree structure defined by parent_id.
+     * Rebuilds lft/rgt/depth values for all nodes within this builder's
+     * scope by walking the tree structure defined by parent_id.
+     *
+     * On a scoped builder, only that scope's rows are touched. The
+     * model-facing API (Phase 8) is what refuses a no-root call on a
+     * scoped class — at this layer the scope is already explicit.
      */
     public function rebuildTree(): void
     {
-        // Load all nodes indexed by id.
-        $rows = $this->connection->table($this->table)
+        $rows = $this->scoped()
             ->select(['id', $this->parentId])
             ->get()
             ->keyBy('id');
 
-        // Build children map: parent_id => [child_id, ...]
         /** @var array<int|string, list<int>> $children */
         $children = [];
         $roots = [];
@@ -107,7 +115,6 @@ final readonly class TreeRepairBuilder
             }
         }
 
-        // Walk and assign lft/rgt/depth via DFS.
         $counter = 1;
 
         /** @var array<int, array{lft: int, rgt: int, depth: int}> $positions */
@@ -129,7 +136,6 @@ final readonly class TreeRepairBuilder
             $walk($rootId, 0);
         }
 
-        // Persist in a single transaction.
         $this->connection->transaction(function () use ($positions): void {
             foreach ($positions as $id => $pos) {
                 $this->connection->table($this->table)
@@ -149,12 +155,11 @@ final readonly class TreeRepairBuilder
      */
     public function rebuildSubtree(int $rootId): void
     {
-        $all = $this->connection->table($this->table)
+        $all = $this->scoped()
             ->select(['id', $this->parentId])
             ->get()
             ->keyBy('id');
 
-        // Collect all nodes in the subtree.
         $inSubtree = [];
         $this->collectSubtree($rootId, $all->all(), $inSubtree);
 
@@ -175,8 +180,7 @@ final readonly class TreeRepairBuilder
             }
         }
 
-        // Determine the root's current lft (preserve position in the table).
-        $rootRow = $this->connection->table($this->table)
+        $rootRow = $this->scoped()
             ->select([$this->lft, $this->depth])
             ->where('id', $rootId)
             ->first();
@@ -220,11 +224,15 @@ final readonly class TreeRepairBuilder
      * Fixes the tree by rebuilding all lft/rgt/depth values and returns
      * a result describing what was corrected.
      */
-    public function fixTree(): TreeFixResult
+    public function fixTree(?int $rootId = null): TreeFixResult
     {
-        $this->rebuildTree();
+        if ($rootId !== null) {
+            $this->rebuildSubtree($rootId);
+        } else {
+            $this->rebuildTree();
+        }
 
-        $nodesUpdated = (int) $this->connection->table($this->table)->count();
+        $nodesUpdated = (int) $this->scoped()->count();
         $errorsAfter = $this->countErrors();
 
         return new TreeFixResult(
@@ -236,6 +244,35 @@ final readonly class TreeRepairBuilder
     // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
+
+    private function scoped(): Builder
+    {
+        $query = $this->connection->table($this->table);
+
+        foreach ($this->scope as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        return $query;
+    }
+
+    private function orphanQuery(): Builder
+    {
+        $tableName = $this->table;
+        $query = $this->connection->table("{$tableName} as child")
+            ->leftJoin("{$tableName} as parent", 'parent.id', '=', "child.{$this->parentId}")
+            ->whereNotNull("child.{$this->parentId}")
+            ->whereNull('parent.id');
+
+        // A parent in a different scope still counts as missing — orphan
+        // semantics require the parent to be in the same tree, not just
+        // anywhere in the table.
+        foreach ($this->scope as $column => $value) {
+            $query->where("child.{$column}", '=', $value);
+        }
+
+        return $query;
+    }
 
     /**
      * @param  array<int|string, object>  $all
