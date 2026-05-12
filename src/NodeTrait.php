@@ -7,6 +7,7 @@ namespace Vusys\NestedSet;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Concerns\HasBulkInsert;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
@@ -31,6 +32,7 @@ use Vusys\NestedSet\Query\TreeQueryBuilder;
  */
 trait NodeTrait
 {
+    use HasBulkInsert;
     use HasNestedSetAggregates;
     use HasNodeInspection;
     use HasSoftDeleteTree;
