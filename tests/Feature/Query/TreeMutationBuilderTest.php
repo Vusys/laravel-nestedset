@@ -121,9 +121,10 @@ final class TreeMutationBuilderTest extends TestCase
         // Move AA (lft=3, rgt=4) to after AB (lft=5, rgt=6).
         // After move: AB should be at 3-4, AA at 5-6.
         $from = new NodeBounds(lft: 3, rgt: 4, depth: 2);
-        $targetLft = 5; // desired final lft of AA in the final state
+        // position semantic = AB.rgt + 1 in *original* coordinates.
+        $position = 7;
 
-        $this->mutator->moveNode(from: $from, targetLft: $targetLft, depthDelta: 0);
+        $this->mutator->moveNode(from: $from, position: $position, depthDelta: 0);
 
         $aa = $this->rowById('categories', 3);
         $ab = $this->rowById('categories', 4);
@@ -139,9 +140,10 @@ final class TreeMutationBuilderTest extends TestCase
         // Move AB (lft=5, rgt=6) to before AA (lft=3, rgt=4).
         // After move: AB should be at 3-4, AA at 5-6.
         $from = new NodeBounds(lft: 5, rgt: 6, depth: 2);
-        $targetLft = 3;
+        // position semantic = AA.lft in original coordinates.
+        $position = 3;
 
-        $this->mutator->moveNode(from: $from, targetLft: $targetLft, depthDelta: 0);
+        $this->mutator->moveNode(from: $from, position: $position, depthDelta: 0);
 
         $aa = $this->rowById('categories', 3);
         $ab = $this->rowById('categories', 4);
@@ -154,12 +156,12 @@ final class TreeMutationBuilderTest extends TestCase
 
     public function test_move_node_updates_depth_delta(): void
     {
-        // Move Child B (lft=8, rgt=9, depth=1) to just after AB (lft=5-6).
-        // targetLft=7 means Child B ends at lft=7 in the final state (inside Child A's subtree).
+        // Move Child B (lft=8, rgt=9, depth=1) to appended-to Child A.
+        // position = Child A.rgt = 7 in original coordinates.
         $from = new NodeBounds(lft: 8, rgt: 9, depth: 1);
-        $targetLft = 7; // final lft of Child B (backward move)
+        $position = 7;
 
-        $this->mutator->moveNode(from: $from, targetLft: $targetLft, depthDelta: 1);
+        $this->mutator->moveNode(from: $from, position: $position, depthDelta: 1);
 
         $childB = $this->rowById('categories', 5);
 
@@ -171,7 +173,8 @@ final class TreeMutationBuilderTest extends TestCase
         $from = new NodeBounds(lft: 3, rgt: 4, depth: 2);
 
         $before = DB::table('categories')->orderBy('lft')->pluck('lft')->all();
-        $this->mutator->moveNode(from: $from, targetLft: 3, depthDelta: 0);
+        // position = AA.lft means "insert here" which is already its position.
+        $this->mutator->moveNode(from: $from, position: 3, depthDelta: 0);
         $after = DB::table('categories')->orderBy('lft')->pluck('lft')->all();
 
         $this->assertSame($before, $after);
@@ -239,7 +242,7 @@ final class TreeMutationBuilderTest extends TestCase
 
         $this->mutator->moveNode(
             from: new NodeBounds(lft: 3, rgt: 4, depth: 2),
-            targetLft: 6,
+            position: 7,
             depthDelta: 0,
         );
 
