@@ -14,6 +14,8 @@ use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Concerns\HasTreeRelations;
 use Vusys\NestedSet\Concerns\HasTreeRepair;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 
 /**
@@ -206,6 +208,25 @@ trait NodeTrait
     public function newEloquentBuilder($query): TreeQueryBuilder
     {
         return new TreeQueryBuilder($query);
+    }
+
+    /**
+     * Returns the package's custom base query builder so SQL-execution
+     * hooks (e.g. the MariaDB `SET STATEMENT optimizer_switch=…` prefix
+     * used by {@see TreeAggregateBuilder::applyMariaDbDerivedFreshSelects()})
+     * have somewhere to live. Falls back to the parent builder's
+     * connection/grammar/processor wiring otherwise — identical to
+     * Eloquent's default except for the concrete class.
+     */
+    protected function newBaseQueryBuilder(): TreeBaseQueryBuilder
+    {
+        $connection = $this->getConnection();
+
+        return new TreeBaseQueryBuilder(
+            $connection,
+            $connection->getQueryGrammar(),
+            $connection->getPostProcessor(),
+        );
     }
 
     /**

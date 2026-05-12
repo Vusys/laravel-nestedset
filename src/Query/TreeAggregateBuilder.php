@@ -105,14 +105,20 @@ final class TreeAggregateBuilder
      * queries pay only the cost of their selected rows; large queries
      * pay one full-table inner pass instead of K of them.
      *
-     * Measured at N=10K on a balancedFanout fanout=10 tree:
-     *   correlated (current):           44,269 ms
-     *   derived + o-filter (this path): ~10,000 ms — 4.4× faster
+     * The derived shape on its own is ~4× faster than the correlated
+     * fallback. MariaDB's planner then converts the derived into a
+     * LATERAL DERIVED via its `split_materialized` optimisation — that
+     * gives back most of the win because the derived gets re-executed
+     * per outer row instead of materialised once. We disable
+     * `split_materialized` for this single statement by routing the
+     * compiled SQL through {@see TreeBaseQueryBuilder::runSelect()},
+     * which prepends `SET STATEMENT optimizer_switch=…` when the flag
+     * below is set. (No session state is touched.)
      *
-     * (A further 3× could be unlocked by prepending
-     * `SET STATEMENT optimizer_switch='split_materialized=off'`, but
-     * that needs SQL-execution hooking we don't yet have — tracked as
-     * a follow-up.)
+     * Measured at N=10K on a balancedFanout fanout=10 tree:
+     *   correlated (previous default):                 44,269 ms
+     *   derived + o-filter, no SET STATEMENT:          10,316 ms  (4.3× faster)
+     *   derived + o-filter + split_materialized=off:    3,762 ms  (11.8× faster)
      *
      * @param  TreeQueryBuilder<Model>  $builder
      * @param  array<string, AggregateDefinition>  $resolved
@@ -135,6 +141,14 @@ final class TreeAggregateBuilder
         $userIdsQuery->columns = ["{$table}.{$modelKey}"];
         $userIdsSql = $userIdsQuery->toSql();
         $userIdsBindings = $userIdsQuery->getBindings();
+
+        // Coax MariaDB's planner away from re-lateralising the derived
+        // table we are about to build. See this method's docblock and
+        // {@see TreeBaseQueryBuilder::runSelect()}.
+        $queryBuilder = $builder->getQuery();
+        if ($queryBuilder instanceof TreeBaseQueryBuilder) {
+            $queryBuilder->withMariaDbSplitMaterializedOff();
+        }
 
         $byInclusivity = ['inclusive' => [], 'exclusive' => []];
         foreach ($resolved as $alias => $definition) {
