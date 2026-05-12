@@ -10,6 +10,9 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class BlueprintMacroTest extends TestCase
 {
+    /** Schema tests mutate config; not relevant to tree integrity. */
+    protected bool $allowBrokenTreeAtTearDown = true;
+
     private string $table = 'blueprint_macro_test';
 
     protected function tearDown(): void

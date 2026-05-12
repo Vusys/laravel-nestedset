@@ -20,6 +20,9 @@ final class TreeRepairBuilderTest extends TestCase
 {
     private TreeRepairBuilder $repair;
 
+    /** This suite intentionally inserts broken trees to exercise repair. */
+    protected bool $allowBrokenTreeAtTearDown = true;
+
     protected function setUp(): void
     {
         parent::setUp();

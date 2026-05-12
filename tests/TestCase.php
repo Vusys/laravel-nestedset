@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use stdClass;
 use Vusys\NestedSet\NestedSetServiceProvider;
+use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 
 abstract class TestCase extends OrchestraTestCase
 {
@@ -27,6 +29,76 @@ abstract class TestCase extends OrchestraTestCase
         }
 
         return $row;
+    }
+
+    /**
+     * Opt out of the tearDown tree-integrity check for tests that
+     * intentionally leave the tree corrupt (repair tests, force-delete
+     * orphan tests, etc.).
+     */
+    protected bool $allowBrokenTreeAtTearDown = false;
+
+    /**
+     * Hardening: every test ends with a tree-integrity check on each
+     * nested-set fixture. Catches regressions where a mutation looks
+     * locally correct in an assertion but leaves the tree corrupt.
+     */
+    protected function tearDown(): void
+    {
+        // Skip the postcondition when the test already failed (the broken
+        // tree is likely a consequence of the actual failure, not the cause
+        // — and the fail() call inside tearDown would mask the real error).
+        $alreadyFailed = ! $this->status()->isUnknown() && ! $this->status()->isSuccess();
+
+        if (! $this->allowBrokenTreeAtTearDown && ! $alreadyFailed) {
+            $this->assertCategoriesTreeIntact();
+            $this->assertMenuItemsTreesIntact();
+        }
+
+        parent::tearDown();
+    }
+
+    private function assertCategoriesTreeIntact(): void
+    {
+        if (! DB::connection()->getSchemaBuilder()->hasTable('categories')) {
+            return;
+        }
+
+        $errors = Category::countErrors();
+        $total = array_sum($errors);
+
+        if ($total > 0) {
+            $this->fail('Categories tree is broken at tearDown: '.json_encode($errors));
+        }
+    }
+
+    private function assertMenuItemsTreesIntact(): void
+    {
+        if (! DB::connection()->getSchemaBuilder()->hasTable('menu_items')) {
+            return;
+        }
+
+        /** @var array<int, mixed> $menuIds */
+        $menuIds = DB::table('menu_items')->distinct()->pluck('menu_id')->all();
+
+        foreach ($menuIds as $menuId) {
+            if (! is_numeric($menuId)) {
+                continue;
+            }
+
+            $anchor = MenuItem::query()->where('menu_id', (int) $menuId)->first();
+
+            if ($anchor === null) {
+                continue;
+            }
+
+            $errors = MenuItem::countErrors($anchor);
+            $total = array_sum($errors);
+
+            if ($total > 0) {
+                $this->fail("MenuItems tree for menu {$menuId} is broken at tearDown: ".json_encode($errors));
+            }
+        }
     }
 
     protected function defineEnvironment($app): void

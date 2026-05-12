@@ -171,6 +171,7 @@ final class ScopingTest extends TestCase
     public function test_count_errors_scoped_to_one_menu_only(): void
     {
         // Break menu 1; menu 2 stays valid.
+        $this->allowBrokenTreeAtTearDown = true;
         DB::table('menu_items')->where('menu_id', $this->menu1->id)->update([
             'lft' => 0, 'rgt' => 0,
         ]);

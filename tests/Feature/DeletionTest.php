@@ -34,11 +34,14 @@ final class DeletionTest extends TestCase
 
     public function test_force_delete_removes_only_the_node(): void
     {
+        // Force-deleting a non-leaf without first reparenting children
+        // leaves the tree corrupt — that's the documented behaviour
+        // (we don't cascade hard-deletes through the tree).
+        $this->allowBrokenTreeAtTearDown = true;
+
         $a = Category::query()->findOrFail(2);
         $a->forceDelete();
 
-        // A's descendants (AA, AB) still exist as rows in the table — the
-        // tree may now be inconsistent but no rows were destroyed beyond A.
         $this->assertNull(Category::withTrashed()->find(2));
         $this->assertNotNull(Category::withTrashed()->find(3));
         $this->assertNotNull(Category::withTrashed()->find(4));
