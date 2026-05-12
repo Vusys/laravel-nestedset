@@ -6,12 +6,15 @@ namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
+use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
@@ -717,5 +720,291 @@ trait HasNestedSetAggregates
         }
 
         return 0;
+    }
+
+    // ----------------------------------------------------------------
+    // Aggregate-repair static API
+    //
+    // These were originally declared directly on NodeTrait alongside
+    // the tree-repair statics. They live here now so every aggregate-
+    // related method — lifecycle handlers above, public repair surface
+    // below — sits in one file. Composed back into NodeTrait via the
+    // existing `use HasNestedSetAggregates` so callers still write
+    // `Model::fixAggregates()` etc.
+    // ----------------------------------------------------------------
+
+    /**
+     * Returns per-column counts of stored aggregate columns that
+     * disagree with their freshly-computed values over the source.
+     * Empty array on a model with no aggregate declarations.
+     *
+     * @return array<string, int>
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function aggregateErrors(?HasNestedSet $anchor = null): array
+    {
+        $instance = self::vusysAggregateAnchorOrFail($anchor);
+        $rootId = self::vusysAnchorRootId($anchor);
+
+        return TreeAggregateBuilder::aggregateErrors(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $anchor instanceof Model
+                ? NestedSetScopeResolver::valuesFor($anchor)
+                : [],
+            definitions: AggregateRegistry::for(static::class),
+            rootId: $rootId,
+        );
+    }
+
+    /**
+     * True when any declared aggregate column has at least one row
+     * whose stored value disagrees with the freshly-computed value.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function aggregatesAreBroken(?HasNestedSet $anchor = null): bool
+    {
+        return array_sum(self::aggregateErrors($anchor)) > 0;
+    }
+
+    /**
+     * Recomputes every declared aggregate column (including internal
+     * AVG companions) from the source data and overwrites stored
+     * values that have drifted. Returns a structured count per column.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function fixAggregates(?HasNestedSet $anchor = null): AggregateFixResult
+    {
+        $instance = self::vusysAggregateAnchorOrFail($anchor);
+        $rootId = self::vusysAnchorRootId($anchor);
+
+        return TreeAggregateBuilder::fixAggregates(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $anchor instanceof Model
+                ? NestedSetScopeResolver::valuesFor($anchor)
+                : [],
+            definitions: AggregateRegistry::for(static::class),
+            rootId: $rootId,
+        );
+    }
+
+    /**
+     * Repairs a single chunk of stored aggregate columns and returns the
+     * cursor to feed into the next chunk (or null if this was the last).
+     *
+     * The chunk is defined as "up to `$chunkSize` rows whose id is
+     * strictly greater than `$afterId`, ordered by id". Each chunk runs
+     * one (chunked) fixAggregates call constrained to those outer ids,
+     * so total work scales linearly in chunkSize regardless of total
+     * table size.
+     *
+     * Used by {@see FixAggregatesJob} to break a long-running repair
+     * into a series of short, self-re-dispatching jobs.
+     *
+     * @return array{result: AggregateFixResult, nextAfterId: int|null}
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function fixAggregatesChunk(
+        ?HasNestedSet $anchor,
+        ?int $afterId,
+        int $chunkSize,
+    ): array {
+        $instance = self::vusysAggregateAnchorOrFail($anchor);
+        $rootId = self::vusysAnchorRootId($anchor);
+
+        if ($chunkSize <= 0) {
+            throw new \InvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
+        }
+
+        $key = $instance->getKeyName();
+        $scope = $anchor instanceof Model
+            ? NestedSetScopeResolver::valuesFor($anchor)
+            : [];
+
+        // Fetch the next chunk of outer ids in a single bounded query
+        // — `WHERE id > X ORDER BY id LIMIT N`. Scope-and-rooted in the
+        // same shape fixAggregates uses so we don't process rows outside
+        // the anchor's subtree.
+        $query = $instance->getConnection()
+            ->table($instance->getTable())
+            ->select($key)
+            ->orderBy($key)
+            ->limit($chunkSize);
+
+        if ($afterId !== null) {
+            $query->where($key, '>', $afterId);
+        }
+        foreach ($scope as $col => $value) {
+            $query->where($col, '=', $value);
+        }
+        if ($rootId !== null) {
+            $rootRow = $instance->getConnection()
+                ->table($instance->getTable())
+                ->where('id', $rootId)
+                ->first([$instance->getLftName(), $instance->getRgtName()]);
+            if ($rootRow !== null) {
+                $query->where($instance->getLftName(), '>=', $rootRow->{$instance->getLftName()})
+                    ->where($instance->getRgtName(), '<=', $rootRow->{$instance->getRgtName()});
+            }
+        }
+
+        $ids = array_values(array_map(
+            static fn (\stdClass $row): int => (int) ($row->{$instance->getKeyName()} ?? 0),
+            $query->get()->all(),
+        ));
+
+        $result = TreeAggregateBuilder::fixAggregates(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $scope,
+            definitions: AggregateRegistry::for(static::class),
+            rootId: $rootId,
+            outerIds: $ids,
+        );
+
+        // A short final chunk (fewer rows than asked for) means we've
+        // reached the end of the table — no further dispatch needed.
+        $nextAfterId = count($ids) === $chunkSize ? end($ids) : null;
+
+        return ['result' => $result, 'nextAfterId' => $nextAfterId];
+    }
+
+    /**
+     * Dispatches a {@see FixAggregatesJob} to repair stored aggregate
+     * columns asynchronously. Useful when the synchronous path would take
+     * too long for a web request — e.g. a heavily-drifted 1M-row tree —
+     * and you'd rather hand the work to a worker.
+     *
+     * Routing defaults come from `config('nestedset.queue.connection')`
+     * and `config('nestedset.queue.queue')`; both `null` (the default)
+     * uses Laravel's default queue. Per-call `onConnection` /
+     * `onQueue` overrides take precedence.
+     *
+     * Pass `chunkSize` to break the work into a chain of bounded
+     * self-redispatching jobs — each chunk processes that many outer
+     * rows and the chain terminates when a chunk returns fewer rows
+     * than `chunkSize`.
+     *
+     * Idempotent — a second dispatch on a clean tree finds zero drift
+     * and writes nothing. Safe to fire defensively after batch work.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function queueFixAggregates(
+        ?HasNestedSet $anchor = null,
+        ?string $onConnection = null,
+        ?string $onQueue = null,
+        ?int $chunkSize = null,
+    ): FixAggregatesJob {
+        // Fail fast at dispatch time — without this the job would be
+        // enqueued, picked up, then throw inside the worker for the
+        // exact same reason. Catching here gives a synchronous stack
+        // trace and avoids a poisoned queue entry.
+        $scopeColumns = NestedSetScopeResolver::columns(static::class);
+        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
+            throw new ScopeViolationException(sprintf(
+                '%s declares a scope (%s); pass an anchor node to queueFixAggregates() so the job knows which tree to repair.',
+                static::class,
+                implode(', ', $scopeColumns),
+            ));
+        }
+
+        $job = new FixAggregatesJob(
+            modelClass: static::class,
+            anchorId: self::vusysAnchorRootId($anchor),
+            chunkSize: $chunkSize !== null && $chunkSize > 0 ? $chunkSize : null,
+        );
+
+        // Apply config defaults; per-call args win. Both null leaves the
+        // job on Laravel's default queue/connection.
+        $configConnection = config('nestedset.queue.connection');
+        $connection = $onConnection ?? (is_string($configConnection) ? $configConnection : null);
+        if ($connection !== null) {
+            $job->onConnection($connection);
+        }
+
+        $configQueue = config('nestedset.queue.queue');
+        $queue = $onQueue ?? (is_string($configQueue) ? $configQueue : null);
+        if ($queue !== null) {
+            $job->onQueue($queue);
+        }
+
+        // Dispatch eagerly via the global helper rather than returning
+        // a PendingDispatch — PendingDispatch fires its dispatch in
+        // __destruct, which can run after the test framework has torn
+        // down the container. Eager dispatch also gives callers a
+        // simple "did it queue?" check via the returned job instance
+        // (its queue/connection properties are set).
+        dispatch($job);
+
+        return $job;
+    }
+
+    /**
+     * Internal — called from {@see HasTreeRepair::fixTree()} after the
+     * structural repair so stored aggregates match the rebuilt tree.
+     * Cross-trait access works because both traits flatten into the
+     * same using class, where private methods are mutually visible.
+     */
+    private static function vusysRunFixAggregates(
+        ?HasNestedSet $anchor,
+        ?int $rootId,
+    ): ?AggregateFixResult {
+        $definitions = AggregateRegistry::for(static::class);
+
+        if ($definitions === []) {
+            return null;
+        }
+
+        $instance = new static;
+
+        return TreeAggregateBuilder::fixAggregates(
+            connection: $instance->getConnection(),
+            table: $instance->getTable(),
+            lftCol: $instance->getLftName(),
+            rgtCol: $instance->getRgtName(),
+            scope: $anchor instanceof Model
+                ? NestedSetScopeResolver::valuesFor($anchor)
+                : [],
+            definitions: $definitions,
+            rootId: $rootId,
+        );
+    }
+
+    private static function vusysAggregateAnchorOrFail(?HasNestedSet $anchor): self
+    {
+        $scopeColumns = NestedSetScopeResolver::columns(static::class);
+
+        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
+            throw new ScopeViolationException(sprintf(
+                '%s declares a scope (%s); pass an anchor node to scope this operation.',
+                static::class,
+                implode(', ', $scopeColumns),
+            ));
+        }
+
+        return new static;
+    }
+
+    private static function vusysAnchorRootId(?HasNestedSet $anchor): ?int
+    {
+        if (! $anchor instanceof Model) {
+            return null;
+        }
+
+        $key = $anchor->getKey();
+
+        return is_numeric($key) ? (int) $key : null;
     }
 }
