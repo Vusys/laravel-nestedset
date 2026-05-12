@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
+use Illuminate\Database\Query\Builder;
 use RuntimeException;
 use Vusys\NestedSet\NodeBounds;
 
@@ -13,9 +14,18 @@ use Vusys\NestedSet\NodeBounds;
  *
  * All multi-step operations use a single CASE WHEN UPDATE where possible
  * to avoid intermediate states that violate the nested-set invariant.
+ *
+ * Scope: when $scope is non-empty, every internal write is constrained
+ * to rows matching those [column => value] pairs. Read methods
+ * (getPlainNodeData/getNodeData) intentionally ignore scope — callers
+ * pass an id that uniquely identifies a row and are responsible for
+ * picking the right model context.
  */
 final readonly class TreeMutationBuilder
 {
+    /**
+     * @param  array<string, mixed>  $scope
+     */
     public function __construct(
         private Connection $connection,
         private string $table,
@@ -23,6 +33,7 @@ final readonly class TreeMutationBuilder
         private string $rgt,
         private string $parentId,
         private string $depth,
+        private array $scope = [],
     ) {}
 
     // ----------------------------------------------------------------
@@ -35,7 +46,7 @@ final readonly class TreeMutationBuilder
      */
     public function makeGap(int $at, int $size): void
     {
-        $this->connection->table($this->table)->update([
+        $this->scoped()->update([
             $this->lft => new TreeExpression(
                 "CASE WHEN {$this->lft} >= {$at} THEN {$this->lft} + {$size} ELSE {$this->lft} END"
             ),
@@ -51,7 +62,7 @@ final readonly class TreeMutationBuilder
      */
     public function closeGap(int $at, int $size): void
     {
-        $this->connection->table($this->table)->update([
+        $this->scoped()->update([
             $this->lft => new TreeExpression(
                 "CASE WHEN {$this->lft} > {$at} THEN {$this->lft} - {$size} ELSE {$this->lft} END"
             ),
@@ -117,7 +128,7 @@ final readonly class TreeMutationBuilder
             $fillEnd = $targetLft + $size;  // exclusive
 
             // depth MUST come before lft/rgt so MySQL evaluates it against original lft.
-            $this->connection->table($this->table)->update([
+            $this->scoped()->update([
                 $this->depth => new TreeExpression("
                     CASE
                         WHEN {$this->lft} BETWEEN {$fromLft} AND {$fromRgt}
@@ -150,7 +161,7 @@ final readonly class TreeMutationBuilder
             // Nodes in [targetLft, fromLft) shift right by $size to fill the vacated space.
             $subtreeOffset = $targetLft - $fromLft;
 
-            $this->connection->table($this->table)->update([
+            $this->scoped()->update([
                 $this->depth => new TreeExpression("
                     CASE
                         WHEN {$this->lft} BETWEEN {$fromLft} AND {$fromRgt}
@@ -217,5 +228,21 @@ final readonly class TreeMutationBuilder
             rgt: $data['rgt'],
             depth: $data['depth'],
         );
+    }
+
+    /**
+     * Returns a fresh query builder against the target table, pre-constrained
+     * to this builder's scope. Every mutation goes through here so cross-scope
+     * leakage is impossible.
+     */
+    private function scoped(): Builder
+    {
+        $query = $this->connection->table($this->table);
+
+        foreach ($this->scope as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        return $query;
     }
 }
