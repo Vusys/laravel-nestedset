@@ -77,8 +77,8 @@ accidentally counting errors across every tenant's tree at once.
 
 The structural check is fast — index range scans plus a `GROUP BY` for
 the duplicate counts. The aggregate-drift check is the same cost as one
-`withFreshAggregates` pass; see [PERFORMANCE.md](PERFORMANCE.md) §1.7
-for the shape and per-backend timings.
+`withFreshAggregates` pass — see the package's workspace `PERFORMANCE.md`
+for the SQL shape and per-backend timings.
 
 > **Cycles are not currently surfaced by `countErrors()`.** They appear
 > indirectly as "rows you couldn't see in the tree after a repair" —
@@ -257,8 +257,7 @@ Area::fixAggregates($root);     // single subtree
 2. Compares the freshly-computed value to the stored value.
 3. For every row whose stored value disagrees, issues a single
    chunked `UPDATE … SET col = CASE id WHEN … END WHERE id IN (…)`
-   to write the correction. See [PERFORMANCE.md](PERFORMANCE.md)
-   §1.4 for the SQL shape.
+   to write the correction.
 4. Returns an `AggregateFixResult` with per-column counts of rows
    updated.
 
@@ -386,7 +385,6 @@ that subtree.
 
 ---
 
-*See also: [README.md § Tree repair](README.md#tree-repair) for the
-public API surface, [PERFORMANCE.md](PERFORMANCE.md) §1.4 for the
-SQL shape of `fixAggregates`, and `tests/Feature/Corruption/` for
-executable examples of every category in §3.*
+*See also: [`README.md` § Tree repair](../README.md#tree-repair) for
+the public API surface and `tests/Feature/Corruption/` for executable
+examples of every category in §3.*
