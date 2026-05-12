@@ -38,15 +38,51 @@ trait NodeTrait
     use HasTreeRelations;
 
     /**
-     * Wires the model's `saving` event so any operation queued by
-     * appendToNode/etc. is dispatched right before Eloquent issues the
-     * INSERT or UPDATE — preserving Laravel's auto-boot convention.
+     * Wires every Eloquent lifecycle event the package consumes.
+     *
+     *  - `saving`  → callPendingAction (Path A move/insert dispatch)
+     *                and captureAggregateDeltas (Path B source-column
+     *                dirty-tracking; existing models only).
+     *  - `saved`   → applyAggregateDeltas (issues the captured UPDATE).
+     *  - `created` → applyAggregateOnCreate (push fresh node's
+     *                contribution to ancestors; skipped when the node
+     *                has not been placed in the tree yet, see
+     *                {@see HasNestedSetAggregates::isPlacedInTree()}).
+     *  - `deleted` → applyAggregateOnDelete (subtract stored subtree
+     *                contribution from ancestors). Fires for both hard
+     *                and soft deletes; HasSoftDeleteTree's separate
+     *                `deleted` listener cascades the timestamp to
+     *                descendants.
      */
     public static function bootNodeTrait(): void
     {
         static::saving(static function (Model $node): void {
-            if ($node instanceof HasNestedSet && method_exists($node, 'callPendingAction')) {
+            if (! $node instanceof HasNestedSet) {
+                return;
+            }
+            if (method_exists($node, 'callPendingAction')) {
                 $node->callPendingAction();
+            }
+            if (method_exists($node, 'captureAggregateDeltas')) {
+                $node->captureAggregateDeltas();
+            }
+        });
+
+        static::saved(static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateDeltas')) {
+                $node->applyAggregateDeltas();
+            }
+        });
+
+        static::created(static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnCreate')) {
+                $node->applyAggregateOnCreate();
+            }
+        });
+
+        static::deleted(static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnDelete')) {
+                $node->applyAggregateOnDelete();
             }
         });
     }
