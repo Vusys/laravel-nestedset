@@ -129,10 +129,11 @@ final class ScopingTest extends TestCase
     public function test_move_node_in_menu1_does_not_affect_menu2(): void
     {
         // Swap A (lft 2-3) and B (lft 4-5) within Menu 1.
+        // position = B.rgt + 1 = 6 in original coordinates.
         $this->mutator(['menu_id' => $this->menu1->id])
             ->moveNode(
                 from: new NodeBounds(lft: 2, rgt: 3, depth: 1),
-                targetLft: 4,
+                position: 6,
                 depthDelta: 0,
             );
 

@@ -98,97 +98,81 @@ final readonly class TreeMutationBuilder
     // ----------------------------------------------------------------
 
     /**
-     * Moves the subtree rooted at $from so that its lft starts at $targetLft
-     * in the final state, adjusting depth by $depthDelta. Uses a single
-     * CASE WHEN UPDATE for atomicity — no intermediate gap state on disk.
+     * Moves the subtree rooted at $from to $position in the *original*
+     * coordinate space, adjusting depth by $depthDelta. Single CASE WHEN
+     * UPDATE — no intermediate state visible on disk.
      *
-     * $targetLft is the desired final lft of the subtree root (not a
-     * pre-removal position). For a forward move of a leaf from lft=3 to
-     * end up at lft=5, pass targetLft=5.
+     * $position is the lft value the subtree would land at if no other
+     * rows shifted; pass parent->rgt for appendToNode, sibling->rgt + 1
+     * for insertAfterNode, sibling->lft for insertBeforeNode.
      *
-     * depth is updated first in the SET clause to ensure MySQL evaluates it
-     * against the original lft value (MySQL processes SET left-to-right with
-     * updated values of preceding columns).
+     * Algorithm credit: the kalnoy/nestedset move-with-CASE-WHEN trick
+     * (compute the [from, to] band that all moves stay within, then split
+     * "the moved subtree" from "everything else in the band").
+     *
+     * depth is first in the SET clause so MySQL evaluates it against the
+     * pre-update lft (left-to-right SET semantics).
      */
-    public function moveNode(NodeBounds $from, int $targetLft, int $depthDelta): void
+    public function moveNode(NodeBounds $from, int $position, int $depthDelta): void
     {
-        $size = $from->rgt - $from->lft + 1;
-        $fromLft = $from->lft;
-        $fromRgt = $from->rgt;
+        $lft = $from->lft;
+        $rgt = $from->rgt;
+        $height = $rgt - $lft + 1;
 
-        if ($targetLft === $fromLft && $depthDelta === 0) {
+        if ($lft < $position && $position <= $rgt) {
+            throw new \LogicException('Cannot move node into itself.');
+        }
+
+        $boundFrom = min($lft, $position);
+        $boundTo = max($rgt, $position - 1);
+
+        $distance = $boundTo - $boundFrom + 1 - $height;
+
+        if ($distance === 0 && $depthDelta === 0) {
             return;
         }
 
-        if ($targetLft > $fromLft) {
-            // Moving forward.
-            // Subtree shifts right by (targetLft - fromLft).
-            // Nodes in (fromRgt, targetLft + size) fill the gap left by the subtree.
-            $subtreeOffset = $targetLft - $fromLft;
-            $fillEnd = $targetLft + $size;  // exclusive
-
-            // depth MUST come before lft/rgt so MySQL evaluates it against original lft.
-            $this->scoped()->update([
-                $this->depth => new TreeExpression("
-                    CASE
-                        WHEN {$this->lft} BETWEEN {$fromLft} AND {$fromRgt}
-                            THEN {$this->depth} + {$depthDelta}
-                        ELSE {$this->depth}
-                    END
-                "),
-                $this->lft => new TreeExpression("
-                    CASE
-                        WHEN {$this->lft} BETWEEN {$fromLft} AND {$fromRgt}
-                            THEN {$this->lft} + {$subtreeOffset}
-                        WHEN {$this->lft} > {$fromRgt} AND {$this->lft} < {$fillEnd}
-                            THEN {$this->lft} - {$size}
-                        ELSE {$this->lft}
-                    END
-                "),
-                $this->rgt => new TreeExpression("
-                    CASE
-                        WHEN {$this->rgt} BETWEEN {$fromLft} AND {$fromRgt}
-                            THEN {$this->rgt} + {$subtreeOffset}
-                        WHEN {$this->rgt} > {$fromRgt} AND {$this->rgt} < {$fillEnd}
-                            THEN {$this->rgt} - {$size}
-                        ELSE {$this->rgt}
-                    END
-                "),
-            ]);
+        // Subtree shifts by ±distance; bystanders shift by ∓height (filling
+        // or making room as the subtree moves through them).
+        if ($position > $lft) {
+            $subtreeShift = $distance;        // forward
+            $bystanderShift = -$height;
         } else {
-            // Moving backward.
-            // Subtree shifts left by (targetLft - fromLft) — a negative offset.
-            // Nodes in [targetLft, fromLft) shift right by $size to fill the vacated space.
-            $subtreeOffset = $targetLft - $fromLft;
-
-            $this->scoped()->update([
-                $this->depth => new TreeExpression("
-                    CASE
-                        WHEN {$this->lft} BETWEEN {$fromLft} AND {$fromRgt}
-                            THEN {$this->depth} + {$depthDelta}
-                        ELSE {$this->depth}
-                    END
-                "),
-                $this->lft => new TreeExpression("
-                    CASE
-                        WHEN {$this->lft} BETWEEN {$fromLft} AND {$fromRgt}
-                            THEN {$this->lft} + {$subtreeOffset}
-                        WHEN {$this->lft} >= {$targetLft} AND {$this->lft} < {$fromLft}
-                            THEN {$this->lft} + {$size}
-                        ELSE {$this->lft}
-                    END
-                "),
-                $this->rgt => new TreeExpression("
-                    CASE
-                        WHEN {$this->rgt} BETWEEN {$fromLft} AND {$fromRgt}
-                            THEN {$this->rgt} + {$subtreeOffset}
-                        WHEN {$this->rgt} >= {$targetLft} AND {$this->rgt} < {$fromLft}
-                            THEN {$this->rgt} + {$size}
-                        ELSE {$this->rgt}
-                    END
-                "),
-            ]);
+            $subtreeShift = -$distance;       // backward
+            $bystanderShift = $height;
         }
+
+        $this->scoped()->update([
+            $this->depth => new TreeExpression(
+                "CASE WHEN {$this->lft} BETWEEN {$lft} AND {$rgt} "
+                ."THEN {$this->depth} + {$depthDelta} "
+                ."ELSE {$this->depth} END"
+            ),
+            $this->lft => new TreeExpression(
+                $this->shiftCase($this->lft, $lft, $rgt, $boundFrom, $boundTo, $subtreeShift, $bystanderShift),
+            ),
+            $this->rgt => new TreeExpression(
+                $this->shiftCase($this->rgt, $lft, $rgt, $boundFrom, $boundTo, $subtreeShift, $bystanderShift),
+            ),
+        ]);
+    }
+
+    private function shiftCase(
+        string $col,
+        int $lft,
+        int $rgt,
+        int $boundFrom,
+        int $boundTo,
+        int $subtreeShift,
+        int $bystanderShift,
+    ): string {
+        $subtree = $subtreeShift >= 0 ? "+ {$subtreeShift}" : '- '.abs($subtreeShift);
+        $bystander = $bystanderShift >= 0 ? "+ {$bystanderShift}" : '- '.abs($bystanderShift);
+
+        return 'CASE '
+            ."WHEN {$col} BETWEEN {$lft} AND {$rgt} THEN {$col} {$subtree} "
+            ."WHEN {$col} BETWEEN {$boundFrom} AND {$boundTo} THEN {$col} {$bystander} "
+            ."ELSE {$col} END";
     }
 
     // ----------------------------------------------------------------
