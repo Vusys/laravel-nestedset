@@ -85,6 +85,16 @@ trait NodeTrait
                 $node->applyAggregateOnDelete();
             }
         });
+
+        // Restored — soft-delete only. Aggregates were decremented by
+        // applyAggregateOnDelete; add them back. HasSoftDeleteTree's
+        // separate `restored` listener cascades timestamps to
+        // descendants in parallel.
+        static::registerModelEvent('restored', static function (Model $node): void {
+            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnRestore')) {
+                $node->applyAggregateOnRestore();
+            }
+        });
     }
 
     // ----------------------------------------------------------------

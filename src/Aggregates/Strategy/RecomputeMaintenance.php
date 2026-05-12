@@ -37,6 +37,13 @@ final class RecomputeMaintenance
      *                                            Controls whether the recompute SELECT is issued with
      *                                            FOR UPDATE. 'always' and 'auto' both lock here; 'never'
      *                                            skips.
+     * @param  NodeBounds|null  $excludeBounds
+     *                                          When set, the inner MIN/MAX subquery excludes rows whose
+     *                                          lft/rgt fall inside these bounds. Used by the Path A
+     *                                          before-move hook so the recompute reflects the
+     *                                          post-move-but-pre-SQL state: A1 (the moving node and
+     *                                          its descendants) is removed from the subtree scan even
+     *                                          though it's still physically in the table.
      */
     public static function apply(
         Connection $connection,
@@ -48,6 +55,7 @@ final class RecomputeMaintenance
         array $scope = [],
         array $filterEquals = [],
         string $locking = 'auto',
+        ?NodeBounds $excludeBounds = null,
     ): int {
         if ($columns === []) {
             return 0;
@@ -63,6 +71,7 @@ final class RecomputeMaintenance
             scope: $scope,
             filterEquals: $filterEquals,
             locking: $locking,
+            excludeBounds: $excludeBounds,
         );
 
         if ($candidates === []) {
@@ -94,8 +103,13 @@ final class RecomputeMaintenance
         array $scope,
         array $filterEquals,
         string $locking,
+        ?NodeBounds $excludeBounds = null,
     ): array {
         $selects = ['outer_a.id'];
+
+        $exclusionClause = $excludeBounds instanceof NodeBounds
+            ? " AND NOT (inner_a.{$lftCol} >= {$excludeBounds->lft} AND inner_a.{$rgtCol} <= {$excludeBounds->rgt})"
+            : '';
 
         foreach ($columns as $i => $spec) {
             $alias = self::recomputeAlias($i);
@@ -112,11 +126,21 @@ final class RecomputeMaintenance
             $source = $spec['source'];
 
             $selects[] = "(SELECT {$func}(inner_a.{$source}) FROM {$table} AS inner_a "
-                ."WHERE {$boundsClause}{$scopeJoin}) AS {$alias}";
+                ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}) AS {$alias}";
         }
 
         $where = "outer_a.{$lftCol} <= ? AND outer_a.{$rgtCol} >= ?";
         $bindings = [$bounds->lft, $bounds->rgt];
+
+        if ($excludeBounds instanceof NodeBounds) {
+            // Outer-side counterpart of the inner exclusion. For the
+            // move-before-hook this skips self + moving-subtree rows so
+            // they aren't recomputed against an empty inner result set
+            // (which would set their stored extremum to NULL).
+            $where .= " AND NOT (outer_a.{$lftCol} >= ? AND outer_a.{$rgtCol} <= ?)";
+            $bindings[] = $excludeBounds->lft;
+            $bindings[] = $excludeBounds->rgt;
+        }
 
         foreach ($scope as $col => $value) {
             $where .= " AND outer_a.{$col} = ?";

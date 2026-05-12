@@ -150,7 +150,20 @@ trait HasTreeMutation
             NestedSetScopeResolver::assertSameScope($this, $target);
         }
 
-        $work = function () use ($op): void {
+        // For existing-node moves we want hooks that bracket the
+        // structural SQL: the "before" hook reads pre-move bounds while
+        // they're still accurate; the "after" hook acts on post-move
+        // bounds. New-node placements have no meaningful `from` (lft/rgt
+        // are still the migration default 0); the `created` Eloquent
+        // event handles their aggregate maintenance.
+        $wasExisting = $this->exists;
+        $from = $wasExisting ? $this->getBounds() : null;
+
+        $work = function () use ($op, $wasExisting, $from): void {
+            if ($wasExisting && $from !== null) {
+                $this->onBeforePendingAction($from, $op->action);
+            }
+
             match ($op->action) {
                 'appendTo' => $this->actAppendTo($this->requireModelNode($op)),
                 'prependTo' => $this->actPrependTo($this->requireModelNode($op)),
@@ -158,18 +171,51 @@ trait HasTreeMutation
                 'root' => $this->actMakeRoot(),
                 default => throw new LogicException("Unknown pending action: {$op->action}"),
             };
+
+            if ($wasExisting && $from !== null) {
+                $this->onAfterPendingAction($from, $this->getBounds(), $op->action);
+            }
         };
 
         if (config('nestedset.auto_transaction', true)) {
             // Wrap makeGap-then-set-attrs (or moveNode-then-getPlainNodeData)
             // so a thrown exception between the two halves rolls back the
-            // gap rather than leaving the tree corrupt.
+            // gap rather than leaving the tree corrupt. The aggregate
+            // maintenance hook is inside the transaction too so a failure
+            // there also rolls back the structural mutation.
             $this->getConnection()->transaction($work);
         } else {
             $work();
         }
 
         $this->markMoved();
+    }
+
+    /**
+     * Seam called immediately before the structural SQL runs for an
+     * existing-node mutation. The pre-move bounds are still accurate
+     * here, so handlers can act on the OLD ancestor chain (e.g.
+     * subtract aggregate contributions) using bounds-based WHEREs.
+     *
+     * Default no-op on HasTreeMutation-only models; NodeTrait composes
+     * HasNestedSetAggregates which provides the aggregate handler. A
+     * model using HasTreeMutation without HasNestedSetAggregates would
+     * miss this dispatch, but the package's NodeTrait pairs them.
+     */
+    protected function onBeforePendingAction(NodeBounds $from, string $action): void
+    {
+        $this->applyAggregateBeforeMove($from, $action);
+    }
+
+    /**
+     * Seam called immediately after the structural SQL runs for an
+     * existing-node mutation, within the same transaction. The
+     * post-move bounds are now in place, so handlers can act on the
+     * NEW ancestor chain.
+     */
+    protected function onAfterPendingAction(NodeBounds $from, NodeBounds $to, string $action): void
+    {
+        $this->applyAggregateAfterMove($from, $to, $action);
     }
 
     /**
