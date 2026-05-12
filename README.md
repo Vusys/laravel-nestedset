@@ -317,6 +317,223 @@ MenuItem::fixTree($anchor);                 // repair one menu's tree
 
 ---
 
+## Precalculated aggregate columns
+
+Sometimes you want a node to carry rolled-up data about its subtree —
+a total, a count, an average, a min/max — without re-running an
+aggregate query every time the tree is rendered. Declare the columns
+and the package keeps them in sync as the tree mutates.
+
+```php
+use Vusys\NestedSet\Attributes\NestedSetAggregate;
+
+#[NestedSetAggregate(column: 'tickets_total',     sum:   'tickets')]
+#[NestedSetAggregate(column: 'tickets_count_all', count: true)]
+#[NestedSetAggregate(column: 'tickets_avg',       avg:   'tickets')]
+#[NestedSetAggregate(column: 'tickets_min',       min:   'tickets')]
+#[NestedSetAggregate(column: 'tickets_max',       max:   'tickets')]
+class Area extends Model implements HasNestedSet
+{
+    use NodeTrait;
+}
+```
+
+For a tree where `Root(tickets=100) > A(50) > A1(50)` and `Root > B(25)`:
+
+```php
+$root->refresh()->tickets_total;    // 225  (100 + 50 + 50 + 25)
+$root->tickets_count_all;           // 4
+$root->tickets_avg;                 // 56.25
+$root->tickets_min;                 // 25
+$root->tickets_max;                 // 100
+```
+
+Every node carries its own subtree's rollup. Inserts, source-column
+updates, deletes, moves and soft-delete restores all keep the stored
+values current.
+
+### Migration helper
+
+```php
+Schema::create('areas', function (Blueprint $table): void {
+    $table->id();
+    $table->string('name');
+    $table->unsignedInteger('tickets')->default(0);
+    $table->nestedSet();
+
+    // SUM / COUNT — non-null, default 0
+    $table->nestedSetAggregate('tickets_total');
+    $table->nestedSetAggregate('tickets_count_all');
+
+    // AVG — nullable decimal; null on empty subtree
+    $table->nestedSetAggregate('tickets_avg', type: 'avg');
+
+    // MIN / MAX — nullable; empty subtree yields NULL
+    $table->nestedSetAggregate('tickets_min', type: 'min_max');
+    $table->nestedSetAggregate('tickets_max', type: 'min_max');
+});
+```
+
+### Required model conventions
+
+Aggregate columns are derived state. Two rules:
+
+```php
+class Area extends Model implements HasNestedSet
+{
+    use NodeTrait;
+
+    // Aggregate columns NEVER belong in $fillable. Mass-assigning them
+    // is silently overwritten on the next mutation and produces drift
+    // in the interim.
+    protected $fillable = ['name', 'tickets'];
+
+    // Declare casts manually — NodeTrait does not register them for you.
+    protected $casts = [
+        'tickets'           => 'integer',
+        'tickets_total'     => 'integer',
+        'tickets_count_all' => 'integer',
+        'tickets_avg'       => 'decimal:4',
+        'tickets_min'       => 'integer',
+        'tickets_max'       => 'integer',
+    ];
+}
+```
+
+### Reading: stored vs fresh
+
+The stored column is a single-row read — effectively free. The fresh
+counterpart recomputes from the source column via a correlated
+subquery — useful for audit reports or drift detection.
+
+```php
+// Single-row fresh recomputation
+$area->tickets_total;                        // stored
+$area->freshAggregate('tickets_total');      // recomputed from source
+
+// Collection-level fresh selects (overlay stored values)
+Area::query()->withFreshAggregates()->get();
+Area::query()->withFreshAggregates(['tickets_total', 'tickets_max'])->get();
+
+// Ad-hoc fresh aggregate without declaring a column
+use Vusys\NestedSet\Aggregates\Aggregate;
+Area::query()->withFreshAggregates([
+    'descendants_total' => Aggregate::sum('tickets')->exclusive(),
+])->get();
+```
+
+### Method-override declaration form
+
+For runtime-conditional aggregates (or large declaration sets that
+would clutter the class header), override `nestedSetAggregates()`:
+
+```php
+class Area extends Model implements HasNestedSet
+{
+    use NodeTrait;
+
+    /** @return list<\Vusys\NestedSet\Aggregates\AggregateDefinition> */
+    protected function nestedSetAggregates(): array
+    {
+        return [
+            Aggregate::sum('tickets')->into('tickets_total'),
+            Aggregate::count()->into('tickets_count'),
+            Aggregate::avg('tickets')->into('tickets_avg'),
+        ];
+    }
+}
+```
+
+Attribute and method-override forms can coexist; attribute declarations
+come first, method override appends. Same precedence rule as scope
+resolution.
+
+### Maintenance
+
+Aggregates ride the package's existing lifecycle events:
+
+| Mutation                  | Path                                      | Extra UPDATEs |
+|---------------------------|-------------------------------------------|---------------|
+| Insert leaf               | cheap-delta (SUM/COUNT/MIN/MAX) + AVG ratio | 1            |
+| Source-column update      | cheap-delta + recompute for invalidated extremum | 1 or 2 |
+| Delete                    | delta subtract + recompute for invalidated extremum | 1 or 2 |
+| Move (`appendToNode` etc.)| delta on old chain + delta on new chain   | 2            |
+| Soft-delete restore       | delta re-add to current chain             | 1            |
+
+MIN/MAX use a SELECT-then-UPDATE recompute path when the change may
+have invalidated the stored extremum — controlled by the
+`nestedset.aggregate_locking` config flag (`'auto'` / `'always'` /
+`'never'`; see `config/nestedset.php`).
+
+### Integrity tooling
+
+Mirrors the tree-repair API:
+
+```php
+Area::aggregateErrors();
+// ['tickets_total' => 0, 'tickets_count_all' => 0, 'tickets_avg' => 0, ...]
+
+Area::aggregatesAreBroken();    // bool
+
+Area::fixAggregates();
+// → AggregateFixResult { totalRowsUpdated: 0, perColumn: [...] }
+```
+
+`fixTree()` runs `fixAggregates()` as a final step — corrupted lft/rgt
+plus drifted aggregates are repairable in one call. The result carries
+the aggregate stats alongside the tree stats:
+
+```php
+$result = Area::fixTree();
+$result->nodesUpdated;       // tree side
+$result->errors;             // post-repair tree errors
+$result->aggregatesFixed;    // AggregateFixResult — null on no-aggregate models
+```
+
+Scoped models require an anchor on `aggregateErrors`, `aggregatesAreBroken`,
+and `fixAggregates` (same as `fixTree`).
+
+### Adding aggregates to an existing model
+
+1. Add `#[NestedSetAggregate(...)]` declarations to the model class.
+2. Add `$table->nestedSetAggregate('col_name', type: ...)` to a new
+   migration; run it.
+3. Add the matching cast to `$casts`.
+4. Run `YourModel::fixAggregates()` once to backfill stored values from
+   the source data. On scoped models, run per anchor.
+5. Deploy.
+
+After the backfill, every subsequent mutation through Eloquent keeps
+the stored values current.
+
+### Limitations and footguns
+
+- **Raw DB::table updates bypass aggregate maintenance.**
+  `DB::table('areas')->where(...)->update(['tickets' => 99])` won't fire
+  Eloquent events. Use `fixAggregates()` to recover.
+- **Soft-delete cascade preserves stored aggregates on the soft-deleted
+  subtree;** ancestor chain is decremented. `restored` re-adds.
+- **`replicate()` clones reset every aggregate column** to the function's
+  empty element (0 for SUM/COUNT, NULL for AVG/MIN/MAX). The clone
+  backfills correctly on placement.
+- **Plain `Area::create(...)` without `appendToNode()` / `makeRoot()`**
+  leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance is
+  skipped until the node is placed in the tree.
+- **AVG over a nullable source.** `avg: 'col'` uses `AVG(col)` which
+  skips NULL rows. If the source is nullable, the auto-promoted COUNT
+  companion uses `COUNT(col)` (also non-null-skipping) so the ratio
+  stays consistent.
+- **MIN/MAX recompute cost.** Deletes and source-decreasing updates that
+  invalidate the stored extremum trigger a SELECT-then-UPDATE recompute.
+  Cheap-skipped when the change couldn't have affected the extremum —
+  but if you have a deep, wide tree with hot MIN/MAX columns, expect
+  occasional spikes.
+
+For SQL examples, lifecycle attachment points, and the full design
+rationale, see `AGGREGATES.md` in the package's workspace root.
+
+---
+
 ## Transactions
 
 Mutations are wrapped in a database transaction by default — if the
@@ -360,6 +577,11 @@ return [
     ],
 
     'auto_transaction' => true,
+
+    // 'auto'   — lock the ancestor chain only on the MIN/MAX recompute path
+    // 'always' — lock on every aggregate maintenance UPDATE
+    // 'never'  — issue no explicit locks
+    'aggregate_locking' => 'auto',
 ];
 ```
 
