@@ -5,6 +5,16 @@ on:
     branches: [master]
   pull_request:
 
+# Workflow-wide minimal token. Jobs that genuinely need more scope can
+# override on a per-job basis. Restricting at the top keeps the
+# auto-issued GITHUB_TOKEN harmless even if its value leaks (the
+# shivammathur/setup-php → composer auth-error path has been seen to
+# wrap the token across log lines, bypassing Actions' single-line
+# masker). A read-only contents token cannot rewrite the repo, comment
+# on PRs, or interact with packages.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -112,7 +122,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
