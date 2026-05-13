@@ -84,10 +84,23 @@ final class TreeAggregateBuilder
         // SQLite stays on this path — it parses LATERAL but the planner
         // doesn't pick a meaningfully different plan, and the correlated
         // shape is already fast there.
+        //
+        // Leaf fast-path applies here too — and pays off most clearly on
+        // this backend because every correlated subquery is a per-row
+        // evaluation. Wrapping in CASE makes the subquery dead code on
+        // leaf rows; SQLite (and the others) skip dead branches in CASE,
+        // so on a wideShallow shape only the root pays the subquery cost.
         foreach ($resolved as $alias => $definition) {
             $sql = self::buildCorrelatedSubquery($table, $lftCol, $rgtCol, $scopeCols, $definition);
+            $cased = self::wrapLeafFastPath(
+                $definition,
+                "{$table}.",
+                $lftCol,
+                $rgtCol,
+                "({$sql})",
+            );
 
-            $builder->addSelect(['*', new TreeExpression("({$sql}) as {$alias}")]);
+            $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
         }
     }
 
@@ -180,10 +193,16 @@ final class TreeAggregateBuilder
                 $scopeClause .= " AND d.{$col} = o.{$col}";
             }
 
+            // Leaf fast-path: exclude leaves from the materialised derived
+            // entirely — the outer SELECT picks an inline value for them
+            // via {@see wrapLeafFastPath()}. On a wideShallow shape this
+            // cuts the inner aggregation's input from N to 1 (only the
+            // root has descendants).
             $innerSql = 'SELECT '.implode(', ', $aggSelects)
                 ." FROM {$table} o"
                 ." INNER JOIN {$table} d ON {$boundsClause}{$scopeClause}"
                 ." WHERE o.{$modelKey} IN ({$userIdsSql})"
+                ." AND o.{$rgtCol} > o.{$lftCol} + 1"
                 ." GROUP BY o.{$modelKey}";
 
             $derivedExpr = new TreeExpression("({$innerSql}) as {$derivedAlias}");
@@ -199,20 +218,25 @@ final class TreeAggregateBuilder
             // register them on the 'join' position to stay in compile order.
             $builder->getQuery()->addBinding($userIdsBindings, 'join');
 
-            // The inner GROUP BY emits no row for outer-rows whose inner
-            // JOIN produced 0 matches (typically: exclusive aggregates on
-            // a leaf). The LEFT JOIN then yields NULL for every agg
-            // column. Wrap SUM/COUNT in COALESCE(.., 0) so empty-subtree
-            // contributions stay 0 — matching the LATERAL path and the
-            // pre-v0.7.0 correlated-subquery semantics.
+            // Two layers of fast-path. (1) The inner derived now excludes
+            // leaves, so for leaf outer rows the LEFT JOIN finds no match
+            // and would otherwise yield NULL — the outer CASE returns the
+            // inline source value for them instead. (2) Non-leaf rows
+            // whose inner JOIN matched nothing (exclusive aggregates with
+            // an empty subtree, though that can't happen for an
+            // *exclusive* aggregate on a non-leaf in a well-formed tree)
+            // still get the COALESCE-around-NULL the original path used.
+            // We thread both via wrapLeafFastPath() — the existing
+            // COALESCE shim becomes the JOIN-side of the CASE.
             $columns = ['*'];
             foreach ($group as $colAlias => $definition) {
-                $expr = match ($definition->function) {
+                $joinExpr = match ($definition->function) {
                     AggregateFunction::Sum,
                     AggregateFunction::Count => "COALESCE({$derivedAlias}.{$colAlias}, 0)",
                     default => "{$derivedAlias}.{$colAlias}",
                 };
-                $columns[] = new TreeExpression("{$expr} as {$colAlias}");
+                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr);
+                $columns[] = new TreeExpression("{$cased} as {$colAlias}");
             }
             $builder->addSelect($columns);
         }
@@ -275,20 +299,28 @@ final class TreeAggregateBuilder
                 ." FROM {$table} d"
                 ." WHERE {$boundsClause}{$scopeClause}";
 
-            // LEFT JOIN LATERAL needs an ON clause; `ON TRUE` is the
-            // canonical form (the LATERAL itself constrains rows). Use
-            // Builder::leftJoin with a closure that adds `whereRaw('true')`
-            // — Laravel's docblock for join() accepts Expression as the
-            // table, unlike JoinClause's constructor which is typed
-            // `string` only.
+            // Leaf fast-path: move the leaf check onto the LATERAL's ON
+            // clause so backends that respect "ON FALSE skip the LATERAL"
+            // can prune the inner aggregation entirely for leaf outer
+            // rows. PG and MySQL 8 both honour this — they evaluate the
+            // ON predicate before the LATERAL body. Inside the LATERAL's
+            // own WHERE the same predicate didn't prune on MySQL (the
+            // optimiser kept running the empty aggregation per outer row).
+            //
+            // For leaves the outer SELECT picks an inline value computed
+            // from the source column directly — see
+            // {@see leafInlineExpression()}.
             $lateralExpr = new TreeExpression("LATERAL ({$innerSql}) as {$lateralAlias}");
-            $query->leftJoin($lateralExpr, static function ($join): void {
-                $join->whereRaw('true');
+            $onClause = "{$table}.{$rgtCol} > {$table}.{$lftCol} + 1";
+            $query->leftJoin($lateralExpr, static function ($join) use ($onClause): void {
+                $join->whereRaw($onClause);
             });
 
             $columns = ['*'];
-            foreach (array_keys($group) as $colAlias) {
-                $columns[] = "{$lateralAlias}.{$colAlias} as {$colAlias}";
+            foreach ($group as $colAlias => $definition) {
+                $joinExpr = "{$lateralAlias}.{$colAlias}";
+                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr);
+                $columns[] = new TreeExpression("{$cased} as {$colAlias}");
             }
             $builder->addSelect($columns);
         }
@@ -524,6 +556,81 @@ final class TreeAggregateBuilder
         }
 
         return $definition->source;
+    }
+
+    /**
+     * Inline expression that produces the aggregate value for a leaf
+     * row (`rgt = lft + 1`) without going through the LATERAL / derived
+     * join. For inclusive aggregates the subtree is exactly the leaf
+     * itself, so SUM/AVG/MIN/MAX collapse to the source column and
+     * COUNT(*) is 1; for exclusive aggregates the subtree is empty so
+     * SUM/COUNT are 0 and AVG/MIN/MAX are NULL.
+     *
+     * Used by the leaf fast-path in {@see applyFreshSelects()}, wrapped
+     * in a `CASE WHEN rgt = lft + 1 THEN <inline> ELSE <join-derived>
+     * END` so each row pays JOIN cost only when it has descendants.
+     */
+    private static function leafInlineExpression(AggregateDefinition $definition, string $tableQualifier): string
+    {
+        if (! $definition->inclusive) {
+            return match ($definition->function) {
+                AggregateFunction::Sum, AggregateFunction::Count => '0',
+                AggregateFunction::Avg, AggregateFunction::Min, AggregateFunction::Max => 'NULL',
+            };
+        }
+
+        return match ($definition->function) {
+            AggregateFunction::Sum => sprintf(
+                'COALESCE(%s%s, 0)',
+                $tableQualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Count => $definition->source === null
+                ? '1'
+                : sprintf(
+                    'CASE WHEN %s%s IS NULL THEN 0 ELSE 1 END',
+                    $tableQualifier,
+                    $definition->source,
+                ),
+            AggregateFunction::Avg,
+            AggregateFunction::Min,
+            AggregateFunction::Max => sprintf(
+                '%s%s',
+                $tableQualifier,
+                self::requireSource($definition),
+            ),
+        };
+    }
+
+    /**
+     * Wraps a join-derived aggregate expression in the leaf fast-path
+     * CASE: returns the leaf-inline value when `rgt = lft + 1`, the
+     * join expression otherwise. On every supported backend the inner
+     * branch is only evaluated when the outer CASE picks it; on
+     * LATERAL/derived backends the JOIN may still fire (because the
+     * planner evaluates the JOIN before the SELECT) so callers that
+     * can short-circuit the JOIN itself should do so via the inner
+     * WHERE clause as well — this CASE is the SELECT-side half of
+     * the fast-path.
+     */
+    private static function wrapLeafFastPath(
+        AggregateDefinition $definition,
+        string $tableQualifier,
+        string $lftCol,
+        string $rgtCol,
+        string $joinExpr,
+    ): string {
+        $inline = self::leafInlineExpression($definition, $tableQualifier);
+
+        return sprintf(
+            'CASE WHEN %s%s = %s%s + 1 THEN %s ELSE %s END',
+            $tableQualifier,
+            $rgtCol,
+            $tableQualifier,
+            $lftCol,
+            $inline,
+            $joinExpr,
+        );
     }
 
     // ----------------------------------------------------------------

@@ -293,6 +293,110 @@ final class FreshAggregateReadTest extends TestCase
     }
 
     // ----------------------------------------------------------------
+    // Leaf fast-path — locks in semantics. Leaves have `rgt = lft + 1`
+    // and skip the LATERAL/derived join in favour of an inline CASE
+    // branch that reads from the source column directly. Every value
+    // the fast-path produces has to match what the slow path would
+    // have computed for the same row.
+    // ----------------------------------------------------------------
+
+    public function test_leaf_fast_path_inclusive_count_returns_one(): void
+    {
+        // Leaf B (id=4) inclusive COUNT(*) = 1 (the leaf is its own subtree).
+        $b = Area::query()
+            ->withFreshAggregates(['tickets_count_all'])
+            ->where('id', 4)
+            ->firstOrFail();
+
+        $this->assertSame(1, $this->asInt($b->tickets_count_all));
+    }
+
+    public function test_leaf_fast_path_inclusive_avg_returns_source_value(): void
+    {
+        // Leaf B (id=4) inclusive AVG(tickets) = 25 / 1 = 25.
+        $b = Area::query()
+            ->withFreshAggregates(['tickets_avg'])
+            ->where('id', 4)
+            ->firstOrFail();
+
+        $this->assertSame(25.0, $this->asFloat($b->tickets_avg));
+    }
+
+    public function test_leaf_fast_path_inclusive_min_max_returns_source_value(): void
+    {
+        $b = Area::query()
+            ->withFreshAggregates(['tickets_min', 'tickets_max'])
+            ->where('id', 4)
+            ->firstOrFail();
+
+        $this->assertSame(25, $this->asInt($b->tickets_min));
+        $this->assertSame(25, $this->asInt($b->tickets_max));
+    }
+
+    public function test_mixed_result_set_leaves_and_internals_each_get_correct_value(): void
+    {
+        // One query returning the whole tree — internal nodes go through
+        // the join, leaves through the inline branch. The hydrated
+        // attribute must match per-row regardless of which branch fired.
+        /** @var array<int, array{total: int, count: int, min: int, max: int}> $byId */
+        $byId = Area::query()
+            ->withFreshAggregates()
+            ->orderBy('lft')
+            ->get()
+            ->mapWithKeys(fn (Area $a): array => [$a->id => [
+                'total' => $this->asInt($a->tickets_total),
+                'count' => $this->asInt($a->tickets_count_all),
+                'min' => $this->asInt($a->tickets_min),
+                'max' => $this->asInt($a->tickets_max),
+            ]])
+            ->all();
+
+        // Root (internal): 100+50+50+25=225, count 4, min 25, max 100
+        $this->assertSame(['total' => 225, 'count' => 4, 'min' => 25, 'max' => 100], $byId[1]);
+        // A (internal): 50+50=100, count 2, min 50, max 50
+        $this->assertSame(['total' => 100, 'count' => 2, 'min' => 50, 'max' => 50], $byId[2]);
+        // A1 (leaf via fast-path): own tickets=50, count 1
+        $this->assertSame(['total' => 50, 'count' => 1, 'min' => 50, 'max' => 50], $byId[3]);
+        // B (leaf via fast-path): own tickets=25, count 1
+        $this->assertSame(['total' => 25, 'count' => 1, 'min' => 25, 'max' => 25], $byId[4]);
+    }
+
+    public function test_leaf_fast_path_with_zero_tickets(): void
+    {
+        // Edge case: a leaf with tickets = 0 should still report
+        // SUM = 0, COUNT = 1 (not 0), AVG = 0, MIN = MAX = 0.
+        // Distinguishes "subtree is empty" (COUNT=0, AVG=NULL) from
+        // "subtree has one node valued zero" (COUNT=1, AVG=0).
+        DB::table('areas')->where('id', 4)->update(['tickets' => 0]);
+
+        $b = Area::query()
+            ->withFreshAggregates()
+            ->where('id', 4)
+            ->firstOrFail();
+
+        $this->assertSame(0, $this->asInt($b->tickets_total));
+        $this->assertSame(1, $this->asInt($b->tickets_count_all));
+        $this->assertSame(0.0, $this->asFloat($b->tickets_avg));
+        $this->assertSame(0, $this->asInt($b->tickets_min));
+        $this->assertSame(0, $this->asInt($b->tickets_max));
+    }
+
+    public function test_leaf_fast_path_ad_hoc_count_with_source_returns_one(): void
+    {
+        // Counting a specific column (not COUNT(*)) at the leaf:
+        // `1` when the source is non-null, `0` when null. Tests the
+        // CASE WHEN source IS NULL THEN 0 ELSE 1 END branch.
+        $b = Area::query()
+            ->withFreshAggregates([
+                'tickets_count_source' => Aggregate::count('tickets'),
+            ])
+            ->where('id', 4)
+            ->firstOrFail();
+
+        $this->assertSame(1, $this->asInt($b->getAttribute('tickets_count_source')));
+    }
+
+    // ----------------------------------------------------------------
     // getAggregateDefinitions()
     // ----------------------------------------------------------------
 
