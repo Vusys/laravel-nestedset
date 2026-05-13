@@ -34,6 +34,14 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    # Hard cap on the benchmark job. The full Performance suite runs in
+    # under 5 minutes locally on every backend; 15 minutes is generous
+    # headroom but turns hangs into fast failures. The PG service
+    # container has been observed to wedge on long-running benchmarks
+    # twice in a row (PRs #23 and #24) — without a timeout the job
+    # silently sits for hours.
+    timeout-minutes: 15
+
     strategy:
       fail-fast: false
       matrix:
