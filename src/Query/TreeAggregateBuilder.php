@@ -656,6 +656,8 @@ final class TreeAggregateBuilder
         array $scope,
         array $definitions,
         ?int $rootId = null,
+        ?string $parentIdCol = null,
+        ?string $depthCol = null,
     ): array {
         $userFacing = array_values(array_filter(
             $definitions,
@@ -674,6 +676,8 @@ final class TreeAggregateBuilder
             scope: $scope,
             definitions: $userFacing,
             rootId: $rootId,
+            parentIdCol: $parentIdCol,
+            depthCol: $depthCol,
         );
 
         $errors = [];
@@ -723,6 +727,8 @@ final class TreeAggregateBuilder
         array $definitions,
         ?int $rootId = null,
         ?array $outerIds = null,
+        ?string $parentIdCol = null,
+        ?string $depthCol = null,
     ): AggregateFixResult {
         if ($definitions === []) {
             return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
@@ -751,6 +757,8 @@ final class TreeAggregateBuilder
             definitions: $definitions,
             rootId: $rootId,
             outerIds: $outerIds,
+            parentIdCol: $parentIdCol,
+            depthCol: $depthCol,
         );
 
         $perColumn = [];
@@ -902,9 +910,38 @@ final class TreeAggregateBuilder
         array $definitions,
         ?int $rootId,
         ?array $outerIds = null,
+        ?string $parentIdCol = null,
+        ?string $depthCol = null,
     ): array {
         if ($definitions === []) {
             return [];
+        }
+
+        // Chain-shape fast-path: deep chains hit the slow path's O(N²)
+        // per-row subtree aggregation (every ancestor's "subtree" spans
+        // the rest of the chain). When the in-scope tree has at most one
+        // child per parent we can fold source values from leaf to root
+        // in PHP in O(N), skipping the expensive aggregation SQL
+        // entirely. The fast-path is opt-out only — chunked paths
+        // (`outerIds !== null`) keep the slow path because the chunk's
+        // shape is a subset and chain detection there would be unsafe.
+        if (
+            $outerIds === null
+            && $parentIdCol !== null
+            && $depthCol !== null
+            && self::isChainShape($connection, $table, $parentIdCol, $lftCol, $rgtCol, $scope, $rootId)
+        ) {
+            return self::selectStoredAndComputedViaChainFold(
+                connection: $connection,
+                table: $table,
+                parentIdCol: $parentIdCol,
+                lftCol: $lftCol,
+                rgtCol: $rgtCol,
+                depthCol: $depthCol,
+                scope: $scope,
+                definitions: $definitions,
+                rootId: $rootId,
+            );
         }
 
         $byInclusivity = ['inclusive' => [], 'exclusive' => []];
@@ -943,6 +980,254 @@ final class TreeAggregateBuilder
         }
 
         return array_values($combined);
+    }
+
+    /**
+     * True when every parent in the in-scope tree has at most one child
+     * — i.e. the tree is a pure chain (or empty). Detected via
+     * `GROUP BY parent_id HAVING COUNT(*) > 1`, which is cheap: one
+     * index scan, returns zero rows iff chain.
+     *
+     * Multiple roots in the same scope (NULL parent_id repeated) are
+     * caught by the same GROUP BY — a forest of roots isn't a chain.
+     *
+     * @param  array<string, mixed>  $scope
+     */
+    private static function isChainShape(
+        Connection $connection,
+        string $table,
+        string $parentIdCol,
+        string $lftCol,
+        string $rgtCol,
+        array $scope,
+        ?int $rootId,
+    ): bool {
+        $sql = "SELECT 1 FROM {$table} WHERE 1 = 1";
+        $bindings = [];
+
+        foreach ($scope as $col => $value) {
+            $sql .= " AND {$col} = ?";
+            $bindings[] = $value;
+        }
+
+        if ($rootId !== null) {
+            $sql .= " AND {$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
+            $sql .= " AND {$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $bindings[] = $rootId;
+            $bindings[] = $rootId;
+        }
+
+        $sql .= " GROUP BY {$parentIdCol} HAVING COUNT(*) > 1 LIMIT 1";
+
+        return $connection->select($sql, $bindings) === [];
+    }
+
+    /**
+     * Computes per-row (stored, computed) aggregate values for a tree
+     * known to be a chain. Issues one SELECT to fetch each row's
+     * source / stored / structural columns, then folds bottom-up in
+     * PHP — O(N) total instead of the slow path's O(N²).
+     *
+     * Returns the same row shape as {@see selectStoredAndComputed()}:
+     * `{id, stored_<col>, computed_<col>, ...}` for every declared
+     * column, including internal AVG companions.
+     *
+     * @param  array<string, mixed>  $scope
+     * @param  list<AggregateDefinition>  $definitions
+     * @return list<array<string, mixed>>
+     */
+    private static function selectStoredAndComputedViaChainFold(
+        Connection $connection,
+        string $table,
+        string $parentIdCol,
+        string $lftCol,
+        string $rgtCol,
+        string $depthCol,
+        array $scope,
+        array $definitions,
+        ?int $rootId,
+    ): array {
+        // Collect every column we need to fetch: source columns (for
+        // the fold input), stored aggregate columns (for the diff
+        // output), and the structural columns to walk the chain.
+        $needed = ['id', $parentIdCol, $lftCol, $rgtCol, $depthCol];
+        foreach ($definitions as $definition) {
+            if ($definition->source !== null) {
+                $needed[] = $definition->source;
+            }
+            $needed[] = $definition->column;
+        }
+        $columns = array_values(array_unique($needed));
+
+        $sql = 'SELECT '.implode(', ', $columns)." FROM {$table} WHERE 1 = 1";
+        $bindings = [];
+
+        foreach ($scope as $col => $value) {
+            $sql .= " AND {$col} = ?";
+            $bindings[] = $value;
+        }
+
+        if ($rootId !== null) {
+            $sql .= " AND {$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
+            $sql .= " AND {$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $bindings[] = $rootId;
+            $bindings[] = $rootId;
+        }
+
+        // Order leaf-first. In a pure chain every depth level has exactly
+        // one node, so depth DESC orders the rows along the chain — each
+        // row's child is the row processed immediately before it.
+        $sql .= " ORDER BY {$depthCol} DESC, {$lftCol} ASC";
+
+        $rawRows = $connection->select($sql, $bindings);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = array_map(static fn ($r): array => (array) $r, $rawRows);
+
+        $output = [];
+
+        foreach ($definitions as $definition) {
+            // Two accumulators per definition. `prev` is the immediately-
+            // descendant row's inclusive value. `acc` is what we just
+            // computed for the current row's inclusive subtree — it
+            // becomes `prev` for the next iteration. Empty subtree
+            // (a leaf's exclusive aggregate) reads from `prev` at the
+            // first iteration, where `prev` is still the empty value.
+            $prevInclusive = self::chainFoldEmpty($definition);
+
+            // For AVG: we need parallel SUM/COUNT accumulators because
+            // AVG is a derived ratio. SUM accumulates non-null sources,
+            // COUNT counts non-null sources. Combined at emit time.
+            $prevSumAvg = 0;
+            $prevCountAvg = 0;
+
+            foreach ($rows as $row) {
+                $id = $row['id'];
+                if (! is_int($id) && ! is_string($id)) {
+                    continue;
+                }
+
+                $sourceValue = $definition->source !== null
+                    ? ($row[$definition->source] ?? null)
+                    : null;
+
+                // Combine source with previous-row's inclusive to get
+                // current row's inclusive.
+                if ($definition->function === AggregateFunction::Avg) {
+                    $sumDelta = is_numeric($sourceValue) ? (float) $sourceValue : 0.0;
+                    $countDelta = is_numeric($sourceValue) ? 1 : 0;
+                    $currentSum = $prevSumAvg + $sumDelta;
+                    $currentCount = $prevCountAvg + $countDelta;
+                    $currentInclusive = $currentCount > 0 ? $currentSum / $currentCount : null;
+                    $previousInclusive = $prevCountAvg > 0 ? $prevSumAvg / $prevCountAvg : null;
+                } else {
+                    $currentInclusive = self::chainFoldStep($definition, $sourceValue, $prevInclusive);
+                    $previousInclusive = $prevInclusive;
+                }
+
+                $computedValue = $definition->inclusive ? $currentInclusive : $previousInclusive;
+
+                if (! isset($output[$id])) {
+                    $output[$id] = ['id' => $id];
+                }
+                $output[$id][self::storedAlias($definition->column)] = $row[$definition->column] ?? null;
+                $output[$id][self::computedAlias($definition->column)] = $computedValue;
+
+                if ($definition->function === AggregateFunction::Avg) {
+                    $prevSumAvg = $currentSum;
+                    $prevCountAvg = $currentCount;
+                }
+                $prevInclusive = $currentInclusive;
+            }
+        }
+
+        return array_values($output);
+    }
+
+    /**
+     * Initial accumulator value for the chain fold — represents the
+     * inclusive aggregate of an empty subtree (i.e. what an exclusive
+     * aggregate reports on a leaf). Mirrors the SQL the slow path
+     * would emit for the same empty subtree.
+     */
+    private static function chainFoldEmpty(AggregateDefinition $definition): ?int
+    {
+        return match ($definition->function) {
+            AggregateFunction::Sum,
+            AggregateFunction::Count => 0,
+            AggregateFunction::Avg,
+            AggregateFunction::Min,
+            AggregateFunction::Max => null,
+        };
+    }
+
+    /**
+     * One step of the chain fold. Takes the current row's source value
+     * and the previous (already-folded) inclusive subtree value, and
+     * returns the current row's inclusive subtree value.
+     */
+    private static function chainFoldStep(
+        AggregateDefinition $definition,
+        mixed $sourceValue,
+        int|float|null $previousInclusive,
+    ): int|float|null {
+        switch ($definition->function) {
+            case AggregateFunction::Sum:
+                $sourceNumeric = is_numeric($sourceValue) ? (float) $sourceValue : 0.0;
+                $prev = $previousInclusive ?? 0;
+                $sum = $sourceNumeric + (float) $prev;
+
+                return self::isWhole($sum) ? (int) $sum : $sum;
+
+            case AggregateFunction::Count:
+                $contribution = $definition->source === null
+                    ? 1
+                    : ($sourceValue !== null ? 1 : 0);
+
+                return ((int) ($previousInclusive ?? 0)) + $contribution;
+
+            case AggregateFunction::Min:
+                if (! is_numeric($sourceValue)) {
+                    return $previousInclusive;
+                }
+                $sourceNumeric = (float) $sourceValue;
+                if ($previousInclusive === null) {
+                    return self::isWhole($sourceNumeric) ? (int) $sourceNumeric : $sourceNumeric;
+                }
+
+                $minValue = min($sourceNumeric, (float) $previousInclusive);
+
+                return self::isWhole($minValue) ? (int) $minValue : $minValue;
+
+            case AggregateFunction::Max:
+                if (! is_numeric($sourceValue)) {
+                    return $previousInclusive;
+                }
+                $sourceNumeric = (float) $sourceValue;
+                if ($previousInclusive === null) {
+                    return self::isWhole($sourceNumeric) ? (int) $sourceNumeric : $sourceNumeric;
+                }
+
+                $maxValue = max($sourceNumeric, (float) $previousInclusive);
+
+                return self::isWhole($maxValue) ? (int) $maxValue : $maxValue;
+
+            case AggregateFunction::Avg:
+                // AVG is handled inline by the caller because it needs
+                // two parallel accumulators (SUM and COUNT-of-non-null).
+                throw new \LogicException('AVG must be handled inline in the chain fold.');
+        }
+    }
+
+    /**
+     * True when a float value has no fractional part — used so the
+     * chain fold can return integer-valued results as `int` to match
+     * what the SQL path emits (where SUM/MIN/MAX over an integer
+     * column come back as int, not float).
+     */
+    private static function isWhole(float $value): bool
+    {
+        return $value === floor($value) && abs($value) < PHP_INT_MAX;
     }
 
     /**
