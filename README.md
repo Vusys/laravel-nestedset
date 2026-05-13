@@ -209,6 +209,25 @@ Category::with('descendants')->get();
 Category::whereHas('descendants', fn ($q) => $q->where('active', true))->get();
 ```
 
+The descendants relation is unbounded by default — it pulls every
+descendant of every selected row. For trees with deep, wide subtrees
+this can be a lot more data than the UI needs. Bound the load to
+the first N levels by composing a `where` on the relation's `depth`
+column (which the trait already maintains):
+
+```php
+// Just children + grandchildren of $root (depth 1 + 2 relative to root)
+$root->load(['descendants' => fn ($q) => $q->where('depth', '<=', $root->depth + 2)]);
+
+// Or on a top-level query — load every root with its first two levels
+Category::with([
+    'descendants' => fn ($q) => $q->where('depth', '<=', 2),
+])->whereIsRoot()->get();
+```
+
+The composite index already covers `depth`, so the bounded `WHERE`
+costs no more than the unbounded eager load on the same rows.
+
 ### In-memory tree shaping
 
 When you've already fetched a flat result, build the tree without extra
@@ -680,11 +699,67 @@ and `fixAggregates` (same as `fixTree`).
 After the backfill, every subsequent mutation through Eloquent keeps
 the stored values current.
 
+### When aggregates can drift
+
+Aggregate columns are maintained through **Eloquent's event lifecycle**.
+Anything that mutates the source column without firing those events
+leaves the stored aggregates out of sync until the next repair pass.
+This is the same property `counterCache`, observer-driven side effects,
+and most "computed column" packages have — it's not nestedset-specific.
+
+The two real-world ways this happens:
+
+```php
+// 1. Raw query builder bypasses Eloquent entirely.
+DB::table('areas')->where('id', 1)->update(['tickets' => 99]);
+
+// 2. Bulk INSERT / migration that touches the source column directly.
+DB::statement('UPDATE areas SET tickets = tickets + 1 WHERE rgt < 100');
+```
+
+Both modify the source, neither fires `saving` / `saved`, neither
+triggers ancestor-chain delta UPDATEs. The stored aggregates now
+disagree with what a fresh recomputation would return.
+
+**Detect drift** at any time via the integrity API:
+
+```php
+Area::aggregateErrors();      // ['tickets_total' => 3, 'tickets_count_all' => 0, ...]
+Area::aggregatesAreBroken();  // bool
+```
+
+**Repair** either synchronously or asynchronously:
+
+```php
+// Sync — runs in the current process, returns when done.
+Area::fixAggregates();
+
+// Sync + chunked + progress — for CLI commands on large tables.
+Area::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
+    echo "Chunk {$i}: {$r->totalRowsUpdated} rows\n";
+});
+
+// Async — hands the repair to a Laravel queue worker. Self-redispatches
+// per chunk; idempotent if run twice.
+Area::queueFixAggregates(chunkSize: 1_000);
+```
+
+**Recommended mitigation pattern for workloads that mix Eloquent and
+raw SQL writes:** schedule a defensive repair on a cron interval that
+matches your drift tolerance. The chunked queue path makes this safe
+even on multi-million-row tables:
+
+```php
+// app/Console/Kernel.php
+$schedule->call(fn () => Area::queueFixAggregates(chunkSize: 1_000))
+    ->hourly();
+```
+
+The job is idempotent — running it against a clean tree finds zero
+drift and writes nothing. Safe to fire defensively.
+
 ### Limitations and footguns
 
-- **Raw DB::table updates bypass aggregate maintenance.**
-  `DB::table('areas')->where(...)->update(['tickets' => 99])` won't fire
-  Eloquent events. Use `fixAggregates()` to recover.
 - **Soft-delete cascade preserves stored aggregates on the soft-deleted
   subtree;** ancestor chain is decremented. `restored` re-adds.
 - **`replicate()` clones reset every aggregate column** to the function's
@@ -777,6 +852,34 @@ class Category extends Model implements HasNestedSet
     public function getRgtName(): string  { return 'tree_rgt'; }
 }
 ```
+
+---
+
+## Production notes
+
+### Routing fresh-aggregate reads to a read replica
+
+`withFreshAggregates()` runs an aggregation per outer row — on a
+balancedFanout tree at N=10K it's the most expensive read the package
+emits. If you have read replicas, route these reads off the primary:
+
+```php
+Area::query()
+    ->withFreshAggregates()
+    ->useReadPdo()        // ← stays on Laravel's read connection
+    ->get();
+```
+
+Caveat: Eloquent automatically routes any query inside an open
+transaction to the **write** PDO regardless of `useReadPdo()`, to
+avoid replication-lag visibility issues. If you wrap the read in a
+transaction (or call it from inside one), it lands on the primary
+anyway. For genuine replica routing, the read needs to live outside a
+transaction boundary.
+
+Pair with the `nestedset.aggregate_locking` config flag — `'never'` is
+safe on a read-only path; the locking modes only matter for the write
+path.
 
 ---
 
