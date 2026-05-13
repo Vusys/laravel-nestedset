@@ -151,6 +151,9 @@ $a->saveAsRoot();         // shorthand for makeRoot()->save()
 
 $a->up();                 // swap with previous sibling (returns bool)
 $a->down();               // swap with next sibling
+
+$a->prevSibling();        // ?static — sibling immediately before this node
+$a->nextSibling();        // ?static — sibling immediately after this node
 ```
 
 **Important**: pass a fresh copy of the parent / sibling (`->refresh()`)
@@ -237,6 +240,17 @@ $node->isSiblingOf($other);
 $node->getNodeHeight();           // rgt - lft + 1
 $node->getDescendantCount();      // (rgt - lft - 1) / 2
 $node->hasMoved();                // true after a mutation this request
+```
+
+The `NodeBounds` value object that powers the query scopes carries the
+same primitives, useful when you have bounds but not a model instance:
+
+```php
+$bounds = $node->getBounds();
+
+$bounds->height();                // rgt - lft + 1
+$bounds->contains($other);        // strict containment (descendant test)
+$bounds->depthDelta($other);      // signed depth difference
 ```
 
 ---
@@ -603,6 +617,11 @@ Attribute and method-override forms can coexist; attribute declarations
 come first, method override appends. Same precedence rule as scope
 resolution.
 
+For tooling that needs to enumerate what a model declares at runtime
+— Filament resources, admin generators, export scripts — use
+`$model->getAggregateDefinitions()`, which returns the user-facing
+`AggregateDefinition` list (internal AVG companions are filtered out).
+
 ### Maintenance
 
 Aggregates ride the package's existing lifecycle events:
@@ -673,7 +692,9 @@ the stored values current.
   backfills correctly on placement.
 - **Plain `Area::create(...)` without `appendToNode()` / `makeRoot()`**
   leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance is
-  skipped until the node is placed in the tree.
+  skipped until the node is placed in the tree. Check the state with
+  `$node->isPlacedInTree(): bool` — returns false when both `lft` and
+  `rgt` are still the migration default.
 - **AVG over a nullable source.** `avg: 'col'` uses `AVG(col)` which
   skips NULL rows. If the source is nullable, the auto-promoted COUNT
   companion uses `COUNT(col)` (also non-null-skipping) so the ratio
@@ -771,7 +792,7 @@ This package is a modern reimplementation — not a fork. Key differences:
 | Required interface | None | `HasNestedSet` |
 | Static analysis | None | **Larastan level 9, no baseline** |
 | Pint / Rector | None | Yes |
-| Test count | 86 | 157 |
+| Test coverage | 86 tests | 340+ tests, performance bench harness, cross-backend matrix |
 | Auto transactions | No (footgun) | **On by default, opt-out via config** |
 | Depth column | Computed subquery | **Stored, maintained on mutation** |
 | Scoping API | Method-based | Attribute (`#[NestedSetScope]`) + method |
