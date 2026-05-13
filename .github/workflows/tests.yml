@@ -35,8 +35,13 @@ jobs:
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
-          # Coverage on one combination only
-          - { laravel: '13.0', php: '8.4', db: sqlite, coverage: true }
+          # Coverage on one cell per backend so backend-specific code
+          # paths (LATERAL on PG/MySQL, derived shape on MariaDB,
+          # correlated fallback on SQLite) all appear covered. Codecov
+          # merges per-flag uploads from the same commit.
+          - { laravel: '13.0', php: '8.4', db: sqlite,  coverage: true }
+          - { laravel: '13.0', php: '8.4', db: pgsql,   coverage: true }
+          - { laravel: '13.0', php: '8.4', db: mariadb, coverage: true }
 
     name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.db }}"
 
@@ -138,6 +143,11 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: coverage.xml
+          # Tag each backend's upload so Codecov merges them per-flag
+          # rather than overwriting. Without this, the last-uploaded
+          # report wins and backend-specific code (LATERAL on PG/MySQL,
+          # derived shape on MariaDB) shows as uncovered.
+          flags: ${{ matrix.db }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
