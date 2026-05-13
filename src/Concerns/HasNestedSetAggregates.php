@@ -797,6 +797,8 @@ trait HasNestedSetAggregates
                 : [],
             definitions: AggregateRegistry::for(static::class),
             rootId: $rootId,
+            parentIdCol: $instance->getParentIdName(),
+            depthCol: $instance->getDepthName(),
         );
     }
 
@@ -860,6 +862,8 @@ trait HasNestedSetAggregates
                 : [],
             definitions: AggregateRegistry::for(static::class),
             rootId: $rootId,
+            parentIdCol: $instance->getParentIdName(),
+            depthCol: $instance->getDepthName(),
         );
     }
 
@@ -1178,6 +1182,8 @@ trait HasNestedSetAggregates
                 : [],
             definitions: $definitions,
             rootId: $rootId,
+            parentIdCol: $instance->getParentIdName(),
+            depthCol: $instance->getDepthName(),
         );
     }
 
