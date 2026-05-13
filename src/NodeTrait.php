@@ -15,6 +15,8 @@ use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Concerns\HasTreeRelations;
 use Vusys\NestedSet\Concerns\HasTreeRepair;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\AggregateMaintenanceFailed;
+use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
@@ -67,25 +69,25 @@ trait NodeTrait
                 $node->callPendingAction();
             }
             if (method_exists($node, 'captureAggregateDeltas')) {
-                $node->captureAggregateDeltas();
+                self::runAggregateHook($node, 'capture', static fn () => $node->captureAggregateDeltas());
             }
         });
 
         static::saved(static function (Model $node): void {
             if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateDeltas')) {
-                $node->applyAggregateDeltas();
+                self::runAggregateHook($node, 'apply', static fn () => $node->applyAggregateDeltas());
             }
         });
 
         static::created(static function (Model $node): void {
             if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnCreate')) {
-                $node->applyAggregateOnCreate();
+                self::runAggregateHook($node, 'on_create', static fn () => $node->applyAggregateOnCreate());
             }
         });
 
         static::deleted(static function (Model $node): void {
             if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnDelete')) {
-                $node->applyAggregateOnDelete();
+                self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
             }
         });
 
@@ -95,9 +97,34 @@ trait NodeTrait
         // descendants in parallel.
         static::registerModelEvent('restored', static function (Model $node): void {
             if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnRestore')) {
-                $node->applyAggregateOnRestore();
+                self::runAggregateHook($node, 'on_restore', static fn () => $node->applyAggregateOnRestore());
             }
         });
+    }
+
+    /**
+     * Runs one of the trait's aggregate-maintenance hooks, firing
+     * {@see AggregateMaintenanceFailed} if it throws so observability
+     * tooling (Sentry, Bugsnag, etc.) sees the failure even though the
+     * exception still propagates up to roll back the wrapping
+     * transaction. `$stage` is one of: 'capture', 'apply',
+     * 'on_create', 'on_delete', 'on_restore'.
+     */
+    private static function runAggregateHook(Model $node, string $stage, \Closure $hook): void
+    {
+        try {
+            $hook();
+        } catch (\Throwable $e) {
+            $nodeKey = $node->getKey();
+            EventDispatcher::dispatch(new AggregateMaintenanceFailed(
+                modelClass: $node::class,
+                anchorId: is_numeric($nodeKey) ? (int) $nodeKey : null,
+                stage: $stage,
+                exception: $e,
+            ));
+
+            throw $e;
+        }
     }
 
     // ----------------------------------------------------------------
