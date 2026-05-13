@@ -92,6 +92,19 @@ jobs:
           coverage: ${{ matrix.coverage && 'pcov' || 'none' }}
           tools: composer:v2
 
+      # shivammathur/setup-php's internal handoff of GITHUB_TOKEN to
+      # Composer's auth.json sometimes writes the runner-masked `***`
+      # literal instead of the real value (the token's line-wrap defeats
+      # Actions' per-line masker, typically on a Composer cache-miss).
+      # Overwrite auth.json ourselves so Composer sees the real token
+      # regardless. `secrets.GITHUB_TOKEN` is a known secret with reliable
+      # masking; `composer config` writes the file directly without
+      # echoing the value through the runner's logging layer.
+      - name: Configure Composer authentication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
+
       - name: Cache Composer dependencies
         uses: actions/cache@v4
         with:
@@ -142,6 +155,13 @@ jobs:
           extensions: mbstring
           coverage: none
           tools: composer:v2
+
+      # See "Configure Composer authentication" note in the test job —
+      # same setup-php token-masking workaround applies here.
+      - name: Configure Composer authentication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
 
       - name: Cache Composer dependencies
         uses: actions/cache@v4
