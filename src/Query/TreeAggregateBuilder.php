@@ -1348,12 +1348,26 @@ final class TreeAggregateBuilder
             }
         }
 
+        // MySQL's planner picks `Inner hash join (no condition)` for the
+        // inner aggregation, which produces a full N×N cartesian product
+        // (~100M rows at N=10K) then filters by `lft BETWEEN`. The right
+        // plan is a nested-loop with an indexed range scan on i.lft —
+        // ~50K rows total. STRAIGHT_JOIN forces o-then-i ordering AND
+        // bans the hash-join, both of which the planner needs to reach
+        // the index-scan plan. Drops the inner step from 2.4s to 65ms
+        // at N=10K balancedFanout (37× faster).
+        //
+        // MariaDB is unaffected — its derived-table issue is the
+        // split_materialized optimisation, handled below. SQLite and PG
+        // pick the right plan without help.
+        $innerJoinKeyword = self::isMySql($connection) ? 'STRAIGHT_JOIN' : 'INNER JOIN';
+
         $sql = 'SELECT '.implode(', ', $outerSelects)
             ." FROM {$table} AS outer_a"
             .' LEFT JOIN ('
             .'SELECT '.implode(', ', $aggSelects)
             ." FROM {$table} AS o"
-            ." INNER JOIN {$table} AS i ON {$joinClause}{$scopeJoinExtra}"
+            ." {$innerJoinKeyword} {$table} AS i ON {$joinClause}{$scopeJoinExtra}"
             ." WHERE {$innerWhere}"
             .' GROUP BY o.id'
             .') AS agg ON agg.outer_id = outer_a.id'
@@ -1436,5 +1450,19 @@ final class TreeAggregateBuilder
         }
 
         return is_string($version) && stripos($version, 'mariadb') !== false;
+    }
+
+    /**
+     * Returns true on real MySQL (Oracle MySQL), false on MariaDB or
+     * any non-mysql driver. Distinguishes MySQL from MariaDB so we can
+     * apply MySQL-specific planner hints (e.g. STRAIGHT_JOIN inside
+     * the fixAggregates derived table) without affecting MariaDB,
+     * which has its own SET STATEMENT path for the same query.
+     */
+    private static function isMySql(ConnectionInterface $connection): bool
+    {
+        return $connection instanceof Connection
+            && $connection->getDriverName() === 'mysql'
+            && ! self::isMariaDb($connection);
     }
 }
