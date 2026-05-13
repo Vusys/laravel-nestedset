@@ -7,6 +7,8 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\BulkInsertTreeCompleted;
+use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Query\TreeMutationBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -121,7 +123,8 @@ trait HasBulkInsert
         $connection = $instance->getConnection();
         $mutator = self::bulkInsertMutator($instance, $scopeValues);
 
-        return self::withDeferredAggregateMaintenance(
+        $startNs = hrtime(true);
+        $saved = self::withDeferredAggregateMaintenance(
             fn (): array => $connection->transaction(static function () use (
                 $plan,
                 $anchorRgt,
@@ -178,6 +181,16 @@ trait HasBulkInsert
             }),
             anchor: $appendTo,
         );
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
+
+        EventDispatcher::dispatch(new BulkInsertTreeCompleted(
+            modelClass: static::class,
+            anchorId: $anchorParentId,
+            rowsInserted: count($saved),
+            durationMs: $durationMs,
+        ));
+
+        return $saved;
     }
 
     /**

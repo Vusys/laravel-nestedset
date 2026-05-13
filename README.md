@@ -881,6 +881,66 @@ Pair with the `nestedset.aggregate_locking` config flag — `'never'` is
 safe on a read-only path; the locking modes only matter for the write
 path.
 
+### Telemetry
+
+The package fires typed events on Laravel's event bus around its
+meaningful operations. Listen via standard `Event::listen()` to wire
+metrics (Datadog, New Relic, OpenTelemetry), errors (Sentry, Bugsnag),
+or audit logs.
+
+Events (all in `Vusys\NestedSet\Events\`):
+
+| Event | Fires when |
+|---|---|
+| `FixTreeCompleted` | `Model::fixTree()` finishes |
+| `FixAggregatesCompleted` | `Model::fixAggregates()` finishes (sync, single-shot or chunked) |
+| `FixAggregatesChunkCompleted` | per chunk in sync chunked + per dispatch in queued chunked |
+| `FixAggregatesJobDispatched` | `Model::queueFixAggregates()` hands a job to the dispatcher |
+| `BulkInsertTreeCompleted` | `Model::bulkInsertTree()` finishes |
+| `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair |
+| `NodeMoved` | structural mutation of an *existing* node (appendToNode, makeRoot, etc.) — new-node placements use Eloquent's `created` instead |
+| `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks — propagates the original, but lets observers see the failure |
+
+Example wirings:
+
+```php
+use Vusys\NestedSet\Events\FixAggregatesCompleted;
+use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
+use Vusys\NestedSet\Events\AggregateMaintenanceFailed;
+
+// Datadog histogram for repair latency
+Event::listen(FixAggregatesCompleted::class, function (FixAggregatesCompleted $e): void {
+    Datadog::histogram('nestedset.fix_aggregates.duration_ms', $e->durationMs, [
+        'model' => $e->modelClass,
+        'rows' => $e->totalRowsUpdated,
+        'chunks' => $e->totalChunks,
+    ]);
+});
+
+// Streaming progress to logs for long-running chunked repairs
+Event::listen(FixAggregatesChunkCompleted::class, function (FixAggregatesChunkCompleted $e): void {
+    Log::info("nestedset chunk {$e->chunkIndex}: {$e->rowsUpdated} rows in {$e->durationMs}ms");
+});
+
+// Sentry for hook failures
+Event::listen(AggregateMaintenanceFailed::class, function (AggregateMaintenanceFailed $e): void {
+    Sentry::captureException($e->exception, [
+        'tags' => ['nestedset_stage' => $e->stage, 'nestedset_model' => $e->modelClass],
+    ]);
+});
+```
+
+All event classes are simple readonly value objects with scalar /
+array fields, so queued listeners (`ShouldQueue`) are safe — with one
+exception: `AggregateMaintenanceFailed::$exception` is a `Throwable`
+and won't serialise cleanly across most queue drivers. If you need to
+queue listeners on that event, capture the scalar fields you care
+about synchronously and forward those.
+
+To disable every firing site (e.g. in a very-hot path), set
+`nestedset.events_enabled => false` in the published config. Default
+is `true`.
+
 ---
 
 ## Comparison vs. `kalnoy/nestedset`

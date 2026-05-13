@@ -7,6 +7,8 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\NodeMoved;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\PendingOperation;
@@ -177,6 +179,8 @@ trait HasTreeMutation
             }
         };
 
+        $startNs = hrtime(true);
+
         if (config('nestedset.auto_transaction', true)) {
             // Wrap makeGap-then-set-attrs (or moveNode-then-getPlainNodeData)
             // so a thrown exception between the two halves rolls back the
@@ -188,7 +192,25 @@ trait HasTreeMutation
             $work();
         }
 
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
+
         $this->markMoved();
+
+        // NodeMoved fires for existing-node mutations only. New-node
+        // placements have Eloquent's `created` event for observability;
+        // emitting our own NodeMoved for them would duplicate that
+        // surface and confuse the "this was a move, not an insert"
+        // intent of the event.
+        if ($wasExisting && $from !== null) {
+            EventDispatcher::dispatch(new NodeMoved(
+                modelClass: static::class,
+                nodeId: $this->intKey($this),
+                fromBounds: $from,
+                toBounds: $this->getBounds(),
+                operation: $op->action,
+                durationMs: $durationMs,
+            ));
+        }
     }
 
     /**

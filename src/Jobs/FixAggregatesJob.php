@@ -12,6 +12,8 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
 
 /**
  * Phase N: queued repair of stored aggregate columns.
@@ -55,6 +57,13 @@ final class FixAggregatesJob implements ShouldQueue
         public readonly ?int $anchorId = null,
         public readonly ?int $chunkSize = null,
         public readonly ?int $cursorAfterId = null,
+        /**
+         * Index of this chunk within the chain, starting at 0 for the
+         * first dispatch and incremented per self-redispatch. Carried
+         * through the chain so {@see FixAggregatesChunkCompleted}
+         * events on the queue path have a consistent ordering.
+         */
+        public readonly int $chunkIndex = 0,
     ) {}
 
     public function handle(): AggregateFixResult
@@ -121,8 +130,20 @@ final class FixAggregatesJob implements ShouldQueue
             ));
         }
 
+        $startNs = hrtime(true);
         /** @var array{result: AggregateFixResult, nextAfterId: int|null} $chunk */
         $chunk = $modelClass::fixAggregatesChunk($anchor, $this->cursorAfterId, $this->chunkSize ?? 0);
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
+
+        EventDispatcher::dispatch(new FixAggregatesChunkCompleted(
+            modelClass: $this->modelClass,
+            anchorId: $this->anchorId,
+            chunkIndex: $this->chunkIndex,
+            chunkSize: $this->chunkSize ?? 0,
+            rowsUpdated: $chunk['result']->totalRowsUpdated,
+            cursorAfter: $chunk['nextAfterId'],
+            durationMs: $durationMs,
+        ));
 
         if ($chunk['nextAfterId'] !== null) {
             // More chunks remain — schedule the next one. Inherit the
@@ -133,6 +154,7 @@ final class FixAggregatesJob implements ShouldQueue
                 anchorId: $this->anchorId,
                 chunkSize: $this->chunkSize,
                 cursorAfterId: $chunk['nextAfterId'],
+                chunkIndex: $this->chunkIndex + 1,
             );
             if (is_string($this->connection)) {
                 $next->onConnection($this->connection);

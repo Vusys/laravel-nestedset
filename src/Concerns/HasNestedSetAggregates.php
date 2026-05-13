@@ -12,6 +12,11 @@ use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\DeferredAggregateMaintenanceCompleted;
+use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
+use Vusys\NestedSet\Events\FixAggregatesCompleted;
+use Vusys\NestedSet\Events\FixAggregatesJobDispatched;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
@@ -852,7 +857,8 @@ trait HasNestedSetAggregates
         $instance = self::aggregateAnchorOrFail($anchor);
         $rootId = self::anchorRootId($anchor);
 
-        return TreeAggregateBuilder::fixAggregates(
+        $startNs = hrtime(true);
+        $result = TreeAggregateBuilder::fixAggregates(
             connection: $instance->getConnection(),
             table: $instance->getTable(),
             lftCol: $instance->getLftName(),
@@ -865,6 +871,19 @@ trait HasNestedSetAggregates
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
         );
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
+
+        EventDispatcher::dispatch(new FixAggregatesCompleted(
+            modelClass: static::class,
+            anchorId: $rootId,
+            totalRowsUpdated: $result->totalRowsUpdated,
+            perColumn: $result->perColumn,
+            durationMs: $durationMs,
+            chunkSize: null,
+            totalChunks: 1,
+        ));
+
+        return $result;
     }
 
     /**
@@ -885,9 +904,13 @@ trait HasNestedSetAggregates
         $cursor = null;
         $chunkIndex = 0;
         $safety = 0;
+        $anchorRootId = self::anchorRootId($anchor);
+        $loopStartNs = hrtime(true);
 
         do {
+            $chunkStartNs = hrtime(true);
             $chunk = self::fixAggregatesChunk($anchor, $cursor, $chunkSize);
+            $chunkMs = (hrtime(true) - $chunkStartNs) / 1_000_000;
             $result = $chunk['result'];
 
             $totalRows += $result->totalRowsUpdated;
@@ -896,6 +919,16 @@ trait HasNestedSetAggregates
             }
 
             $cursor = $chunk['nextAfterId'];
+
+            EventDispatcher::dispatch(new FixAggregatesChunkCompleted(
+                modelClass: static::class,
+                anchorId: $anchorRootId,
+                chunkIndex: $chunkIndex,
+                chunkSize: $chunkSize,
+                rowsUpdated: $result->totalRowsUpdated,
+                cursorAfter: $cursor,
+                durationMs: $chunkMs,
+            ));
 
             if ($onChunk instanceof \Closure) {
                 $onChunk($result, $chunkIndex, $cursor);
@@ -910,6 +943,16 @@ trait HasNestedSetAggregates
                 throw new \RuntimeException('fixAggregates(chunkSize: …): chunk loop exceeded 1,000,000 iterations.');
             }
         } while ($cursor !== null);
+
+        EventDispatcher::dispatch(new FixAggregatesCompleted(
+            modelClass: static::class,
+            anchorId: $anchorRootId,
+            totalRowsUpdated: $totalRows,
+            perColumn: $perColumn,
+            durationMs: (hrtime(true) - $loopStartNs) / 1_000_000,
+            chunkSize: $chunkSize,
+            totalChunks: $chunkIndex,
+        ));
 
         return new AggregateFixResult(
             totalRowsUpdated: $totalRows,
@@ -1055,9 +1098,22 @@ trait HasNestedSetAggregates
         self::aggregateAnchorOrFail($anchor);
 
         self::$deferredDepth++;
+        $isOutermost = self::$deferredDepth === 1;
+        $closureMs = 0.0;
+        $repairMs = 0.0;
+        /** @var AggregateFixResult|null $repairResult */
+        $repairResult = null;
+        $closureFailed = false;
 
         try {
-            return $work();
+            $closureStartNs = hrtime(true);
+            $result = $work();
+            $closureMs = (hrtime(true) - $closureStartNs) / 1_000_000;
+
+            return $result;
+        } catch (\Throwable $e) {
+            $closureFailed = true;
+            throw $e;
         } finally {
             self::$deferredDepth--;
 
@@ -1069,7 +1125,9 @@ trait HasNestedSetAggregates
                 // original throwable wins — losing the original would
                 // hide the actual bug.
                 try {
-                    self::fixAggregates($anchor);
+                    $repairStartNs = hrtime(true);
+                    $repairResult = self::fixAggregates($anchor);
+                    $repairMs = (hrtime(true) - $repairStartNs) / 1_000_000;
                 } catch (\Throwable $secondary) {
                     // Best effort. The caller can re-run fixAggregates
                     // themselves once they've handled the primary error.
@@ -1079,6 +1137,21 @@ trait HasNestedSetAggregates
                         $secondary->getMessage(),
                     ));
                 }
+            }
+
+            // Only the outermost wrapper emits the boundary event, and
+            // only when the user's closure ran without throwing. A
+            // throw inside the closure is the user's failure to handle;
+            // the event would conflate that with a successful batch
+            // boundary.
+            if ($isOutermost && ! $closureFailed) {
+                EventDispatcher::dispatch(new DeferredAggregateMaintenanceCompleted(
+                    modelClass: static::class,
+                    anchorId: self::anchorRootId($anchor),
+                    rowsFixed: $repairResult === null ? 0 : $repairResult->totalRowsUpdated,
+                    closureDurationMs: $closureMs,
+                    repairDurationMs: $repairMs,
+                ));
             }
         }
     }
@@ -1150,6 +1223,14 @@ trait HasNestedSetAggregates
         // simple "did it queue?" check via the returned job instance
         // (its queue/connection properties are set).
         dispatch($job);
+
+        EventDispatcher::dispatch(new FixAggregatesJobDispatched(
+            modelClass: static::class,
+            anchorId: self::anchorRootId($anchor),
+            chunkSize: $chunkSize !== null && $chunkSize > 0 ? $chunkSize : null,
+            onConnection: $connection,
+            onQueue: $queue,
+        ));
 
         return $job;
     }
