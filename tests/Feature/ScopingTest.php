@@ -184,6 +184,37 @@ final class ScopingTest extends TestCase
     }
 
     // ----------------------------------------------------------------
+    // Scoped repair API requires an anchor — calling isBroken /
+    // countErrors / fixTree on a scoped model without one walks the
+    // whole table, which is rarely what the caller intends. The
+    // shared `repairBuilder` guard rejects the call up front; below
+    // tests cover that the three Model-facing entries all funnel
+    // through it.
+    // ----------------------------------------------------------------
+
+    public function test_is_broken_on_scoped_model_without_anchor_throws(): void
+    {
+        $this->expectException(ScopeViolationException::class);
+        $this->expectExceptionMessageMatches('/menu_id/');
+
+        MenuItem::isBroken();
+    }
+
+    public function test_count_errors_on_scoped_model_without_anchor_throws(): void
+    {
+        $this->expectException(ScopeViolationException::class);
+
+        MenuItem::countErrors();
+    }
+
+    public function test_fix_tree_on_scoped_model_without_anchor_throws(): void
+    {
+        $this->expectException(ScopeViolationException::class);
+
+        MenuItem::fixTree();
+    }
+
+    // ----------------------------------------------------------------
     // assertSameScope
     // ----------------------------------------------------------------
 

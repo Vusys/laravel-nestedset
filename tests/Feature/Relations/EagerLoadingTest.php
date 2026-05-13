@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Relations;
 
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -211,5 +212,63 @@ final class EagerLoadingTest extends TestCase
             ->all();
 
         $this->assertSame(['Root', 'Child A'], $names);
+    }
+
+    public function test_parent_relation_returns_belongs_to_pointing_at_parent_id(): void
+    {
+        // The `parent` relation method is a thin BelongsTo wrapper.
+        // The README features it but no test had exercised it
+        // directly — the bulk of relation testing has gone through
+        // the custom ancestors/descendants relations.
+        $aa = $this->find(3);
+        $childA = $aa->parent;
+
+        $this->assertInstanceOf(Category::class, $childA);
+        $this->assertSame('Child A', $childA->name);
+        $this->assertSame(2, $childA->id);
+
+        // Roots return null.
+        $this->assertNull($this->find(1)->parent);
+    }
+
+    public function test_children_relation_returns_direct_children_only(): void
+    {
+        // The `children` HasMany filters by parent_id — README
+        // documents it. Distinct from `descendants` (transitive).
+        $root = $this->find(1);
+        $names = $root->children->sortBy('lft')->pluck('name')->all();
+
+        $this->assertSame(['Child A', 'Child B'], array_values($names));
+
+        // Leaf has no children.
+        $this->assertCount(0, $this->find(3)->children);
+    }
+
+    public function test_children_relation_applies_scope_filters_on_scoped_models(): void
+    {
+        // On a scoped model (MenuItem with #[NestedSetScope('menu_id')])
+        // the children() builder gets an extra `menu_id = ?` so
+        // multi-tree tables don't return rows from another tree that
+        // happen to share a parent_id value. Two menus with their own
+        // root + a child each:
+        DB::table('menus')->insert([
+            ['id' => 100, 'name' => 'Menu A'],
+            ['id' => 200, 'name' => 'Menu B'],
+        ]);
+        DB::table('menu_items')->insert([
+            ['id' => 1001, 'menu_id' => 100, 'name' => 'A-root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
+            ['id' => 1002, 'menu_id' => 100, 'name' => 'A-leaf', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1001],
+            ['id' => 2001, 'menu_id' => 200, 'name' => 'B-root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
+            // Same parent_id (1001) but in a different scope. Would
+            // leak into A-root's children without the scope filter.
+            ['id' => 2002, 'menu_id' => 200, 'name' => 'B-rogue', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1001],
+        ]);
+
+        /** @var MenuItem $aRoot */
+        $aRoot = MenuItem::query()->findOrFail(1001);
+
+        $names = $aRoot->children->pluck('name')->all();
+
+        $this->assertSame(['A-leaf'], array_values($names));
     }
 }
