@@ -248,4 +248,153 @@ final class AggregateIntegrityTest extends TestCase
 
         $this->assertNull($result->aggregatesFixed);
     }
+
+    // ----------------------------------------------------------------
+    // Chain-shape fast-path: trees where every parent has exactly one
+    // child take a linear PHP fold over the rows instead of the
+    // O(N²) per-row subtree aggregation SQL. Tests below assert
+    // **value equivalence with the slow path** for every supported
+    // aggregate function and both inclusivities. The benchmarks
+    // (PathologicalShapesBenchmarkTest::test_deep_chain_*) anchor
+    // the perf side.
+    // ----------------------------------------------------------------
+
+    /**
+     * 5-node chain: R(10) -> a(20) -> b(30) -> c(40) -> d(50).
+     * Each parent has exactly one child; chain detection should fire.
+     */
+    private function seedChain(): void
+    {
+        $root = new Area(['name' => 'R', 'tickets' => 10]);
+        $root->saveAsRoot();
+        $prev = $root;
+        foreach (['a' => 20, 'b' => 30, 'c' => 40, 'd' => 50] as $name => $tickets) {
+            $node = new Area(['name' => $name, 'tickets' => $tickets]);
+            $node->appendToNode($prev->refresh())->save();
+            $prev = $node;
+        }
+    }
+
+    public function test_chain_fast_path_intact_tree_has_no_aggregate_errors(): void
+    {
+        $this->seedChain();
+
+        // Intact tree: maintained aggregates already match the source.
+        // The fast-path's PHP fold should agree with the stored values.
+        $this->assertSame(
+            ['tickets_total' => 0, 'tickets_count_all' => 0, 'tickets_avg' => 0, 'tickets_min' => 0, 'tickets_max' => 0],
+            Area::aggregateErrors(),
+        );
+        $this->assertFalse(Area::aggregatesAreBroken());
+    }
+
+    public function test_chain_fast_path_detects_drift_in_every_function(): void
+    {
+        $this->seedChain();
+
+        // Hand-corrupt one row's aggregates so the chain fast-path has
+        // to flag drift in every column simultaneously.
+        DB::table('areas')->where('name', 'b')->update([
+            'tickets_total' => 999,
+            'tickets_count_all' => 999,
+            'tickets_avg' => 999,
+            'tickets_min' => 999,
+            'tickets_max' => 999,
+        ]);
+
+        $errors = Area::aggregateErrors();
+
+        // Every user-facing column should register exactly one drift.
+        $this->assertSame(1, $errors['tickets_total']);
+        $this->assertSame(1, $errors['tickets_count_all']);
+        $this->assertSame(1, $errors['tickets_avg']);
+        $this->assertSame(1, $errors['tickets_min']);
+        $this->assertSame(1, $errors['tickets_max']);
+    }
+
+    public function test_chain_fast_path_repairs_all_function_drift(): void
+    {
+        $this->seedChain();
+
+        // Drift every aggregate column on the deepest node.
+        DB::table('areas')->where('name', 'd')->update([
+            'tickets_total' => 1, 'tickets_count_all' => 1,
+            'tickets_avg' => 1, 'tickets_min' => 1, 'tickets_max' => 1,
+        ]);
+
+        $result = Area::fixAggregates();
+
+        $this->assertInstanceOf(AggregateFixResult::class, $result);
+        $this->assertSame(1, $result->totalRowsUpdated);
+
+        // After repair, the deepest node's inclusive aggregates over
+        // its single-node subtree are: SUM=50, COUNT=1, AVG=50,
+        // MIN=MAX=50. The fast-path's fold must produce those.
+        $d = Area::query()->where('name', 'd')->firstOrFail();
+        $this->assertSame(50, $this->asInt($d->tickets_total));
+        $this->assertSame(1, $this->asInt($d->tickets_count_all));
+        $this->assertSame(50, $this->asInt($d->tickets_min));
+        $this->assertSame(50, $this->asInt($d->tickets_max));
+        // AVG comes back as decimal:4 → string on most backends.
+        $this->assertSame(50.0, (float) $d->tickets_avg);
+    }
+
+    public function test_chain_fast_path_repairs_along_the_whole_chain(): void
+    {
+        $this->seedChain();
+
+        // Wipe every node's aggregates so the fast-path has to repair
+        // each row of the chain.
+        DB::table('areas')->update([
+            'tickets_total' => 0, 'tickets_count_all' => 0,
+            'tickets_avg' => null, 'tickets_min' => null, 'tickets_max' => null,
+        ]);
+
+        Area::fixAggregates();
+
+        // Expected inclusive subtree sums along R(10) -> a -> b -> c -> d (5 nodes):
+        //   d:    SUM= 50 COUNT=1 MIN=50 MAX= 50
+        //   c:    SUM= 90 COUNT=2 MIN=40 MAX= 50
+        //   b:    SUM=120 COUNT=3 MIN=30 MAX= 50
+        //   a:    SUM=140 COUNT=4 MIN=20 MAX= 50
+        //   R:    SUM=150 COUNT=5 MIN=10 MAX= 50
+        $expected = [
+            'd' => ['total' => 50,  'count' => 1, 'min' => 50, 'max' => 50],
+            'c' => ['total' => 90,  'count' => 2, 'min' => 40, 'max' => 50],
+            'b' => ['total' => 120, 'count' => 3, 'min' => 30, 'max' => 50],
+            'a' => ['total' => 140, 'count' => 4, 'min' => 20, 'max' => 50],
+            'R' => ['total' => 150, 'count' => 5, 'min' => 10, 'max' => 50],
+        ];
+
+        foreach ($expected as $name => $values) {
+            $row = Area::query()->where('name', $name)->firstOrFail();
+            $this->assertSame($values['total'], $this->asInt($row->tickets_total), "{$name} total");
+            $this->assertSame($values['count'], $this->asInt($row->tickets_count_all), "{$name} count");
+            $this->assertSame($values['min'], $this->asInt($row->tickets_min), "{$name} min");
+            $this->assertSame($values['max'], $this->asInt($row->tickets_max), "{$name} max");
+        }
+    }
+
+    public function test_chain_fast_path_bails_when_a_branch_point_appears(): void
+    {
+        // R(10) -> a(20), with a *second* child of R — not a chain.
+        // The detector must observe `parent_id=R, COUNT=2` and route
+        // through the slow path instead of the chain fold. We exercise
+        // the bail-out by setting up drift and confirming repair still
+        // works — the slow path is well-covered by existing tests.
+        $this->seedMotivatingTree(); // has branching: Root -> A, B
+
+        DB::table('areas')->update([
+            'tickets_total' => 0, 'tickets_count_all' => 0,
+            'tickets_avg' => null, 'tickets_min' => null, 'tickets_max' => null,
+        ]);
+
+        $result = Area::fixAggregates();
+
+        // Slow path must have run (chain detection bailed). The
+        // motivating-tree assertions from elsewhere in this file lock
+        // in the values; here we just confirm the repair ran.
+        $this->assertGreaterThan(0, $result->totalRowsUpdated);
+        $this->assertFalse(Area::aggregatesAreBroken());
+    }
 }
