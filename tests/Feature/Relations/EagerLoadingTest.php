@@ -195,4 +195,21 @@ final class EagerLoadingTest extends TestCase
 
         $this->assertSame(['Child A', 'AA', 'AB', 'Child B'], $names);
     }
+
+    public function test_where_has_descendants_accepts_constraint_closure(): void
+    {
+        // README line 206 documents the constraint-closure form:
+        //   Category::whereHas('descendants', fn ($q) => $q->where('active', true))
+        // Category doesn't have an `active` column, so we constrain by name
+        // — the surface being exercised is the closure dispatch, not the
+        // predicate itself. Root has descendants named AA / AB; Child B has
+        // none matching. Expected matches: Root, Child A.
+        $names = Category::query()
+            ->whereHas('descendants', static fn ($q) => $q->where('name', 'like', 'A%'))
+            ->orderBy('lft')
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Root', 'Child A'], $names);
+    }
 }
