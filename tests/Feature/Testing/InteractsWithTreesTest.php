@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Testing;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\AssertionFailedError;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -308,5 +311,229 @@ final class InteractsWithTreesTest extends TestCase
 
         $error = $this->expectFailure(fn () => $this->assertAggregatesAreIntact(Category::class));
         $this->assertStringContainsString('aggregate', strtolower($error->getMessage()));
+    }
+
+    // ----------------------------------------------------------------
+    // Defensive misuse paths — the helpers fail clearly when the
+    // caller passes a model that doesn't implement the expected
+    // surface. Exercises the `method_exists` and `is_numeric` guards.
+    // ----------------------------------------------------------------
+
+    public function test_assert_aggregates_are_intact_fails_clearly_on_non_node_model(): void
+    {
+        // stdClass has neither aggregatesAreBroken() nor
+        // aggregateErrors(). The guard should fire fast with a
+        // message that points the user at the missing surface.
+        $error = $this->expectFailure(fn () => $this->assertAggregatesAreIntact(\stdClass::class));
+        $this->assertStringContainsString('NestedSetAggregate', $error->getMessage());
+    }
+
+    public function test_assert_aggregate_matches_fresh_fails_clearly_on_non_aggregate_model(): void
+    {
+        // Category uses NodeTrait but declares no aggregate columns.
+        // NodeTrait provides `freshAggregate()`, but calling it for an
+        // undeclared column raises AggregateConfigurationException
+        // — which the helper translates into a clean test-time
+        // failure rather than the user seeing an exception class
+        // they have to learn about.
+        $category = new Category(['name' => 'Root']);
+        $category->saveAsRoot();
+
+        // freshAggregate() throws AggregateConfigurationException for an
+        // unknown column, which surfaces as a test error — but the
+        // helper itself triggers when the model doesn't have the
+        // method at all. Use an anonymous Model that implements
+        // HasNestedSet without NodeTrait to exercise the guard:
+        $bareModel = new class extends Model implements HasNestedSet
+        {
+            public int $id = 1;
+
+            public function getLft(): int
+            {
+                return 1;
+            }
+
+            public function getRgt(): int
+            {
+                return 2;
+            }
+
+            public function getDepth(): int
+            {
+                return 0;
+            }
+
+            public function getParentId(): ?int
+            {
+                return null;
+            }
+
+            public function getBounds(): NodeBounds
+            {
+                return new NodeBounds(1, 2, 0);
+            }
+
+            public function getLftName(): string
+            {
+                return 'lft';
+            }
+
+            public function getRgtName(): string
+            {
+                return 'rgt';
+            }
+
+            public function getDepthName(): string
+            {
+                return 'depth';
+            }
+
+            public function getParentIdName(): string
+            {
+                return 'parent_id';
+            }
+        };
+
+        $error = $this->expectFailure(fn () => $this->assertAggregateMatchesFresh($bareModel, 'tickets_total'));
+        $this->assertStringContainsString('NestedSetAggregate', $error->getMessage());
+    }
+
+    public function test_assert_is_child_of_rejects_non_integer_primary_key(): void
+    {
+        // The package documents integer primary keys as a hard
+        // requirement (depth deltas, aggregate UPDATE bindings,
+        // parent_id columns all assume int). Passing a parent with a
+        // non-numeric key into an assertion that compares parent_id
+        // surfaces with a clear LogicException — better than a
+        // silent (int) cast that returns 0 and produces a misleading
+        // assertion failure.
+        $stringKeyParent = new class extends Model implements HasNestedSet
+        {
+            protected $primaryKey = 'id';
+
+            public $incrementing = false;
+
+            protected $keyType = 'string';
+
+            protected $attributes = ['id' => 'not-a-number', 'lft' => 1, 'rgt' => 4, 'depth' => 0];
+
+            public function getLft(): int
+            {
+                return 1;
+            }
+
+            public function getRgt(): int
+            {
+                return 4;
+            }
+
+            public function getDepth(): int
+            {
+                return 0;
+            }
+
+            public function getParentId(): ?int
+            {
+                return null;
+            }
+
+            public function getBounds(): NodeBounds
+            {
+                return new NodeBounds(1, 4, 0);
+            }
+
+            public function getLftName(): string
+            {
+                return 'lft';
+            }
+
+            public function getRgtName(): string
+            {
+                return 'rgt';
+            }
+
+            public function getDepthName(): string
+            {
+                return 'depth';
+            }
+
+            public function getParentIdName(): string
+            {
+                return 'parent_id';
+            }
+        };
+
+        $child = new class extends Model implements HasNestedSet
+        {
+            public function getLft(): int
+            {
+                return 2;
+            }
+
+            public function getRgt(): int
+            {
+                return 3;
+            }
+
+            public function getDepth(): int
+            {
+                return 1;
+            }
+
+            public function getParentId(): int
+            {
+                return 1;
+            }
+
+            public function getBounds(): NodeBounds
+            {
+                return new NodeBounds(2, 3, 1);
+            }
+
+            public function getLftName(): string
+            {
+                return 'lft';
+            }
+
+            public function getRgtName(): string
+            {
+                return 'rgt';
+            }
+
+            public function getDepthName(): string
+            {
+                return 'depth';
+            }
+
+            public function getParentIdName(): string
+            {
+                return 'parent_id';
+            }
+        };
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('integer primary key');
+
+        $this->assertIsChildOf($child, $stringKeyParent);
+    }
+
+    public function test_assert_aggregate_matches_fresh_handles_non_numeric_values(): void
+    {
+        // Both stored and fresh end up null when an exclusive MIN
+        // hits a leaf. Tolerant numeric comparison short-circuits;
+        // the helper falls through to a strict assertSame so the
+        // null-vs-null case still passes cleanly.
+        $this->seedMotivatingTree();
+        // A1 is a leaf — its inclusive aggregates are based on its own row,
+        // but we'll write a deliberately non-numeric value (NULL) into
+        // tickets_min and re-verify against fresh.
+        DB::table('areas')->where('name', 'A1')->update(['tickets_min' => null]);
+        $a1 = Area::query()->where('name', 'A1')->firstOrFail();
+
+        // Fresh for tickets_min on A1 (inclusive, leaf with tickets=50) is 50.
+        // Stored is now null. The non-numeric branch fires; assertSame
+        // detects the mismatch.
+        $error = $this->expectFailure(fn () => $this->assertAggregateMatchesFresh($a1, 'tickets_min'));
+        $this->assertStringContainsString('tickets_min', $error->getMessage());
     }
 }
