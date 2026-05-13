@@ -156,7 +156,14 @@ jobs:
           # pipefail so phpunit's exit code propagates through tee.
           # Without it, tee's exit code (always 0) masks test failures.
           set -o pipefail
-          vendor/bin/phpunit --testsuite Performance --testdox 2>&1 | tee perf-output.txt
+          # stdbuf -oL -eL forces line-buffered stdout/stderr on the
+          # phpunit child, so per-bench heartbeats appear in the live
+          # GitHub Actions log instead of being held until phpunit
+          # exits. When a benchmark hangs (observed on PG twice), the
+          # last visible heartbeat identifies which one wedged —
+          # without this, the log shows nothing between "Run benchmarks"
+          # starting and the eventual timeout.
+          stdbuf -oL -eL vendor/bin/phpunit --testsuite Performance --testdox 2>&1 | tee perf-output.txt
 
       - name: Upload raw results
         uses: actions/upload-artifact@v4

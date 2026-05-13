@@ -63,8 +63,21 @@ abstract class PerformanceTestCase extends TestCase
 
     protected function bench(string $label, callable $operation): Benchmark
     {
+        // Heartbeat to stderr — bypasses `--testdox`'s per-class
+        // buffering and the `| tee` pipe buffering, so the live CI
+        // log shows "starting X" before the bench runs. When a
+        // benchmark hangs (PG service container has done this twice
+        // on the perf workflow), the last heartbeat tells us
+        // exactly which test wedged. fflush is a no-op on stderr in
+        // most setups but harmless.
+        fwrite(STDERR, "  ::bench-start:: {$label}\n");
+        @fflush(STDERR);
+
         $result = Benchmark::run($label, $operation);
         $this->benchmarks[] = $result;
+
+        fwrite(STDERR, "  ::bench-end::   {$label}  ".$result->toLine()."\n");
+        @fflush(STDERR);
 
         return $result;
     }
