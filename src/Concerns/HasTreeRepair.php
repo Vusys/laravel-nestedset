@@ -6,6 +6,8 @@ namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\FixTreeCompleted;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Query\TreeRepairBuilder;
@@ -79,25 +81,36 @@ trait HasTreeRepair
             $rootId = is_numeric($key) ? (int) $key : null;
         }
 
-        $treeResult = $builder->fixTree($rootId);
+        // Time the structural repair + the aggregate rebuild as one
+        // unit so the FixTreeCompleted event's duration matches the
+        // user-observable wall-clock of the call. The aggregate
+        // rebuild lives on HasNestedSetAggregates — trait-private
+        // methods are visible to any other method of the using class,
+        // including methods composed in from sibling traits.
+        $startNs = hrtime(true);
 
-        // After the structural repair, rebuild aggregate columns —
-        // lft/rgt may have been rewritten, so any previous aggregate
-        // maintenance based on the old layout is suspect. The helper
-        // lives on HasNestedSetAggregates; trait-private methods are
-        // visible to any other method of the using class, including
-        // methods composed in from sibling traits.
+        $treeResult = $builder->fixTree($rootId);
         $aggregatesFixed = self::runFixAggregates($anchor, $rootId);
 
-        if ($aggregatesFixed === null) {
-            return $treeResult;
-        }
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
-        return new TreeFixResult(
+        $result = $aggregatesFixed === null
+            ? $treeResult
+            : new TreeFixResult(
+                nodesUpdated: $treeResult->nodesUpdated,
+                errors: $treeResult->errors,
+                aggregatesFixed: $aggregatesFixed,
+            );
+
+        EventDispatcher::dispatch(new FixTreeCompleted(
+            modelClass: static::class,
+            anchorId: $rootId,
             nodesUpdated: $treeResult->nodesUpdated,
-            errors: $treeResult->errors,
-            aggregatesFixed: $aggregatesFixed,
-        );
+            durationMs: $durationMs,
+            aggregatesFixed: $aggregatesFixed?->totalRowsUpdated,
+        ));
+
+        return $result;
     }
 
     private static function repairBuilder(?HasNestedSet $anchor): TreeRepairBuilder

@@ -78,4 +78,21 @@ return [
         'queue' => env('NESTEDSET_QUEUE'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Telemetry events
+    |--------------------------------------------------------------------------
+    | When true (default), the package fires typed events on Laravel's
+    | event bus around its meaningful operations — fixTree, fixAggregates
+    | (incl. per-chunk progress), bulkInsertTree, structural moves of
+    | existing nodes, the boundary marker for withDeferredAggregateMaintenance,
+    | and aggregate-maintenance failures. Set to false to short-circuit
+    | every firing site — useful only if you're in a hot path and don't
+    | want the overhead of constructing event objects you'll never observe.
+    |
+    | Event classes live in `Vusys\NestedSet\Events\`. See README → Telemetry.
+    */
+
+    'events_enabled' => true,
+
 ];
