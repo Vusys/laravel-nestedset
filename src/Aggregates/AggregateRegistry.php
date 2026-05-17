@@ -252,6 +252,7 @@ final class AggregateRegistry
                     source: $source,
                     inclusive: $definition->inclusive,
                     internal: true,
+                    filter: $definition->filter,
                 );
             }
 
@@ -262,6 +263,7 @@ final class AggregateRegistry
                     source: $source,
                     inclusive: $definition->inclusive,
                     internal: true,
+                    filter: $definition->filter,
                 );
             }
         }

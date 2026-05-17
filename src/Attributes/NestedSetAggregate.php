@@ -8,6 +8,7 @@ use Attribute;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**
@@ -36,6 +37,10 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 #[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 final readonly class NestedSetAggregate
 {
+    /**
+     * @param  array<string,mixed>|null  $filter
+     * @param  list<string>              $filterRawWatches
+     */
     public function __construct(
         public string $column,
         public ?string $sum = null,
@@ -44,6 +49,10 @@ final readonly class NestedSetAggregate
         public ?string $min = null,
         public ?string $max = null,
         public bool $exclusive = false,
+        public ?array $filter = null,
+        public ?string $filterNotNull = null,
+        public ?string $filterRaw = null,
+        public array $filterRawWatches = [],
     ) {}
 
     /**
@@ -86,6 +95,7 @@ final readonly class NestedSetAggregate
             function: $function,
             source: $source,
             inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
         );
     }
 
@@ -135,5 +145,34 @@ final readonly class NestedSetAggregate
                 'Unreachable: declaredFunctions() returned an unknown key.',
             ),
         };
+    }
+
+    private function resolveFilter(): ?FilterPredicate
+    {
+        $count = ($this->filter !== null ? 1 : 0)
+            + ($this->filterNotNull !== null ? 1 : 0)
+            + ($this->filterRaw !== null ? 1 : 0);
+
+        if ($count > 1) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": at most one filter form may be declared '
+                .'(filter, filterNotNull, filterRaw).',
+                $this->column,
+            ));
+        }
+
+        if ($this->filter !== null) {
+            return FilterPredicate::equality($this->filter);
+        }
+
+        if ($this->filterNotNull !== null) {
+            return FilterPredicate::notNull($this->filterNotNull);
+        }
+
+        if ($this->filterRaw !== null) {
+            return FilterPredicate::raw($this->filterRaw, $this->filterRawWatches);
+        }
+
+        return null;
     }
 }

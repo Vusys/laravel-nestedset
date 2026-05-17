@@ -9,11 +9,13 @@ use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AttributeOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithCompanionsArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\DuplicateColumnArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\FilteredAvgArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\HybridArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\MethodOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\NoAggregateArea;
@@ -164,5 +166,26 @@ final class AggregateRegistryTest extends TestCase
         // rebuilt, so the AggregateDefinition instances differ.
         $this->assertNotSame($first[0], $second[0]);
         $this->assertEquals($first[0]->getColumn(), $second[0]->getColumn());
+    }
+
+    public function test_avg_filtered_companions_inherit_the_filter(): void
+    {
+        $definitions = AggregateRegistry::for(FilteredAvgArea::class);
+
+        $this->assertCount(3, $definitions);
+
+        $companions = array_filter(
+            $definitions,
+            static fn (AggregateDefinitionContract $d): bool => $d instanceof AggregateDefinition && $d->isInternal(),
+        );
+
+        $this->assertCount(2, $companions);
+
+        foreach ($companions as $companion) {
+            $this->assertInstanceOf(AggregateDefinition::class, $companion);
+            $this->assertNotNull($companion->filter);
+            $this->assertSame(FilterPredicateKind::Equality, $companion->filter->getKind());
+            $this->assertSame(['type' => 'fire'], $companion->filter->getConditions());
+        }
     }
 }

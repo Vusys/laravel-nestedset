@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
@@ -35,6 +36,7 @@ final readonly class Aggregate
         public AggregateFunction $function,
         public ?string $source,
         public bool $inclusive,
+        public ?FilterPredicate $filter = null,
     ) {}
 
     /**
@@ -82,7 +84,7 @@ final readonly class Aggregate
      */
     public function inclusive(): self
     {
-        return new self($this->function, $this->source, true);
+        return new self($this->function, $this->source, true, $this->filter);
     }
 
     /**
@@ -92,7 +94,35 @@ final readonly class Aggregate
      */
     public function exclusive(): self
     {
-        return new self($this->function, $this->source, false);
+        return new self($this->function, $this->source, false, $this->filter);
+    }
+
+    /**
+     * Only aggregate rows where the given column/value pairs all match.
+     *
+     * @param  array<string,mixed>  $conditions
+     */
+    public function filter(array $conditions): self
+    {
+        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::equality($conditions));
+    }
+
+    /**
+     * Only aggregate rows where $column IS NOT NULL.
+     */
+    public function filterNotNull(string $column): self
+    {
+        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::notNull($column));
+    }
+
+    /**
+     * Only aggregate rows matching the given raw SQL expression.
+     *
+     * @param  list<string>  $watches  columns whose changes should trigger re-aggregation.
+     */
+    public function filterRaw(string $sql, array $watches = []): self
+    {
+        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::raw($sql, $watches));
     }
 
     /**
@@ -114,6 +144,7 @@ final readonly class Aggregate
             function: $this->function,
             source: $this->source,
             inclusive: $this->inclusive,
+            filter: $this->filter,
         );
     }
 }

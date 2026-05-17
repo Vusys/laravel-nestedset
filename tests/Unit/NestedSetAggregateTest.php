@@ -8,6 +8,7 @@ use Attribute;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
@@ -125,5 +126,69 @@ final class NestedSetAggregateTest extends TestCase
             Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE,
             $attr->flags,
         );
+    }
+
+    public function test_filter_param_produces_equality_predicate_on_definition(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            filter: ['type' => 'fire'],
+        ))->toDefinition();
+
+        $this->assertNotNull($definition->filter);
+        $this->assertSame(FilterPredicateKind::Equality, $definition->filter->getKind());
+        $this->assertSame(['type' => 'fire'], $definition->filter->getConditions());
+    }
+
+    public function test_filter_not_null_param_produces_not_null_predicate_on_definition(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            filterNotNull: 'deleted_at',
+        ))->toDefinition();
+
+        $this->assertNotNull($definition->filter);
+        $this->assertSame(FilterPredicateKind::NotNull, $definition->filter->getKind());
+        $this->assertSame('deleted_at', $definition->filter->getNotNullColumn());
+    }
+
+    public function test_filter_raw_param_produces_raw_predicate_on_definition(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            filterRaw: 'status = 1',
+            filterRawWatches: ['status'],
+        ))->toDefinition();
+
+        $this->assertNotNull($definition->filter);
+        $this->assertSame(FilterPredicateKind::Raw, $definition->filter->getKind());
+        $this->assertSame('status = 1', $definition->filter->getRawSql());
+        $this->assertSame(['status'], $definition->filter->watchColumns());
+    }
+
+    public function test_multiple_filter_params_throws(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('at most one filter form');
+
+        (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            filter: ['type' => 'fire'],
+            filterNotNull: 'deleted_at',
+        ))->toDefinition();
+    }
+
+    public function test_definition_has_no_filter_when_none_declared(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+        ))->toDefinition();
+
+        $this->assertNull($definition->filter);
     }
 }
