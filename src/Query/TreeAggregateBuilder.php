@@ -9,6 +9,7 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
@@ -462,6 +463,9 @@ final class TreeAggregateBuilder
         $resolved = [];
 
         foreach (AggregateRegistry::for($model::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if ($definition->isInternal()) {
                 continue;
             }
@@ -474,7 +478,7 @@ final class TreeAggregateBuilder
     private static function findDeclared(Model&HasNestedSet $model, string $column): AggregateDefinition
     {
         foreach (AggregateRegistry::for($model::class) as $definition) {
-            if ($definition->column === $column) {
+            if ($definition instanceof AggregateDefinition && $definition->column === $column) {
                 return $definition;
             }
         }
@@ -645,7 +649,7 @@ final class TreeAggregateBuilder
      * surface — but `fixAggregates()` still repairs them when present.
      *
      * @param  array<string, mixed>  $scope
-     * @param  list<AggregateDefinition>  $definitions
+     * @param  list<AggregateDefinitionContract>  $definitions
      * @return array<string, int>
      */
     public static function aggregateErrors(
@@ -659,10 +663,12 @@ final class TreeAggregateBuilder
         ?string $parentIdCol = null,
         ?string $depthCol = null,
     ): array {
-        $userFacing = array_values(array_filter(
-            $definitions,
-            static fn (AggregateDefinition $d): bool => ! $d->isInternal(),
-        ));
+        $userFacing = [];
+        foreach ($definitions as $def) {
+            if ($def instanceof AggregateDefinition && ! $def->isInternal()) {
+                $userFacing[] = $def;
+            }
+        }
 
         if ($userFacing === []) {
             return [];
@@ -708,11 +714,7 @@ final class TreeAggregateBuilder
      * gets corrected.
      *
      * @param  array<string, mixed>  $scope
-     * @param  list<AggregateDefinition>  $definitions
-     */
-    /**
-     * @param  array<string, mixed>  $scope
-     * @param  list<AggregateDefinition>  $definitions
+     * @param  list<AggregateDefinitionContract>  $definitions
      * @param  list<int>|null  $outerIds  When non-null, restricts the
      *                                    repair to this subset of outer
      *                                    rows. Used by the chunked /
@@ -730,7 +732,14 @@ final class TreeAggregateBuilder
         ?string $parentIdCol = null,
         ?string $depthCol = null,
     ): AggregateFixResult {
-        if ($definitions === []) {
+        $sqlDefinitions = [];
+        foreach ($definitions as $def) {
+            if ($def instanceof AggregateDefinition) {
+                $sqlDefinitions[] = $def;
+            }
+        }
+
+        if ($sqlDefinitions === []) {
             return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
         }
 
@@ -739,7 +748,7 @@ final class TreeAggregateBuilder
         // which is a syntax error.
         if ($outerIds !== null && $outerIds === []) {
             $perColumn = [];
-            foreach ($definitions as $definition) {
+            foreach ($sqlDefinitions as $definition) {
                 if (! $definition->isInternal()) {
                     $perColumn[$definition->column] = 0;
                 }
@@ -754,7 +763,7 @@ final class TreeAggregateBuilder
             lftCol: $lftCol,
             rgtCol: $rgtCol,
             scope: $scope,
-            definitions: $definitions,
+            definitions: $sqlDefinitions,
             rootId: $rootId,
             outerIds: $outerIds,
             parentIdCol: $parentIdCol,
@@ -762,7 +771,7 @@ final class TreeAggregateBuilder
         );
 
         $perColumn = [];
-        foreach ($definitions as $definition) {
+        foreach ($sqlDefinitions as $definition) {
             if (! $definition->isInternal()) {
                 $perColumn[$definition->column] = 0;
             }
@@ -778,7 +787,7 @@ final class TreeAggregateBuilder
 
             $updates = [];
 
-            foreach ($definitions as $definition) {
+            foreach ($sqlDefinitions as $definition) {
                 $stored = $row[self::storedAlias($definition->column)] ?? null;
                 $computed = $row[self::computedAlias($definition->column)] ?? null;
 

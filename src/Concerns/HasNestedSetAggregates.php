@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
@@ -86,7 +87,7 @@ trait HasNestedSetAggregates
      * declarations — those are an implementation detail of the
      * maintenance machinery, not part of the public read surface.
      *
-     * @return list<AggregateDefinition>
+     * @return list<AggregateDefinitionContract>
      */
     public function getAggregateDefinitions(): array
     {
@@ -163,6 +164,9 @@ trait HasNestedSetAggregates
         }
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if ($definition->source === null) {
                 continue;
             }
@@ -337,6 +341,9 @@ trait HasNestedSetAggregates
         $extremes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if (! $definition->inclusive) {
                 // Exclusive aggregates have different self-handling;
                 // inclusive-only for now. Exclusive support arrives in Phase G.
@@ -414,6 +421,9 @@ trait HasNestedSetAggregates
         $minMaxRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if (! $definition->inclusive) {
                 continue;
             }
@@ -568,6 +578,9 @@ trait HasNestedSetAggregates
         $extremes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if (! $definition->inclusive) {
                 continue;
             }
@@ -661,6 +674,9 @@ trait HasNestedSetAggregates
         $extremes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if (! $definition->inclusive) {
                 continue;
             }
@@ -720,6 +736,9 @@ trait HasNestedSetAggregates
         $clone = parent::replicate($except);
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             $clone->setAttribute(
                 $definition->column,
                 $definition->function->nullableOnEmpty() ? null : 0,
@@ -732,7 +751,7 @@ trait HasNestedSetAggregates
     private function resolveAggregateDefinition(string $column): AggregateDefinition
     {
         foreach (AggregateRegistry::for(static::class) as $definition) {
-            if ($definition->column === $column) {
+            if ($definition instanceof AggregateDefinition && $definition->column === $column) {
                 return $definition;
             }
         }

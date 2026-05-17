@@ -43,7 +43,7 @@ final class AggregateRegistry
      * a class never change after first resolution; caching avoids
      * repeated reflection on hot paths.
      *
-     * @var array<class-string, list<AggregateDefinition>>
+     * @var array<class-string, list<AggregateDefinitionContract>>
      */
     private static array $cache = [];
 
@@ -51,8 +51,13 @@ final class AggregateRegistry
      * Returns the merged, validated, auto-promoted set of definitions
      * for $class. Empty list means the model declares no aggregates.
      *
+     * The list may contain both {@see AggregateDefinition} instances
+     * (SQL-function aggregates) and — once registered — instances of
+     * other {@see AggregateDefinitionContract} implementations. Callers
+     * that need concrete properties must narrow with `instanceof`.
+     *
      * @param  class-string<Model&HasNestedSet>  $class
-     * @return list<AggregateDefinition>
+     * @return list<AggregateDefinitionContract>
      */
     public static function for(string $class): array
     {
@@ -108,6 +113,9 @@ final class AggregateRegistry
         $result = [];
 
         foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if ($definition->function !== AggregateFunction::Avg) {
                 continue;
             }
@@ -262,7 +270,7 @@ final class AggregateRegistry
     }
 
     /**
-     * @param  list<AggregateDefinition>  $definitions
+     * @param  list<AggregateDefinitionContract>  $definitions
      * @return array<string, list<AggregateDefinition>>
      */
     private static function indexBySource(array $definitions): array
@@ -270,6 +278,9 @@ final class AggregateRegistry
         $index = [];
 
         foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
             if ($definition->source === null) {
                 continue;
             }
@@ -294,7 +305,7 @@ final class AggregateRegistry
     }
 
     /**
-     * @param  list<AggregateDefinition>  $definitions
+     * @param  list<AggregateDefinitionContract>  $definitions
      * @param  class-string  $class
      */
     private static function assertNoDuplicateColumns(array $definitions, string $class): void
@@ -302,15 +313,17 @@ final class AggregateRegistry
         $seen = [];
 
         foreach ($definitions as $definition) {
-            if (isset($seen[$definition->column])) {
+            $column = $definition->getColumn();
+
+            if (isset($seen[$column])) {
                 throw new AggregateConfigurationException(sprintf(
                     '%s: aggregate column "%s" is declared more than once. '
                     .'Each stored aggregate column must be targeted by exactly one declaration.',
                     $class,
-                    $definition->column,
+                    $column,
                 ));
             }
-            $seen[$definition->column] = true;
+            $seen[$column] = true;
         }
     }
 }
