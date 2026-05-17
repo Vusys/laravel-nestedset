@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 
@@ -28,6 +29,7 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public ?string $source,
         public bool $inclusive,
         public bool $internal = false,
+        public ?FilterPredicate $filter = null,
     ) {}
 
     public function getColumn(): string
