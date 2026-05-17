@@ -13,6 +13,8 @@ use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\FilterPredicate;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -522,6 +524,10 @@ final class TreeAggregateBuilder
      */
     private static function aggregateExpression(AggregateDefinition $definition, string $qualifier): string
     {
+        if ($definition->filter !== null) {
+            return self::filteredAggregateExpression($definition, $qualifier, $definition->filter);
+        }
+
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
                 'COALESCE(SUM(%s%s), 0)',
@@ -547,6 +553,102 @@ final class TreeAggregateBuilder
                 self::requireSource($definition),
             ),
         };
+    }
+
+    private static function filteredAggregateExpression(
+        AggregateDefinition $definition,
+        string $qualifier,
+        FilterPredicate $filter,
+    ): string {
+        $pred = self::filterPredicateSql($filter, $qualifier);
+
+        return match ($definition->function) {
+            AggregateFunction::Sum => sprintf(
+                'COALESCE(SUM(CASE WHEN %s THEN %s%s ELSE 0 END), 0)',
+                $pred,
+                $qualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Count => $definition->source === null
+                ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $pred)
+                : sprintf(
+                    'COUNT(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                    $pred,
+                    $qualifier,
+                    $definition->source,
+                ),
+            AggregateFunction::Avg => sprintf(
+                'AVG(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                $pred,
+                $qualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Min => sprintf(
+                'MIN(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                $pred,
+                $qualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Max => sprintf(
+                'MAX(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                $pred,
+                $qualifier,
+                self::requireSource($definition),
+            ),
+        };
+    }
+
+    private static function filterPredicateSql(FilterPredicate $filter, string $qualifier): string
+    {
+        return match ($filter->getKind()) {
+            FilterPredicateKind::Equality => implode(' AND ', array_map(
+                static function (string $col, mixed $value) use ($qualifier): string {
+                    if ($value === null) {
+                        return "{$qualifier}{$col} IS NULL";
+                    }
+
+                    return "{$qualifier}{$col} = ".self::quoteFilterValue($value);
+                },
+                array_keys($filter->getConditions()),
+                array_values($filter->getConditions()),
+            )),
+            FilterPredicateKind::NotNull => sprintf(
+                '%s%s IS NOT NULL',
+                $qualifier,
+                (string) $filter->getNotNullColumn(),
+            ),
+            FilterPredicateKind::Raw => $filter->getRawSql() ?? throw new AggregateConfigurationException(
+                'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
+            ),
+        };
+    }
+
+    private static function quoteFilterValue(mixed $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return (string) $value;
+        }
+
+        if (! is_string($value)) {
+            throw new AggregateConfigurationException(sprintf(
+                'FilterPredicate equality condition value must be scalar; got %s.',
+                get_debug_type($value),
+            ));
+        }
+
+        return "'".str_replace("'", "''", $value)."'";
     }
 
     private static function requireSource(AggregateDefinition $definition): string
@@ -583,6 +685,10 @@ final class TreeAggregateBuilder
             };
         }
 
+        if ($definition->filter !== null) {
+            return self::filteredLeafInlineExpression($definition, $tableQualifier, $definition->filter);
+        }
+
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
                 'COALESCE(%s%s, 0)',
@@ -600,6 +706,39 @@ final class TreeAggregateBuilder
             AggregateFunction::Min,
             AggregateFunction::Max => sprintf(
                 '%s%s',
+                $tableQualifier,
+                self::requireSource($definition),
+            ),
+        };
+    }
+
+    private static function filteredLeafInlineExpression(
+        AggregateDefinition $definition,
+        string $tableQualifier,
+        FilterPredicate $filter,
+    ): string {
+        $pred = self::filterPredicateSql($filter, $tableQualifier);
+
+        return match ($definition->function) {
+            AggregateFunction::Sum => sprintf(
+                'COALESCE(CASE WHEN %s THEN %s%s ELSE 0 END, 0)',
+                $pred,
+                $tableQualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Count => $definition->source === null
+                ? sprintf('CASE WHEN %s THEN 1 ELSE 0 END', $pred)
+                : sprintf(
+                    'CASE WHEN %s AND %s%s IS NOT NULL THEN 1 ELSE 0 END',
+                    $pred,
+                    $tableQualifier,
+                    $definition->source,
+                ),
+            AggregateFunction::Avg,
+            AggregateFunction::Min,
+            AggregateFunction::Max => sprintf(
+                'CASE WHEN %s THEN %s%s ELSE NULL END',
+                $pred,
                 $tableQualifier,
                 self::requireSource($definition),
             ),
