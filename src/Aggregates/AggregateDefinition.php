@@ -15,8 +15,12 @@ use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
  * Produced by {@see Aggregate::into()} (method-override form) or by
  * {@see NestedSetAggregate::toDefinition()}
  * (attribute form), and stored in {@see AggregateRegistry}.
+ *
+ * Implements {@see AggregateDefinitionContract} so it can be handled
+ * alongside {@see ListenerAggregateDefinition} by code that does not
+ * need to know which kind it holds.
  */
-final readonly class AggregateDefinition
+final readonly class AggregateDefinition implements AggregateDefinitionContract
 {
     public function __construct(
         public string $column,
@@ -25,6 +29,16 @@ final readonly class AggregateDefinition
         public bool $inclusive,
         public bool $internal = false,
     ) {}
+
+    public function getColumn(): string
+    {
+        return $this->column;
+    }
+
+    public function isInclusive(): bool
+    {
+        return $this->inclusive;
+    }
 
     /**
      * True when this definition was auto-added by the registry as a

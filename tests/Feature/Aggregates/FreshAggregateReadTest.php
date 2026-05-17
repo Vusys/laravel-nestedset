@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -405,7 +406,7 @@ final class FreshAggregateReadTest extends TestCase
         $area = new Area;
         $definitions = $area->getAggregateDefinitions();
 
-        $columns = array_map(static fn (AggregateDefinition $d): string => $d->column, $definitions);
+        $columns = array_map(static fn (AggregateDefinitionContract $d): string => $d->getColumn(), $definitions);
 
         $this->assertContains('tickets_total', $columns);
         $this->assertContains('tickets_count_all', $columns);
