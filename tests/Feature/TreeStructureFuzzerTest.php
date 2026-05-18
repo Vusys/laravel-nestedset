@@ -6,7 +6,9 @@ namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -36,6 +38,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * Failures replay deterministically — the seed prints in the
  * assertion message.
  */
+#[Group('fuzzer')]
 final class TreeStructureFuzzerTest extends TestCase
 {
     /**
@@ -43,15 +46,12 @@ final class TreeStructureFuzzerTest extends TestCase
      */
     public static function seedProvider(): iterable
     {
-        yield 'seed 1' => ['seed' => 1, 'steps' => 30];
+        $seeds = FuzzerConfig::seeds([1, 42, 1337, 9999, 314159]);
+        $steps = FuzzerConfig::steps(30);
 
-        yield 'seed 42' => ['seed' => 42, 'steps' => 30];
-
-        yield 'seed 1337' => ['seed' => 1337, 'steps' => 30];
-
-        yield 'seed 9999' => ['seed' => 9999, 'steps' => 40];
-
-        yield 'seed 314159' => ['seed' => 314159, 'steps' => 40];
+        foreach ($seeds as $seed) {
+            yield "seed {$seed}" => ['seed' => $seed, 'steps' => $steps];
+        }
     }
 
     #[DataProvider('seedProvider')]

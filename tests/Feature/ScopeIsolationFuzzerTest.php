@@ -6,8 +6,10 @@ namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
+use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -28,6 +30,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * If a mutation in menu 1 changes a single byte of menu 2's snapshot,
  * the test fails and reports exactly which row drifted.
  */
+#[Group('fuzzer')]
 final class ScopeIsolationFuzzerTest extends TestCase
 {
     /**
@@ -35,21 +38,15 @@ final class ScopeIsolationFuzzerTest extends TestCase
      */
     public static function seedProvider(): iterable
     {
-        yield 'seed 1, 3 menus, 30 steps' => [
-            'seed' => 1, 'menuCount' => 3, 'steps' => 30,
-        ];
+        $seeds = FuzzerConfig::seeds([1, 42, 1337, 9999]);
+        $steps = FuzzerConfig::steps(30);
+        $menuCount = FuzzerConfig::runs(3);
 
-        yield 'seed 42, 4 menus, 30 steps' => [
-            'seed' => 42, 'menuCount' => 4, 'steps' => 30,
-        ];
-
-        yield 'seed 1337, 5 menus, 40 steps' => [
-            'seed' => 1337, 'menuCount' => 5, 'steps' => 40,
-        ];
-
-        yield 'seed 9999, 3 menus, 50 steps' => [
-            'seed' => 9999, 'menuCount' => 3, 'steps' => 50,
-        ];
+        foreach ($seeds as $seed) {
+            yield "seed {$seed}, {$menuCount} menus, {$steps} steps" => [
+                'seed' => $seed, 'menuCount' => $menuCount, 'steps' => $steps,
+            ];
+        }
     }
 
     #[DataProvider('seedProvider')]

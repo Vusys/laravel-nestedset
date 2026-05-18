@@ -7,9 +7,11 @@ namespace Vusys\NestedSet\Tests\Feature;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
+use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -37,6 +39,7 @@ use Vusys\NestedSet\Tests\TestCase;
  *   - Anchor is a leaf
  *   - Scoped model (MenuItem) anchored to a menu
  */
+#[Group('fuzzer')]
 final class BulkInsertFuzzerTest extends TestCase
 {
     /**
@@ -44,15 +47,12 @@ final class BulkInsertFuzzerTest extends TestCase
      */
     public static function seedProvider(): iterable
     {
-        yield 'seed 1' => ['seed' => 1, 'runs' => 8];
+        $seeds = FuzzerConfig::seeds([1, 42, 1337, 9999, 314159]);
+        $runs = FuzzerConfig::runs(8);
 
-        yield 'seed 42' => ['seed' => 42, 'runs' => 8];
-
-        yield 'seed 1337' => ['seed' => 1337, 'runs' => 8];
-
-        yield 'seed 9999' => ['seed' => 9999, 'runs' => 12];
-
-        yield 'seed 314159' => ['seed' => 314159, 'runs' => 12];
+        foreach ($seeds as $seed) {
+            yield "seed {$seed}" => ['seed' => $seed, 'runs' => $runs];
+        }
     }
 
     // ================================================================
