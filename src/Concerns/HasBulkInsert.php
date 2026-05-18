@@ -123,6 +123,13 @@ trait HasBulkInsert
         $connection = $instance->getConnection();
         $mutator = self::bulkInsertMutator($instance, $scopeValues);
 
+        // The post-bulk `fixAggregates($anchor)` treats $anchor as a
+        // *subtree* boundary — only rows under $anchor are repaired.
+        // Inserting under an interior or leaf node affects ancestors
+        // too (their descendant counts and sums grow), so we widen the
+        // repair anchor to the root of the tree containing $appendTo.
+        $repairAnchor = self::resolveBulkInsertRepairAnchor($appendTo, $scopeValues);
+
         $startNs = hrtime(true);
         $saved = self::withDeferredAggregateMaintenance(
             fn (): array => $connection->transaction(static function () use (
@@ -179,7 +186,7 @@ trait HasBulkInsert
 
                 return $saved;
             }),
-            anchor: $appendTo,
+            anchor: $repairAnchor,
         );
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
@@ -308,5 +315,46 @@ trait HasBulkInsert
             depth: $instance->getDepthName(),
             scope: $scopeValues,
         );
+    }
+
+    /**
+     * Returns the anchor the post-bulk `fixAggregates` pass should use.
+     * When the user's `$appendTo` is a root (or null), it's already
+     * the correct boundary. When it's an interior or leaf node, the
+     * tree's actual root is loaded and returned so the repair pass
+     * walks every ancestor whose aggregates the insert disturbed.
+     *
+     * @param  array<string, mixed>  $scopeValues
+     */
+    private static function resolveBulkInsertRepairAnchor(
+        ?HasNestedSet $appendTo,
+        array $scopeValues,
+    ): ?HasNestedSet {
+        if (! $appendTo instanceof Model) {
+            return null;
+        }
+
+        if ($appendTo->getParentId() === null) {
+            return $appendTo;
+        }
+
+        $instance = new static;
+
+        $query = $instance->newQuery()
+            ->where($instance->getLftName(), '<=', $appendTo->getLft())
+            ->where($instance->getRgtName(), '>=', $appendTo->getRgt())
+            ->whereNull($instance->getParentIdName());
+
+        foreach ($scopeValues as $col => $value) {
+            $query->where($col, $value);
+        }
+
+        $root = $query->first();
+
+        if ($root instanceof HasNestedSet) {
+            return $root;
+        }
+
+        return $appendTo;
     }
 }
