@@ -24,7 +24,6 @@ reviews:
   path_filters:
     - '!vendor/**'
     - '!build/**'
-    - '!.github/**'
     - '!composer.lock'
   path_instructions:
     - path: 'src/**'

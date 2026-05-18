@@ -321,6 +321,6 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
             return (string) (float) $value;
         }
 
-        return (string) $value; /** @phpstan-ignore-line */
+        $this->fail('unexpected aggregate value type: '.get_debug_type($value));
     }
 }

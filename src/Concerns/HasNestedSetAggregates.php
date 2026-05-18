@@ -1563,8 +1563,8 @@ trait HasNestedSetAggregates
             }
         }
 
-        if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
-            $clone->setAttribute('deleted_at', null);
+        if (($deletedAtColumn = $this->softDeleteColumn()) !== null) {
+            $clone->setAttribute($deletedAtColumn, null);
         }
 
         return $clone;
