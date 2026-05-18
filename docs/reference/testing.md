@@ -13,9 +13,8 @@ final class CategoryTreeTest extends TestCase
     public function test_appending_child_keeps_tree_intact(): void
     {
         $root = Category::factory()->create();
-        $child = (new Category(['name' => 'child']))
-            ->appendToNode($root)
-            ->save();
+        $child = new Category(['name' => 'child']);
+        $child->appendToNode($root)->save();
 
         $this->assertIsRoot($root->refresh());
         $this->assertIsChildOf($child, $root);

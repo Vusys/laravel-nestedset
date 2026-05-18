@@ -74,10 +74,10 @@ drift and writes nothing. Safe to fire defensively.
   skipped until the node is placed in the tree. Check the state with
   `$node->isPlacedInTree(): bool` — returns false when both `lft` and
   `rgt` are still the migration default.
-- **AVG over a nullable source.** `avg: 'col'` uses `AVG(col)` which
+- **AVG over a nullable source.** `avg: 'col'` uses `AVG(col)`, which
   skips NULL rows. If the source is nullable, the auto-promoted COUNT
-  companion uses `COUNT(col)` (also non-null-skipping) so the ratio
-  stays consistent.
+  companion uses `COUNT(col)` (which also skips NULLs — i.e. counts
+  only non-NULL rows) so the ratio stays consistent.
 - **MIN/MAX recompute cost.** Deletes and source-decreasing updates
   that invalidate the stored extremum trigger a SELECT-then-UPDATE
   recompute. Cheap-skipped when the change couldn't have affected the

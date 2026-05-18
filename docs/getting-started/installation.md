@@ -4,7 +4,8 @@
 composer require vusys/laravel-nestedset
 ```
 
-The service provider auto-registers Blueprint macros and publishes config.
+The service provider auto-registers Blueprint macros and registers a
+publishable config file.
 
 ```bash
 php artisan vendor:publish \

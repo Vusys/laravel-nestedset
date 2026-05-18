@@ -40,13 +40,15 @@ $node->hasMoved();              // true after a mutation this request
 
 ## Subtree size
 
-`getNodeHeight()` counts the slots in the interval — every node
-including itself.
+`getNodeHeight()` returns the raw `rgt - lft + 1` interval width — two
+slots per node, so a leaf is `2` and a subtree of `N` nodes is `2 * N`.
+`getDescendantCount()` is the more useful "count of strict descendants"
+view, derived as `(rgt - lft - 1) / 2`.
 
 ```php
-$electronics->getNodeHeight();      // 6   ((12 - 1 + 1) / 2 = 6)
-$electronics->getDescendantCount(); // 5   (height - 1)
-$laptops->getNodeHeight();          // 1
+$electronics->getNodeHeight();      // 12   (rgt - lft + 1 = 12 - 1 + 1)
+$electronics->getDescendantCount(); // 5    ((12 - 1 - 1) / 2)
+$laptops->getNodeHeight();          // 2
 $laptops->getDescendantCount();     // 0
 ```
 

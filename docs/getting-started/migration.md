@@ -28,11 +28,19 @@ return new class extends Migration {
 };
 ```
 
-For a scoped (multi-tree) table, declare the scope column **first** in the
-composite index so each tree gets its own index slice:
+For a scoped (multi-tree) table, pass the scope column(s) to the macro
+so each tree gets its own index slice — the scope columns are placed at
+the head of the same composite index, no separate index needed:
 
 ```php
-$table->index(['post_id', 'lft', 'rgt', 'parent_id']);
+$table->nestedSet(scope: 'post_id');
+// or for a multi-column scope:
+$table->nestedSet(scope: ['tenant_id', 'post_id']);
 ```
 
-To remove the columns later: `$table->dropNestedSet()`.
+`cover: [...]` appends columns to the tail of the index — useful when
+aggregate source columns benefit from covering range scans (see
+[Filtered Aggregates](../aggregates/filtered.html#index-tuning)).
+
+To remove the columns later: `$table->dropNestedSet()` (pass the same
+`scope` / `cover` arguments you used in `nestedSet()`).

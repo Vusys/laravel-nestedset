@@ -15,15 +15,14 @@ declare(strict_types=1);
  * The browser polls /_build.json for the build timestamp and auto-reloads
  * when it changes (see public/app.js).
  */
-
 $opts = getopt('', ['port::', 'no-watch']);
 $port = (int) ($opts['port'] ?? 8000);
-$watch = !array_key_exists('no-watch', $opts);
+$watch = ! array_key_exists('no-watch', $opts);
 
-$repoRoot = realpath(__DIR__ . '/..');
-$siteDir  = $repoRoot . '/site';
-$docsDir  = $repoRoot . '/docs';
-$srcDir   = __DIR__;
+$repoRoot = realpath(__DIR__.'/..');
+$siteDir = $repoRoot.'/site';
+$docsDir = $repoRoot.'/docs';
+$srcDir = __DIR__;
 
 build($repoRoot);
 
@@ -35,7 +34,7 @@ register_shutdown_function(function () use (&$server) {
     }
 });
 
-if (!$watch) {
+if (! $watch) {
     echo "Watching disabled. Hit Ctrl+C to stop.\n";
     waitForever($server);
     exit;
@@ -43,18 +42,18 @@ if (!$watch) {
 
 echo "Watching {$docsDir} and {$srcDir} for changes...\n";
 
-$state = snapshot([$docsDir, $srcDir . '/templates', $srcDir . '/public', $srcDir . '/build.php']);
+$state = snapshot([$docsDir, $srcDir.'/templates', $srcDir.'/public', $srcDir.'/build.php']);
 
 while (true) {
     usleep(400_000);
 
     $procStatus = proc_get_status($server);
-    if (!$procStatus['running']) {
+    if (! $procStatus['running']) {
         echo "Server stopped.\n";
         break;
     }
 
-    $next = snapshot([$docsDir, $srcDir . '/templates', $srcDir . '/public', $srcDir . '/build.php']);
+    $next = snapshot([$docsDir, $srcDir.'/templates', $srcDir.'/public', $srcDir.'/build.php']);
     if ($next !== $state) {
         echo "\nChange detected, rebuilding...\n";
         build($repoRoot);
@@ -64,7 +63,7 @@ while (true) {
 
 function build(string $repoRoot): void
 {
-    $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/build.php');
+    $cmd = escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/build.php');
     $start = microtime(true);
     passthru($cmd, $code);
     $ms = (int) ((microtime(true) - $start) * 1000);
@@ -77,7 +76,7 @@ function build(string $repoRoot): void
 
 function startServer(string $docroot, int $port)
 {
-    if (!is_dir($docroot)) {
+    if (! is_dir($docroot)) {
         fwrite(STDERR, "site/ does not exist; did the initial build fail?\n");
         exit(1);
     }
@@ -97,10 +96,11 @@ function startServer(string $docroot, int $port)
     ];
 
     $proc = proc_open($cmd, $desc, $pipes);
-    if (!is_resource($proc)) {
+    if (! is_resource($proc)) {
         fwrite(STDERR, "Failed to start dev server.\n");
         exit(1);
     }
+
     return $proc;
 }
 
@@ -108,7 +108,7 @@ function waitForever($server): void
 {
     while (true) {
         $status = proc_get_status($server);
-        if (!$status['running']) {
+        if (! $status['running']) {
             break;
         }
         sleep(1);
@@ -120,10 +120,11 @@ function snapshot(array $paths): string
     $hash = hash_init('xxh3');
     foreach ($paths as $path) {
         if (is_file($path)) {
-            hash_update($hash, $path . ':' . filemtime($path));
+            hash_update($hash, $path.':'.filemtime($path));
+
             continue;
         }
-        if (!is_dir($path)) {
+        if (! is_dir($path)) {
             continue;
         }
         $items = new RecursiveIteratorIterator(
@@ -131,9 +132,10 @@ function snapshot(array $paths): string
         );
         foreach ($items as $item) {
             if ($item->isFile()) {
-                hash_update($hash, $item->getPathname() . ':' . $item->getMTime());
+                hash_update($hash, $item->getPathname().':'.$item->getMTime());
             }
         }
     }
+
     return hash_final($hash);
 }
