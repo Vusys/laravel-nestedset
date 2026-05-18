@@ -13,10 +13,11 @@ use Vusys\NestedSet\Tests\TestCase;
  * evaluate raw SQL predicates in PHP, so it skips the relevant columns
  * on save() and relies on fixAggregates() / fresh-read for recovery.
  *
- * Branch declares `active_tickets_total` with `filterRaw: '{q}active = 1'`.
- * The `{q}` token is substituted with the table qualifier at SQL render
- * time so the predicate disambiguates inside the package's self-join
- * shape.
+ * Branch declares `active_tickets_total` with `filterRaw: 'active = 1'`.
+ * The bare `active` reference is unambiguous because the package emits
+ * raw-filtered aggregates as correlated subqueries whose only `FROM`
+ * is the model's table — SQL's local resolution rule pins bare names
+ * to the inner row.
  *
  *  Root(tickets=10, active=true)
  *  ├── A(tickets=20, active=false)   ← inactive: should NOT contribute

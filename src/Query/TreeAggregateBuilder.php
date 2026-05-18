@@ -183,7 +183,15 @@ final class TreeAggregateBuilder
 
             $aggSelects = ["o.{$modelKey} AS outer_id"];
             foreach ($group as $colAlias => $definition) {
-                $expr = self::aggregateExpression($definition, qualifier: 'd.');
+                $expr = self::aggregateExpressionInJoinedContext(
+                    $definition,
+                    innerQualifier: 'd.',
+                    outerAlias: 'o',
+                    table: $table,
+                    lftCol: $lftCol,
+                    rgtCol: $rgtCol,
+                    scopeCols: $scopeCols,
+                );
                 $aggSelects[] = "{$expr} AS {$colAlias}";
             }
 
@@ -521,6 +529,15 @@ final class TreeAggregateBuilder
      * Returns the SQL aggregate expression for a definition. `$qualifier`
      * prefixes the source column (e.g. `d.` inside a correlated subquery,
      * empty for the single-node scalar form which does not need an alias).
+     *
+     * Use this in shapes where the inner table is the *only* `branches`
+     * scope visible to the expression — correlated subquery, LATERAL,
+     * and the single-node scalar form. For shapes that put both an
+     * outer and inner alias of the same table in local identifier scope
+     * (`groupedAggregateQuery`, the MariaDB derived shape), call
+     * {@see aggregateExpressionInJoinedContext()} instead so raw SQL
+     * filters get rewritten as a correlated subquery and resolve their
+     * bare column references unambiguously.
      */
     private static function aggregateExpression(AggregateDefinition $definition, string $qualifier): string
     {
@@ -617,14 +634,135 @@ final class TreeAggregateBuilder
                 $qualifier,
                 (string) $filter->getNotNullColumn(),
             ),
-            FilterPredicateKind::Raw => str_replace(
-                '{q}',
-                $qualifier,
-                $filter->getRawSql() ?? throw new AggregateConfigurationException(
-                    'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
-                ),
+            FilterPredicateKind::Raw => $filter->getRawSql() ?? throw new AggregateConfigurationException(
+                'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
             ),
         };
+    }
+
+    /**
+     * Wraps a Raw-filtered aggregate as a correlated subquery whose FROM
+     * is the only `$table` scope visible to the user's raw SQL —
+     * guarantees that bare column references in the predicate resolve
+     * to the inner row regardless of how many copies of the table are
+     * present in the caller's joined context.
+     *
+     * Used by the MariaDB derived shape and {@see groupedAggregateQuery()}
+     * (both have an `o` and an `i`/`d` of the same table at the same
+     * scope level). Other shapes — LATERAL, correlated fallback, scalar,
+     * and the recompute-maintenance subquery — already place the inner
+     * table as the only local FROM, so SQL's local-resolution rule does
+     * the right thing for them with the standard {@see aggregateExpression()}.
+     *
+     * @param  list<string>  $scopeCols
+     */
+    private static function correlatedRawFilterExpression(
+        AggregateDefinition $definition,
+        string $outerAlias,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+    ): string {
+        $filter = $definition->filter;
+        if (! $filter instanceof FilterPredicate || $filter->getKind() !== FilterPredicateKind::Raw) {
+            throw new AggregateConfigurationException(
+                'correlatedRawFilterExpression(): expected a Raw FilterPredicate.',
+            );
+        }
+
+        $rawSql = $filter->getRawSql() ?? throw new AggregateConfigurationException(
+            'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
+        );
+
+        $innerAlias = 'nss_rf';
+
+        $aggInner = match ($definition->function) {
+            AggregateFunction::Sum => sprintf(
+                'SUM(CASE WHEN %s THEN %s.%s ELSE 0 END)',
+                $rawSql,
+                $innerAlias,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Count => $definition->source === null
+                ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $rawSql)
+                : sprintf(
+                    'COUNT(CASE WHEN %s THEN %s.%s ELSE NULL END)',
+                    $rawSql,
+                    $innerAlias,
+                    $definition->source,
+                ),
+            AggregateFunction::Avg => sprintf(
+                'AVG(CASE WHEN %s THEN %s.%s ELSE NULL END)',
+                $rawSql,
+                $innerAlias,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Min => sprintf(
+                'MIN(CASE WHEN %s THEN %s.%s ELSE NULL END)',
+                $rawSql,
+                $innerAlias,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Max => sprintf(
+                'MAX(CASE WHEN %s THEN %s.%s ELSE NULL END)',
+                $rawSql,
+                $innerAlias,
+                self::requireSource($definition),
+            ),
+        };
+
+        $bounds = $definition->inclusive
+            ? "{$innerAlias}.{$lftCol} >= {$outerAlias}.{$lftCol} AND {$innerAlias}.{$rgtCol} <= {$outerAlias}.{$rgtCol}"
+            : "{$innerAlias}.{$lftCol} > {$outerAlias}.{$lftCol} AND {$innerAlias}.{$rgtCol} < {$outerAlias}.{$rgtCol}";
+
+        $scopeClause = '';
+        foreach ($scopeCols as $col) {
+            $scopeClause .= " AND {$innerAlias}.{$col} = {$outerAlias}.{$col}";
+        }
+
+        $expr = "(SELECT {$aggInner} FROM {$table} AS {$innerAlias} WHERE {$bounds}{$scopeClause})";
+
+        // SUM and COUNT must produce 0 for an empty subtree (NOT NULL
+        // storage convention); MIN/MAX/AVG can stay NULL.
+        if ($definition->function === AggregateFunction::Sum || $definition->function === AggregateFunction::Count) {
+            return "COALESCE({$expr}, 0)";
+        }
+
+        return $expr;
+    }
+
+    /**
+     * Aggregate expression for a joined context — a SELECT scope where
+     * the outer and inner aliases both reference `$table`. For Raw
+     * filters, falls back to a correlated subquery so bare column
+     * references in the user's predicate resolve unambiguously; all
+     * other definitions use the standard inline form.
+     *
+     * @param  list<string>  $scopeCols
+     */
+    private static function aggregateExpressionInJoinedContext(
+        AggregateDefinition $definition,
+        string $innerQualifier,
+        string $outerAlias,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+    ): string {
+        if ($definition->filter instanceof FilterPredicate
+            && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+            return self::correlatedRawFilterExpression(
+                $definition,
+                $outerAlias,
+                $table,
+                $lftCol,
+                $rgtCol,
+                $scopeCols,
+            );
+        }
+
+        return self::aggregateExpression($definition, $innerQualifier);
     }
 
     private static function quoteFilterValue(mixed $value): string
@@ -1434,7 +1572,15 @@ final class TreeAggregateBuilder
         $aggSelects = ['o.id AS outer_id'];
 
         foreach ($definitions as $definition) {
-            $innerExpr = self::aggregateExpression($definition, qualifier: 'i.');
+            $innerExpr = self::aggregateExpressionInJoinedContext(
+                $definition,
+                innerQualifier: 'i.',
+                outerAlias: 'o',
+                table: $table,
+                lftCol: $lftCol,
+                rgtCol: $rgtCol,
+                scopeCols: array_keys($scope),
+            );
             $computedAlias = self::computedAlias($definition->column);
             $aggSelects[] = "{$innerExpr} AS {$computedAlias}";
 

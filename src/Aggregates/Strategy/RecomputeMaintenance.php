@@ -254,12 +254,8 @@ final class RecomputeMaintenance
                 $qualifier,
                 (string) $filter->getNotNullColumn(),
             ),
-            FilterPredicateKind::Raw => str_replace(
-                '{q}',
-                $qualifier,
-                $filter->getRawSql() ?? throw new AggregateConfigurationException(
-                    'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
-                ),
+            FilterPredicateKind::Raw => $filter->getRawSql() ?? throw new AggregateConfigurationException(
+                'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
             ),
         };
     }
