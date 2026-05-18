@@ -108,4 +108,27 @@ final readonly class FilterPredicate
     {
         return $this->watches;
     }
+
+    /**
+     * Evaluates the predicate against a set of model attributes.
+     * Returns null for Raw predicates (cannot be evaluated in PHP).
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function evaluateFor(array $attributes): ?bool
+    {
+        return match ($this->kind) {
+            FilterPredicateKind::Equality => (function () use ($attributes): bool {
+                foreach ($this->conditions as $col => $value) {
+                    if (($attributes[$col] ?? null) != $value) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })(),
+            FilterPredicateKind::NotNull => ($attributes[$this->notNullColumn ?? ''] ?? null) !== null,
+            FilterPredicateKind::Raw => null,
+        };
+    }
 }
