@@ -544,6 +544,7 @@ trait HasNestedSetAggregates
             scope: $scope,
             avgs: AggregateRegistry::avgCompanionsFor(static::class),
             extremes: $extremes,
+            softDeletedColumn: $this->softDeleteColumn(),
         );
 
         if ($recomputes !== []) {
@@ -818,6 +819,7 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
+                softDeletedColumn: $this->softDeleteColumn(),
             );
         }
 
@@ -965,6 +967,7 @@ trait HasNestedSetAggregates
                 includeSelf: false,
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
+                softDeletedColumn: $this->softDeleteColumn(),
             );
         }
 
@@ -1029,6 +1032,7 @@ trait HasNestedSetAggregates
                 includeSelf: false,
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
+                softDeletedColumn: $this->softDeleteColumn(),
             );
         }
 
@@ -1149,6 +1153,7 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $candidateExtremes,
+                softDeletedColumn: $this->softDeleteColumn(),
             );
         }
 
@@ -1329,9 +1334,19 @@ trait HasNestedSetAggregates
      * `restored` hook (soft delete only): the subtree's stored
      * aggregates were left intact during the cascade soft-delete, but
      * the ancestor chain's aggregates were decremented by
-     * {@see applyAggregateOnDelete()}. On restore we add them back —
-     * SUM/COUNT via delta, MIN/MAX via cheap-delta with the stored
-     * subtree extremum as the candidate.
+     * {@see applyAggregateOnDelete()}. On restore we re-sync via:
+     *
+     *   1. fixAggregates(self) — recompute every stored aggregate on
+     *      this subtree from the (now-live) set, since intervening
+     *      mutations may have invalidated them.
+     *   2. Chain recompute on ancestors for every declared aggregate —
+     *      not a delta. A delta of self.stored would over-count when a
+     *      descendant of self was independently restored earlier and
+     *      had its own contribution credited to live ancestors at
+     *      that point.
+     *
+     * Pre-snapshot-semantics builds used a delta path here. That path
+     * is wrong under partial restores, so we always recompute.
      */
     public function applyAggregateOnRestore(): void
     {
@@ -1343,6 +1358,49 @@ trait HasNestedSetAggregates
             return;
         }
 
+        $usesSoftDeletes = in_array(SoftDeletes::class, class_uses_recursive(static::class), true);
+
+        if ($usesSoftDeletes) {
+            // Step 1: recompute self's subtree from the current live
+            // set. Cascade restore has already un-trashed matching
+            // descendants, so the live subtree is final.
+            self::fixAggregates($this);
+            $this->refresh();
+
+            // Step 2: chain-recompute every aggregate on the ancestor
+            // chain. Skips trashed ancestors via Eloquent's default
+            // scope, which is exactly the snapshot-semantics
+            // behaviour we want.
+            $scope = NestedSetScopeResolver::valuesFor($this);
+
+            /** @var array<string, AggregateDefinition> $sqlDefs */
+            $sqlDefs = [];
+            /** @var array<string, ListenerAggregateDefinition> $listenerDefs */
+            $listenerDefs = [];
+            foreach (AggregateRegistry::for(static::class) as $def) {
+                if ($def instanceof AggregateDefinition) {
+                    $sqlDefs[$def->column] = $def;
+                } elseif ($def instanceof ListenerAggregateDefinition) {
+                    $listenerDefs[$def->column] = $def;
+                }
+            }
+
+            if ($sqlDefs !== []) {
+                $this->applyChainRecompute($this->getBounds(), $scope, $sqlDefs);
+            }
+            if ($listenerDefs !== []) {
+                $this->applyListenerChainRecompute(
+                    bounds: $this->getBounds(),
+                    scope: $scope,
+                    definitions: $listenerDefs,
+                    includeSelf: false,
+                );
+            }
+
+            return;
+        }
+
+        // Non-soft-delete models: keep the original delta path.
         $deltas = [];
         $extremes = [];
         /** @var array<string, AggregateDefinition> $chainRecomputes */
@@ -1444,6 +1502,7 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
+                softDeletedColumn: $this->softDeleteColumn(),
             );
         }
 
@@ -2603,6 +2662,30 @@ trait HasNestedSetAggregates
         }
 
         return new static;
+    }
+
+    /**
+     * Returns the soft-delete column name for models that use Eloquent's
+     * SoftDeletes trait, or null otherwise. The aggregate-maintenance
+     * delta path passes this to {@see DeltaMaintenance} so per-mutation
+     * updates skip trashed ancestors — snapshot semantics: a trashed
+     * ancestor's stored aggregate stays frozen at trash time, then gets
+     * re-synced on restore.
+     */
+    private function softDeleteColumn(): ?string
+    {
+        if (! in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
+            return null;
+        }
+
+        // Reflection: SoftDeletes is in the hierarchy at runtime, but
+        // PHPStan analyses each concrete model class in isolation and
+        // can prove `getDeletedAtColumn` doesn't exist for non-soft-
+        // delete fixtures. Reflection bypasses that static check
+        // without an ignore.
+        $column = (new \ReflectionMethod($this, 'getDeletedAtColumn'))->invoke($this);
+
+        return is_string($column) ? $column : null;
     }
 
     private static function anchorRootId(?HasNestedSet $anchor): ?int

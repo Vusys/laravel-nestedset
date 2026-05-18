@@ -56,6 +56,12 @@ final class DeltaMaintenance
      *                                                                                         cheap-delta candidates: aggregate column =>
      *                                                                                         {function: Min|Max, value: candidate}.
      * @param  array<string, mixed>  $scope  column => value, applied as equality WHEREs
+     * @param  string|null  $softDeletedColumn  when set, restricts the UPDATE to rows where this
+     *                                          column is NULL. Snapshot semantics for soft-deleted
+     *                                          trees: per-mutation deltas don't touch trashed
+     *                                          ancestors so their stored aggregates stay frozen
+     *                                          at trash time. Restore-time recompute re-syncs the
+     *                                          restored subtree from live descendants.
      */
     public static function apply(
         Connection $connection,
@@ -68,6 +74,7 @@ final class DeltaMaintenance
         array $scope = [],
         array $avgs = [],
         array $extremes = [],
+        ?string $softDeletedColumn = null,
     ): int {
         // Order matters on MySQL / MariaDB: SET clauses are evaluated
         // left-to-right with each prior assignment visible to later
@@ -104,6 +111,10 @@ final class DeltaMaintenance
 
         foreach ($scope as $column => $value) {
             $query->where($column, '=', $value);
+        }
+
+        if ($softDeletedColumn !== null) {
+            $query->whereNull($softDeletedColumn);
         }
 
         return $query->update($setExpressions);
