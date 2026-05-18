@@ -288,7 +288,15 @@ trait HasTreeMutation
 
     private function actMakeRoot(): void
     {
-        $rawMax = $this->newQuery()->getQuery()->max($this->getRgtName());
+        // Scope the max-rgt lookup to this node's scope. Without the
+        // scope filter, the second scope's first root would land past
+        // the first scope's rgt and silently break per-scope lft/rgt
+        // independence. Caught by the scope-isolation fuzzer.
+        $query = $this->newQuery()->getQuery();
+        foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+            $query->where($col, $value);
+        }
+        $rawMax = $query->max($this->getRgtName());
         $maxRgt = is_numeric($rawMax) ? (int) $rawMax : 0;
 
         // Position at maxRgt + 1 places this node at the end of the table;
