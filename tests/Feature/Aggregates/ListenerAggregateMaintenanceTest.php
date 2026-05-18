@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
+use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Pokemon;
 use Vusys\NestedSet\Tests\TestCase;
@@ -283,5 +284,96 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         // Removing the 1.5 contribution must leave 2.0. An int-truncated
         // delta would leave 3.5 - 1 = 2.5 instead.
         $this->assertSame(2.0, $this->asFloat($root->half_weighted_power));
+    }
+
+    // ----------------------------------------------------------------
+    // Listener MIN recompute path: deleting / updating a node that
+    // held the stored minimum triggers applyListenerMinMaxRecomputes
+    // for each affected ancestor. Covers the batched-read refactor.
+    // ----------------------------------------------------------------
+
+    public function test_min_listener_recomputes_on_delete_of_extremum_holder(): void
+    {
+        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Pokemon(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 3]);
+        $a->appendToNode($root)->save();
+
+        $b = new Pokemon(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 7]);
+        $b->appendToNode($root)->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        // Root's weakest_level = min(5, 3, 7) = 3 (held by A).
+        $this->assertSame(3, $this->asInt($root->weakest_level));
+        $this->assertSame(3, $this->asInt($a->weakest_level));
+
+        // Deleting A removes the extremum holder. Root must recompute
+        // to min(5, 7) = 5.
+        $a->delete();
+        $root->refresh();
+
+        $this->assertSame(5, $this->asInt($root->weakest_level));
+    }
+
+    public function test_min_listener_recompute_batches_subtree_reads(): void
+    {
+        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 10]);
+        $root->saveAsRoot();
+
+        // Two intermediate ancestors deep, with a leaf at the bottom.
+        $a = new Pokemon(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 8]);
+        $a->appendToNode($root)->save();
+
+        $b = new Pokemon(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 6]);
+        $b->appendToNode($a)->save();
+
+        $c = new Pokemon(['name' => 'C', 'type' => 'water', 'base_power' => 1, 'level' => 4]);
+        $c->appendToNode($b)->save();
+
+        $root->refresh();
+        $c->refresh();
+        $this->assertSame(4, $this->asInt($root->weakest_level));
+
+        // Reset query log; delete C and observe how many SELECT/UPDATE
+        // statements the recompute path issues. The pre-refactor code
+        // ran one SELECT per (ancestor × listener-Min/Max definition);
+        // with one Min listener and 3 ancestors above C that was 3
+        // SELECTs plus per-ancestor UPDATEs. The batched read brings
+        // the SELECT count to a small constant (load ancestors once,
+        // load nodes-under-topmost-ancestor once).
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $c->delete();
+
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $selectCount = 0;
+        foreach ($queries as $entry) {
+            if (stripos($entry['query'], 'select') === 0) {
+                $selectCount++;
+            }
+        }
+
+        // The batched recompute issues exactly two SELECTs regardless
+        // of ancestor depth: one to load the ancestor models and one
+        // to load all in-scope nodes under the topmost ancestor's
+        // bounding box. The pre-batched code did one descendant
+        // SELECT per (ancestor × Min/Max definition) — with 3
+        // ancestors above C that would be 4+ SELECTs and grows with
+        // depth.
+        $this->assertLessThanOrEqual(
+            2,
+            $selectCount,
+            "Listener Min recompute should batch subtree reads, but {$selectCount} SELECT statements ran.",
+        );
+
+        $root->refresh();
+        // After deleting C (level=4), root's weakest_level = min(10, 8, 6) = 6.
+        $this->assertSame(6, $this->asInt($root->weakest_level));
     }
 }

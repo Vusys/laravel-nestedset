@@ -762,9 +762,12 @@ come first.
 Listener aggregates ride the same lifecycle hooks as SQL aggregates. On
 each save the package calls `contribution()` on the changed node, computes
 a delta, and propagates it up the ancestor chain. Min/Max listener columns
-that may have been invalidated trigger a PHP-based ancestor recompute
-(loads Eloquent models for each affected ancestor's subtree and recomputes
-in PHP).
+that may have been invalidated trigger a PHP-based ancestor recompute —
+the package issues exactly two SELECTs (one to load the ancestor chain,
+one to load every in-scope node under the topmost ancestor) regardless of
+chain depth, then computes each ancestor's new extremum in PHP. Listener
+contributions are cached per node across all Min/Max definitions, so each
+`contribution()` call runs once per node per recompute.
 
 `fixAggregates()`, `aggregateErrors()`, and `freshAggregate()` all cover
 listener columns:

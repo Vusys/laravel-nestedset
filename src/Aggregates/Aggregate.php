@@ -99,6 +99,16 @@ final readonly class Aggregate
     /**
      * Only aggregate rows where the given column/value pairs all match.
      *
+     * Security: values are inlined into the generated SQL via
+     * {@see FilterPredicate::equality()} — they bypass PDO parameter
+     * binding. Pass only **trusted constants** (class-level literals,
+     * config values you control). **Never pass user-supplied input** —
+     * a string like `"x' OR 1=1 --"` would render as a SQL fragment.
+     *
+     * In the attribute form `#[NestedSetAggregate(..., filter: [...])]`,
+     * PHP requires attribute values to be compile-time constants, so the
+     * concern only applies to the method-override form here.
+     *
      * @param  array<string,mixed>  $conditions
      */
     public function filter(array $conditions): self
@@ -116,6 +126,12 @@ final readonly class Aggregate
 
     /**
      * Only aggregate rows matching the given raw SQL expression.
+     *
+     * Security: the SQL is inlined verbatim into generated aggregate
+     * queries — no escaping, no parameter binding. Pass only fragments
+     * you write yourself; **never pass user-supplied input**. Use this
+     * for predicates the equality / not-null forms can't express
+     * (e.g. `status IN ('open','triaged')`, `active = 1`).
      *
      * @param  list<string>  $watches  columns whose changes should trigger re-aggregation.
      */
