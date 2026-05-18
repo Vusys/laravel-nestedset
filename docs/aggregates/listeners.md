@@ -41,7 +41,7 @@ maintenance.
 
 Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`. `Avg` is
 auto-promoted into a pair of internal `Sum` + `Count` companions plus
-the display column — see [Listener AVG](#content-listener-avg) below.
+the display column — see [Listener AVG](#listener-avg) below.
 
 ## Migration
 
