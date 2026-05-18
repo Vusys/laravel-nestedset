@@ -85,9 +85,51 @@ trait NodeTrait
             }
         });
 
+        static::deleting(static function (Model $node): void {
+            if (! $node instanceof HasNestedSet) {
+                return;
+            }
+            // Re-read structural columns (lft/rgt/depth/parent_id) so
+            // the deleted hook below sees current values. The in-memory
+            // attributes may have gone stale since this model was
+            // loaded — e.g. an earlier closeGap from a sibling's hard
+            // delete shifted this row's bounds in the DB but not in
+            // memory. Aggregate maintenance and the closeGap step both
+            // rely on accurate bounds.
+            $key = $node->getKey();
+            if ($key === null) {
+                return;
+            }
+            $row = $node->getConnection()
+                ->table($node->getTable())
+                ->where($node->getKeyName(), $key)
+                ->first([$node->getLftName(), $node->getRgtName(), $node->getDepthName(), $node->getParentIdName()]);
+            if ($row === null) {
+                return;
+            }
+            $node->setAttribute($node->getLftName(), $row->{$node->getLftName()});
+            $node->setAttribute($node->getRgtName(), $row->{$node->getRgtName()});
+            $node->setAttribute($node->getDepthName(), $row->{$node->getDepthName()});
+            $node->setAttribute($node->getParentIdName(), $row->{$node->getParentIdName()});
+            $node->syncOriginalAttribute($node->getLftName());
+            $node->syncOriginalAttribute($node->getRgtName());
+            $node->syncOriginalAttribute($node->getDepthName());
+            $node->syncOriginalAttribute($node->getParentIdName());
+        });
+
         static::deleted(static function (Model $node): void {
-            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnDelete')) {
+            if (! $node instanceof HasNestedSet) {
+                return;
+            }
+            if (method_exists($node, 'applyAggregateOnDelete')) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
+            }
+            // Compact lft/rgt for hard-delete-of-a-leaf so the bounds
+            // sequence stays a contiguous 1..2N permutation. No-ops for
+            // soft delete (row still exists) and interior force-delete
+            // (children would shift into invalid positions).
+            if (method_exists($node, 'applyStructuralCleanupOnDelete')) {
+                $node->applyStructuralCleanupOnDelete();
             }
         });
 
