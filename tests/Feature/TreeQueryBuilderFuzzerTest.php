@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -21,6 +23,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * Strategy: plant a random tree, build a pure-PHP oracle, then
  * compare each builder method's id-set against the oracle.
  */
+#[Group('fuzzer')]
 final class TreeQueryBuilderFuzzerTest extends TestCase
 {
     /**
@@ -28,13 +31,12 @@ final class TreeQueryBuilderFuzzerTest extends TestCase
      */
     public static function seedProvider(): iterable
     {
-        yield 'seed 1' => ['seed' => 1, 'size' => 12];
+        $seeds = FuzzerConfig::seeds([1, 42, 1337, 9999]);
+        $size = FuzzerConfig::steps(15);
 
-        yield 'seed 42' => ['seed' => 42, 'size' => 14];
-
-        yield 'seed 1337' => ['seed' => 1337, 'size' => 18];
-
-        yield 'seed 9999' => ['seed' => 9999, 'size' => 20];
+        foreach ($seeds as $seed) {
+            yield "seed {$seed}, {$size} nodes" => ['seed' => $seed, 'size' => $size];
+        }
     }
 
     #[DataProvider('seedProvider')]

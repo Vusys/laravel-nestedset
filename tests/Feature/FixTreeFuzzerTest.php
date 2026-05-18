@@ -6,7 +6,9 @@ namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -27,6 +29,7 @@ use Vusys\NestedSet\Tests\TestCase;
  *   4. `parent_id` agrees with the bounds-derived parent for every
  *      live row.
  */
+#[Group('fuzzer')]
 final class FixTreeFuzzerTest extends TestCase
 {
     /** Every test in this class deliberately corrupts the tree. */
@@ -37,25 +40,16 @@ final class FixTreeFuzzerTest extends TestCase
      */
     public static function seedProvider(): iterable
     {
-        yield 'seed 1, 10 nodes, 1 corruption' => [
-            'seed' => 1, 'treeSize' => 10, 'corruptionCount' => 1,
-        ];
+        // FUZZER_RUNS doubles as the corruption count here.
+        $seeds = FuzzerConfig::seeds([1, 42, 1337, 9999, 314159]);
+        $treeSize = FuzzerConfig::steps(15);
+        $corruptionCount = FuzzerConfig::runs(3);
 
-        yield 'seed 42, 12 nodes, 2 corruptions' => [
-            'seed' => 42, 'treeSize' => 12, 'corruptionCount' => 2,
-        ];
-
-        yield 'seed 1337, 15 nodes, 3 corruptions' => [
-            'seed' => 1337, 'treeSize' => 15, 'corruptionCount' => 3,
-        ];
-
-        yield 'seed 9999, 20 nodes, 4 corruptions' => [
-            'seed' => 9999, 'treeSize' => 20, 'corruptionCount' => 4,
-        ];
-
-        yield 'seed 314159, 25 nodes, 5 corruptions' => [
-            'seed' => 314159, 'treeSize' => 25, 'corruptionCount' => 5,
-        ];
+        foreach ($seeds as $seed) {
+            yield "seed {$seed}, {$treeSize} nodes, {$corruptionCount} corruptions" => [
+                'seed' => $seed, 'treeSize' => $treeSize, 'corruptionCount' => $corruptionCount,
+            ];
+        }
     }
 
     #[DataProvider('seedProvider')]

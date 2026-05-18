@@ -5,9 +5,15 @@
          colors="true"
          defaultTestSuite="Package">
     <!--
-        Performance is opt-in:
-        run via `vendor/bin/phpunit  testsuite Performance`.
-        Plain `vendor/bin/phpunit` runs Package only.
+        Performance is opt-in: run via
+        `vendor/bin/phpunit testsuite Performance`. Plain
+        `vendor/bin/phpunit` runs Package only.
+
+        Fuzzers are opt-in too. Tagged with the `fuzzer` PHPUnit group
+        and excluded from the default run. Trigger with `composer fuzz`
+        or `vendor/bin/phpunit group fuzzer`. Configure via the env
+        vars FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS; see
+        tests/Support/FuzzerConfig.php.
     -->
     <testsuites>
         <testsuite name="Package">
@@ -18,6 +24,11 @@
             <directory>tests/Performance</directory>
         </testsuite>
     </testsuites>
+    <groups>
+        <exclude>
+            <group>fuzzer</group>
+        </exclude>
+    </groups>
     <source>
         <include>
             <directory>src</directory>
