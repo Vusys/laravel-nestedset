@@ -4,3 +4,7 @@
 /.phpunit.result.cache
 /build
 .DS_Store
+
+# DIY docs site
+/site
+/docs-site/vendor
