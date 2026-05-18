@@ -28,6 +28,10 @@ if ($port === false) {
 $watch = ! array_key_exists('no-watch', $opts);
 
 $repoRoot = realpath(__DIR__.'/..');
+if ($repoRoot === false) {
+    fwrite(STDERR, 'fatal: failed to resolve repository root from '.__DIR__."\n");
+    exit(1);
+}
 $siteDir = $repoRoot.'/site';
 $docsDir = $repoRoot.'/docs';
 $srcDir = __DIR__;

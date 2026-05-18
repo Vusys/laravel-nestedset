@@ -14,6 +14,10 @@ use League\CommonMark\MarkdownConverter;
 use League\CommonMark\Node\Block\Document;
 
 $repoRoot = realpath(__DIR__.'/..');
+if ($repoRoot === false) {
+    fwrite(STDERR, 'fatal: failed to resolve repository root from '.__DIR__."\n");
+    exit(1);
+}
 $docsDir = $repoRoot.'/docs';
 $siteRoot = $repoRoot.'/site';
 $siteDir = $siteRoot;
@@ -116,6 +120,22 @@ function flattenNav(array $nav): array
 }
 
 /**
+ * Reject summary entries that try to escape docs/ via absolute paths
+ * or traversal segments. summary.md is hand-written, so this catches
+ * typos as much as anything malicious.
+ */
+function safeDocPath(string $path): string
+{
+    $path = str_replace('\\', '/', trim($path));
+    if ($path === '' || str_starts_with($path, '/') || preg_match('#(^|/)\.\.(/|$)#', $path) === 1) {
+        fwrite(STDERR, "fatal: invalid summary path {$path}\n");
+        exit(1);
+    }
+
+    return $path;
+}
+
+/**
  * Parse docs/summary.md into a section/pages tree.
  *
  *   # Section Title
@@ -133,10 +153,16 @@ function parseSummary(string $path): array
         exit(1);
     }
 
+    $lines = file($path, FILE_IGNORE_NEW_LINES);
+    if ($lines === false) {
+        fwrite(STDERR, "fatal: failed to read summary at {$path}\n");
+        exit(1);
+    }
+
     $sections = [];
     $sectionIdx = -1;
 
-    foreach (file($path, FILE_IGNORE_NEW_LINES) as $line) {
+    foreach ($lines as $line) {
         if (preg_match('/^#\s+(.+?)\s*$/', $line, $m)) {
             if ($sectionIdx === -1 && strcasecmp(trim($m[1]), 'Summary') === 0) {
                 continue;
@@ -148,7 +174,7 @@ function parseSummary(string $path): array
         }
 
         if ($sectionIdx !== -1 && preg_match('/^\s*-\s*\[(.+?)\]\((.+?)\)\s*$/', $line, $m)) {
-            $sections[$sectionIdx]['pages'][] = ['title' => $m[1], 'file' => $m[2]];
+            $sections[$sectionIdx]['pages'][] = ['title' => $m[1], 'file' => safeDocPath($m[2])];
         }
     }
 
