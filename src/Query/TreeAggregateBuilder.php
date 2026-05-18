@@ -181,7 +181,18 @@ final class TreeAggregateBuilder
             $derivedIndex++;
             $derivedAlias = "vusys_fresh_derived_{$derivedIndex}";
 
-            $aggSelects = ["o.{$modelKey} AS outer_id"];
+            $rawFilterContext = self::hasRawFilter($group);
+            $outer = self::outerFromFragment(
+                table: $table,
+                lftCol: $lftCol,
+                rgtCol: $rgtCol,
+                scopeCols: $scopeCols,
+                rawFilterPresent: $rawFilterContext,
+                outerAlias: 'o',
+                idCol: $modelKey,
+            );
+
+            $aggSelects = ["{$outer['outerId']} AS outer_id"];
             foreach ($group as $colAlias => $definition) {
                 $expr = self::aggregateExpressionInJoinedContext(
                     $definition,
@@ -191,17 +202,18 @@ final class TreeAggregateBuilder
                     lftCol: $lftCol,
                     rgtCol: $rgtCol,
                     scopeCols: $scopeCols,
+                    rawFilterContext: $rawFilterContext,
                 );
                 $aggSelects[] = "{$expr} AS {$colAlias}";
             }
 
             $boundsClause = $mode === 'inclusive'
-                ? "d.{$lftCol} >= o.{$lftCol} AND d.{$lftCol} <= o.{$rgtCol}"
-                : "d.{$lftCol} > o.{$lftCol} AND d.{$lftCol} < o.{$rgtCol}";
+                ? "d.{$lftCol} >= {$outer['outerLft']} AND d.{$lftCol} <= {$outer['outerRgt']}"
+                : "d.{$lftCol} > {$outer['outerLft']} AND d.{$lftCol} < {$outer['outerRgt']}";
 
             $scopeClause = '';
-            foreach ($scopeCols as $col) {
-                $scopeClause .= " AND d.{$col} = o.{$col}";
+            foreach ($outer['outerScope'] as $col => $outerRef) {
+                $scopeClause .= " AND d.{$col} = {$outerRef}";
             }
 
             // Leaf fast-path: exclude leaves from the materialised derived
@@ -210,11 +222,11 @@ final class TreeAggregateBuilder
             // cuts the inner aggregation's input from N to 1 (only the
             // root has descendants).
             $innerSql = 'SELECT '.implode(', ', $aggSelects)
-                ." FROM {$table} o"
+                ." FROM {$outer['from']}"
                 ." INNER JOIN {$table} d ON {$boundsClause}{$scopeClause}"
-                ." WHERE o.{$modelKey} IN ({$userIdsSql})"
-                ." AND o.{$rgtCol} > o.{$lftCol} + 1"
-                ." GROUP BY o.{$modelKey}";
+                ." WHERE {$outer['outerId']} IN ({$userIdsSql})"
+                ." AND {$outer['outerRgt']} > {$outer['outerLft']} + 1"
+                ." GROUP BY {$outer['outerId']}";
 
             $derivedExpr = new TreeExpression("({$innerSql}) as {$derivedAlias}");
             $builder->getQuery()->leftJoin(
@@ -641,18 +653,162 @@ final class TreeAggregateBuilder
     }
 
     /**
+     * Inline raw-filter aggregate expression. Used when the caller
+     * arranges for the outer-table alias to expose its columns under
+     * renamed identifiers (see {@see renamedOuterColumn()}) so bare
+     * column references inside `$rawFilter` resolve unambiguously to
+     * the inner `$innerQualifier` table at SQL-parse time.
+     *
+     * The inner source column is qualified with `$innerQualifier` so
+     * the CASE WHEN body always picks the inner row. Equivalent in
+     * runtime cost to the unfiltered inline aggregate — both ride the
+     * same STRAIGHT_JOIN'd covering range scan.
+     */
+    private static function inlineRawFilterExpression(
+        AggregateDefinition $definition,
+        string $rawFilter,
+        string $innerQualifier,
+    ): string {
+        return match ($definition->function) {
+            AggregateFunction::Sum => sprintf(
+                'COALESCE(SUM(CASE WHEN %s THEN %s%s ELSE 0 END), 0)',
+                $rawFilter,
+                $innerQualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Count => $definition->source === null
+                ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $rawFilter)
+                : sprintf(
+                    'COUNT(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                    $rawFilter,
+                    $innerQualifier,
+                    $definition->source,
+                ),
+            AggregateFunction::Avg => sprintf(
+                'AVG(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                $rawFilter,
+                $innerQualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Min => sprintf(
+                'MIN(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                $rawFilter,
+                $innerQualifier,
+                self::requireSource($definition),
+            ),
+            AggregateFunction::Max => sprintf(
+                'MAX(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                $rawFilter,
+                $innerQualifier,
+                self::requireSource($definition),
+            ),
+        };
+    }
+
+    /**
+     * Token used to alias the outer table's columns inside the
+     * renamed-derived FROM clause that the joined-shape callers use
+     * when raw filters are present. Bare column references in user
+     * raw SQL (e.g. `active = 1`) need a non-colliding outer scope so
+     * they resolve to the inner `i` table; renaming `id → __nss_o_id`,
+     * `lft → __nss_o_lft` etc. inside `(SELECT … FROM branches) AS o`
+     * gives the SQL parser the unambiguous scope it needs.
+     *
+     * Pick a prefix obscure enough that user models almost certainly
+     * don't have columns with this name. (If they do, they can
+     * declare the raw filter via the registry's escape hatch.)
+     */
+    private static function renamedOuterColumn(string $col): string
+    {
+        return '__nss_o_'.$col;
+    }
+
+    /**
+     * True if any of the given definitions carries a Raw filter — when
+     * yes, the joined-shape SQL must use the renamed-outer derived so
+     * bare column refs in the raw SQL bind correctly to the inner
+     * table. When no, the simpler shape (no rename) is used.
+     *
+     * @param  iterable<AggregateDefinition>  $definitions
+     */
+    private static function hasRawFilter(iterable $definitions): bool
+    {
+        foreach ($definitions as $definition) {
+            if ($definition->filter instanceof FilterPredicate
+                && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Renders the outer-table FROM clause fragment for joined-shape
+     * callers. When `$rawFilterPresent`, wraps the outer table in a
+     * derived that renames `id`, `lft`, `rgt`, and every scope column
+     * to a `__nss_o_*` form so bare column refs in raw SQL
+     * unambiguously resolve to the inner table at SQL-parse time.
+     * Otherwise returns the simpler `branches AS o` form.
+     *
+     * Returns the FROM fragment plus the fully-qualified outer-column
+     * references the caller should use in JOIN / WHERE / GROUP BY.
+     *
+     * @param  list<string>  $scopeCols
+     * @return array{from: string, outerLft: string, outerRgt: string, outerId: string, outerScope: array<string, string>}
+     */
+    private static function outerFromFragment(
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+        bool $rawFilterPresent,
+        string $outerAlias,
+        string $idCol = 'id',
+    ): array {
+        if (! $rawFilterPresent) {
+            $scopeRefs = [];
+            foreach ($scopeCols as $col) {
+                $scopeRefs[$col] = "{$outerAlias}.{$col}";
+            }
+
+            return [
+                'from' => "{$table} AS {$outerAlias}",
+                'outerLft' => "{$outerAlias}.{$lftCol}",
+                'outerRgt' => "{$outerAlias}.{$rgtCol}",
+                'outerId' => "{$outerAlias}.{$idCol}",
+                'outerScope' => $scopeRefs,
+            ];
+        }
+
+        $projections = [
+            "{$idCol} AS ".self::renamedOuterColumn($idCol),
+            "{$lftCol} AS ".self::renamedOuterColumn($lftCol),
+            "{$rgtCol} AS ".self::renamedOuterColumn($rgtCol),
+        ];
+        $outerScope = [];
+        foreach ($scopeCols as $col) {
+            $projections[] = "{$col} AS ".self::renamedOuterColumn($col);
+            $outerScope[$col] = "{$outerAlias}.".self::renamedOuterColumn($col);
+        }
+
+        return [
+            'from' => '(SELECT '.implode(', ', $projections)." FROM {$table}) AS {$outerAlias}",
+            'outerLft' => "{$outerAlias}.".self::renamedOuterColumn($lftCol),
+            'outerRgt' => "{$outerAlias}.".self::renamedOuterColumn($rgtCol),
+            'outerId' => "{$outerAlias}.".self::renamedOuterColumn($idCol),
+            'outerScope' => $outerScope,
+        ];
+    }
+
+    /**
      * Wraps a Raw-filtered aggregate as a correlated subquery whose FROM
      * is the only `$table` scope visible to the user's raw SQL —
      * guarantees that bare column references in the predicate resolve
      * to the inner row regardless of how many copies of the table are
-     * present in the caller's joined context.
-     *
-     * Used by the MariaDB derived shape and {@see groupedAggregateQuery()}
-     * (both have an `o` and an `i`/`d` of the same table at the same
-     * scope level). Other shapes — LATERAL, correlated fallback, scalar,
-     * and the recompute-maintenance subquery — already place the inner
-     * table as the only local FROM, so SQL's local-resolution rule does
-     * the right thing for them with the standard {@see aggregateExpression()}.
+     * present in the caller's joined context. Used as the fallback
+     * when the caller can't accommodate the renamed-outer derived
+     * shape (LATERAL, scalar, single-FROM correlated).
      *
      * @param  list<string>  $scopeCols
      */
@@ -712,9 +868,17 @@ final class TreeAggregateBuilder
             ),
         };
 
+        // Single-column predicate on lft so MySQL's planner can use a
+        // covering range scan on the (lft, rgt, parent_id, cover…)
+        // index. The `i.lft <= o.rgt` form is equivalent to
+        // `i.rgt <= o.rgt` under the nested-set invariant (any node
+        // whose lft is in [o.lft, o.rgt] is a descendant-or-self of
+        // o); the two-column shape `i.rgt <= o.rgt` forces MySQL into
+        // a full index scan + filter that turns this subquery from
+        // a covering ~5µs/row into a non-covering ~200µs/row.
         $bounds = $definition->inclusive
-            ? "{$innerAlias}.{$lftCol} >= {$outerAlias}.{$lftCol} AND {$innerAlias}.{$rgtCol} <= {$outerAlias}.{$rgtCol}"
-            : "{$innerAlias}.{$lftCol} > {$outerAlias}.{$lftCol} AND {$innerAlias}.{$rgtCol} < {$outerAlias}.{$rgtCol}";
+            ? "{$innerAlias}.{$lftCol} >= {$outerAlias}.{$lftCol} AND {$innerAlias}.{$lftCol} <= {$outerAlias}.{$rgtCol}"
+            : "{$innerAlias}.{$lftCol} > {$outerAlias}.{$lftCol} AND {$innerAlias}.{$lftCol} < {$outerAlias}.{$rgtCol}";
 
         $scopeClause = '';
         foreach ($scopeCols as $col) {
@@ -734,10 +898,14 @@ final class TreeAggregateBuilder
 
     /**
      * Aggregate expression for a joined context — a SELECT scope where
-     * the outer and inner aliases both reference `$table`. For Raw
-     * filters, falls back to a correlated subquery so bare column
-     * references in the user's predicate resolve unambiguously; all
-     * other definitions use the standard inline form.
+     * the outer and inner aliases both reference `$table`. When
+     * `$rawFilterContext` is true, the caller has wrapped the outer
+     * table in a {@see outerFromFragment()} renamed-derived so bare
+     * refs in raw filters resolve unambiguously to the inner table;
+     * raw filters emit inline (~30× faster on MySQL than the
+     * correlated fallback). When false, raw filters use the
+     * correlated subquery fallback for backends/contexts that can't
+     * accommodate the rename.
      *
      * @param  list<string>  $scopeCols
      */
@@ -749,9 +917,20 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         array $scopeCols,
+        bool $rawFilterContext = false,
     ): string {
         if ($definition->filter instanceof FilterPredicate
             && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+            if ($rawFilterContext) {
+                return self::inlineRawFilterExpression(
+                    $definition,
+                    $definition->filter->getRawSql() ?? throw new AggregateConfigurationException(
+                        'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
+                    ),
+                    $innerQualifier,
+                );
+            }
+
             return self::correlatedRawFilterExpression(
                 $definition,
                 $outerAlias,
@@ -1568,8 +1747,18 @@ final class TreeAggregateBuilder
         ?int $rootId,
         ?array $outerIds = null,
     ): array {
+        $rawFilterContext = self::hasRawFilter($definitions);
+        $outer = self::outerFromFragment(
+            table: $table,
+            lftCol: $lftCol,
+            rgtCol: $rgtCol,
+            scopeCols: array_keys($scope),
+            rawFilterPresent: $rawFilterContext,
+            outerAlias: 'o',
+        );
+
         $outerSelects = ['outer_a.id AS id'];
-        $aggSelects = ['o.id AS outer_id'];
+        $aggSelects = ["{$outer['outerId']} AS outer_id"];
 
         foreach ($definitions as $definition) {
             $innerExpr = self::aggregateExpressionInJoinedContext(
@@ -1580,6 +1769,7 @@ final class TreeAggregateBuilder
                 lftCol: $lftCol,
                 rgtCol: $rgtCol,
                 scopeCols: array_keys($scope),
+                rawFilterContext: $rawFilterContext,
             );
             $computedAlias = self::computedAlias($definition->column);
             $aggSelects[] = "{$innerExpr} AS {$computedAlias}";
@@ -1594,24 +1784,24 @@ final class TreeAggregateBuilder
         }
 
         $joinClause = $inclusive
-            ? "i.{$lftCol} >= o.{$lftCol} AND i.{$lftCol} <= o.{$rgtCol}"
-            : "i.{$lftCol} > o.{$lftCol} AND i.{$lftCol} < o.{$rgtCol}";
+            ? "i.{$lftCol} >= {$outer['outerLft']} AND i.{$lftCol} <= {$outer['outerRgt']}"
+            : "i.{$lftCol} > {$outer['outerLft']} AND i.{$lftCol} < {$outer['outerRgt']}";
 
         $scopeJoinExtra = '';
-        foreach (array_keys($scope) as $col) {
-            $scopeJoinExtra .= " AND i.{$col} = o.{$col}";
+        foreach ($outer['outerScope'] as $col => $outerRef) {
+            $scopeJoinExtra .= " AND i.{$col} = {$outerRef}";
         }
 
         $bindings = [];
 
         $innerWhere = '1 = 1';
         foreach ($scope as $col => $value) {
-            $innerWhere .= " AND o.{$col} = ?";
+            $innerWhere .= " AND {$outer['outerScope'][$col]} = ?";
             $bindings[] = $value;
         }
         if ($rootId !== null) {
-            $innerWhere .= " AND o.{$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
-            $innerWhere .= " AND o.{$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $innerWhere .= " AND {$outer['outerLft']} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
+            $innerWhere .= " AND {$outer['outerRgt']} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
         }
@@ -1621,7 +1811,7 @@ final class TreeAggregateBuilder
         // rows in this chunk.
         if ($outerIds !== null) {
             $placeholders = implode(', ', array_fill(0, count($outerIds), '?'));
-            $innerWhere .= " AND o.id IN ({$placeholders})";
+            $innerWhere .= " AND {$outer['outerId']} IN ({$placeholders})";
             foreach ($outerIds as $id) {
                 $bindings[] = $id;
             }
@@ -1664,10 +1854,10 @@ final class TreeAggregateBuilder
             ." FROM {$table} AS outer_a"
             .' LEFT JOIN ('
             .'SELECT '.implode(', ', $aggSelects)
-            ." FROM {$table} AS o"
+            ." FROM {$outer['from']}"
             ." {$innerJoinKeyword} {$table} AS i ON {$joinClause}{$scopeJoinExtra}"
             ." WHERE {$innerWhere}"
-            .' GROUP BY o.id'
+            ." GROUP BY {$outer['outerId']}"
             .') AS agg ON agg.outer_id = outer_a.id'
             ." WHERE {$outerWhere}";
 

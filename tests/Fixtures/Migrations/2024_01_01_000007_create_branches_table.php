@@ -20,7 +20,13 @@ return new class extends Migration
             // comparisons; the integer storage sidesteps that.
             $table->unsignedTinyInteger('active')->default(1);
 
-            $table->nestedSet(cover: ['tickets']);
+            // Cover `tickets` (the SUM source) so the inner aggregate
+            // can do a covering index scan. Raw-filter watch columns
+            // (here `active`) also go in the cover so the inline
+            // STRAIGHT_JOIN'd CASE WHEN expression stays a covering
+            // scan instead of falling back to non-covering index range
+            // scans with primary-key row fetches per match.
+            $table->nestedSet(cover: ['tickets', 'active']);
 
             // Inclusive (default) baseline for sanity comparison.
             $table->nestedSetAggregate('tickets_total');
