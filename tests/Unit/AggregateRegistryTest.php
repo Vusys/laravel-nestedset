@@ -6,13 +6,21 @@ namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\AggregateInFillableArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AttributeOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithCompanionsArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadListenerMethodEntryArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadListenerMethodReturnArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadMethodEntryArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadMethodReturnArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\DuplicateColumnArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\FilteredAvgArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\HybridArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\MethodOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\NoAggregateArea;
@@ -35,10 +43,14 @@ final class AggregateRegistryTest extends TestCase
         $definitions = AggregateRegistry::for(AttributeOnlyArea::class);
 
         $this->assertCount(2, $definitions);
-        $this->assertSame('tickets_total', $definitions[0]->column);
-        $this->assertSame(AggregateFunction::Sum, $definitions[0]->function);
-        $this->assertSame('tickets_count', $definitions[1]->column);
-        $this->assertSame(AggregateFunction::Count, $definitions[1]->function);
+        $def0 = $definitions[0];
+        $def1 = $definitions[1];
+        $this->assertInstanceOf(AggregateDefinition::class, $def0);
+        $this->assertInstanceOf(AggregateDefinition::class, $def1);
+        $this->assertSame('tickets_total', $def0->column);
+        $this->assertSame(AggregateFunction::Sum, $def0->function);
+        $this->assertSame('tickets_count', $def1->column);
+        $this->assertSame(AggregateFunction::Count, $def1->function);
     }
 
     public function test_resolves_method_override_declarations(): void
@@ -46,10 +58,14 @@ final class AggregateRegistryTest extends TestCase
         $definitions = AggregateRegistry::for(MethodOnlyArea::class);
 
         $this->assertCount(2, $definitions);
-        $this->assertSame('tickets_total', $definitions[0]->column);
-        $this->assertSame(AggregateFunction::Sum, $definitions[0]->function);
-        $this->assertSame('tickets_max', $definitions[1]->column);
-        $this->assertSame(AggregateFunction::Max, $definitions[1]->function);
+        $def0 = $definitions[0];
+        $def1 = $definitions[1];
+        $this->assertInstanceOf(AggregateDefinition::class, $def0);
+        $this->assertInstanceOf(AggregateDefinition::class, $def1);
+        $this->assertSame('tickets_total', $def0->column);
+        $this->assertSame(AggregateFunction::Sum, $def0->function);
+        $this->assertSame('tickets_max', $def1->column);
+        $this->assertSame(AggregateFunction::Max, $def1->function);
     }
 
     public function test_attribute_declarations_precede_method_override_declarations(): void
@@ -57,10 +73,14 @@ final class AggregateRegistryTest extends TestCase
         $definitions = AggregateRegistry::for(HybridArea::class);
 
         $this->assertCount(2, $definitions);
-        $this->assertSame('tickets_total', $definitions[0]->column);
-        $this->assertSame(AggregateFunction::Sum, $definitions[0]->function);
-        $this->assertSame('tickets_max', $definitions[1]->column);
-        $this->assertSame(AggregateFunction::Max, $definitions[1]->function);
+        $def0 = $definitions[0];
+        $def1 = $definitions[1];
+        $this->assertInstanceOf(AggregateDefinition::class, $def0);
+        $this->assertInstanceOf(AggregateDefinition::class, $def1);
+        $this->assertSame('tickets_total', $def0->column);
+        $this->assertSame(AggregateFunction::Sum, $def0->function);
+        $this->assertSame('tickets_max', $def1->column);
+        $this->assertSame(AggregateFunction::Max, $def1->function);
     }
 
     public function test_avg_without_companions_auto_promotes_internal_sum_and_count(): void
@@ -69,14 +89,17 @@ final class AggregateRegistryTest extends TestCase
 
         $this->assertCount(3, $definitions);
 
-        $userFacing = array_values(array_filter(
-            $definitions,
-            static fn (AggregateDefinition $d): bool => ! $d->isInternal(),
-        ));
-        $internal = array_values(array_filter(
-            $definitions,
-            static fn (AggregateDefinition $d): bool => $d->isInternal(),
-        ));
+        $userFacing = [];
+        $internal = [];
+        foreach ($definitions as $def) {
+            if ($def instanceof AggregateDefinition) {
+                if ($def->isInternal()) {
+                    $internal[] = $def;
+                } else {
+                    $userFacing[] = $def;
+                }
+            }
+        }
 
         $this->assertCount(1, $userFacing);
         $this->assertSame('tickets_avg', $userFacing[0]->column);
@@ -98,7 +121,7 @@ final class AggregateRegistryTest extends TestCase
         $definitions = AggregateRegistry::for(AvgOnlyArea::class);
 
         $columns = array_map(
-            static fn (AggregateDefinition $d): string => $d->column,
+            static fn (AggregateDefinitionContract $d): string => $d->getColumn(),
             $definitions,
         );
 
@@ -116,7 +139,7 @@ final class AggregateRegistryTest extends TestCase
         foreach ($definitions as $definition) {
             $this->assertFalse(
                 $definition->isInternal(),
-                "Column {$definition->column} should not be internal — user declared it.",
+                "Column {$definition->getColumn()} should not be internal — user declared it.",
             );
         }
     }
@@ -147,6 +170,67 @@ final class AggregateRegistryTest extends TestCase
         // Definitions are equal in value but the underlying array was
         // rebuilt, so the AggregateDefinition instances differ.
         $this->assertNotSame($first[0], $second[0]);
-        $this->assertEquals($first[0]->column, $second[0]->column);
+        $this->assertEquals($first[0]->getColumn(), $second[0]->getColumn());
+    }
+
+    public function test_avg_filtered_companions_inherit_the_filter(): void
+    {
+        $definitions = AggregateRegistry::for(FilteredAvgArea::class);
+
+        $this->assertCount(3, $definitions);
+
+        $companions = array_filter(
+            $definitions,
+            static fn (AggregateDefinitionContract $d): bool => $d instanceof AggregateDefinition && $d->isInternal(),
+        );
+
+        $this->assertCount(2, $companions);
+
+        foreach ($companions as $companion) {
+            $this->assertInstanceOf(AggregateDefinition::class, $companion);
+            $this->assertNotNull($companion->filter);
+            $this->assertSame(FilterPredicateKind::Equality, $companion->filter->getKind());
+            $this->assertSame(['type' => 'fire'], $companion->filter->getConditions());
+        }
+    }
+
+    public function test_method_override_must_return_array(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('nestedSetAggregates() must return an array');
+
+        AggregateRegistry::for(BadMethodReturnArea::class);
+    }
+
+    public function test_method_override_entry_must_be_aggregate_definition(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('entry at index 0 is not an AggregateDefinition');
+
+        AggregateRegistry::for(BadMethodEntryArea::class);
+    }
+
+    public function test_listener_method_override_must_return_array(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('nestedSetListenerAggregates() must return an array');
+
+        AggregateRegistry::for(BadListenerMethodReturnArea::class);
+    }
+
+    public function test_listener_method_override_entry_must_be_listener_aggregate_definition(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('entry at index 0 is not a ListenerAggregateDefinition');
+
+        AggregateRegistry::for(BadListenerMethodEntryArea::class);
+    }
+
+    public function test_aggregate_column_in_fillable_throws(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('aggregate column(s) [tickets_total] appear in $fillable');
+
+        AggregateRegistry::for(AggregateInFillableArea::class);
     }
 }

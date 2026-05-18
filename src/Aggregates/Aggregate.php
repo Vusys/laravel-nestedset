@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Illuminate\Contracts\Database\Query\Expression;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
@@ -35,6 +36,7 @@ final readonly class Aggregate
         public AggregateFunction $function,
         public ?string $source,
         public bool $inclusive,
+        public ?FilterPredicate $filter = null,
     ) {}
 
     /**
@@ -82,7 +84,7 @@ final readonly class Aggregate
      */
     public function inclusive(): self
     {
-        return new self($this->function, $this->source, true);
+        return new self($this->function, $this->source, true, $this->filter);
     }
 
     /**
@@ -92,7 +94,95 @@ final readonly class Aggregate
      */
     public function exclusive(): self
     {
-        return new self($this->function, $this->source, false);
+        return new self($this->function, $this->source, false, $this->filter);
+    }
+
+    /**
+     * Only aggregate rows where the given column/value pairs all match.
+     *
+     * Security: values are inlined into the generated SQL via
+     * {@see FilterPredicate::equality()} — they bypass PDO parameter
+     * binding. Pass only **trusted constants** (class-level literals,
+     * config values you control). **Never pass user-supplied input** —
+     * a string like `"x' OR 1=1 --"` would render as a SQL fragment.
+     *
+     * In the attribute form `#[NestedSetAggregate(..., filter: [...])]`,
+     * PHP requires attribute values to be compile-time constants, so the
+     * concern only applies to the method-override form here.
+     *
+     * @param  array<string,mixed>  $conditions
+     */
+    public function filter(array $conditions): self
+    {
+        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::equality($conditions));
+    }
+
+    /**
+     * Only aggregate rows where $column IS NOT NULL.
+     */
+    public function filterNotNull(string $column): self
+    {
+        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::notNull($column));
+    }
+
+    /**
+     * Only aggregate rows matching the given raw SQL expression.
+     *
+     * Accepts either a string or a Laravel
+     * {@see Expression} — the
+     * latter (e.g. `DB::raw('active = 1')`) reads as obviously-raw at
+     * the call site and is the conventional Laravel signal for
+     * "I know this is SQL, I take responsibility".
+     *
+     * Security: the SQL is inlined verbatim into generated aggregate
+     * queries — no escaping, no parameter binding. Pass only fragments
+     * you write yourself; **never pass user-supplied input**. Use this
+     * for predicates the equality / not-null forms can't express
+     * (e.g. `status IN ('open','triaged')`, `active = 1`).
+     *
+     * @param  list<string>  $watches  columns whose changes should trigger re-aggregation.
+     */
+    public function filterRaw(string|Expression $sql, array $watches = []): self
+    {
+        return new self(
+            $this->function,
+            $this->source,
+            $this->inclusive,
+            FilterPredicate::raw($this->expressionToString($sql), $watches),
+        );
+    }
+
+    /**
+     * Extract the underlying SQL from a string-or-Expression argument.
+     * Laravel's Expression::getValue() requires a Grammar; we don't
+     * have a Connection at fluent-call time, so we read the protected
+     * `$value` property via reflection. Compatible with the
+     * package's pinned Laravel range (11+).
+     */
+    private function expressionToString(string|Expression $sql): string
+    {
+        if (is_string($sql)) {
+            return $sql;
+        }
+
+        $reflection = new \ReflectionClass($sql);
+        // Walk the parent chain — subclasses may shadow the property.
+        while ($reflection !== false) {
+            if ($reflection->hasProperty('value')) {
+                $property = $reflection->getProperty('value');
+                $value = $property->getValue($sql);
+                if (is_string($value) || is_int($value) || is_float($value)) {
+                    return (string) $value;
+                }
+                break;
+            }
+            $reflection = $reflection->getParentClass();
+        }
+
+        throw new AggregateConfigurationException(
+            'filterRaw(): Expression instance did not expose a readable scalar `$value` property. '
+            .'Pass the SQL as a string, or use `DB::raw(...)` which returns a standard '.Expression::class.'.',
+        );
     }
 
     /**
@@ -114,6 +204,7 @@ final readonly class Aggregate
             function: $this->function,
             source: $this->source,
             inclusive: $this->inclusive,
+            filter: $this->filter,
         );
     }
 }

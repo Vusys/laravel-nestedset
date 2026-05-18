@@ -198,18 +198,37 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Faithfully attribute the trigger so two coexisting runs
+          # (run-perf and run-pathological fired on the same PR) are
+          # distinguishable in their respective comments.
+          TRIGGER_LABEL: ${{ github.event.label.name }}
         run: |
+          # The benchmark suite grew with the filtered/listener
+          # aggregate work and the post-grep output for some backends
+          # now exceeds the previous 100-line cap, dropping
+          # RawFilterMaintenanceBenchmarkTest / SourceUpdateBenchmarkTest
+          # / WithFreshAggregatesBenchmarkTest rows from the comment.
+          # 400 lines comfortably accommodates the full suite per
+          # backend without crossing GitHub's 65k-char comment limit
+          # (≈160 chars × 400 lines × 4 backends ≈ 256k → ~64k after
+          # de-dup of bench-end/per-class summary pairs handled below).
           {
             echo "## Performance benchmark results"
             echo
-            echo "Triggered by \`run-perf\` label on this PR."
+            echo "Triggered by \`${TRIGGER_LABEL:-run-perf}\` label on this PR."
             echo
             for dir in perf-results/perf-*/; do
               backend=$(basename "$dir" | sed 's/perf-\([^-]*\).*/\1/')
               echo "<details><summary><strong>$backend</strong></summary>"
               echo
               echo '```'
-              grep -E '\[.*\]|ms' "$dir/perf-output.txt" 2>/dev/null | head -100 || echo "(no output)"
+              # Drop the ::bench-end:: heartbeat lines (they duplicate
+              # the per-class summary rows immediately after) so the
+              # cap stretches further.
+              grep -E '\[.*\]|ms' "$dir/perf-output.txt" 2>/dev/null \
+                | grep -v '::bench-end::' \
+                | head -400 \
+                || echo "(no output)"
               echo '```'
               echo
               echo '</details>'
@@ -218,11 +237,16 @@ jobs:
           } > comment.md
           gh pr comment "$PR_NUMBER" --body-file comment.md
 
-      - name: Remove run-perf label
+      - name: Remove trigger label
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Same label-attribution logic as the comment step — clean
+          # up whichever label fired this run.
+          TRIGGER_LABEL: ${{ github.event.label.name }}
         run: |
-          gh pr edit "$PR_NUMBER" --remove-label run-perf || true
+          if [ -n "$TRIGGER_LABEL" ]; then
+            gh pr edit "$PR_NUMBER" --remove-label "$TRIGGER_LABEL" || true
+          fi

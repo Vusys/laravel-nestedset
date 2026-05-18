@@ -50,13 +50,44 @@ abstract class TestCase extends OrchestraTestCase
     {
         parent::setUp();
 
-        $tables = ['areas', 'categories', 'menu_items', 'menus'];
+        $tables = ['areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters'];
 
         foreach ($tables as $table) {
             if (DB::connection()->getSchemaBuilder()->hasTable($table)) {
                 DB::table($table)->delete();
             }
         }
+    }
+
+    /**
+     * Raw bulk inserts with explicit `id` values leave PostgreSQL's
+     * SEQUENCE untouched — subsequent Eloquent INSERTs pull id=1 and
+     * collide with the seeded rows. MySQL/MariaDB auto-increment
+     * silently advances past explicit ids, and SQLite uses ROWID so
+     * the issue doesn't arise. PG needs an explicit `setval`.
+     *
+     * Call this after a setUp that seeds rows with explicit ids and
+     * before any test code that creates rows through Eloquent.
+     */
+    protected function syncSequence(string $table): void
+    {
+        $connection = DB::connection();
+
+        if ($connection->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $rawMax = DB::table($table)->max('id');
+        $maxId = is_numeric($rawMax) ? (int) $rawMax : 0;
+
+        if ($maxId === 0) {
+            return;
+        }
+
+        $connection->statement(
+            "SELECT setval(pg_get_serial_sequence(?, 'id'), ?)",
+            [$table, $maxId],
+        );
     }
 
     /**

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
+use Illuminate\Database\Query\Expression;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class AggregateTest extends TestCase
@@ -112,5 +114,81 @@ final class AggregateTest extends TestCase
         $this->expectExceptionMessage('must not be empty');
 
         Aggregate::sum('tickets')->into('');
+    }
+
+    public function test_filter_is_null_by_default(): void
+    {
+        $this->assertNull(Aggregate::sum('tickets')->filter);
+    }
+
+    public function test_filter_method_sets_equality_predicate(): void
+    {
+        $aggregate = Aggregate::sum('tickets')->filter(['type' => 'fire']);
+
+        $this->assertNotNull($aggregate->filter);
+        $this->assertSame(FilterPredicateKind::Equality, $aggregate->filter->getKind());
+        $this->assertSame(['type' => 'fire'], $aggregate->filter->getConditions());
+    }
+
+    public function test_filter_not_null_method_sets_not_null_predicate(): void
+    {
+        $aggregate = Aggregate::sum('tickets')->filterNotNull('deleted_at');
+
+        $this->assertNotNull($aggregate->filter);
+        $this->assertSame(FilterPredicateKind::NotNull, $aggregate->filter->getKind());
+    }
+
+    public function test_filter_raw_method_sets_raw_predicate(): void
+    {
+        $aggregate = Aggregate::sum('tickets')->filterRaw('status = 1');
+
+        $this->assertNotNull($aggregate->filter);
+        $this->assertSame(FilterPredicateKind::Raw, $aggregate->filter->getKind());
+        $this->assertSame('status = 1', $aggregate->filter->getRawSql());
+    }
+
+    public function test_filter_raw_accepts_db_raw_expression(): void
+    {
+        // DB::raw() returns a Laravel Expression — the package extracts
+        // the underlying SQL string via reflection (Expression::getValue
+        // requires a Grammar instance the fluent call site doesn't have).
+        $expr = new Expression('status = 1');
+        $aggregate = Aggregate::sum('tickets')->filterRaw($expr, ['status']);
+
+        $this->assertNotNull($aggregate->filter);
+        $this->assertSame(FilterPredicateKind::Raw, $aggregate->filter->getKind());
+        $this->assertSame('status = 1', $aggregate->filter->getRawSql());
+        $this->assertSame(['status'], $aggregate->filter->watchColumns());
+    }
+
+    public function test_filter_modifier_returns_new_instance(): void
+    {
+        $base = Aggregate::sum('tickets');
+        $filtered = $base->filter(['type' => 'fire']);
+
+        $this->assertNotSame($base, $filtered);
+        $this->assertNull($base->filter);
+        $this->assertNotNull($filtered->filter);
+    }
+
+    public function test_into_carries_filter_to_definition(): void
+    {
+        $definition = Aggregate::sum('tickets')
+            ->filter(['type' => 'fire'])
+            ->into('tickets_total');
+
+        $this->assertNotNull($definition->filter);
+        $this->assertSame(FilterPredicateKind::Equality, $definition->filter->getKind());
+    }
+
+    public function test_exclusive_preserves_filter(): void
+    {
+        $aggregate = Aggregate::sum('tickets')
+            ->filter(['type' => 'fire'])
+            ->exclusive();
+
+        $this->assertNotNull($aggregate->filter);
+        $this->assertSame(FilterPredicateKind::Equality, $aggregate->filter->getKind());
+        $this->assertFalse($aggregate->inclusive);
     }
 }

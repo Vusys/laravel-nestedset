@@ -6,6 +6,9 @@ namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\FilterPredicate;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeBounds;
 
 /**
@@ -28,7 +31,7 @@ use Vusys\NestedSet\NodeBounds;
 final class RecomputeMaintenance
 {
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      *                                                         column => previous_value pairs ORed into the WHERE.
@@ -87,7 +90,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      * @param  'always'|'auto'|'never'  $locking
@@ -122,10 +125,10 @@ final class RecomputeMaintenance
                 $scopeJoin .= " AND inner_a.{$col} = outer_a.{$col}";
             }
 
-            $func = $spec['function'] === AggregateFunction::Max ? 'MAX' : 'MIN';
-            $source = $spec['source'];
+            $filterPredicate = $spec['filter'] ?? null;
+            $aggExpr = self::innerAggregateExpression($spec, $filterPredicate);
 
-            $selects[] = "(SELECT {$func}(inner_a.{$source}) FROM {$table} AS inner_a "
+            $selects[] = "(SELECT {$aggExpr} FROM {$table} AS inner_a "
                 ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}) AS {$alias}";
         }
 
@@ -188,7 +191,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}>  $columns
      * @param  list<array<string, mixed>>  $candidates
      */
     private static function writeRecomputedValues(
@@ -222,5 +225,118 @@ final class RecomputeMaintenance
     private static function recomputeAlias(int $index): string
     {
         return 'recompute_'.$index;
+    }
+
+    /**
+     * Builds the inner SUM/COUNT/AVG/MIN/MAX expression for the
+     * recompute subquery — wrapping the source column reference in a
+     * `CASE WHEN <filter> THEN … ELSE …` when a filter is present.
+     *
+     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}  $spec
+     */
+    private static function innerAggregateExpression(array $spec, ?FilterPredicate $filter): string
+    {
+        $source = $spec['source'];
+        $sourceRef = "inner_a.{$source}";
+
+        if ($filter instanceof FilterPredicate) {
+            $pred = self::filterPredicateSql($filter, 'inner_a.');
+
+            return match ($spec['function']) {
+                AggregateFunction::Sum => sprintf(
+                    'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
+                    $pred,
+                    $sourceRef,
+                ),
+                AggregateFunction::Count => sprintf(
+                    // COUNT(NULL) and COUNT(expr-returning-NULL) both yield 0
+                    // — wrap in a CASE that returns 1 / NULL to match
+                    // COUNT(*)-semantics-with-filter as well as
+                    // COUNT(col)-with-filter (NULL source already produces
+                    // NULL via the CASE branch).
+                    'COUNT(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $spec['source'] === '' ? '1' : $sourceRef,
+                ),
+                AggregateFunction::Avg => sprintf(
+                    'AVG(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $sourceRef,
+                ),
+                AggregateFunction::Min => sprintf(
+                    'MIN(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $sourceRef,
+                ),
+                AggregateFunction::Max => sprintf(
+                    'MAX(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $sourceRef,
+                ),
+            };
+        }
+
+        return match ($spec['function']) {
+            AggregateFunction::Sum => "COALESCE(SUM({$sourceRef}), 0)",
+            AggregateFunction::Count => $spec['source'] === ''
+                ? 'COUNT(*)'
+                : "COUNT({$sourceRef})",
+            AggregateFunction::Avg => "AVG({$sourceRef})",
+            AggregateFunction::Min => "MIN({$sourceRef})",
+            AggregateFunction::Max => "MAX({$sourceRef})",
+        };
+    }
+
+    private static function filterPredicateSql(FilterPredicate $filter, string $qualifier): string
+    {
+        return match ($filter->getKind()) {
+            FilterPredicateKind::Equality => implode(' AND ', array_map(
+                static function (string $col, mixed $value) use ($qualifier): string {
+                    if ($value === null) {
+                        return "{$qualifier}{$col} IS NULL";
+                    }
+
+                    return "{$qualifier}{$col} = ".self::quoteFilterValue($value);
+                },
+                array_keys($filter->getConditions()),
+                array_values($filter->getConditions()),
+            )),
+            FilterPredicateKind::NotNull => sprintf(
+                '%s%s IS NOT NULL',
+                $qualifier,
+                (string) $filter->getNotNullColumn(),
+            ),
+            FilterPredicateKind::Raw => $filter->getRawSql() ?? throw new AggregateConfigurationException(
+                'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
+            ),
+        };
+    }
+
+    private static function quoteFilterValue(mixed $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return (string) $value;
+        }
+
+        if (! is_string($value)) {
+            throw new AggregateConfigurationException(sprintf(
+                'FilterPredicate equality condition value must be scalar; got %s.',
+                get_debug_type($value),
+            ));
+        }
+
+        return "'".str_replace("'", "''", $value)."'";
     }
 }

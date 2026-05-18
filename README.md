@@ -641,6 +641,476 @@ For tooling that needs to enumerate what a model declares at runtime
 `$model->getAggregateDefinitions()`, which returns the user-facing
 `AggregateDefinition` list (internal AVG companions are filtered out).
 
+### Filtered aggregates
+
+Add a filter to any `#[NestedSetAggregate]` declaration so only nodes
+that match a condition contribute to the rollup:
+
+```php
+#[NestedSetAggregate(column: 'fire_tickets', sum:   'tickets', filter: ['type' => 'fire'])]
+#[NestedSetAggregate(column: 'fire_count',   count: true,      filter: ['type' => 'fire'])]
+#[NestedSetAggregate(column: 'water_max',    max:   'tickets', filter: ['type' => 'water'])]
+#[NestedSetAggregate(column: 'has_tickets',  count: true,      filterNotNull: 'tickets')]
+class Area extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+Three filter forms:
+
+| Form | Attribute param | Meaning |
+|------|----------------|---------|
+| Equality | `filter: ['col' => value, ...]` | All listed columns must match |
+| Not-null | `filterNotNull: 'col'` | `col IS NOT NULL` |
+| Raw SQL | `filterRaw: 'active = 1'`, `filterRawWatches: ['active']` | Arbitrary SQL predicate |
+
+The fluent builder equivalents:
+
+```php
+Aggregate::sum('tickets')->filter(['type' => 'fire'])->into('fire_tickets')
+Aggregate::count()->filterNotNull('tickets')->into('has_tickets')
+Aggregate::max('tickets')->filterRaw('active = 1', watches: ['active'])->into('active_max')
+// Or with DB::raw — reads as obviously-SQL at the call site:
+Aggregate::max('tickets')->filterRaw(DB::raw('active = 1'), watches: ['active'])->into('active_max')
+```
+
+`filterRaw()` accepts either a string or a Laravel
+`Illuminate\Contracts\Database\Query\Expression`. The Expression form
+(`DB::raw(...)`) is the conventional Laravel signal for *this is raw
+SQL, I take responsibility for the contents* — useful for code review.
+Both forms produce identical SQL.
+
+Write raw predicates with **bare column names** — the package emits
+them inside a correlated subquery whose only `FROM` is the model's
+table, so SQL's local-resolution rule binds bare references to the
+row being evaluated regardless of what the calling context has in
+scope.
+
+Filtered columns use the same `$table->nestedSetAggregate(...)` migration
+macro as unfiltered ones — the migration doesn't know about filter logic.
+
+**Maintenance:** all three filter forms are kept in sync incrementally —
+no scheduled repair pass needed.
+
+- *Equality* and *not-null* predicates are evaluated in PHP, so the
+  package produces a signed delta per mutation and adds one extra `UPDATE`
+  to the ancestor chain. Same cost shape as unfiltered SUM/COUNT.
+- *Raw SQL* predicates can't be evaluated in PHP, so delta arithmetic is
+  unavailable. When any watched column changes (or the row is created /
+  deleted / moved / restored), the package bulk-recomputes the affected
+  raw-filter column over the affected ancestor chain via one SELECT
+  plus one UPDATE per ancestor row. Cost: O(depth × subtree-size) per
+  mutation that dirties a watched column, matching the MIN/MAX
+  extremum-lost path. Mutations that don't touch a watched column skip
+  the recompute entirely.
+
+The fresh-read path (`withFreshAggregates()`, `freshAggregate()`) always
+generates correct SQL — `CASE WHEN pred THEN source ELSE … END` — regardless
+of filter kind.
+
+**Index tuning.** Include every raw-filter *watched column* in the
+`nestedSet(cover: [...])` index alongside the source column. The
+inline `SUM(CASE WHEN <raw> THEN i.source ELSE 0 END)` shape rides
+the same covering range scan as unfiltered aggregates only when the
+columns the CASE WHEN reads are all in the cover; otherwise MySQL
+falls back to a non-covering scan that fetches each candidate row
+through the clustered index (~40× slower at N=10K).
+
+```php
+$table->nestedSet(cover: ['tickets', 'status', 'priority']);
+$table->nestedSetAggregate('open_tickets');  // filtered on status
+```
+
+For trees over ~5K rows with raw-filter aggregates declared, prefer
+`fixAggregates(chunkSize: 1000)` or `queueFixAggregates()` over the
+unchunked call — the full-table SELECT still scales linearly with N
+but the chunked path bounds each statement so long-running
+operations don't lock other writers behind them.
+
+---
+
+### PHP listener aggregates
+
+When a contribution requires PHP logic that can't be expressed as a SQL
+column reference — for example `SUM(base_power * level)` where the product
+is computed per node — declare a **listener aggregate**:
+
+```php
+use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+
+class WeightedPowerListener implements TreeAggregateListener
+{
+    public function contribution(Model $node): int|float|null
+    {
+        return (int) $node->base_power * (int) $node->level;
+    }
+
+    /** Columns whose changes should trigger re-aggregation on ancestors. */
+    public function watchColumns(): array
+    {
+        return ['base_power', 'level'];
+    }
+}
+```
+
+Declare it on the model with `#[NestedSetAggregateListener]`:
+
+```php
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
+
+#[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
+#[NestedSetAggregateListener(column: 'fire_count',     listener: FireCountListener::class,     operation: AggregateFunction::Sum)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+`contribution()` returns this node's value. `null` means "exclude this
+node" — useful for Min/Max where some nodes have no meaningful value.
+`watchColumns()` declares which attribute changes trigger incremental
+maintenance.
+
+Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`. `Avg` is
+auto-promoted into a pair of internal `Sum` + `Count` companions plus
+the display column — see [Listener AVG](#listener-avg) below.
+
+#### Migration
+
+Listener columns use the same macro as SQL aggregates:
+
+```php
+$table->nestedSetAggregate('weighted_power');             // integer, NOT NULL, default 0
+$table->nestedSetAggregate('fire_count');                  // integer, NOT NULL, default 0
+$table->nestedSetAggregate('fire_max', type: 'min_max');  // nullable, for Min/Max
+```
+
+**Float contributions need a non-integer column type.** A listener's
+`contribution()` returns `int|float|null` and the package threads
+floats end-to-end through the maintenance pipeline. But the *stored
+column* still has to accept them. If you declared the column as
+integer via `nestedSetAggregate()` and your listener returns
+fractional values, the DB will truncate at the write side and your
+column will drift.
+
+Declare a decimal column manually for float-returning listeners:
+
+```php
+// instead of $table->nestedSetAggregate('weighted_score'),
+$table->decimal('weighted_score', 14, 4)->default(0);
+// or for nullable Min/Max-style:
+$table->decimal('weighted_max', 14, 4)->nullable();
+```
+
+Cast as `float` (or `decimal:N`) on the model:
+
+```php
+protected $casts = [
+    'weighted_score' => 'float',
+];
+```
+
+The aggregate machinery doesn't care which Blueprint helper produced
+the column — it cares only that the column exists with the declared
+name and accepts the value range your listener returns.
+
+#### Method-override form
+
+```php
+use Vusys\NestedSet\Aggregates\ListenerAggregate;
+
+/** @return list<\Vusys\NestedSet\Aggregates\ListenerAggregateDefinition> */
+protected function nestedSetListenerAggregates(): array
+{
+    return [
+        ListenerAggregate::sum(WeightedPowerListener::class)->into('weighted_power'),
+        ListenerAggregate::max(FireMaxListener::class)->into('fire_max'),
+    ];
+}
+```
+
+Attribute and method-override forms can coexist; attribute declarations
+come first.
+
+#### Listener AVG
+
+Declare a listener AVG with `AggregateFunction::Avg` and the package
+auto-promotes two internal companions — a Sum and a Count — that ride
+the same listener. The display column is then written by the same
+`avg = sum / NULLIF(count, 0)` SET clause that powers SQL AVG, so the
+ancestor `UPDATE` stays a single statement.
+
+```php
+#[NestedSetAggregateListener(column: 'weighted_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The companion columns are conventionally suffixed `__sum` and `__count`
+on the AVG column name. You declare them in the migration alongside the
+display column:
+
+```php
+// Display column — nullable, fractional. Use decimal for fixed-precision
+// or float for an approximate type. Cast on the model accordingly.
+$table->decimal('weighted_avg', 14, 4)->nullable();
+
+// Internal companions — integer (or decimal, if your listener returns floats).
+$table->nestedSetAggregate('weighted_avg__sum');
+$table->nestedSetAggregate('weighted_avg__count');
+```
+
+Cast all three on the model:
+
+```php
+protected $casts = [
+    'weighted_avg'        => 'float',     // or 'decimal:4'
+    'weighted_avg__sum'   => 'integer',
+    'weighted_avg__count' => 'integer',
+];
+```
+
+The companions are tagged internal — `getAggregateDefinitions()` filters
+them out, so they don't appear in user-facing introspection. The
+listener's `contribution()` runs once per node per save and produces
+both Sum and Count contributions in one call (Count adds `1` when
+`contribution()` returns non-null, `0` when it returns `null`).
+
+The companion column names must follow the `__sum` / `__count`
+convention — the auto-promotion always derives them from the display
+column name, so renaming them isn't supported.
+
+#### Maintenance
+
+Listener aggregates ride the same lifecycle hooks as SQL aggregates. On
+each save the package calls `contribution()` on the changed node, computes
+a delta, and propagates it up the ancestor chain. Min/Max listener columns
+that may have been invalidated trigger a PHP-based ancestor recompute —
+the package issues exactly two SELECTs (one to load the ancestor chain,
+one to load every in-scope node under the topmost ancestor) regardless of
+chain depth, then computes each ancestor's new extremum in PHP. Listener
+contributions are cached per node across all Min/Max definitions, so each
+`contribution()` call runs once per node per recompute.
+
+`fixAggregates()`, `aggregateErrors()`, and `freshAggregate()` all cover
+listener columns:
+
+```php
+Monster::fixAggregates();              // repairs SQL and listener columns together
+Monster::aggregateErrors();            // counts drift in both column types
+$node->freshAggregate('weighted_power'); // PHP-computed fresh value for one node
+```
+
+`replicate()` resets listener columns to `0` (Sum/Count) or `null`
+(Min/Max) on clones, matching the SQL-aggregate behaviour.
+
+#### Listener aggregate limitations
+
+- **`withFreshAggregates()` does not cover listener columns** — the
+  collection-level fresh-read path is SQL-only. Use `freshAggregate('col')`
+  for a single node or repair the whole set with `fixAggregates()`.
+- **`fixAggregates()` is O(N²) for listener columns** — it loads every
+  in-scope node and scans each node's subtree in PHP. Use
+  `withDeferredAggregateMaintenance()` for batch mutations to amortise
+  the cost down to one pass.
+- **Listener repair / Min-Max recompute holds the bounding-box
+  subtree in PHP memory.** `fixAggregates()` loads every in-scope
+  Eloquent model; the Min/Max recompute path loads every in-scope
+  node under the topmost affected ancestor. At N > ~100K nodes this
+  is the more pressing constraint than CPU. Anchored
+  `fixAggregates($subtreeRoot)` and chunked `fixAggregates(chunkSize: …)`
+  both bound the working set.
+- **Filters are encoded in the listener itself** — there is no `filter:`
+  param on `#[NestedSetAggregateListener]`. Return `null` from
+  `contribution()` to exclude a node, or `0` / `1` to count conditionally.
+
+---
+
+### Recipes
+
+The aggregate primitives compose. A handful of common shapes:
+
+#### Status breakdown — one column per state
+
+For a workflow column with a small enum of values, declare one
+filtered SUM and one filtered COUNT per state. Cheap delta path
+on every save; one extra `UPDATE` per state per mutation.
+
+```php
+#[NestedSetAggregate(column: 'open_tickets',   sum: 'tickets', filter: ['status' => 'open'])]
+#[NestedSetAggregate(column: 'open_count',     count: true,    filter: ['status' => 'open'])]
+#[NestedSetAggregate(column: 'closed_tickets', sum: 'tickets', filter: ['status' => 'closed'])]
+#[NestedSetAggregate(column: 'closed_count',   count: true,    filter: ['status' => 'closed'])]
+class Project extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+When a ticket flips from `open` to `closed`, the package fires
+a delta on `open_*` *and* on `closed_*` in the same `saved`
+event — `+/- ticket_value` on each pair, propagated to every
+ancestor in one `UPDATE`.
+
+#### Inclusive vs exclusive — totals including and below
+
+Two declarations against the same source column gives you both
+"my subtree total" (inclusive) and "everything below me" (exclusive)
+without double-counting. UI screens use the exclusive value when
+they show *self* and *descendants total* side by side; the
+inclusive one when they show a single rollup.
+
+```php
+#[NestedSetAggregate(column: 'budget_inclusive', sum: 'budget')]
+#[NestedSetAggregate(column: 'budget_below',     sum: 'budget', exclusive: true)]
+class Department extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+`exclusive: true` excludes self from the rollup. A leaf reports
+`budget_below = 0`. A folder with three children each holding
+`budget = 100` reports `budget_inclusive = 300 + own_budget` and
+`budget_below = 300`.
+
+Exclusive aggregates are maintained incrementally across every
+lifecycle hook (create, update, delete, restore, move). The
+chain-recompute path runs whenever a watched column dirties on save —
+cost shape is O(depth × subtree-size) per mutation, the same as the
+MIN/MAX extremum-lost branch. Mutations that don't touch a watched
+column skip the recompute entirely.
+
+#### Date-window roll-ups via raw filter
+
+When the filter needs a SQL function or a comparison against
+something the equality / not-null forms can't express, drop down
+to `filterRaw`. Watched columns trigger an ancestor-chain
+recompute on save.
+
+```php
+#[NestedSetAggregate(
+    column: 'recent_revenue',
+    sum: 'revenue',
+    filterRaw: 'closed_at >= CURRENT_DATE - INTERVAL 30 DAY',
+    filterRawWatches: ['closed_at'],
+)]
+class Account extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The watch on `closed_at` says "if this column changes on a save,
+the raw-filter column may need to be recomputed for the
+ancestor chain". A `name` change won't trigger the recompute;
+a `closed_at` change will.
+
+Date-window filters have a second source of drift: the window
+slides every day. Schedule a periodic `fixAggregates()` (or
+`queueFixAggregates()`) to catch the rows that *would* re-enter
+or leave the window simply because of time passing — none of
+which fire a `saved` event.
+
+#### Weighted contributions via listener
+
+When each row's contribution is a PHP expression — a product,
+ratio, lookup-driven value, anything that isn't a single
+column reference — declare a `TreeAggregateListener` and route
+through a listener aggregate. SUM is the common one but
+COUNT / MIN / MAX work too.
+
+```php
+final class RiskWeightedExposureListener implements TreeAggregateListener
+{
+    public function contribution(Model $node): int|float|null
+    {
+        return $node->exposure * ($node->risk_score / 100.0);
+    }
+
+    public function watchColumns(): array
+    {
+        return ['exposure', 'risk_score'];
+    }
+}
+
+#[NestedSetAggregateListener(
+    column: 'weighted_exposure',
+    listener: RiskWeightedExposureListener::class,
+    operation: AggregateFunction::Sum,
+)]
+class Position extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The maintained column is a `decimal` (declare it via the
+migration's standard Blueprint helpers, not `nestedSetAggregate`,
+when you need a non-integer column type). Cast as `float` or
+`decimal:N` on the model.
+
+#### Conditional-contribution via listener `null`
+
+Listener `contribution()` can return `null` to exclude a row.
+This is the listener-side equivalent of a filter — useful when
+the inclusion test isn't expressible as a SQL predicate.
+
+```php
+final class ApprovedAmountListener implements TreeAggregateListener
+{
+    public function contribution(Model $node): ?int
+    {
+        // Only "approved" amounts roll up; everything else is excluded.
+        return $node->status === 'approved' ? (int) $node->amount : null;
+    }
+
+    public function watchColumns(): array
+    {
+        return ['status', 'amount'];
+    }
+}
+```
+
+For SUM operations, `null` is treated as zero (the row doesn't
+contribute). For MIN/MAX, `null` skips the row entirely — useful
+when you want "minimum across only the qualifying rows".
+
+#### Multiple Min/Max sliced by type
+
+Filtered MIN/MAX gives you per-category extrema without a
+`GROUP BY` at read time. Useful for sidebar / dashboard widgets
+that show "lowest open priority", "highest urgent priority", etc.
+
+```php
+#[NestedSetAggregate(column: 'low_priority_min',  min: 'priority', filter: ['status' => 'open'])]
+#[NestedSetAggregate(column: 'high_priority_max', max: 'priority', filter: ['status' => 'urgent'])]
+class Issue extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+Each column gets its own cheap-delta / recompute behaviour
+independently — `low_priority_min` only triggers a recompute
+when the deleted/changed row's value matched the stored extremum
+AND the row's `status` was `open`.
+
+#### Ad-hoc fresh aggregates without declaration
+
+`withFreshAggregates()` accepts inline `Aggregate` objects — no
+column needed on the model, no migration. Useful for one-off
+reports against an arbitrary predicate.
+
+```php
+$rows = Project::query()
+    ->whereDescendantOf($rootBounds)
+    ->withFreshAggregates([
+        'p1_count'    => Aggregate::count()->filter(['priority' => 1]),
+        'recent_sum'  => Aggregate::sum('amount')->filterRaw('created_at >= ?', watches: []),
+    ])
+    ->get();
+```
+
+The returned models have `p1_count` and `recent_sum` as computed
+attributes. Nothing's persisted; subsequent reads pay the
+correlated-subquery cost each time.
+
+#### Choosing the right form
+
+| Need | Use |
+|------|-----|
+| Sum/count/min/max/avg over a column, all rows | unfiltered `#[NestedSetAggregate]` |
+| Same, but only rows matching column = value | `filter: ['col' => v]` |
+| Same, but only rows where a column is not null | `filterNotNull: 'col'` |
+| Same, but predicate needs SQL functions or comparisons | `filterRaw: '...'` + `filterRawWatches: [...]` |
+| Contribution is a PHP expression | `TreeAggregateListener` + `#[NestedSetAggregateListener]` |
+| Aggregate descendants only (not self) | `exclusive: true` |
+| One-off / ad-hoc / no column on the model | `withFreshAggregates(['alias' => Aggregate::...])` |
+
+---
+
 ### Maintenance
 
 Aggregates ride the package's existing lifecycle events:

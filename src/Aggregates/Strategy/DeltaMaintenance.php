@@ -47,12 +47,14 @@ final class DeltaMaintenance
      * this when the change can only extend the extremum (insert, or
      * source-update where new is more extreme than old).
      *
-     * @param  array<string, int>  $deltas  column => signed integer delta
+     * @param  array<string, int|float>  $deltas  column => signed delta. Listener
+     *                                            aggregates may pass floats; SQL aggregates
+     *                                            over integer source columns pass ints.
      * @param  array<string, array{sum: string, count: string}>  $avgs
      *                                                                  avg_display_col => {sum companion, count companion}
-     * @param  array<string, array{function: AggregateFunction, value: int}>  $extremes
-     *                                                                                   cheap-delta candidates: aggregate column =>
-     *                                                                                   {function: Min|Max, value: candidate}.
+     * @param  array<string, array{function: AggregateFunction, value: int|float}>  $extremes
+     *                                                                                         cheap-delta candidates: aggregate column =>
+     *                                                                                         {function: Min|Max, value: candidate}.
      * @param  array<string, mixed>  $scope  column => value, applied as equality WHEREs
      */
     public static function apply(
@@ -108,7 +110,7 @@ final class DeltaMaintenance
     }
 
     /**
-     * @param  array<string, int>  $deltas
+     * @param  array<string, int|float>  $deltas
      * @return array<string, TreeExpression>
      */
     private static function buildDeltaSetClauses(array $deltas): array
@@ -116,12 +118,12 @@ final class DeltaMaintenance
         $clauses = [];
 
         foreach ($deltas as $column => $delta) {
-            if ($delta === 0) {
+            if ($delta == 0) {
                 continue;
             }
 
             $sign = $delta >= 0 ? '+' : '-';
-            $abs = abs($delta);
+            $abs = self::formatNumeric(abs($delta));
 
             $clauses[$column] = new TreeExpression("{$column} {$sign} {$abs}");
         }
@@ -130,7 +132,7 @@ final class DeltaMaintenance
     }
 
     /**
-     * @param  array<string, int>  $deltas
+     * @param  array<string, int|float>  $deltas
      * @param  array<string, array{sum: string, count: string}>  $avgs
      * @return array<string, TreeExpression>
      */
@@ -157,14 +159,14 @@ final class DeltaMaintenance
         return $clauses;
     }
 
-    private static function columnPlusDelta(string $column, int $delta): string
+    private static function columnPlusDelta(string $column, int|float $delta): string
     {
-        if ($delta === 0) {
+        if ($delta == 0) {
             return $column;
         }
 
         $sign = $delta > 0 ? '+' : '-';
-        $abs = abs($delta);
+        $abs = self::formatNumeric(abs($delta));
 
         return "{$column} {$sign} {$abs}";
     }
@@ -176,7 +178,7 @@ final class DeltaMaintenance
      * Portable across SQLite / MySQL / MariaDB / PostgreSQL — no LEAST
      * / GREATEST dependency.
      *
-     * @param  array<string, array{function: AggregateFunction, value: int}>  $extremes
+     * @param  array<string, array{function: AggregateFunction, value: int|float}>  $extremes
      * @return array<string, TreeExpression>
      */
     private static function buildExtremeSetClauses(array $extremes): array
@@ -184,7 +186,7 @@ final class DeltaMaintenance
         $clauses = [];
 
         foreach ($extremes as $column => $spec) {
-            $value = $spec['value'];
+            $value = self::formatNumeric($spec['value']);
             $operator = $spec['function'] === AggregateFunction::Max ? '>' : '<';
 
             $clauses[$column] = new TreeExpression(
@@ -193,5 +195,25 @@ final class DeltaMaintenance
         }
 
         return $clauses;
+    }
+
+    /**
+     * Format a numeric for direct interpolation into SQL. PHP's default
+     * float-to-string conversion respects the runtime `precision` ini
+     * setting and can emit scientific notation (`1.0E-5`) on extreme
+     * values; using a locale-independent decimal form keeps the SQL
+     * portable across MySQL/MariaDB/PostgreSQL/SQLite.
+     */
+    private static function formatNumeric(int|float $value): string
+    {
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        // 14 significant digits matches PHP's default serialize precision
+        // without crossing into scientific notation for typical magnitudes.
+        $formatted = rtrim(rtrim(sprintf('%.14F', $value), '0'), '.');
+
+        return $formatted === '' || $formatted === '-' ? '0' : $formatted;
     }
 }
