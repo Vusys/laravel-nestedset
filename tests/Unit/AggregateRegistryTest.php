@@ -14,6 +14,10 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AttributeOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithCompanionsArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadListenerMethodEntryArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadListenerMethodReturnArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadMethodEntryArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\BadMethodReturnArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\DuplicateColumnArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FilteredAvgArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\HybridArea;
@@ -187,5 +191,37 @@ final class AggregateRegistryTest extends TestCase
             $this->assertSame(FilterPredicateKind::Equality, $companion->filter->getKind());
             $this->assertSame(['type' => 'fire'], $companion->filter->getConditions());
         }
+    }
+
+    public function test_method_override_must_return_array(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('nestedSetAggregates() must return an array');
+
+        AggregateRegistry::for(BadMethodReturnArea::class);
+    }
+
+    public function test_method_override_entry_must_be_aggregate_definition(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('entry at index 0 is not an AggregateDefinition');
+
+        AggregateRegistry::for(BadMethodEntryArea::class);
+    }
+
+    public function test_listener_method_override_must_return_array(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('nestedSetListenerAggregates() must return an array');
+
+        AggregateRegistry::for(BadListenerMethodReturnArea::class);
+    }
+
+    public function test_listener_method_override_entry_must_be_listener_aggregate_definition(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('entry at index 0 is not a ListenerAggregateDefinition');
+
+        AggregateRegistry::for(BadListenerMethodEntryArea::class);
     }
 }

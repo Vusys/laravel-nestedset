@@ -7,6 +7,9 @@ namespace Vusys\NestedSet\Tests\Performance;
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
+use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
+use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
+use Vusys\NestedSet\Tests\Performance\Fixtures\AggregateTreeShapes;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
 use Vusys\NestedSet\TreeFixResult;
 
@@ -204,6 +207,143 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
             'deepChain fixTree (drifted), N=10000',
             fn (): TreeFixResult => Area::fixTree(),
         );
+        $this->assertBenchmarksRan();
+    }
+
+    // ----------------------------------------------------------------
+    // raw-filter chain recompute — exercises the new
+    // applyRawFilterChainRecompute path against shapes where the cost
+    // is dominated by chain depth (deepChain) or per-ancestor subtree
+    // size (wideShallow). The cost-per-save is O(depth × subtree-size).
+    // ----------------------------------------------------------------
+
+    public function test_deep_chain_raw_filter_source_update(): void
+    {
+        // Deep chain stresses chain length — recompute touches every
+        // ancestor (D = N). Inner subquery per ancestor is small
+        // (1..N-i). Net cost ≈ O(N) per ancestor × N ancestors = O(N²).
+        foreach ([100, 1_000] as $n) {
+            DB::table('branches')->delete();
+            AggregateTreeShapes::branchesDeepChain(nodes: $n);
+
+            $leaf = Branch::query()->orderByDesc('depth')->orderBy('id')->firstOrFail();
+
+            $this->bench(
+                "deepChain raw-filter source-update at leaf, N={$n}",
+                function () use ($leaf): void {
+                    $leaf->tickets = 42;
+                    $leaf->save();
+                },
+            );
+        }
+        $this->assertBenchmarksRan();
+    }
+
+    public function test_wide_shallow_raw_filter_source_update(): void
+    {
+        // Wide-shallow: depth = 1 but the root's subtree size = N. The
+        // recompute touches one ancestor (root) but the inner subquery
+        // scans N rows. Useful counterpart to deepChain.
+        foreach ([100, 1_000, 10_000] as $n) {
+            DB::table('branches')->delete();
+            AggregateTreeShapes::branchesWideShallow(directChildren: $n);
+
+            $leaf = Branch::query()->whereNotNull('parent_id')->orderBy('id')->firstOrFail();
+
+            $this->bench(
+                "wideShallow raw-filter source-update at leaf, children={$n}",
+                function () use ($leaf): void {
+                    $leaf->tickets = 42;
+                    $leaf->save();
+                },
+            );
+        }
+        $this->assertBenchmarksRan();
+    }
+
+    public function test_wide_shallow_raw_filter_fix_aggregates(): void
+    {
+        foreach ([100, 1_000, 10_000] as $n) {
+            DB::table('branches')->delete();
+            AggregateTreeShapes::branchesWideShallow(directChildren: $n);
+
+            $this->bench(
+                "wideShallow Branch::fixAggregates() (raw filter), children={$n}",
+                fn (): AggregateFixResult => Branch::fixAggregates(),
+            );
+        }
+        $this->assertBenchmarksRan();
+    }
+
+    // ----------------------------------------------------------------
+    // listener Min/Max PHP-side chain recompute — measures the cost
+    // of loading every in-scope node into Eloquent + iterating in PHP
+    // for each affected ancestor when an extremum is lost.
+    // ----------------------------------------------------------------
+
+    public function test_deep_chain_listener_min_recompute(): void
+    {
+        // Each ancestor's contribution cache + bounds check runs in PHP
+        // — pure-O(N²) on the deep-chain shape because the topmost
+        // ancestor covers the full table.
+        foreach ([100, 1_000] as $n) {
+            DB::table('monsters')->delete();
+            AggregateTreeShapes::monstersDeepChain(nodes: $n);
+
+            // Force a Min recompute: drop one leaf below the seeded
+            // uniform level, then raise it past the new minimum.
+            $leaf = Monster::query()->orderByDesc('depth')->orderBy('id')->firstOrFail();
+            $leaf->level = 1;
+            $leaf->save();
+            $leaf->refresh();
+
+            $this->bench(
+                "deepChain listener Min recompute at leaf, N={$n}",
+                function () use ($leaf): void {
+                    $leaf->level = 9;
+                    $leaf->save();
+                },
+            );
+        }
+        $this->assertBenchmarksRan();
+    }
+
+    public function test_wide_shallow_listener_min_delete(): void
+    {
+        foreach ([100, 1_000, 10_000] as $n) {
+            DB::table('monsters')->delete();
+            AggregateTreeShapes::monstersWideShallow(directChildren: $n);
+
+            // Set one child's level to 1 so it's the unique Min;
+            // deleting it forces the root's recompute.
+            $candidate = Monster::query()->whereNotNull('parent_id')->orderBy('id')->firstOrFail();
+            $candidate->level = 1;
+            $candidate->save();
+            $candidate->refresh();
+
+            $this->bench(
+                "wideShallow listener Min delete of extremum holder, children={$n}",
+                function () use ($candidate): void {
+                    $candidate->delete();
+                },
+            );
+        }
+        $this->assertBenchmarksRan();
+    }
+
+    public function test_wide_shallow_listener_fix_aggregates(): void
+    {
+        // fixListenerAggregatesPhp is O(N²) — guard against silent
+        // regressions in that bound.
+        foreach ([100, 1_000] as $n) {
+            DB::table('monsters')->delete();
+            AggregateTreeShapes::monstersWideShallow(directChildren: $n);
+
+            $this->bench(
+                "wideShallow Monster::fixAggregates() (listener O(N^2)), children={$n}",
+                fn (): AggregateFixResult => Monster::fixAggregates(),
+            );
+        }
         $this->assertBenchmarksRan();
     }
 }

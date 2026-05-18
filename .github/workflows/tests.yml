@@ -36,12 +36,14 @@ jobs:
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
           # Coverage on one cell per backend so backend-specific code
-          # paths (LATERAL on PG/MySQL, derived shape on MariaDB,
-          # correlated fallback on SQLite) all appear covered. Codecov
-          # merges per-flag uploads from the same commit.
+          # paths (LATERAL on PG/MySQL, STRAIGHT_JOIN on MySQL, derived
+          # shape on MariaDB, correlated fallback on SQLite) all appear
+          # covered. Codecov merges per-flag uploads from the same
+          # commit.
           - { laravel: '13.0', php: '8.4', db: sqlite,  coverage: true }
           - { laravel: '13.0', php: '8.4', db: pgsql,   coverage: true }
           - { laravel: '13.0', php: '8.4', db: mariadb, coverage: true }
+          - { laravel: '13.0', php: '8.4', db: mysql,   coverage: true }
 
     name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.db }}"
 
