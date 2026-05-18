@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
@@ -1466,6 +1467,10 @@ trait HasNestedSetAggregates
      * SUM / COUNT, NULL for AVG / MIN / MAX); on subsequent placement
      * the regular maintenance path computes correct values.
      *
+     * Also clears `deleted_at` so a clone of a trashed row starts
+     * un-trashed — the clone is a template for a new placement, not
+     * a continuation of the source's lifecycle.
+     *
      * @param  list<string>|null  $except
      */
     public function replicate(?array $except = null): static
@@ -1488,11 +1493,16 @@ trait HasNestedSetAggregates
                 $clone->setAttribute(
                     $definition->column,
                     ($definition->operation === AggregateFunction::Min
-                        || $definition->operation === AggregateFunction::Max)
+                        || $definition->operation === AggregateFunction::Max
+                        || $definition->operation === AggregateFunction::Avg)
                         ? null
                         : 0,
                 );
             }
+        }
+
+        if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
+            $clone->setAttribute('deleted_at', null);
         }
 
         return $clone;
