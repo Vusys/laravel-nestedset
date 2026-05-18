@@ -31,9 +31,10 @@ class Category extends Model implements HasNestedSet
 {
     use NodeTrait;
 
-    // Aggregate columns NEVER belong in $fillable. Mass-assigning them
-    // is silently overwritten on the next mutation and produces drift
-    // in the interim.
+    // Aggregate columns must NOT appear in $fillable — the package
+    // enforces this and throws AggregateConfigurationException at boot
+    // if any aggregate column is found there. They stay readable,
+    // castable, hideable; only mass-assignment is rejected.
     protected $fillable = ['name', 'articles'];
 
     // Declare casts manually — NodeTrait does not register them for you.

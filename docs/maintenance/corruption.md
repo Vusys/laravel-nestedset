@@ -337,8 +337,8 @@ In order of impact:
    - Build the table with raw INSERTs and run `fixTree()` once at
      the end — `parent_id` is the only column you need to get
      right; everything else will be rebuilt.
-   - (When v0.9.0 ships) use `Model::bulkInsertTree()` which does
-     the above as one operation.
+   - Use `Model::bulkInsertTree($rows, appendTo: $anchor)` which
+     does the above as one operation — see [Bulk Insertion](../tree-operations/bulk-insertion.html).
 3. **Don't write to `lft` / `rgt` / `depth` directly.** Treat them
    as derived. The only authoritative column is `parent_id` —
    editing that is fine (provided you keep it acyclic and

@@ -70,8 +70,8 @@ Category::query()->whereIsRoot()->pluck('name');
 Category::query()->whereIsLeaf()->pluck('name');
 // → ['Laptops', 'Desktops', 'Android', 'Fiction', 'Non-fiction']
 
-// One-shot when you know the tree has a single root:
-Category::query()->root();   // ?Category — null on empty / multi-root tables
+// One-shot first-root lookup — sugar for whereIsRoot()->first():
+Category::query()->root();   // ?Category — first root by query order, or null if none
 
 // Ordering by lft yields depth-first traversal order
 Category::query()->defaultOrder()->pluck('name');
