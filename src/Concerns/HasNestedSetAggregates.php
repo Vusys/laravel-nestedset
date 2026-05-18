@@ -60,7 +60,11 @@ trait HasNestedSetAggregates
      * Source-column deltas captured in `saving` and applied in `saved`.
      * Keyed by aggregate column name (the SUM column receiving the delta).
      *
-     * @var array<string, int>
+     * Listener aggregates may produce float deltas; SQL aggregates over
+     * integer source columns produce int deltas. The maintenance pipeline
+     * threads both through as `int|float`.
+     *
+     * @var array<string, int|float>
      */
     private array $capturedAggregateDeltas = [];
 
@@ -70,7 +74,7 @@ trait HasNestedSetAggregates
      * extremum, never invalidate it). Applied alongside Phase D's
      * deltas as `CASE WHEN ... THEN candidate ELSE stored END`.
      *
-     * @var array<string, array{function: AggregateFunction, value: int}>
+     * @var array<string, array{function: AggregateFunction, value: int|float}>
      */
     private array $capturedExtremes = [];
 
@@ -81,7 +85,7 @@ trait HasNestedSetAggregates
      * delta UPDATE commits, filtered by `stored = previous_value` so
      * unaffected ancestors are skipped.
      *
-     * @var array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>
+     * @var array<string, array{function: AggregateFunction, source: string, filterValue: int|float, filter: FilterPredicate|null}>
      */
     private array $capturedRecomputes = [];
 
@@ -375,18 +379,16 @@ trait HasNestedSetAggregates
             // Old contribution: snapshot of pre-save attributes
             $oldSnapshot = new static;
             $oldSnapshot->setRawAttributes($this->getOriginal(), true);
-            $oldRaw = $listener->contribution($oldSnapshot);
-            $oldVal = (int) ($oldRaw ?? 0);
+            $oldVal = self::listenerContributionValue($listener->contribution($oldSnapshot));
 
             // New contribution: current attributes
-            $newRaw = $listener->contribution($this);
-            $newVal = (int) ($newRaw ?? 0);
+            $newVal = self::listenerContributionValue($listener->contribution($this));
 
             $op = $definition->operation;
 
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 $delta = $newVal - $oldVal;
-                if ($delta !== 0) {
+                if ($delta != 0) {
                     $this->capturedAggregateDeltas[$definition->column] = $delta;
                 }
 
@@ -474,7 +476,7 @@ trait HasNestedSetAggregates
     }
 
     /**
-     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>  $recomputes
+     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int|float, filter: FilterPredicate|null}>  $recomputes
      * @param  array<string, mixed>  $scope
      */
     private function applyCapturedRecomputes(array $recomputes, array $scope): void
@@ -615,12 +617,12 @@ trait HasNestedSetAggregates
 
             $listener = $definition->makeListener();
             $contrib = $listener->contribution($this);
-            $value = (int) ($contrib ?? 0);
+            $value = self::listenerContributionValue($contrib);
 
             $op = $definition->operation;
 
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
-                if ($value !== 0) {
+                if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
             } elseif (($op === AggregateFunction::Max || $op === AggregateFunction::Min) && $contrib !== null) {
@@ -722,8 +724,9 @@ trait HasNestedSetAggregates
 
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 // Stored column holds the inclusive subtree total — same as SQL path.
-                $value = self::numeric($this->getAttribute($definition->column));
-                if ($value !== 0) {
+                // Use type-preserving read: a float-listener column may be DECIMAL.
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                if ($value != 0) {
                     $deltas[$definition->column] = -$value;
                 }
 
@@ -789,7 +792,7 @@ trait HasNestedSetAggregates
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         if ($sumCountDeltas !== []) {
-            $negative = array_map(static fn (int $v): int => -$v, $sumCountDeltas);
+            $negative = array_map(static fn (int|float $v): int|float => -$v, $sumCountDeltas);
             DeltaMaintenance::apply(
                 connection: $this->getConnection(),
                 table: $this->getTable(),
@@ -878,7 +881,7 @@ trait HasNestedSetAggregates
      * Same data is read by both before- and after-move hooks; this
      * helper keeps them in sync.
      *
-     * @return array{0: array<string, int>, 1: array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>, 2: array<string, array{function: AggregateFunction, value: int}>}
+     * @return array{0: array<string, int|float>, 1: array<string, array{function: AggregateFunction, source: string, filterValue: int|float, filter: FilterPredicate|null}>, 2: array<string, array{function: AggregateFunction, value: int|float}>}
      */
     private function collectMoveSubtreeContribution(): array
     {
@@ -934,8 +937,9 @@ trait HasNestedSetAggregates
 
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 // Stored column holds the inclusive subtree total.
-                $value = self::numeric($this->getAttribute($definition->column));
-                if ($value !== 0) {
+                // Type-preserving read: listener columns may be DECIMAL.
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                if ($value != 0) {
                     $sumCount[$definition->column] = $value;
                 }
 
@@ -945,7 +949,7 @@ trait HasNestedSetAggregates
             if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
                 // Use stored extremum for cheap-delta (extend new chain) and
                 // as the recompute filterValue for old chain.
-                $stored = self::numeric($this->getAttribute($definition->column));
+                $stored = self::numericPreserveType($this->getAttribute($definition->column));
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $op,
                     'source' => $definition->column,   // sentinel — not used by listener recompute
@@ -960,7 +964,7 @@ trait HasNestedSetAggregates
     }
 
     /**
-     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>  $minMaxByFunction
+     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int|float, filter: FilterPredicate|null}>  $minMaxByFunction
      * @param  array<string, mixed>  $scope
      */
     private function applyMoveRecomputes(
@@ -1059,8 +1063,8 @@ trait HasNestedSetAggregates
             $op = $definition->operation;
 
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
-                $value = self::numeric($this->getAttribute($definition->column));
-                if ($value !== 0) {
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
 
@@ -1068,7 +1072,7 @@ trait HasNestedSetAggregates
             }
 
             if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
-                $value = self::numeric($this->getAttribute($definition->column));
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
                 $extremes[$definition->column] = ['function' => $op, 'value' => $value];
             }
         }
@@ -1576,6 +1580,47 @@ trait HasNestedSetAggregates
         }
 
         return 0;
+    }
+
+    /**
+     * Type-preserving narrowing for listener contributions. The contract
+     * advertises `int|float|null`; truncating floats to int here would
+     * silently corrupt weighted-sum listeners (e.g. `base_power * 0.5`).
+     * Returns 0 (int) for null so a "no contribution" listener doesn't
+     * shift downstream arithmetic.
+     */
+    private static function listenerContributionValue(int|float|null $value): int|float
+    {
+        return $value ?? 0;
+    }
+
+    /**
+     * Number-preserving narrowing for stored aggregate column reads.
+     * Listener columns may be declared `decimal` / `float`, in which case
+     * `getAttribute()` returns a string (decimal cast) or float; an int
+     * cast would lose the fractional part for the same reason
+     * {@see self::listenerContributionValue()} preserves it on the input
+     * side. Returns 0 (int) for null/non-numeric input.
+     */
+    private static function numericPreserveType(mixed $value): int|float
+    {
+        if ($value === null) {
+            return 0;
+        }
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+        if (! is_numeric($value)) {
+            return 0;
+        }
+
+        // String-cast decimals: keep them as float only when they have a
+        // fractional part. "10" → 10 (int), "10.5" → 10.5 (float).
+        $string = $value;
+
+        return str_contains($string, '.') || str_contains($string, 'e') || str_contains($string, 'E')
+            ? (float) $value
+            : (int) $value;
     }
 
     // ----------------------------------------------------------------

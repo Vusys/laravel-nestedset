@@ -10,6 +10,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\HalfWeightedPowerListener;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 
 /**
@@ -24,9 +25,11 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
  * @property int|null $parent_id
  * @property int $weighted_power
  * @property int $fire_count
+ * @property float $half_weighted_power
  */
 #[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'fire_count', listener: FireCountListener::class, operation: AggregateFunction::Sum)]
+#[NestedSetAggregateListener(column: 'half_weighted_power', listener: HalfWeightedPowerListener::class, operation: AggregateFunction::Sum)]
 final class Pokemon extends Model implements HasNestedSet
 {
     use NodeTrait;
@@ -46,5 +49,6 @@ final class Pokemon extends Model implements HasNestedSet
         'level' => 'integer',
         'weighted_power' => 'integer',
         'fire_count' => 'integer',
+        'half_weighted_power' => 'float',
     ];
 }

@@ -197,4 +197,91 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         // Root's weighted_power must be unchanged
         $this->assertSame($beforeWeightedPower, $this->asInt($root->weighted_power));
     }
+
+    // ----------------------------------------------------------------
+    // Float-listener path: HalfWeightedPowerListener returns
+    // (base_power * level) / 2 as a float. Regression guard against
+    // truncating-to-int at the maintenance boundary, which would lose
+    // every odd-product node's .5.
+    // ----------------------------------------------------------------
+
+    private function asFloat(mixed $value): float
+    {
+        if ($value === null || ! is_numeric($value)) {
+            $this->fail('Expected numeric, got '.get_debug_type($value));
+        }
+
+        return (float) $value;
+    }
+
+    public function test_float_listener_preserves_half_on_create(): void
+    {
+        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 3, 'level' => 5]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        // Root's half_weighted_power = (3 * 5) / 2 = 7.5
+        $this->assertSame(7.5, $this->asFloat($root->half_weighted_power));
+
+        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 3]);
+        $child->appendToNode($root)->save();
+        $root->refresh();
+
+        // Root rollup = 7.5 + (5 * 3) / 2 = 7.5 + 7.5 = 15.0
+        $this->assertSame(15.0, $this->asFloat($root->half_weighted_power));
+    }
+
+    public function test_float_listener_preserves_half_on_update(): void
+    {
+        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 4]);
+        $root->saveAsRoot();
+
+        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
+        $child->appendToNode($root)->save();
+        $root->refresh();
+
+        // Root = (2*4)/2 + (2*2)/2 = 4 + 2 = 6.0
+        $this->assertSame(6.0, $this->asFloat($root->half_weighted_power));
+
+        // Bump child's level from 2 → 3 → contribution moves from 2.0 to 3.0
+        // (delta = +1.0). Root must end at 5.0 + 2.0 = 7.0 — not 6.0
+        // (which would happen if the float delta were truncated to int 0).
+        // To exhibit the regression we need the delta to be non-integer; use
+        // base_power=3, level: 1→2 changes contribution from 1.5 to 3.0 (delta = +1.5).
+        $child->base_power = 3;
+        $child->level = 1;
+        $child->save();
+        $root->refresh();
+        // Root = (2*4)/2 + (3*1)/2 = 4 + 1.5 = 5.5
+        $this->assertSame(5.5, $this->asFloat($root->half_weighted_power));
+
+        $child->level = 2;
+        $child->save();
+        $root->refresh();
+        // Root = 4 + (3*2)/2 = 4 + 3 = 7.0
+        $this->assertSame(7.0, $this->asFloat($root->half_weighted_power));
+    }
+
+    public function test_float_listener_preserves_half_on_delete(): void
+    {
+        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
+        $root->saveAsRoot();
+
+        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 3, 'level' => 1]);
+        $child->appendToNode($root)->save();
+        $root->refresh();
+        // Refresh child so its stored aggregate columns are loaded before
+        // delete reads them to compute the subtraction delta.
+        $child->refresh();
+
+        // Root = (2*2)/2 + (3*1)/2 = 2 + 1.5 = 3.5
+        $this->assertSame(3.5, $this->asFloat($root->half_weighted_power));
+
+        $child->delete();
+        $root->refresh();
+
+        // Removing the 1.5 contribution must leave 2.0. An int-truncated
+        // delta would leave 3.5 - 1 = 2.5 instead.
+        $this->assertSame(2.0, $this->asFloat($root->half_weighted_power));
+    }
 }
