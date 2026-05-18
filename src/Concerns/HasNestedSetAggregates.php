@@ -1154,10 +1154,13 @@ trait HasNestedSetAggregates
             return;
         }
 
+        $lftCol = $this->getLftName();
+        $rgtCol = $this->getRgtName();
+
         // Load ancestor models.
         $ancestorQuery = static::query()
-            ->where($this->getLftName(), '<=', $bounds->lft)
-            ->where($this->getRgtName(), '>=', $bounds->rgt);
+            ->where($lftCol, '<=', $bounds->lft)
+            ->where($rgtCol, '>=', $bounds->rgt);
 
         foreach ($scope as $col => $value) {
             $ancestorQuery->where($col, $value);
@@ -1166,64 +1169,118 @@ trait HasNestedSetAggregates
         if (! $includeSelf) {
             $lft = $bounds->lft;
             $rgt = $bounds->rgt;
-            $lftN = $this->getLftName();
-            $rgtN = $this->getRgtName();
-            $ancestorQuery->where(static function ($q) use ($lftN, $rgtN, $lft, $rgt): void {
-                $q->where($lftN, '!=', $lft)->orWhere($rgtN, '!=', $rgt);
+            $ancestorQuery->where(static function ($q) use ($lftCol, $rgtCol, $lft, $rgt): void {
+                $q->where($lftCol, '!=', $lft)->orWhere($rgtCol, '!=', $rgt);
             });
         }
 
         $ancestors = $ancestorQuery->get();
 
+        if ($ancestors->isEmpty()) {
+            return;
+        }
+
+        // Ancestors are nested intervals — the topmost has the smallest
+        // lft and largest rgt and covers every other ancestor's subtree.
+        // Loading nodes under that one bounding box once is a superset
+        // of what any ancestor needs, so the per-ancestor descendant
+        // scan reduces from one SELECT to in-memory filtering.
+        $topLft = PHP_INT_MAX;
+        $topRgt = PHP_INT_MIN;
         foreach ($ancestors as $ancestor) {
+            $aLft = self::numeric($ancestor->getAttribute($lftCol));
+            $aRgt = self::numeric($ancestor->getAttribute($rgtCol));
+            if ($aLft < $topLft) {
+                $topLft = $aLft;
+            }
+            if ($aRgt > $topRgt) {
+                $topRgt = $aRgt;
+            }
+        }
+
+        $nodesQuery = static::query()
+            ->where($lftCol, '>=', $topLft)
+            ->where($rgtCol, '<=', $topRgt);
+        foreach ($scope as $col => $value) {
+            $nodesQuery->where($col, $value);
+        }
+        $allNodes = $nodesQuery->get();
+
+        // Cache contributions per (definition column × node id) so each
+        // listener->contribution() call runs exactly once per node, no
+        // matter how many ancestors include it.
+        /** @var array<string, array<int|string, int|float|null>> $contribCache */
+        $contribCache = [];
+        foreach ($definitions as $column => $definition) {
+            $listener = $definition->makeListener();
+            $contribCache[$column] = [];
+            foreach ($allNodes as $node) {
+                $key = $node->getKey();
+                if (! is_int($key) && ! is_string($key)) {
+                    continue;
+                }
+                $contribCache[$column][$key] = $listener->contribution($node);
+            }
+        }
+
+        // Precompute each node's bounds once — repeated getAttribute()
+        // calls inside the ancestor × definition loop add up.
+        /** @var list<array{key: int|string, lft: int, rgt: int}> $nodeBounds */
+        $nodeBounds = [];
+        foreach ($allNodes as $node) {
+            $key = $node->getKey();
+            if (! is_int($key) && ! is_string($key)) {
+                continue;
+            }
+            $nodeBounds[] = [
+                'key' => $key,
+                'lft' => self::numeric($node->getAttribute($lftCol)),
+                'rgt' => self::numeric($node->getAttribute($rgtCol)),
+            ];
+        }
+
+        $eLft = $excludeBounds instanceof NodeBounds ? $excludeBounds->lft : null;
+        $eRgt = $excludeBounds instanceof NodeBounds ? $excludeBounds->rgt : null;
+
+        foreach ($ancestors as $ancestor) {
+            $aLft = self::numeric($ancestor->getAttribute($lftCol));
+            $aRgt = self::numeric($ancestor->getAttribute($rgtCol));
+
             $updates = [];
 
-            $aLft = self::numeric($ancestor->getAttribute($this->getLftName()));
-            $aRgt = self::numeric($ancestor->getAttribute($this->getRgtName()));
-
             foreach ($definitions as $column => $definition) {
-                $listener = $definition->makeListener();
+                $inclusive = $definition->isInclusive();
+                /** @var list<int|float> $candidates */
+                $candidates = [];
 
-                $descQuery = static::query()
-                    ->where($this->getLftName(), '>=', $aLft)
-                    ->where($this->getRgtName(), '<=', $aRgt);
+                foreach ($nodeBounds as $nb) {
+                    $nLft = $nb['lft'];
+                    $nRgt = $nb['rgt'];
 
-                if (! $definition->isInclusive()) {
-                    $lftN = $this->getLftName();
-                    $rgtN = $this->getRgtName();
-                    $descQuery->where(static function ($q) use ($lftN, $rgtN, $aLft, $aRgt): void {
-                        $q->where($lftN, '!=', $aLft)->orWhere($rgtN, '!=', $aRgt);
-                    });
+                    $inBounds = $inclusive
+                        ? ($nLft >= $aLft && $nRgt <= $aRgt)
+                        : ($nLft > $aLft && $nRgt < $aRgt);
+
+                    if (! $inBounds) {
+                        continue;
+                    }
+
+                    if ($eLft !== null && $eRgt !== null
+                        && $nLft >= $eLft && $nRgt <= $eRgt) {
+                        continue;
+                    }
+
+                    $contrib = $contribCache[$column][$nb['key']] ?? null;
+                    if ($contrib !== null) {
+                        $candidates[] = $contrib;
+                    }
                 }
 
-                if ($excludeBounds instanceof NodeBounds) {
-                    $eLft = $excludeBounds->lft;
-                    $eRgt = $excludeBounds->rgt;
-                    $lftN = $this->getLftName();
-                    $rgtN = $this->getRgtName();
-                    $descQuery->where(static function ($q) use ($lftN, $rgtN, $eLft, $eRgt): void {
-                        $q->where($lftN, '<', $eLft)->orWhere($rgtN, '>', $eRgt);
-                    });
-                }
-
-                foreach ($scope as $col => $value) {
-                    $descQuery->where($col, $value);
-                }
-
-                /** @var list<int|float|null> $contributions */
-                $contributions = $descQuery->get()
-                    ->map(static fn (self $node): int|float|null => $listener->contribution($node))
-                    ->filter(static fn (mixed $c): bool => $c !== null)
-                    ->values()
-                    ->all();
-
-                $newValue = $contributions === []
+                $updates[$column] = $candidates === []
                     ? null
                     : ($definition->operation === AggregateFunction::Max
-                        ? max($contributions)
-                        : min($contributions));
-
-                $updates[$column] = $newValue;
+                        ? max($candidates)
+                        : min($candidates));
             }
 
             $this->getConnection()->table($this->getTable())

@@ -25,6 +25,10 @@ return new class extends Migration
             // (base_power * level) / 2 — exercises the int|float path through
             // captureAggregateDeltas / DeltaMaintenance.
             $table->decimal('half_weighted_power', 14, 4)->default(0);
+            // Nullable column for Min-listener tests: returns the
+            // smallest level in the subtree. Exercises the listener
+            // Min/Max recompute path on delete.
+            $table->integer('weakest_level')->nullable();
 
             $table->timestamps();
         });

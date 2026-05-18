@@ -11,6 +11,16 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  * computing an aggregate over the subtree.
  *
  * Construct via the three factory methods; the constructor is private.
+ *
+ * **Security:** filter values and raw SQL are inlined into the generated
+ * aggregate queries; they do not flow through PDO parameter binding.
+ * Only pass **trusted constants** — class-level literals, config values
+ * you control, or developer-written SQL fragments. **Never pass
+ * user-supplied input**, or a string like `"x' OR 1=1 --"` will render
+ * as a SQL fragment. PHP enforces the constant-only constraint for the
+ * attribute form (`#[NestedSetAggregate(filter: [...])]`); only the
+ * fluent method-override form (`Aggregate::sum(...)->filter([...])`)
+ * can flow runtime data, so the constraint is on the caller there.
  */
 final readonly class FilterPredicate
 {
