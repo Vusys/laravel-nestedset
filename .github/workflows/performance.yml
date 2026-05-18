@@ -183,7 +183,15 @@ jobs:
   comment-on-pr:
     name: Post results on PR
     needs: benchmark
-    if: github.event_name == 'pull_request' && always()
+    # `pull_request: types: [labeled]` fires on EVERY label add, so this
+    # workflow is invoked when Dependabot's `dependencies` / ecosystem
+    # labels are applied. `benchmark` skips itself in that case, but
+    # without the `result != 'skipped'` guard this job still runs, posts
+    # an empty perf comment, and strips the triggering label.
+    if: |
+      always()
+      && needs.benchmark.result != 'skipped'
+      && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
