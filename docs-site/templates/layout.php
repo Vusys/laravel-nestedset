@@ -32,6 +32,7 @@ if (! function_exists('navLink')) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.css">
     <link rel="stylesheet" href="<?= $baseUrl ?>style.css">
 </head>
+<body data-built-at="<?= $builtAt ?>">
 <?php
     /*
      * Block applying any dark-mode preference before paint to avoid a flash
@@ -43,7 +44,6 @@ if (! function_exists('navLink')) {
         document.documentElement.setAttribute('data-theme', 'dark');
     }
 })();</script>
-<body data-built-at="<?= $builtAt ?>">
 <aside class="sidebar" aria-label="Documentation navigation">
     <a href="<?= $baseUrl ?>index.html" class="sidebar-brand"><?= htmlspecialchars($siteName) ?></a>
     <nav class="sidebar-nav">

@@ -39,6 +39,11 @@ foreach ($pages as $i => $page) {
     }
 
     $raw = file_get_contents($sourcePath);
+    if ($raw === false) {
+        fwrite(STDERR, "fatal: failed to read {$sourcePath}\n");
+        exit(1);
+    }
+
     $result = $converter->convert($raw);
     $html = (string) $result;
     $toc = extractToc($html);
@@ -48,9 +53,8 @@ foreach ($pages as $i => $page) {
     $outRel = relativeOutputPath($page['file'], $i === 0);
     $outAbs = $siteDir.'/'.$outRel;
 
-    @mkdir(dirname($outAbs), 0777, true);
-
-    $rendered = renderLayout($layoutFile, [
+    mustMakeDir(dirname($outAbs));
+    mustWriteFile($outAbs, renderLayout($layoutFile, [
         'title' => $title,
         'siteName' => 'laravel-nestedset',
         'content' => $bodyHtml,
@@ -61,13 +65,12 @@ foreach ($pages as $i => $page) {
         'next' => $pages[$i + 1] ?? null,
         'baseUrl' => baseUrlFor($outRel),
         'builtAt' => $builtAt,
-    ]);
+    ]));
 
-    file_put_contents($outAbs, $rendered);
     echo "  wrote {$outRel}\n";
 }
 
-file_put_contents($siteDir.'/_build.json', json_encode(['builtAt' => $builtAt]));
+mustWriteFile($siteDir.'/_build.json', json_encode(['builtAt' => $builtAt]));
 
 echo 'Built '.count($pages)." pages to {$siteDir}\n";
 
@@ -174,6 +177,33 @@ function baseUrlFor(string $outRel): string
     return $depth === 0 ? './' : str_repeat('../', $depth);
 }
 
+function mustMakeDir(string $dir): void
+{
+    if (is_dir($dir)) {
+        return;
+    }
+    if (! mkdir($dir, 0777, true) && ! is_dir($dir)) {
+        fwrite(STDERR, "fatal: failed to create directory {$dir}\n");
+        exit(1);
+    }
+}
+
+function mustWriteFile(string $path, string $contents): void
+{
+    if (file_put_contents($path, $contents) === false) {
+        fwrite(STDERR, "fatal: failed to write {$path}\n");
+        exit(1);
+    }
+}
+
+function mustCopyFile(string $src, string $dest): void
+{
+    if (! copy($src, $dest)) {
+        fwrite(STDERR, "fatal: failed to copy {$src} → {$dest}\n");
+        exit(1);
+    }
+}
+
 function resetDir(string $dir): void
 {
     if (is_dir($dir)) {
@@ -184,9 +214,11 @@ function resetDir(string $dir): void
         foreach ($items as $item) {
             $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
         }
-    } else {
-        mkdir($dir, 0777, true);
+
+        return;
     }
+
+    mustMakeDir($dir);
 }
 
 function copyPublic(string $src, string $dest): void
@@ -202,9 +234,9 @@ function copyPublic(string $src, string $dest): void
         $rel = substr($item->getPathname(), strlen($src) + 1);
         $target = $dest.'/'.$rel;
         if ($item->isDir()) {
-            @mkdir($target, 0777, true);
+            mustMakeDir($target);
         } else {
-            copy($item->getPathname(), $target);
+            mustCopyFile($item->getPathname(), $target);
         }
     }
 }
@@ -275,11 +307,11 @@ function renderMissing(array $page, array $nav, string $siteDir, string $layoutF
 {
     $outRel = relativeOutputPath($page['file'], $i === 0);
     $outAbs = $siteDir.'/'.$outRel;
-    @mkdir(dirname($outAbs), 0777, true);
+    mustMakeDir(dirname($outAbs));
 
     $bodyHtml = "<h1>{$page['title']}</h1><p><em>This page hasn't been written yet.</em></p>";
 
-    $rendered = renderLayout($layoutFile, [
+    mustWriteFile($outAbs, renderLayout($layoutFile, [
         'title' => $page['title'].' (placeholder)',
         'siteName' => 'laravel-nestedset',
         'content' => $bodyHtml,
@@ -290,8 +322,6 @@ function renderMissing(array $page, array $nav, string $siteDir, string $layoutF
         'next' => $pages[$i + 1] ?? null,
         'baseUrl' => baseUrlFor($outRel),
         'builtAt' => $builtAt,
-    ]);
-
-    file_put_contents($outAbs, $rendered);
+    ]));
     echo "  wrote {$outRel} (placeholder)\n";
 }

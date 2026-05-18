@@ -16,7 +16,15 @@ declare(strict_types=1);
  * when it changes (see public/app.js).
  */
 $opts = getopt('', ['port::', 'no-watch']);
-$port = (int) ($opts['port'] ?? 8000);
+$port = filter_var(
+    $opts['port'] ?? 8000,
+    FILTER_VALIDATE_INT,
+    ['options' => ['min_range' => 1, 'max_range' => 65535]]
+);
+if ($port === false) {
+    fwrite(STDERR, "Invalid --port value. Use an integer between 1 and 65535.\n");
+    exit(1);
+}
 $watch = ! array_key_exists('no-watch', $opts);
 
 $repoRoot = realpath(__DIR__.'/..');
@@ -24,7 +32,9 @@ $siteDir = $repoRoot.'/site';
 $docsDir = $repoRoot.'/docs';
 $srcDir = __DIR__;
 
-build($repoRoot);
+if (! build($repoRoot)) {
+    exit(1);
+}
 
 $server = startServer($siteDir, $port);
 register_shutdown_function(function () use (&$server) {
@@ -61,7 +71,7 @@ while (true) {
     }
 }
 
-function build(string $repoRoot): void
+function build(string $repoRoot): bool
 {
     $cmd = escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/build.php');
     $start = microtime(true);
@@ -69,9 +79,13 @@ function build(string $repoRoot): void
     $ms = (int) ((microtime(true) - $start) * 1000);
     if ($code !== 0) {
         echo "Build failed (exit {$code})\n";
-    } else {
-        echo "Build OK in {$ms}ms\n";
+
+        return false;
     }
+
+    echo "Build OK in {$ms}ms\n";
+
+    return true;
 }
 
 function startServer(string $docroot, int $port)
