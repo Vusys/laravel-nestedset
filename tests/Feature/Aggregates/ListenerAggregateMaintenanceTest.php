@@ -354,7 +354,7 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
         $selectCount = 0;
         foreach ($queries as $entry) {
-            if (stripos($entry['query'], 'select') === 0) {
+            if (stripos((string) $entry['query'], 'select') === 0) {
                 $selectCount++;
             }
         }
