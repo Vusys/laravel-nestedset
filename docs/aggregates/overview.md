@@ -5,33 +5,49 @@ total, a count, an average, a min/max — without re-running an aggregate
 query every time the tree is rendered. Declare the columns and the
 package keeps them in sync as the tree mutates.
 
+For the examples in this section, imagine a `Category` model from a blog
+or shop. Each category has an `articles` integer for the number of
+articles directly tagged with it; the aggregates roll those counts up
+the tree.
+
 ```php
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 
-#[NestedSetAggregate(column: 'tickets_total',     sum:   'tickets')]
-#[NestedSetAggregate(column: 'tickets_count_all', count: true)]
-#[NestedSetAggregate(column: 'tickets_avg',       avg:   'tickets')]
-#[NestedSetAggregate(column: 'tickets_min',       min:   'tickets')]
-#[NestedSetAggregate(column: 'tickets_max',       max:   'tickets')]
-class Area extends Model implements HasNestedSet
+#[NestedSetAggregate(column: 'articles_total',     sum:   'articles')]
+#[NestedSetAggregate(column: 'articles_count_all', count: true)]
+#[NestedSetAggregate(column: 'articles_avg',       avg:   'articles')]
+#[NestedSetAggregate(column: 'articles_min',       min:   'articles')]
+#[NestedSetAggregate(column: 'articles_max',       max:   'articles')]
+class Category extends Model implements HasNestedSet
 {
     use NodeTrait;
 }
 ```
 
-For a tree where `Root(tickets=100) > A(50) > A1(50)` and `Root > B(25)`:
+For a tree:
 
-```php
-$root->refresh()->tickets_total;    // 225  (100 + 50 + 50 + 25)
-$root->tickets_count_all;           // 4
-$root->tickets_avg;                 // 56.25
-$root->tickets_min;                 // 25
-$root->tickets_max;                 // 100
+```text
+Electronics  (articles = 4)
+├── Computers  (articles = 2)
+│   ├── Laptops   (articles = 8)
+│   └── Desktops  (articles = 3)
+└── Phones     (articles = 12)
 ```
 
-Every node carries its own subtree's rollup. Inserts, source-column
-updates, deletes, moves and soft-delete restores all keep the stored
-values current.
+…the stored aggregates on `Electronics` are:
+
+```php
+$electronics->refresh()->articles_total;     // 29  (4 + 2 + 8 + 3 + 12)
+$electronics->articles_count_all;            // 5   (self + 4 descendants)
+$electronics->articles_avg;                  // 5.8 (29 / 5)
+$electronics->articles_min;                  // 2
+$electronics->articles_max;                  // 12
+```
+
+Every node carries its own subtree's rollup — `Computers` independently
+reports `articles_total = 13` and `articles_count_all = 3`. Inserts,
+source-column updates, deletes, moves and soft-delete restores all keep
+the stored values current.
 
 ## In this section
 

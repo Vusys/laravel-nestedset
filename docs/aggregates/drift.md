@@ -13,10 +13,10 @@ The two real-world ways this happens:
 
 ```php
 // 1. Raw query builder bypasses Eloquent entirely.
-DB::table('areas')->where('id', 1)->update(['tickets' => 99]);
+DB::table('categories')->where('id', 1)->update(['articles' => 99]);
 
 // 2. Bulk INSERT / migration that touches the source column directly.
-DB::statement('UPDATE areas SET tickets = tickets + 1 WHERE rgt < 100');
+DB::statement('UPDATE categories SET articles = articles + 1 WHERE rgt < 100');
 ```
 
 Both modify the source, neither fires `saving` / `saved`, neither
@@ -28,24 +28,24 @@ disagree with what a fresh recomputation would return.
 **Detect drift** at any time via the integrity API:
 
 ```php
-Area::aggregateErrors();      // ['tickets_total' => 3, 'tickets_count_all' => 0, ...]
-Area::aggregatesAreBroken();  // bool
+Category::aggregateErrors();      // ['articles_total' => 3, 'articles_count_all' => 0, ...]
+Category::aggregatesAreBroken();  // bool
 ```
 
 **Repair** either synchronously or asynchronously:
 
 ```php
 // Sync — runs in the current process, returns when done.
-Area::fixAggregates();
+Category::fixAggregates();
 
 // Sync + chunked + progress — for CLI commands on large tables.
-Area::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
+Category::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
     echo "Chunk {$i}: {$r->totalRowsUpdated} rows\n";
 });
 
 // Async — hands the repair to a Laravel queue worker. Self-redispatches
 // per chunk; idempotent if run twice.
-Area::queueFixAggregates(chunkSize: 1_000);
+Category::queueFixAggregates(chunkSize: 1_000);
 ```
 
 **Recommended mitigation pattern for workloads that mix Eloquent and
@@ -55,7 +55,7 @@ even on multi-million-row tables:
 
 ```php
 // app/Console/Kernel.php
-$schedule->call(fn () => Area::queueFixAggregates(chunkSize: 1_000))
+$schedule->call(fn () => Category::queueFixAggregates(chunkSize: 1_000))
     ->hourly();
 ```
 
@@ -69,7 +69,7 @@ drift and writes nothing. Safe to fire defensively.
 - **`replicate()` clones reset every aggregate column** to the
   function's empty element (0 for SUM/COUNT, NULL for AVG/MIN/MAX).
   The clone backfills correctly on placement.
-- **Plain `Area::create(...)` without `appendToNode()` / `makeRoot()`**
+- **Plain `Category::create(...)` without `appendToNode()` / `makeRoot()`**
   leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance is
   skipped until the node is placed in the tree. Check the state with
   `$node->isPlacedInTree(): bool` — returns false when both `lft` and
