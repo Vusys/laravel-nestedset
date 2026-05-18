@@ -121,7 +121,15 @@ trait NodeTrait
             if (! $node instanceof HasNestedSet) {
                 return;
             }
-            if (method_exists($node, 'applyAggregateOnDelete')) {
+            // forceDelete on a row that was already soft-deleted fires
+            // this hook a second time. Its aggregate contribution was
+            // removed at the original soft-delete; running the hook
+            // again would double-decrement every ancestor.
+            $alreadyTrashed = method_exists($node, 'isForceDeleting')
+                && $node->isForceDeleting()
+                && $node->getAttribute('deleted_at') !== null;
+
+            if (! $alreadyTrashed && method_exists($node, 'applyAggregateOnDelete')) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
             }
             // Compact lft/rgt for hard-delete-of-a-leaf so the bounds
