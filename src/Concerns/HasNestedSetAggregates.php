@@ -12,6 +12,7 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
@@ -82,6 +83,14 @@ trait HasNestedSetAggregates
      * @var array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>
      */
     private array $capturedRecomputes = [];
+
+    /**
+     * Listener Min/Max definitions where the stored extremum may be
+     * invalidated by a change — PHP-based recompute required.
+     *
+     * @var array<string, ListenerAggregateDefinition>
+     */
+    private array $capturedListenerRecomputes = [];
 
     /**
      * The user-facing aggregate definitions declared on this model.
@@ -160,6 +169,7 @@ trait HasNestedSetAggregates
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
+        $this->capturedListenerRecomputes = [];
 
         if (! $this->exists) {
             return;
@@ -299,6 +309,57 @@ trait HasNestedSetAggregates
                 }
             }
         }
+
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+
+            $listener = $definition->makeListener();
+            $watchCols = $listener->watchColumns();
+
+            if ($watchCols === [] || ! $this->isDirty($watchCols)) {
+                continue;
+            }
+
+            // Old contribution: snapshot of pre-save attributes
+            /** @var static $oldSnapshot */
+            $oldSnapshot = new static();
+            $oldSnapshot->setRawAttributes($this->getOriginal(), true);
+            $oldRaw = $listener->contribution($oldSnapshot);
+            $oldVal = (int) ($oldRaw ?? 0);
+
+            // New contribution: current attributes
+            $newRaw = $listener->contribution($this);
+            $newVal = (int) ($newRaw ?? 0);
+
+            $op = $definition->operation;
+
+            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+                $delta = $newVal - $oldVal;
+                if ($delta !== 0) {
+                    $this->capturedAggregateDeltas[$definition->column] = $delta;
+                }
+                continue;
+            }
+
+            if ($op === AggregateFunction::Max) {
+                if ($newVal > $oldVal) {
+                    $this->capturedExtremes[$definition->column] = ['function' => AggregateFunction::Max, 'value' => $newVal];
+                } elseif ($newVal < $oldVal) {
+                    $this->capturedListenerRecomputes[$definition->column] = $definition;
+                }
+                continue;
+            }
+
+            if ($op === AggregateFunction::Min) {
+                if ($newVal < $oldVal) {
+                    $this->capturedExtremes[$definition->column] = ['function' => AggregateFunction::Min, 'value' => $newVal];
+                } elseif ($newVal > $oldVal) {
+                    $this->capturedListenerRecomputes[$definition->column] = $definition;
+                }
+            }
+        }
     }
 
     /**
@@ -315,12 +376,14 @@ trait HasNestedSetAggregates
         $deltas = $this->capturedAggregateDeltas;
         $extremes = $this->capturedExtremes;
         $recomputes = $this->capturedRecomputes;
+        $listenerRecomputes = $this->capturedListenerRecomputes;
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
+        $this->capturedListenerRecomputes = [];
 
-        if ($deltas === [] && $extremes === [] && $recomputes === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === []) {
             return;
         }
 
@@ -347,6 +410,15 @@ trait HasNestedSetAggregates
 
         if ($recomputes !== []) {
             $this->applyCapturedRecomputes($recomputes, $scope);
+        }
+
+        if ($listenerRecomputes !== []) {
+            $this->applyListenerMinMaxRecomputes(
+                bounds: $this->getBounds(),
+                scope: $scope,
+                definitions: $listenerRecomputes,
+                includeSelf: true,
+            );
         }
     }
 
@@ -484,6 +556,29 @@ trait HasNestedSetAggregates
             }
         }
 
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+            if (! $definition->isInclusive()) {
+                continue;
+            }
+
+            $listener = $definition->makeListener();
+            $contrib = $listener->contribution($this);
+            $value = (int) ($contrib ?? 0);
+
+            $op = $definition->operation;
+
+            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+                if ($value !== 0) {
+                    $deltas[$definition->column] = $value;
+                }
+            } elseif (($op === AggregateFunction::Max || $op === AggregateFunction::Min) && $contrib !== null) {
+                $extremes[$definition->column] = ['function' => $op, 'value' => $value];
+            }
+        }
+
         if ($deltas === [] && $extremes === []) {
             return;
         }
@@ -563,6 +658,33 @@ trait HasNestedSetAggregates
             }
         }
 
+        /** @var array<string, ListenerAggregateDefinition> $listenerMinMaxDefs */
+        $listenerMinMaxDefs = [];
+
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+            if (! $definition->isInclusive()) {
+                continue;
+            }
+
+            $op = $definition->operation;
+
+            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+                // Stored column holds the inclusive subtree total — same as SQL path.
+                $value = self::numeric($this->getAttribute($definition->column));
+                if ($value !== 0) {
+                    $deltas[$definition->column] = -$value;
+                }
+                continue;
+            }
+
+            if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
+                $listenerMinMaxDefs[$definition->column] = $definition;
+            }
+        }
+
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         if ($deltas !== []) {
@@ -581,6 +703,15 @@ trait HasNestedSetAggregates
 
         if ($minMaxRecomputes !== []) {
             $this->applyCapturedRecomputes($minMaxRecomputes, $scope);
+        }
+
+        if ($listenerMinMaxDefs !== []) {
+            $this->applyListenerMinMaxRecomputes(
+                bounds: $this->getBounds(),
+                scope: $scope,
+                definitions: $listenerMinMaxDefs,
+                includeSelf: false,   // deleted row not in DB anymore
+            );
         }
     }
 
@@ -628,6 +759,26 @@ trait HasNestedSetAggregates
             // physically present; we have to logically exclude them so
             // the recompute reflects the post-move ancestor state.
             $this->applyMoveRecomputes($from, $minMaxByFunction, $scope, excludeBounds: $from);
+        }
+
+        /** @var array<string, ListenerAggregateDefinition> $listenerMinMaxMoveSpecs */
+        $listenerMinMaxMoveSpecs = [];
+        foreach (AggregateRegistry::for(static::class) as $def) {
+            if ($def instanceof ListenerAggregateDefinition
+                && $def->isInclusive()
+                && ($def->operation === AggregateFunction::Max || $def->operation === AggregateFunction::Min)
+            ) {
+                $listenerMinMaxMoveSpecs[$def->column] = $def;
+            }
+        }
+        if ($listenerMinMaxMoveSpecs !== []) {
+            $this->applyListenerMinMaxRecomputes(
+                bounds: $from,
+                scope: $scope,
+                definitions: $listenerMinMaxMoveSpecs,
+                includeSelf: false,
+                excludeBounds: $from,   // exclude moving subtree from scan
+            );
         }
     }
 
@@ -718,6 +869,39 @@ trait HasNestedSetAggregates
                     'function' => $definition->function,
                     'value' => $stored,
                 ];
+            }
+        }
+
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+            if (! $definition->isInclusive()) {
+                continue;
+            }
+
+            $op = $definition->operation;
+
+            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+                // Stored column holds the inclusive subtree total.
+                $value = self::numeric($this->getAttribute($definition->column));
+                if ($value !== 0) {
+                    $sumCount[$definition->column] = $value;
+                }
+                continue;
+            }
+
+            if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
+                // Use stored extremum for cheap-delta (extend new chain) and
+                // as the recompute filterValue for old chain.
+                $stored = self::numeric($this->getAttribute($definition->column));
+                $minMaxRecomputes[$definition->column] = [
+                    'function' => $op,
+                    'source' => $definition->column,   // sentinel — not used by listener recompute
+                    'filterValue' => $stored,
+                    'filter' => null,
+                ];
+                $extremes[$definition->column] = ['function' => $op, 'value' => $stored];
             }
         }
 
@@ -813,6 +997,30 @@ trait HasNestedSetAggregates
             }
         }
 
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+            if (! $definition->isInclusive()) {
+                continue;
+            }
+
+            $op = $definition->operation;
+
+            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+                $value = self::numeric($this->getAttribute($definition->column));
+                if ($value !== 0) {
+                    $deltas[$definition->column] = $value;
+                }
+                continue;
+            }
+
+            if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
+                $value = self::numeric($this->getAttribute($definition->column));
+                $extremes[$definition->column] = ['function' => $op, 'value' => $value];
+            }
+        }
+
         if ($deltas === [] && $extremes === []) {
             return;
         }
@@ -856,6 +1064,104 @@ trait HasNestedSetAggregates
         }
 
         return $clone;
+    }
+
+    /**
+     * PHP-based recompute of listener Min/Max aggregate columns for all
+     * ancestors of the given bounds. For each ancestor, loads all
+     * descendants via Eloquent, calls the listener on each, and takes
+     * the max or min of the contributions.
+     *
+     * @param  array<string, ListenerAggregateDefinition>  $definitions  column => definition
+     * @param  array<string, mixed>  $scope
+     */
+    private function applyListenerMinMaxRecomputes(
+        NodeBounds $bounds,
+        array $scope,
+        array $definitions,
+        bool $includeSelf = true,
+        ?NodeBounds $excludeBounds = null,
+    ): void {
+        if ($definitions === []) {
+            return;
+        }
+
+        // Load ancestor models.
+        $ancestorQuery = static::query()
+            ->where($this->getLftName(), '<=', $bounds->lft)
+            ->where($this->getRgtName(), '>=', $bounds->rgt);
+
+        foreach ($scope as $col => $value) {
+            $ancestorQuery->where($col, $value);
+        }
+
+        if (! $includeSelf) {
+            $lft = $bounds->lft;
+            $rgt = $bounds->rgt;
+            $lftN = $this->getLftName();
+            $rgtN = $this->getRgtName();
+            $ancestorQuery->where(static function ($q) use ($lftN, $rgtN, $lft, $rgt): void {
+                $q->where($lftN, '!=', $lft)->orWhere($rgtN, '!=', $rgt);
+            });
+        }
+
+        $ancestors = $ancestorQuery->get();
+
+        foreach ($ancestors as $ancestor) {
+            $updates = [];
+
+            $aLft = self::numeric($ancestor->getAttribute($this->getLftName()));
+            $aRgt = self::numeric($ancestor->getAttribute($this->getRgtName()));
+
+            foreach ($definitions as $column => $definition) {
+                $listener = $definition->makeListener();
+
+                $descQuery = static::query()
+                    ->where($this->getLftName(), '>=', $aLft)
+                    ->where($this->getRgtName(), '<=', $aRgt);
+
+                if (! $definition->isInclusive()) {
+                    $lftN = $this->getLftName();
+                    $rgtN = $this->getRgtName();
+                    $descQuery->where(static function ($q) use ($lftN, $rgtN, $aLft, $aRgt): void {
+                        $q->where($lftN, '!=', $aLft)->orWhere($rgtN, '!=', $aRgt);
+                    });
+                }
+
+                if ($excludeBounds instanceof NodeBounds) {
+                    $eLft = $excludeBounds->lft;
+                    $eRgt = $excludeBounds->rgt;
+                    $lftN = $this->getLftName();
+                    $rgtN = $this->getRgtName();
+                    $descQuery->where(static function ($q) use ($lftN, $rgtN, $eLft, $eRgt): void {
+                        $q->where($lftN, '<', $eLft)->orWhere($rgtN, '>', $eRgt);
+                    });
+                }
+
+                foreach ($scope as $col => $value) {
+                    $descQuery->where($col, $value);
+                }
+
+                /** @var list<int|float|null> $contributions */
+                $contributions = $descQuery->get()
+                    ->map(static fn (self $node): int|float|null => $listener->contribution($node))
+                    ->filter(static fn (mixed $c): bool => $c !== null)
+                    ->values()
+                    ->all();
+
+                $newValue = $contributions === []
+                    ? null
+                    : ($definition->operation === AggregateFunction::Max
+                        ? max($contributions)
+                        : min($contributions));
+
+                $updates[$column] = $newValue;
+            }
+
+            $this->getConnection()->table($this->getTable())
+                ->where('id', $ancestor->getKey())
+                ->update($updates);
+        }
     }
 
     private function resolveAggregateDefinition(string $column): AggregateDefinition
