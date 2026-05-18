@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      composer-dev-tools:
+        patterns:
+          - "phpunit/phpunit"
+          - "larastan/larastan"
+          - "rector/*"
+          - "driftingly/rector-laravel"
+          - "laravel/pint"
+          - "orchestra/testbench"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
