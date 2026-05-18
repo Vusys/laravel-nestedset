@@ -768,8 +768,9 @@ node" — useful for Min/Max where some nodes have no meaningful value.
 `watchColumns()` declares which attribute changes trigger incremental
 maintenance.
 
-Supported operations: `Sum`, `Count`, `Min`, `Max`. `Avg` is not
-supported — declare a Sum and Count pair and compute the ratio yourself.
+Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`. `Avg` is
+auto-promoted into a pair of internal `Sum` + `Count` companions plus
+the display column — see [Listener AVG](#listener-avg) below.
 
 #### Migration
 
@@ -827,6 +828,53 @@ protected function nestedSetListenerAggregates(): array
 
 Attribute and method-override forms can coexist; attribute declarations
 come first.
+
+#### Listener AVG
+
+Declare a listener AVG with `AggregateFunction::Avg` and the package
+auto-promotes two internal companions — a Sum and a Count — that ride
+the same listener. The display column is then written by the same
+`avg = sum / NULLIF(count, 0)` SET clause that powers SQL AVG, so the
+ancestor `UPDATE` stays a single statement.
+
+```php
+#[NestedSetAggregateListener(column: 'weighted_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The companion columns are conventionally suffixed `__sum` and `__count`
+on the AVG column name. You declare them in the migration alongside the
+display column:
+
+```php
+// Display column — nullable, fractional. Use decimal for fixed-precision
+// or float for an approximate type. Cast on the model accordingly.
+$table->decimal('weighted_avg', 14, 4)->nullable();
+
+// Internal companions — integer (or decimal, if your listener returns floats).
+$table->nestedSetAggregate('weighted_avg__sum');
+$table->nestedSetAggregate('weighted_avg__count');
+```
+
+Cast all three on the model:
+
+```php
+protected $casts = [
+    'weighted_avg'        => 'float',     // or 'decimal:4'
+    'weighted_avg__sum'   => 'integer',
+    'weighted_avg__count' => 'integer',
+];
+```
+
+The companions are tagged internal — `getAggregateDefinitions()` filters
+them out, so they don't appear in user-facing introspection. The
+listener's `contribution()` runs once per node per save and produces
+both Sum and Count contributions in one call (Count adds `1` when
+`contribution()` returns non-null, `0` when it returns `null`).
+
+The companion column names must follow the `__sum` / `__count`
+convention — the auto-promotion always derives them from the display
+column name, so renaming them isn't supported.
 
 #### Maintenance
 

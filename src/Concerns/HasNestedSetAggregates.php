@@ -434,19 +434,44 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            $op = $definition->operation;
+
+            // AVG listener defs maintain themselves through their
+            // auto-promoted Sum + Count companions (separate
+            // ListenerAggregateDefinition entries the registry
+            // generates). The display column is written by
+            // DeltaMaintenance via the `$avgs` SET clauses.
+            if ($op === AggregateFunction::Avg) {
+                continue;
+            }
+
             // Old contribution: snapshot of pre-save attributes
             $oldSnapshot = new static;
             $oldSnapshot->setRawAttributes($this->getOriginal(), true);
-            $oldVal = self::listenerContributionValue($listener->contribution($oldSnapshot));
+            $oldContrib = $listener->contribution($oldSnapshot);
+            $oldVal = self::listenerContributionValue($oldContrib);
 
             // New contribution: current attributes
-            $newVal = self::listenerContributionValue($listener->contribution($this));
+            $newContrib = $listener->contribution($this);
+            $newVal = self::listenerContributionValue($newContrib);
 
-            $op = $definition->operation;
-
-            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+            if ($op === AggregateFunction::Sum) {
                 $delta = $newVal - $oldVal;
                 if ($delta != 0) {
+                    $this->capturedAggregateDeltas[$definition->column] = $delta;
+                }
+
+                continue;
+            }
+
+            if ($op === AggregateFunction::Count) {
+                // Count operation: 1 when the node contributes (i.e.
+                // contribution() returned non-null), 0 otherwise.
+                // Delta is the transition: -1 / 0 / +1.
+                $oldCounted = $oldContrib !== null ? 1 : 0;
+                $newCounted = $newContrib !== null ? 1 : 0;
+                $delta = $newCounted - $oldCounted;
+                if ($delta !== 0) {
                     $this->capturedAggregateDeltas[$definition->column] = $delta;
                 }
 
@@ -463,12 +488,11 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            if ($op === AggregateFunction::Min) {
-                if ($newVal < $oldVal) {
-                    $this->capturedExtremes[$definition->column] = ['function' => AggregateFunction::Min, 'value' => $newVal];
-                } elseif ($newVal > $oldVal) {
-                    $this->capturedListenerRecomputes[$definition->column] = $definition;
-                }
+            // Min: only remaining op after Sum/Count/Avg/Max continues above.
+            if ($newVal < $oldVal) {
+                $this->capturedExtremes[$definition->column] = ['function' => AggregateFunction::Min, 'value' => $newVal];
+            } elseif ($newVal > $oldVal) {
+                $this->capturedListenerRecomputes[$definition->column] = $definition;
             }
         }
     }
@@ -747,17 +771,30 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            $op = $definition->operation;
+
+            // AVG listener: maintained by auto-promoted Sum + Count
+            // companions, which iterate this loop as separate
+            // ListenerAggregateDefinition entries.
+            if ($op === AggregateFunction::Avg) {
+                continue;
+            }
+
             $listener = $definition->makeListener();
             $contrib = $listener->contribution($this);
             $value = self::listenerContributionValue($contrib);
 
-            $op = $definition->operation;
-
-            if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
+            if ($op === AggregateFunction::Sum) {
                 if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
-            } elseif (($op === AggregateFunction::Max || $op === AggregateFunction::Min) && $contrib !== null) {
+            } elseif ($op === AggregateFunction::Count) {
+                // Count contributes 1 when contribution() returned non-null.
+                if ($contrib !== null) {
+                    $deltas[$definition->column] = 1;
+                }
+            } elseif ($contrib !== null) {
+                // Min / Max — only remaining ops after Sum/Count/Avg above.
                 $extremes[$definition->column] = ['function' => $op, 'value' => $value];
             }
         }
@@ -893,6 +930,12 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
+            // AVG listener: maintained via Sum + Count companions
+            // (which iterate this loop separately).
+            if ($op === AggregateFunction::Avg) {
+                continue;
+            }
+
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 // Stored column holds the inclusive subtree total — same as SQL path.
                 // Use type-preserving read: a float-listener column may be DECIMAL.
@@ -904,9 +947,8 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
-                $listenerChainDefs[$definition->column] = $definition;
-            }
+            // Min / Max — only remaining ops after Sum/Count/Avg above.
+            $listenerChainDefs[$definition->column] = $definition;
         }
 
         $scope = NestedSetScopeResolver::valuesFor($this);
@@ -1196,6 +1238,12 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
+            // AVG: maintained via companions; skip in the move-subtree
+            // contribution pass.
+            if ($op === AggregateFunction::Avg) {
+                continue;
+            }
+
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 // Stored column holds the inclusive subtree total.
                 // Type-preserving read: listener columns may be DECIMAL.
@@ -1207,18 +1255,17 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
-                // Use stored extremum for cheap-delta (extend new chain) and
-                // as the recompute filterValue for old chain.
-                $stored = self::numericPreserveType($this->getAttribute($definition->column));
-                $minMaxRecomputes[$definition->column] = [
-                    'function' => $op,
-                    'source' => $definition->column,   // sentinel — not used by listener recompute
-                    'filterValue' => $stored,
-                    'filter' => null,
-                ];
-                $extremes[$definition->column] = ['function' => $op, 'value' => $stored];
-            }
+            // Min / Max — only remaining ops after Sum/Count/Avg above.
+            // Use stored extremum for cheap-delta (extend new chain) and
+            // as the recompute filterValue for old chain.
+            $stored = self::numericPreserveType($this->getAttribute($definition->column));
+            $minMaxRecomputes[$definition->column] = [
+                'function' => $op,
+                'source' => $definition->column,   // sentinel — not used by listener recompute
+                'filterValue' => $stored,
+                'filter' => null,
+            ];
+            $extremes[$definition->column] = ['function' => $op, 'value' => $stored];
         }
 
         return [$sumCount, $minMaxRecomputes, $extremes];
@@ -1343,6 +1390,12 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
+            // AVG: companions handle delta; AVG display written by
+            // DeltaMaintenance's $avgs SET clause.
+            if ($op === AggregateFunction::Avg) {
+                continue;
+            }
+
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 $value = self::numericPreserveType($this->getAttribute($definition->column));
                 if ($value != 0) {
@@ -1352,10 +1405,9 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
-                $extremes[$definition->column] = ['function' => $op, 'value' => $value];
-            }
+            // Min / Max — only remaining ops after Sum/Count/Avg above.
+            $value = self::numericPreserveType($this->getAttribute($definition->column));
+            $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
 
         if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $listenerChainSpecs === []) {
@@ -1781,9 +1833,9 @@ trait HasNestedSetAggregates
             AggregateFunction::Count => count($contributions),
             AggregateFunction::Min => $contributions === [] ? null : min($contributions),
             AggregateFunction::Max => $contributions === [] ? null : max($contributions),
-            AggregateFunction::Avg => throw new AggregateConfigurationException(
-                'Listener aggregates do not support AVG operation.',
-            ),
+            AggregateFunction::Avg => $contributions === []
+                ? null
+                : array_sum($contributions) / count($contributions),
         };
     }
 

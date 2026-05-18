@@ -455,4 +455,131 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(8, $this->asInt($leftParent->weakest_level));
         $this->assertSame(3, $this->asInt($rightParent->weakest_level));
     }
+
+    // ----------------------------------------------------------------
+    // Listener AVG: maintained via auto-promoted Sum + Count
+    // companions. The display column is written by DeltaMaintenance's
+    // $avgs SET clause (avg = sum / NULLIF(count, 0)) every time the
+    // companions take a delta.
+    // ----------------------------------------------------------------
+
+    private function asFloatOrNull(mixed $value): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (! is_numeric($value)) {
+            $this->fail('Expected numeric or null, got '.get_debug_type($value));
+        }
+
+        return (float) $value;
+    }
+
+    public function test_listener_avg_computes_correctly_on_create(): void
+    {
+        // Root: base_power=2, level=5 → contribution 10
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        // Single-node subtree avg = 10.
+        $this->assertSame(10.0, $this->asFloatOrNull($root->weighted_avg));
+
+        // Add child with contribution 12 (base_power=4, level=3).
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 4, 'level' => 3]);
+        $a->appendToNode($root)->save();
+        $root->refresh();
+        $a->refresh();
+
+        // Root avg over (10, 12) = 11.
+        $this->assertSame(11.0, $this->asFloatOrNull($root->weighted_avg));
+        // A's avg = just A's contribution = 12.
+        $this->assertSame(12.0, $this->asFloatOrNull($a->weighted_avg));
+    }
+
+    public function test_listener_avg_updates_on_source_column_change(): void
+    {
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 4, 'level' => 3]);
+        $a->appendToNode($root)->save();
+
+        $root->refresh();
+        $this->assertSame(11.0, $this->asFloatOrNull($root->weighted_avg));   // (10+12)/2
+
+        // Bump A.base_power: 4 → 10 → contribution 30.
+        $a->refresh();
+        $a->base_power = 10;
+        $a->save();
+
+        $root->refresh();
+        // Root avg over (10, 30) = 20.
+        $this->assertSame(20.0, $this->asFloatOrNull($root->weighted_avg));
+    }
+
+    public function test_listener_avg_updates_on_delete(): void
+    {
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 4, 'level' => 3]);
+        $a->appendToNode($root)->save();
+        $a->refresh();
+
+        $root->refresh();
+        $this->assertSame(11.0, $this->asFloatOrNull($root->weighted_avg));
+
+        $a->delete();
+        $root->refresh();
+
+        // Root remaining: contribution 10 alone.
+        $this->assertSame(10.0, $this->asFloatOrNull($root->weighted_avg));
+    }
+
+    public function test_listener_avg_no_drift_via_aggregate_errors(): void
+    {
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 4, 'level' => 3]);
+        $a->appendToNode($root)->save();
+
+        $errors = Monster::aggregateErrors();
+
+        // No drift for the user-facing AVG column. Internal companions
+        // aren't reported in the error count.
+        $this->assertSame(0, $errors['weighted_avg'] ?? -1);
+    }
+
+    public function test_fresh_aggregate_returns_listener_avg(): void
+    {
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 4, 'level' => 3]);
+        $a->appendToNode($root)->save();
+        $root->refresh();
+
+        $fresh = $root->freshAggregate('weighted_avg');
+
+        $this->assertSame(11.0, $this->asFloatOrNull($fresh));
+    }
+
+    public function test_fix_aggregates_recovers_listener_avg(): void
+    {
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 4, 'level' => 3]);
+        $a->appendToNode($root)->save();
+
+        // Corrupt the AVG display column.
+        DB::table('monsters')->where('id', $root->id)->update(['weighted_avg' => 999]);
+
+        Monster::fixAggregates();
+
+        $root->refresh();
+        $this->assertSame(11.0, $this->asFloatOrNull($root->weighted_avg));
+    }
 }

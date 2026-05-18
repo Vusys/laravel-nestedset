@@ -68,6 +68,18 @@ final readonly class ListenerAggregate
     }
 
     /**
+     * AVG of listener contributions over the subtree. Stored as a
+     * derived value: the registry auto-promotes Sum and Count
+     * companions over the same listener class; the AVG display
+     * column is maintained as `sum / NULLIF(count, 0)` after every
+     * delta.
+     */
+    public static function avg(string $listenerClass): self
+    {
+        return new self($listenerClass, AggregateFunction::Avg, true);
+    }
+
+    /**
      * Self-inclusive aggregation — the node's own contribution participates
      * in its stored aggregate. This is the default.
      */

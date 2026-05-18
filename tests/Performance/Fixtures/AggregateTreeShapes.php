@@ -274,6 +274,9 @@ final class AggregateTreeShapes
                 'fire_count' => 0,
                 'half_weighted_power' => 0,
                 'weakest_level' => null,
+                'weighted_avg' => null,
+                'weighted_avg__sum' => 0,
+                'weighted_avg__count' => 0,
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
