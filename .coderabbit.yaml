@@ -1,0 +1,59 @@
+# CodeRabbit configuration.
+# Docs: https://docs.coderabbit.ai/guides/configure-coderabbit
+#
+# Goals here:
+#   - Terse, signal-only reviews (chill profile, no poems).
+#   - Skip vendor / build / generated content.
+#   - Tell CodeRabbit about the project's conventions so it doesn't
+#     re-flag intentional choices on every PR.
+
+language: en-GB
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - master
+  path_filters:
+    - '!vendor/**'
+    - '!build/**'
+    - '!.github/**'
+    - '!composer.lock'
+  path_instructions:
+    - path: 'src/**'
+      instructions: |
+        PHP 8.3+ Laravel package. CI runs PHPStan level 9 (Larastan),
+        Pint, and Rector — assume all three pass before review. Inline
+        @phpstan-ignore comments and PHPStan baseline entries are
+        explicitly disallowed (see existing CLAUDE.md guidance); flag
+        any that creep in. Adding optional parameters at the end of
+        public method signatures is fine; renaming or removing public
+        API needs a deprecation discussion. The package is pre-1.0 so
+        backwards-compat breaks are acceptable when called out.
+    - path: 'tests/**'
+      instructions: |
+        PHPUnit 12, Testbench-based. Concrete fixture types in test
+        helpers are intentional — they exist so PHPStan can see the
+        NodeTrait methods without ignore-comments. The `fuzzer` group
+        is opt-in (`composer fuzz`) and configurable via
+        FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars — those
+        defaults are pinned to catch known regressions.
+    - path: 'tests/Fixtures/**'
+      instructions: |
+        Test fixtures only. Migration ordering matters (TestCase
+        truncates between tests); don't reorder existing migrations.
+    - path: '.github/workflows/**'
+      instructions: |
+        Tests run a 24-cell matrix (PHP 8.3/8.4 × Laravel 11/12/13 ×
+        sqlite/mysql/mariadb/pgsql). Fuzz runs in a separate workflow
+        on dispatch + weekly cron.
+
+chat:
+  auto_reply: true
