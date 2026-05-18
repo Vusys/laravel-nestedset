@@ -1,7 +1,7 @@
 # vusys/laravel-nestedset
 
-[![Tests](https://github.com/Vusys/laravel-vusys-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-vusys-nestedset/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/Vusys/laravel-vusys-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-vusys-nestedset)
+[![Tests](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/Vusys/laravel-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-nestedset)
 [![PHP](https://img.shields.io/badge/php-%5E8.3-777BB4?logo=php&logoColor=white)](composer.json)
 [![Laravel](https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel)](composer.json)
 [![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](phpstan.neon)
