@@ -119,6 +119,10 @@ function startServer(string $docroot, int $port)
         exit(1);
     }
 
+    if (isset($pipes[0]) && is_resource($pipes[0])) {
+        fclose($pipes[0]);
+    }
+
     return $proc;
 }
 
