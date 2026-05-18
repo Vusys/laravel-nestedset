@@ -134,40 +134,20 @@ final class ExclusiveAggregateTest extends TestCase
     }
 
     // ----------------------------------------------------------------
-    // Incremental maintenance skip: save() does NOT update exclusive
-    // columns. They stay at the column default (0 / null) until
-    // fixAggregates() is run.
+    // Incremental maintenance: save() keeps exclusive columns in sync
+    // via the chain-recompute path. No fixAggregates() required.
     // ----------------------------------------------------------------
 
-    public function test_save_does_not_maintain_exclusive_columns(): void
+    public function test_save_maintains_exclusive_columns_on_create(): void
     {
         $this->buildTree();
-
-        $root = $this->rowById('branches', $this->ids['Root']);
-
-        // Exclusive columns are stored as default-0 / null at the row level
-        // because no incremental maintenance writes them.
-        $this->assertSame(0, (int) $root->descendants_total);
-        $this->assertSame(0, (int) $root->descendants_count);
-        $this->assertNull($root->descendants_max);
-
-        // The inclusive baseline is maintained — sanity check.
-        $this->assertSame(100, (int) $root->tickets_total); // 10+20+30+40
-    }
-
-    public function test_fix_aggregates_recovers_exclusive_columns(): void
-    {
-        $this->buildTree();
-
-        $result = Branch::fixAggregates();
-
-        $this->assertGreaterThan(0, $result->totalRowsUpdated);
 
         $root = $this->rowById('branches', $this->ids['Root']);
         $a = $this->rowById('branches', $this->ids['A']);
         $a1 = $this->rowById('branches', $this->ids['A1']);
+        $b = $this->rowById('branches', $this->ids['B']);
 
-        // Root: descendants exclude self.
+        // Root: descendants (A, A1, B) total = 20+30+40 = 90, count 3, max 40.
         $this->assertSame(90, (int) $root->descendants_total);
         $this->assertSame(3, (int) $root->descendants_count);
         $this->assertSame(40, (int) $root->descendants_max);
@@ -177,32 +157,86 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertSame(1, (int) $a->descendants_count);
         $this->assertSame(30, (int) $a->descendants_max);
 
-        // Leaves: empty subtree.
+        // Leaves report empty subtree.
         $this->assertSame(0, (int) $a1->descendants_total);
         $this->assertSame(0, (int) $a1->descendants_count);
         $this->assertNull($a1->descendants_max);
+
+        $this->assertSame(0, (int) $b->descendants_total);
+
+        // The inclusive baseline is also correct.
+        $this->assertSame(100, (int) $root->tickets_total); // 10+20+30+40
     }
 
-    public function test_aggregate_errors_reports_drift_on_exclusive_columns(): void
+    public function test_save_maintains_exclusive_columns_on_source_update(): void
     {
         $this->buildTree();
 
-        // Pre-fixAggregates the exclusive columns are at default values
-        // while the fresh computation says otherwise. aggregateErrors()
-        // should flag the drift.
-        $errors = Branch::aggregateErrors();
+        // Pre-update Root.descendants_total = 90.
+        $root = $this->rowById('branches', $this->ids['Root']);
+        $this->assertSame(90, (int) $root->descendants_total);
 
-        $this->assertGreaterThan(0, $errors['descendants_total'] ?? 0);
-        $this->assertGreaterThan(0, $errors['descendants_count'] ?? 0);
-        $this->assertGreaterThan(0, $errors['descendants_max'] ?? 0);
+        // Bump A1's tickets from 30 → 50 (Δ = +20).
+        $a1 = Branch::query()->findOrFail($this->ids['A1']);
+        $a1->tickets = 50;
+        $a1->save();
 
-        // After a fix, errors clear.
-        Branch::fixAggregates();
+        // Root.descendants_total should follow: 90 → 110.
+        $root = $this->rowById('branches', $this->ids['Root']);
+        $this->assertSame(110, (int) $root->descendants_total);
+
+        // A.descendants_total follows: 30 → 50.
+        $a = $this->rowById('branches', $this->ids['A']);
+        $this->assertSame(50, (int) $a->descendants_total);
+
+        // A1 itself: its own descendants_total is unaffected by its
+        // own source change (descendants-only — A1 has no descendants).
+        $a1Row = $this->rowById('branches', $this->ids['A1']);
+        $this->assertSame(0, (int) $a1Row->descendants_total);
+
+        // descendants_max on Root: previously 40 (B), now 50 (A1).
+        $this->assertSame(50, (int) $root->descendants_max);
+    }
+
+    public function test_save_maintains_exclusive_columns_on_delete(): void
+    {
+        $this->buildTree();
+
+        // Delete A1. A's descendants_total goes 30 → 0; Root's 90 → 60.
+        $a1 = Branch::query()->findOrFail($this->ids['A1']);
+        $a1->delete();
+
+        $root = $this->rowById('branches', $this->ids['Root']);
+        $a = $this->rowById('branches', $this->ids['A']);
+
+        $this->assertSame(60, (int) $root->descendants_total);  // 20+40
+        $this->assertSame(2, (int) $root->descendants_count);
+        $this->assertSame(40, (int) $root->descendants_max);   // B (A1 was 30, never the max)
+
+        $this->assertSame(0, (int) $a->descendants_total);
+        $this->assertSame(0, (int) $a->descendants_count);
+        $this->assertNull($a->descendants_max);
+    }
+
+    public function test_aggregate_errors_reports_no_drift_when_maintained(): void
+    {
+        $this->buildTree();
+
+        // Build + save should produce zero drift; aggregateErrors() reports 0.
         $errors = Branch::aggregateErrors();
 
         $this->assertSame(0, $errors['descendants_total'] ?? -1);
         $this->assertSame(0, $errors['descendants_count'] ?? -1);
         $this->assertSame(0, $errors['descendants_max'] ?? -1);
+    }
+
+    public function test_fix_aggregates_idempotent_after_save(): void
+    {
+        $this->buildTree();
+
+        // First fixAggregates after a clean build should write nothing.
+        $result = Branch::fixAggregates();
+        $this->assertSame(0, $result->totalRowsUpdated);
     }
 
     // ----------------------------------------------------------------
