@@ -1549,7 +1549,7 @@ final class TreeAggregateBuilder
      * AVG is considered equal so a recomputed 56.2500 doesn't disagree
      * with a stored 56.25.
      */
-    private static function aggregatesEqual(mixed $a, mixed $b): bool
+    public static function aggregatesEqual(mixed $a, mixed $b): bool
     {
         if ($a === null && $b === null) {
             return true;
