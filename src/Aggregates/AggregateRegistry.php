@@ -140,6 +140,9 @@ final class AggregateRegistry
                 $countColumn = null;
 
                 foreach ($companions as $companion) {
+                    if (! self::filtersMatch($companion->filter, $definition->filter)) {
+                        continue;
+                    }
                     if ($companion->function === AggregateFunction::Sum && $sumColumn === null) {
                         $sumColumn = $companion->column;
                     }
@@ -341,6 +344,17 @@ final class AggregateRegistry
 
                 $source = $definition->source;
                 $companionsForSource = $bySource[$source] ?? [];
+                // Only candidates whose filter matches the AVG's count
+                // as valid companions. Otherwise the auto-promotion
+                // adopts a Sum with a different filter (e.g. fire-only)
+                // and the AVG silently reads filtered data.
+                $companionsForSource = array_values(array_filter(
+                    $companionsForSource,
+                    static fn (AggregateDefinition $candidate): bool => self::filtersMatch(
+                        $candidate->filter,
+                        $definition->filter,
+                    ),
+                ));
 
                 $hasSum = self::hasFunction($companionsForSource, AggregateFunction::Sum);
                 $hasCount = self::hasFunction($companionsForSource, AggregateFunction::Count);
@@ -473,6 +487,31 @@ final class AggregateRegistry
         }
 
         return false;
+    }
+
+    /**
+     * True when two filter predicates would select the same rows. Used
+     * to decide whether a user-declared Sum / Count is a semantically-
+     * correct companion for an AVG. Sharing companions across mismatched
+     * filters means the AVG silently reads filtered data.
+     */
+    private static function filtersMatch(?FilterPredicate $a, ?FilterPredicate $b): bool
+    {
+        if ($a === null && $b === null) {
+            return true;
+        }
+        if ($a === null || $b === null) {
+            return false;
+        }
+        if ($a->getKind() !== $b->getKind()) {
+            return false;
+        }
+
+        return match ($a->getKind()) {
+            FilterPredicateKind::Equality => $a->getConditions() === $b->getConditions(),
+            FilterPredicateKind::NotNull => $a->getNotNullColumn() === $b->getNotNullColumn(),
+            FilterPredicateKind::Raw => $a->getRawSql() === $b->getRawSql(),
+        };
     }
 
     /**
