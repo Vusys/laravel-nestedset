@@ -125,19 +125,11 @@ final class RecomputeMaintenance
                 $scopeJoin .= " AND inner_a.{$col} = outer_a.{$col}";
             }
 
-            $func = $spec['function'] === AggregateFunction::Max ? 'MAX' : 'MIN';
-            $source = $spec['source'];
-
             $filterPredicate = $spec['filter'] ?? null;
+            $aggExpr = self::innerAggregateExpression($spec, $filterPredicate);
 
-            if ($filterPredicate !== null) {
-                $pred = self::filterPredicateSql($filterPredicate, 'inner_a.');
-                $selects[] = "(SELECT {$func}(CASE WHEN {$pred} THEN inner_a.{$source} ELSE NULL END) FROM {$table} AS inner_a "
-                    ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}) AS {$alias}";
-            } else {
-                $selects[] = "(SELECT {$func}(inner_a.{$source}) FROM {$table} AS inner_a "
-                    ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}) AS {$alias}";
-            }
+            $selects[] = "(SELECT {$aggExpr} FROM {$table} AS inner_a "
+                ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}) AS {$alias}";
         }
 
         $where = "outer_a.{$lftCol} <= ? AND outer_a.{$rgtCol} >= ?";
@@ -233,6 +225,66 @@ final class RecomputeMaintenance
     private static function recomputeAlias(int $index): string
     {
         return 'recompute_'.$index;
+    }
+
+    /**
+     * Builds the inner SUM/COUNT/AVG/MIN/MAX expression for the
+     * recompute subquery — wrapping the source column reference in a
+     * `CASE WHEN <filter> THEN … ELSE …` when a filter is present.
+     *
+     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}  $spec
+     */
+    private static function innerAggregateExpression(array $spec, ?FilterPredicate $filter): string
+    {
+        $source = $spec['source'];
+        $sourceRef = "inner_a.{$source}";
+
+        if ($filter instanceof FilterPredicate) {
+            $pred = self::filterPredicateSql($filter, 'inner_a.');
+
+            return match ($spec['function']) {
+                AggregateFunction::Sum => sprintf(
+                    'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
+                    $pred,
+                    $sourceRef,
+                ),
+                AggregateFunction::Count => sprintf(
+                    // COUNT(NULL) and COUNT(expr-returning-NULL) both yield 0
+                    // — wrap in a CASE that returns 1 / NULL to match
+                    // COUNT(*)-semantics-with-filter as well as
+                    // COUNT(col)-with-filter (NULL source already produces
+                    // NULL via the CASE branch).
+                    'COUNT(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $spec['source'] === '' ? '1' : $sourceRef,
+                ),
+                AggregateFunction::Avg => sprintf(
+                    'AVG(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $sourceRef,
+                ),
+                AggregateFunction::Min => sprintf(
+                    'MIN(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $sourceRef,
+                ),
+                AggregateFunction::Max => sprintf(
+                    'MAX(CASE WHEN %s THEN %s ELSE NULL END)',
+                    $pred,
+                    $sourceRef,
+                ),
+            };
+        }
+
+        return match ($spec['function']) {
+            AggregateFunction::Sum => "COALESCE(SUM({$sourceRef}), 0)",
+            AggregateFunction::Count => $spec['source'] === ''
+                ? 'COUNT(*)'
+                : "COUNT({$sourceRef})",
+            AggregateFunction::Avg => "AVG({$sourceRef})",
+            AggregateFunction::Min => "MIN({$sourceRef})",
+            AggregateFunction::Max => "MAX({$sourceRef})",
+        };
     }
 
     private static function filterPredicateSql(FilterPredicate $filter, string $qualifier): string

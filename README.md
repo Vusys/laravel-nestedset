@@ -679,11 +679,20 @@ scope.
 Filtered columns use the same `$table->nestedSetAggregate(...)` migration
 macro as unfiltered ones — the migration doesn't know about filter logic.
 
-**Maintenance:** equality and not-null predicates are evaluated in PHP so
-delta maintenance stays incremental. Raw SQL predicates cannot be evaluated
-in PHP — the package skips incremental maintenance for those columns and
-requires a `fixAggregates()` pass to catch up. Schedule a periodic repair
-if raw-predicate watch columns are written frequently.
+**Maintenance:** all three filter forms are kept in sync incrementally —
+no scheduled repair pass needed.
+
+- *Equality* and *not-null* predicates are evaluated in PHP, so the
+  package produces a signed delta per mutation and adds one extra `UPDATE`
+  to the ancestor chain. Same cost shape as unfiltered SUM/COUNT.
+- *Raw SQL* predicates can't be evaluated in PHP, so delta arithmetic is
+  unavailable. When any watched column changes (or the row is created /
+  deleted / moved / restored), the package bulk-recomputes the affected
+  raw-filter column over the affected ancestor chain via one SELECT
+  plus one UPDATE per ancestor row. Cost: O(depth × subtree-size) per
+  mutation that dirties a watched column, matching the MIN/MAX
+  extremum-lost path. Mutations that don't touch a watched column skip
+  the recompute entirely.
 
 The fresh-read path (`withFreshAggregates()`, `freshAggregate()`) always
 generates correct SQL — `CASE WHEN pred THEN source ELSE … END` — regardless

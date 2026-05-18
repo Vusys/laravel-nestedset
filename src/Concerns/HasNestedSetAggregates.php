@@ -98,6 +98,19 @@ trait HasNestedSetAggregates
     private array $capturedListenerRecomputes = [];
 
     /**
+     * Aggregate definitions with a Raw-SQL filter predicate that need an
+     * ancestor-chain recompute. The package cannot evaluate the predicate
+     * in PHP, so delta arithmetic is unavailable — when any watched
+     * column on a row changes, we bulk-recompute the whole column on the
+     * affected ancestor chain via {@see RecomputeMaintenance}. The cost
+     * is bounded to O(depth × subtree-size) per save, same as the
+     * extremum-lost branch for MIN/MAX.
+     *
+     * @var array<string, AggregateDefinition>
+     */
+    private array $capturedRawFilterRecomputes = [];
+
+    /**
      * The user-facing aggregate definitions declared on this model.
      * Excludes internal companions auto-promoted alongside AVG
      * declarations — those are an implementation detail of the
@@ -220,6 +233,7 @@ trait HasNestedSetAggregates
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
         $this->capturedListenerRecomputes = [];
+        $this->capturedRawFilterRecomputes = [];
 
         if (! $this->exists) {
             return;
@@ -230,8 +244,19 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Skip Raw predicates — they cannot be evaluated in PHP.
+            // Raw predicates can't be evaluated in PHP, so we can't
+            // produce a signed delta. Queue an ancestor-chain recompute
+            // instead — kicked off in applyAggregateDeltas() alongside
+            // the other captured maintenance work.
             if ($definition->filter?->getKind() === FilterPredicateKind::Raw) {
+                $watchCols = array_unique(array_merge(
+                    $definition->source !== null ? [$definition->source] : [],
+                    $definition->filter->watchColumns(),
+                ));
+                if ($watchCols !== [] && $this->isDirty($watchCols)) {
+                    $this->capturedRawFilterRecomputes[$definition->column] = $definition;
+                }
+
                 continue;
             }
 
@@ -430,13 +455,15 @@ trait HasNestedSetAggregates
         $extremes = $this->capturedExtremes;
         $recomputes = $this->capturedRecomputes;
         $listenerRecomputes = $this->capturedListenerRecomputes;
+        $rawFilterRecomputes = $this->capturedRawFilterRecomputes;
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
         $this->capturedListenerRecomputes = [];
+        $this->capturedRawFilterRecomputes = [];
 
-        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $rawFilterRecomputes === []) {
             return;
         }
 
@@ -463,6 +490,10 @@ trait HasNestedSetAggregates
 
         if ($recomputes !== []) {
             $this->applyCapturedRecomputes($recomputes, $scope);
+        }
+
+        if ($rawFilterRecomputes !== []) {
+            $this->applyRawFilterChainRecompute($this->getBounds(), $scope, $rawFilterRecomputes);
         }
 
         if ($listenerRecomputes !== []) {
@@ -509,6 +540,57 @@ trait HasNestedSetAggregates
     }
 
     /**
+     * Bulk-recomputes the listed raw-filter aggregate columns across the
+     * ancestor chain of `$bounds`. Used wherever a per-row mutation may
+     * change which rows pass the (un-PHP-evaluable) raw predicate —
+     * source/watch column update, create, delete, move, restore.
+     *
+     * Issues one SELECT and one UPDATE per affected ancestor row. Cost
+     * is O(depth × subtree-size) per call, matching the MIN/MAX-extremum
+     * recompute branch.
+     *
+     * @param  array<string, AggregateDefinition>  $definitions
+     * @param  array<string, mixed>  $scope
+     */
+    private function applyRawFilterChainRecompute(
+        NodeBounds $bounds,
+        array $scope,
+        array $definitions,
+        ?NodeBounds $excludeBounds = null,
+    ): void {
+        if ($definitions === []) {
+            return;
+        }
+
+        $columns = [];
+        foreach ($definitions as $aggregateColumn => $definition) {
+            $columns[] = [
+                'column' => $aggregateColumn,
+                'function' => $definition->function,
+                // RecomputeMaintenance reads inner_a.<source>; for COUNT(*) the
+                // source is null in the definition, but the helper handles
+                // empty string specially.
+                'source' => $definition->source ?? '',
+                'inclusive' => $definition->inclusive,
+                'filter' => $definition->filter,
+            ];
+        }
+
+        RecomputeMaintenance::apply(
+            connection: $this->getConnection(),
+            table: $this->getTable(),
+            lftCol: $this->getLftName(),
+            rgtCol: $this->getRgtName(),
+            bounds: $bounds,
+            columns: $columns,
+            scope: $scope,
+            filterEquals: [],   // recompute every ancestor; no cheap-skip
+            locking: self::aggregateLockingMode(),
+            excludeBounds: $excludeBounds,
+        );
+    }
+
+    /**
      * @return 'always'|'auto'|'never'
      */
     private static function aggregateLockingMode(): string
@@ -541,6 +623,8 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $extremes = [];
+        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
+        $rawFilterRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
@@ -552,14 +636,21 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Raw filter: predicate can't be evaluated in PHP, so we
+            // can't decide whether this node contributes. Queue an
+            // ancestor-chain recompute and skip the per-function delta
+            // logic for this definition.
+            if ($definition->filter instanceof FilterPredicate
+                && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                $rawFilterRecomputes[$definition->column] = $definition;
+
+                continue;
+            }
+
             if ($definition->function === AggregateFunction::Sum && $definition->source !== null) {
-                if ($definition->filter instanceof FilterPredicate) {
-                    if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
-                        continue;
-                    }
-                    if ($definition->filter->evaluateFor($this->getAttributes()) !== true) {
-                        continue;
-                    }
+                if ($definition->filter instanceof FilterPredicate
+                    && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                    continue;
                 }
                 $value = self::numeric($this->getAttribute($definition->source));
                 if ($value !== 0) {
@@ -570,13 +661,9 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Count) {
-                if ($definition->filter instanceof FilterPredicate) {
-                    if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
-                        continue;
-                    }
-                    if ($definition->filter->evaluateFor($this->getAttributes()) !== true) {
-                        continue;
-                    }
+                if ($definition->filter instanceof FilterPredicate
+                    && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                    continue;
                 }
                 // COUNT(source) — only contribute if source is non-null.
                 if ($definition->source !== null && $this->getAttribute($definition->source) === null) {
@@ -591,13 +678,9 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                if ($definition->filter instanceof FilterPredicate) {
-                    if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
-                        continue;
-                    }
-                    if ($definition->filter->evaluateFor($this->getAttributes()) !== true) {
-                        continue;
-                    }
+                if ($definition->filter instanceof FilterPredicate
+                    && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                    continue;
                 }
                 $value = self::numeric($this->getAttribute($definition->source));
                 $extremes[$definition->column] = [
@@ -630,22 +713,30 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($deltas === [] && $extremes === []) {
+        if ($deltas === [] && $extremes === [] && $rawFilterRecomputes === []) {
             return;
         }
 
-        DeltaMaintenance::apply(
-            connection: $this->getConnection(),
-            table: $this->getTable(),
-            lftCol: $this->getLftName(),
-            rgtCol: $this->getRgtName(),
-            bounds: $this->getBounds(),
-            deltas: $deltas,
-            includeSelf: true,
-            scope: NestedSetScopeResolver::valuesFor($this),
-            avgs: AggregateRegistry::avgCompanionsFor(static::class),
-            extremes: $extremes,
-        );
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        if ($deltas !== [] || $extremes !== []) {
+            DeltaMaintenance::apply(
+                connection: $this->getConnection(),
+                table: $this->getTable(),
+                lftCol: $this->getLftName(),
+                rgtCol: $this->getRgtName(),
+                bounds: $this->getBounds(),
+                deltas: $deltas,
+                includeSelf: true,
+                scope: $scope,
+                avgs: AggregateRegistry::avgCompanionsFor(static::class),
+                extremes: $extremes,
+            );
+        }
+
+        if ($rawFilterRecomputes !== []) {
+            $this->applyRawFilterChainRecompute($this->getBounds(), $scope, $rawFilterRecomputes);
+        }
     }
 
     /**
@@ -672,12 +763,23 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $minMaxRecomputes = [];
+        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
+        $rawFilterRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
                 continue;
             }
             if (! $definition->inclusive) {
+                continue;
+            }
+
+            // Raw filter: post-delete, the row no longer satisfies any
+            // predicate. Recompute the column on the ancestor chain.
+            if ($definition->filter instanceof FilterPredicate
+                && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                $rawFilterRecomputes[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -758,6 +860,18 @@ trait HasNestedSetAggregates
             $this->applyCapturedRecomputes($minMaxRecomputes, $scope);
         }
 
+        if ($rawFilterRecomputes !== []) {
+            // The deleted row is already gone from the table at this
+            // point, so the subquery naturally excludes it. Recompute
+            // the chain (skip self — its row is gone for hard deletes /
+            // soft-deleted for soft deletes).
+            $this->applyRawFilterChainRecompute(
+                bounds: $this->getBounds(),
+                scope: $scope,
+                definitions: $rawFilterRecomputes,
+            );
+        }
+
         if ($listenerMinMaxDefs !== []) {
             $this->applyListenerMinMaxRecomputes(
                 bounds: $this->getBounds(),
@@ -833,6 +947,28 @@ trait HasNestedSetAggregates
                 excludeBounds: $from,   // exclude moving subtree from scan
             );
         }
+
+        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
+        $rawFilterRecomputes = [];
+        foreach (AggregateRegistry::for(static::class) as $def) {
+            if ($def instanceof AggregateDefinition
+                && $def->inclusive
+                && $def->filter instanceof FilterPredicate
+                && $def->filter->getKind() === FilterPredicateKind::Raw
+            ) {
+                $rawFilterRecomputes[$def->column] = $def;
+            }
+        }
+        if ($rawFilterRecomputes !== []) {
+            // Old-chain recompute pre-move: the moving subtree is still
+            // physically in the table, so we logically exclude it.
+            $this->applyRawFilterChainRecompute(
+                bounds: $from,
+                scope: $scope,
+                definitions: $rawFilterRecomputes,
+                excludeBounds: $from,
+            );
+        }
     }
 
     /**
@@ -852,22 +988,48 @@ trait HasNestedSetAggregates
 
         [$sumCountDeltas, , $candidateExtremes] = $this->collectMoveSubtreeContribution();
 
-        if ($sumCountDeltas === [] && $candidateExtremes === []) {
+        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
+        $rawFilterRecomputes = [];
+        foreach (AggregateRegistry::for(static::class) as $def) {
+            if ($def instanceof AggregateDefinition
+                && $def->inclusive
+                && $def->filter instanceof FilterPredicate
+                && $def->filter->getKind() === FilterPredicateKind::Raw
+            ) {
+                $rawFilterRecomputes[$def->column] = $def;
+            }
+        }
+
+        if ($sumCountDeltas === [] && $candidateExtremes === [] && $rawFilterRecomputes === []) {
             return;
         }
 
-        DeltaMaintenance::apply(
-            connection: $this->getConnection(),
-            table: $this->getTable(),
-            lftCol: $this->getLftName(),
-            rgtCol: $this->getRgtName(),
-            bounds: $to,
-            deltas: $sumCountDeltas,
-            includeSelf: false,
-            scope: NestedSetScopeResolver::valuesFor($this),
-            avgs: AggregateRegistry::avgCompanionsFor(static::class),
-            extremes: $candidateExtremes,
-        );
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        if ($sumCountDeltas !== [] || $candidateExtremes !== []) {
+            DeltaMaintenance::apply(
+                connection: $this->getConnection(),
+                table: $this->getTable(),
+                lftCol: $this->getLftName(),
+                rgtCol: $this->getRgtName(),
+                bounds: $to,
+                deltas: $sumCountDeltas,
+                includeSelf: false,
+                scope: $scope,
+                avgs: AggregateRegistry::avgCompanionsFor(static::class),
+                extremes: $candidateExtremes,
+            );
+        }
+
+        if ($rawFilterRecomputes !== []) {
+            // New-chain recompute post-move: subtree is at $to now,
+            // so a normal recompute over the new chain captures it.
+            $this->applyRawFilterChainRecompute(
+                bounds: $to,
+                scope: $scope,
+                definitions: $rawFilterRecomputes,
+            );
+        }
     }
 
     /**
@@ -1021,12 +1183,21 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $extremes = [];
+        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
+        $rawFilterRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
                 continue;
             }
             if (! $definition->inclusive) {
+                continue;
+            }
+
+            if ($definition->filter instanceof FilterPredicate
+                && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                $rawFilterRecomputes[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -1077,22 +1248,30 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($deltas === [] && $extremes === []) {
+        if ($deltas === [] && $extremes === [] && $rawFilterRecomputes === []) {
             return;
         }
 
-        DeltaMaintenance::apply(
-            connection: $this->getConnection(),
-            table: $this->getTable(),
-            lftCol: $this->getLftName(),
-            rgtCol: $this->getRgtName(),
-            bounds: $this->getBounds(),
-            deltas: $deltas,
-            includeSelf: false,
-            scope: NestedSetScopeResolver::valuesFor($this),
-            avgs: AggregateRegistry::avgCompanionsFor(static::class),
-            extremes: $extremes,
-        );
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        if ($deltas !== [] || $extremes !== []) {
+            DeltaMaintenance::apply(
+                connection: $this->getConnection(),
+                table: $this->getTable(),
+                lftCol: $this->getLftName(),
+                rgtCol: $this->getRgtName(),
+                bounds: $this->getBounds(),
+                deltas: $deltas,
+                includeSelf: false,
+                scope: $scope,
+                avgs: AggregateRegistry::avgCompanionsFor(static::class),
+                extremes: $extremes,
+            );
+        }
+
+        if ($rawFilterRecomputes !== []) {
+            $this->applyRawFilterChainRecompute($this->getBounds(), $scope, $rawFilterRecomputes);
+        }
     }
 
     /**
