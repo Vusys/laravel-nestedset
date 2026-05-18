@@ -54,7 +54,7 @@ final class EventPayloadTest extends TestCase
 
     public function test_node_moved_fires_for_prepend_to_node(): void
     {
-        $root = $this->seedTree();
+        $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
         $b = Area::query()->where('name', 'B')->firstOrFail();
 

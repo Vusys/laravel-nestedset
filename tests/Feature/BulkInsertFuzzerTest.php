@@ -95,7 +95,7 @@ final class BulkInsertFuzzerTest extends TestCase
 
             // Verify DFS pre-order shape against spec.
             $expectedParentId = null;
-            if ($anchor !== null) {
+            if ($anchor instanceof Area) {
                 $key = $anchor->getKey();
                 if (! is_int($key)) {
                     $this->fail("{$tag} anchor key isn't an int");
@@ -110,7 +110,7 @@ final class BulkInsertFuzzerTest extends TestCase
                     models: $inserted,
                     cursor: $idx,
                     expectedParentId: $expectedParentId,
-                    expectedDepth: $anchor !== null ? ((int) $anchor->depth) + 1 : 0,
+                    expectedDepth: $anchor instanceof Area ? ((int) $anchor->depth) + 1 : 0,
                     tag: $tag,
                 );
             }
@@ -124,7 +124,7 @@ final class BulkInsertFuzzerTest extends TestCase
             $minNewLft = min($newLfts);
             $maxNewRgt = max($newRgts);
 
-            if ($anchor !== null) {
+            if ($anchor instanceof Area) {
                 $anchor->refresh();
                 $this->assertLessThan($anchor->rgt, $maxNewRgt, "{$tag} new subtree must sit inside anchor's range");
                 $this->assertGreaterThan($anchor->lft, $minNewLft, "{$tag} new subtree must sit inside anchor's range");

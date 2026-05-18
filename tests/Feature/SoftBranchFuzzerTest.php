@@ -7,25 +7,24 @@ namespace Vusys\NestedSet\Tests\Feature;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
+use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
- * Random sequences of mutate / soft-delete / restore / force-delete /
- * move / append on a Monster (SoftDeletes + listener aggregates).
- * After every step the stored aggregate columns are compared against
- * `freshAggregate()` to detect drift across the soft-delete state
- * machine.
+ * Sibling of {@see SoftDeleteCascadeFuzzerTest} for the SQL-aggregate
+ * surface. SoftBranch carries inclusive SUM (delta path), exclusive
+ * SUM / COUNT / MAX (RecomputeMaintenance), an inclusive SUM with a
+ * raw-SQL filter (RecomputeMaintenance), and SoftDeletes.
  *
- * Snapshot semantics: per-mutation deltas skip trashed ancestors, so
- * their stored aggregates stay frozen at trash time. Restore re-syncs
- * the restored subtree from the now-live set before re-adding to live
- * ancestors. The fuzzer is what proves the snapshot stays consistent
- * under interleaved structural mutations.
+ * The fuzzer drives a random mix of structural mutations and soft-
+ * delete lifecycle calls, asserting every step:
+ *   - `aggregatesAreBroken()` stays false — stored values match
+ *     freshly-computed ones under the snapshot-semantics live view.
+ *   - The tree structure stays valid.
  */
 #[Group('fuzzer')]
-final class SoftDeleteCascadeFuzzerTest extends TestCase
+final class SoftBranchFuzzerTest extends TestCase
 {
     /**
      * @return iterable<string, array{seed: int, steps: int}>
@@ -41,42 +40,40 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_random_soft_delete_sequences_keep_aggregates_consistent(
+    public function test_random_sequences_keep_sql_aggregates_consistent(
         int $seed,
         int $steps,
     ): void {
         mt_srand($seed);
 
-        $root = new Monster([
+        $root = new SoftBranch([
             'name' => 'root',
-            'type' => 'fire',
-            'base_power' => mt_rand(1, 5),
-            'level' => mt_rand(1, 3),
+            'tickets' => mt_rand(0, 5),
+            'active' => mt_rand(0, 1),
         ]);
         $root->saveAsRoot();
 
         for ($i = 0; $i < 5; $i++) {
             $parent = $this->randomLiveNode();
-            if (! $parent instanceof Monster) {
+            if (! $parent instanceof SoftBranch) {
                 continue;
             }
-            $node = new Monster([
+            $node = new SoftBranch([
                 'name' => "p{$i}",
-                'type' => mt_rand(0, 1) === 1 ? 'fire' : 'water',
-                'base_power' => mt_rand(1, 9),
-                'level' => mt_rand(1, 5),
+                'tickets' => mt_rand(0, 30),
+                'active' => mt_rand(0, 1),
             ]);
             $node->appendToNode($parent)->save();
         }
 
-        $this->assertAggregatesAgreeWithFresh("[seed={$seed}] seed");
+        $this->assertInvariants("[seed={$seed}] seed");
 
         $history = [];
         for ($step = 1; $step <= $steps; $step++) {
             $action = $this->pickAction(mt_rand(0, 99));
             $this->doStep($action, $step);
             $history[] = "{$step}:{$action}";
-            $this->assertAggregatesAgreeWithFresh(
+            $this->assertInvariants(
                 "[seed={$seed}] step {$step} ({$action})\nHistory: ".implode(' ', $history),
             );
         }
@@ -117,14 +114,13 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         switch ($action) {
             case 'append':
                 $parent = $this->randomLiveNode();
-                if (! $parent instanceof Monster) {
+                if (! $parent instanceof SoftBranch) {
                     return;
                 }
-                $node = new Monster([
+                $node = new SoftBranch([
                     'name' => "s{$step}",
-                    'type' => mt_rand(0, 1) === 1 ? 'fire' : 'water',
-                    'base_power' => mt_rand(1, 9),
-                    'level' => mt_rand(1, 5),
+                    'tickets' => mt_rand(0, 30),
+                    'active' => mt_rand(0, 1),
                 ]);
                 $node->appendToNode($parent)->save();
 
@@ -132,7 +128,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'soft_delete':
                 $target = $this->randomLiveNonRootNode();
-                if (! $target instanceof Monster) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
                 $target->delete();
@@ -141,7 +137,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'restore':
                 $target = $this->randomTrashedNode();
-                if (! $target instanceof Monster) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
                 $target->restore();
@@ -150,11 +146,11 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'mutate_source':
                 $target = $this->randomLiveNode();
-                if (! $target instanceof Monster) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
-                $target->base_power = mt_rand(0, 12);
-                $target->level = mt_rand(1, 5);
+                $target->tickets = mt_rand(0, 30);
+                $target->active = mt_rand(0, 1);
                 $target->save();
 
                 return;
@@ -163,7 +159,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
                 $live = $this->liveAll();
                 $movables = array_values(array_filter(
                     $live,
-                    fn (Monster $m): bool => $m->parent_id !== null && ($m->rgt - $m->lft) === 1,
+                    fn (SoftBranch $b): bool => $b->parent_id !== null && ($b->rgt - $b->lft) === 1,
                 ));
                 if ($movables === []) {
                     return;
@@ -171,7 +167,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
                 $node = $movables[mt_rand(0, count($movables) - 1)];
                 $targets = array_values(array_filter(
                     $live,
-                    fn (Monster $t): bool => $t->getKey() !== $node->getKey()
+                    fn (SoftBranch $t): bool => $t->getKey() !== $node->getKey()
                         && $t->getKey() !== $node->parent_id
                         && ! $node->isAncestorOf($t),
                 ));
@@ -185,12 +181,9 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'force_delete_trashed':
                 $target = $this->randomTrashedNode();
-                if (! $target instanceof Monster) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
-                // Stick to leaves so we don't intentionally corrupt the
-                // tree (interior force-delete is documented as creating
-                // orphans and lives in fixTree's recovery domain).
                 if ($target->rgt - $target->lft !== 1) {
                     return;
                 }
@@ -202,7 +195,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
                 $live = $this->liveAll();
                 $leaves = array_values(array_filter(
                     $live,
-                    fn (Monster $m): bool => $m->parent_id !== null && ($m->rgt - $m->lft) === 1,
+                    fn (SoftBranch $b): bool => $b->parent_id !== null && ($b->rgt - $b->lft) === 1,
                 ));
                 if ($leaves === []) {
                     return;
@@ -215,7 +208,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
                 $live = $this->liveAll();
                 $subroots = array_values(array_filter(
                     $live,
-                    fn (Monster $m): bool => $m->parent_id !== null && ($m->rgt - $m->lft) > 1,
+                    fn (SoftBranch $b): bool => $b->parent_id !== null && ($b->rgt - $b->lft) > 1,
                 ));
                 if ($subroots === []) {
                     return;
@@ -227,17 +220,17 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
     }
 
     /**
-     * @return list<Monster>
+     * @return list<SoftBranch>
      */
     private function liveAll(): array
     {
-        /** @var list<Monster> $rows */
-        $rows = Monster::query()->orderBy('lft')->get()->all();
+        /** @var list<SoftBranch> $rows */
+        $rows = SoftBranch::query()->orderBy('lft')->get()->all();
 
         return $rows;
     }
 
-    private function randomLiveNode(): ?Monster
+    private function randomLiveNode(): ?SoftBranch
     {
         $live = $this->liveAll();
         if ($live === []) {
@@ -247,11 +240,11 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         return $live[mt_rand(0, count($live) - 1)];
     }
 
-    private function randomLiveNonRootNode(): ?Monster
+    private function randomLiveNonRootNode(): ?SoftBranch
     {
         $live = array_values(array_filter(
             $this->liveAll(),
-            fn (Monster $m): bool => $m->parent_id !== null,
+            fn (SoftBranch $b): bool => $b->parent_id !== null,
         ));
 
         if ($live === []) {
@@ -261,10 +254,10 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         return $live[mt_rand(0, count($live) - 1)];
     }
 
-    private function randomTrashedNode(): ?Monster
+    private function randomTrashedNode(): ?SoftBranch
     {
-        /** @var list<Monster> $trashed */
-        $trashed = Monster::onlyTrashed()->get()->all();
+        /** @var list<SoftBranch> $trashed */
+        $trashed = SoftBranch::onlyTrashed()->get()->all();
         if ($trashed === []) {
             return null;
         }
@@ -272,53 +265,42 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         return $trashed[mt_rand(0, count($trashed) - 1)];
     }
 
-    private function assertAggregatesAgreeWithFresh(string $stage): void
+    private function assertInvariants(string $stage): void
     {
-        // `weighted_avg__sum` is a dead schema column — the user's
-        // `weighted_power` Sum satisfies the AVG companion slot, so
-        // calling freshAggregate on it throws. Skip it in the check.
-        $columns = [
-            'weighted_power',
-            'fire_count',
-            'half_weighted_power',
-            'weakest_level',
-            'weighted_avg',
-        ];
+        $this->assertFalse(
+            SoftBranch::aggregatesAreBroken(),
+            "{$stage} aggregates are broken: ".json_encode(SoftBranch::aggregateErrors()),
+        );
+        $this->assertFalse(SoftBranch::isBroken(), "{$stage} tree is broken");
 
-        foreach ($this->liveAll() as $m) {
+        // Compare each declared user-facing aggregate column against
+        // freshAggregate() on every live row. Catches per-row drift
+        // that aggregatesAreBroken would miss if the comparator's
+        // own logic regressed.
+        $columns = ['tickets_total', 'descendants_total', 'descendants_count', 'descendants_max', 'active_tickets_total'];
+
+        foreach ($this->liveAll() as $row) {
             foreach ($columns as $col) {
-                $stored = $m->getAttribute($col);
-                $fresh = $m->freshAggregate($col);
+                $stored = $row->getAttribute($col);
+                $fresh = $row->freshAggregate($col);
                 $this->assertSame(
                     $this->normalise($fresh),
                     $this->normalise($stored),
-                    "{$stage} #{$m->id} ({$m->name}): {$col} mismatch — stored=".json_encode($stored).' fresh='.json_encode($fresh),
+                    "{$stage} #{$row->id} ({$row->name}): {$col} mismatch — stored=".json_encode($stored).' fresh='.json_encode($fresh),
                 );
             }
         }
 
-        $this->assertFalse(
-            Monster::aggregatesAreBroken(),
-            "{$stage} aggregatesAreBroken() returned true",
-        );
-
-        $this->assertFalse(Monster::isBroken(), "{$stage} tree is broken");
-
-        DB::table('monsters');
+        DB::table('soft_branches'); // keep connection warm
     }
 
-    /**
-     * Decimal columns come back as scale-fixed strings on MySQL /
-     * PostgreSQL but as floats on SQLite. Normalise both sides to
-     * (string)(float) so the comparison is driver-agnostic.
-     */
     private function normalise(mixed $value): string
     {
         if ($value === null) {
             return 'null';
         }
         if (is_numeric($value)) {
-            return (string) (float) $value;
+            return (string) (int) $value;
         }
 
         return (string) $value; /** @phpstan-ignore-line */

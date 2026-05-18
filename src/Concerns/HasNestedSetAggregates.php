@@ -1016,10 +1016,12 @@ trait HasNestedSetAggregates
 
         [$sumCountDeltas, $minMaxByFunction] = $this->collectMoveSubtreeContribution();
 
-        if ($sumCountDeltas === [] && $minMaxByFunction === []) {
-            return;
-        }
-
+        // Don't early-return on empty inclusive deltas alone: a moving
+        // leaf with tickets=0 contributes nothing to inclusive Sums,
+        // but the chain recompute still needs to drop it from every
+        // exclusive descendants_count / descendants_max on the old
+        // ancestor chain. The exclusive-aggregate chain recompute
+        // logic below depends on running for every move.
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         if ($sumCountDeltas !== []) {
@@ -1554,9 +1556,7 @@ trait HasNestedSetAggregates
             if ($definition instanceof ListenerAggregateDefinition) {
                 $clone->setAttribute(
                     $definition->column,
-                    ($definition->operation === AggregateFunction::Min
-                        || $definition->operation === AggregateFunction::Max
-                        || $definition->operation === AggregateFunction::Avg)
+                    (in_array($definition->operation, [AggregateFunction::Min, AggregateFunction::Max, AggregateFunction::Avg], true))
                         ? null
                         : 0,
                 );

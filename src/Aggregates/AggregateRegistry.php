@@ -497,10 +497,10 @@ final class AggregateRegistry
      */
     private static function filtersMatch(?FilterPredicate $a, ?FilterPredicate $b): bool
     {
-        if ($a === null && $b === null) {
+        if (! $a instanceof FilterPredicate && ! $b instanceof FilterPredicate) {
             return true;
         }
-        if ($a === null || $b === null) {
+        if (! $a instanceof FilterPredicate || ! $b instanceof FilterPredicate) {
             return false;
         }
         if ($a->getKind() !== $b->getKind()) {
