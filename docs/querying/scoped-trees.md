@@ -56,7 +56,7 @@ Reads compose with regular Eloquent — no special API:
 $menu = Menu::find(1);
 
 // All root items in this menu
-MenuItem::query()->whereBelongsTo($menu)->whereIsRoot()->first();
+MenuItem::query()->whereBelongsTo($menu)->whereIsRoot()->get();
 
 // Descendants of a specific item, within its menu
 MenuItem::query()

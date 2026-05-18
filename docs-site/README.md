@@ -50,7 +50,7 @@ Pass `--no-watch` to skip the watcher and just serve. Pass
 
 ## Layout
 
-```
+```text
 docs-site/
 ├── build.php           # Markdown → HTML, applies layout, expands snippets
 ├── serve.php           # Build + dev server + file watcher

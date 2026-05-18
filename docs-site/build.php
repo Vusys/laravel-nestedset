@@ -209,18 +209,57 @@ function copyPublic(string $src, string $dest): void
     }
 }
 
-function extractToc(string $html): string
+function findTocSpan(string $html): ?array
 {
-    if (preg_match('/<ul class="toc">.*?<\/ul>/s', $html, $m)) {
-        return $m[0];
+    $start = strpos($html, '<ul class="toc">');
+    if ($start === false) {
+        return null;
     }
 
-    return '';
+    $depth = 0;
+    $cursor = $start;
+    $length = strlen($html);
+
+    while ($cursor < $length) {
+        $nextOpen = strpos($html, '<ul', $cursor);
+        $nextClose = strpos($html, '</ul>', $cursor);
+
+        if ($nextClose === false) {
+            return null;
+        }
+
+        if ($nextOpen !== false && $nextOpen < $nextClose) {
+            $depth++;
+            $cursor = $nextOpen + 3;
+
+            continue;
+        }
+
+        $depth--;
+        if ($depth === 0) {
+            $end = $nextClose + strlen('</ul>');
+
+            return [$start, $end - $start];
+        }
+
+        $cursor = $nextClose + strlen('</ul>');
+    }
+
+    return null;
+}
+
+function extractToc(string $html): string
+{
+    $span = findTocSpan($html);
+
+    return $span === null ? '' : substr($html, $span[0], $span[1]);
 }
 
 function stripFirstToc(string $html): string
 {
-    return preg_replace('/<ul class="toc">.*?<\/ul>/s', '', $html, 1);
+    $span = findTocSpan($html);
+
+    return $span === null ? $html : substr($html, 0, $span[0]).substr($html, $span[0] + $span[1]);
 }
 
 function renderLayout(string $file, array $vars): string
