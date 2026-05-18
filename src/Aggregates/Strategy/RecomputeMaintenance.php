@@ -59,6 +59,7 @@ final class RecomputeMaintenance
         array $filterEquals = [],
         string $locking = 'auto',
         ?NodeBounds $excludeBounds = null,
+        ?string $softDeletedColumn = null,
     ): int {
         if ($columns === []) {
             return 0;
@@ -75,6 +76,7 @@ final class RecomputeMaintenance
             filterEquals: $filterEquals,
             locking: $locking,
             excludeBounds: $excludeBounds,
+            softDeletedColumn: $softDeletedColumn,
         );
 
         if ($candidates === []) {
@@ -107,11 +109,23 @@ final class RecomputeMaintenance
         array $filterEquals,
         string $locking,
         ?NodeBounds $excludeBounds = null,
+        ?string $softDeletedColumn = null,
     ): array {
         $selects = ['outer_a.id'];
 
         $exclusionClause = $excludeBounds instanceof NodeBounds
             ? " AND NOT (inner_a.{$lftCol} >= {$excludeBounds->lft} AND inner_a.{$rgtCol} <= {$excludeBounds->rgt})"
+            : '';
+
+        // Snapshot semantics: ignore soft-deleted rows on both sides
+        // of the recompute. Outer: trashed ancestors stay frozen.
+        // Inner: trashed descendants don't contribute to the sum /
+        // min / max / count over the subtree.
+        $softInner = $softDeletedColumn !== null
+            ? " AND inner_a.{$softDeletedColumn} IS NULL"
+            : '';
+        $softOuter = $softDeletedColumn !== null
+            ? " AND outer_a.{$softDeletedColumn} IS NULL"
             : '';
 
         foreach ($columns as $i => $spec) {
@@ -129,7 +143,7 @@ final class RecomputeMaintenance
             $aggExpr = self::innerAggregateExpression($spec, $filterPredicate);
 
             $selects[] = "(SELECT {$aggExpr} FROM {$table} AS inner_a "
-                ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}) AS {$alias}";
+                ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}{$softInner}) AS {$alias}";
         }
 
         $where = "outer_a.{$lftCol} <= ? AND outer_a.{$rgtCol} >= ?";
@@ -149,6 +163,8 @@ final class RecomputeMaintenance
             $where .= " AND outer_a.{$col} = ?";
             $bindings[] = $value;
         }
+
+        $where .= $softOuter;
 
         if ($filterEquals !== []) {
             $parts = [];
