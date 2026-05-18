@@ -362,12 +362,15 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         // The batched recompute issues exactly two SELECTs regardless
         // of ancestor depth: one to load the ancestor models and one
         // to load all in-scope nodes under the topmost ancestor's
-        // bounding box. The pre-batched code did one descendant
-        // SELECT per (ancestor × Min/Max definition) — with 3
-        // ancestors above C that would be 4+ SELECTs and grows with
-        // depth.
+        // bounding box. The `deleting` hook adds one more (refresh of
+        // the deleted node's structural columns to defend against
+        // stale-bounds across chained leaf deletes). The pre-batched
+        // code did one descendant SELECT per (ancestor × Min/Max
+        // definition) — with 3 ancestors above C that would be 4+
+        // SELECTs and grows with depth, so a constant-3 ceiling
+        // still proves the batching works.
         $this->assertLessThanOrEqual(
-            2,
+            3,
             $selectCount,
             "Listener Min recompute should batch subtree reads, but {$selectCount} SELECT statements ran.",
         );

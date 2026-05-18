@@ -286,6 +286,51 @@ trait HasTreeMutation
         $this->positionAt($insertAt, $newDepth, $newParentId);
     }
 
+    /**
+     * `deleted` lifecycle hook: close the lft/rgt gap a hard-delete
+     * leaves behind so the table's bounds stay a contiguous 1..2N
+     * permutation per root.
+     *
+     * Only fires when the row was actually removed from the DB
+     * (hard delete — `$this->exists === false`) and the deleted
+     * node was a leaf. Soft-deleted rows still occupy their slots,
+     * so closing the gap would invalidate their bounds. Interior
+     * hard-deletes leave their children orphaned and inside the
+     * vanished range — shifting the surrounding rows would move
+     * those orphans into impossible positions, making the eventual
+     * fixTree call's job harder rather than easier.
+     *
+     * Wired into NodeTrait's `deleted` event after the aggregate
+     * decrement runs (the aggregate hook reads the deleted node's
+     * old bounds, so order matters).
+     */
+    public function applyStructuralCleanupOnDelete(): void
+    {
+        // Soft-deleted rows still exist (only deleted_at was set);
+        // their slots must stay reserved.
+        if ($this->exists) {
+            return;
+        }
+
+        $rawLft = $this->getAttribute($this->getLftName());
+        $rawRgt = $this->getAttribute($this->getRgtName());
+        if (! is_numeric($rawLft) || ! is_numeric($rawRgt)) {
+            return;
+        }
+        $lft = (int) $rawLft;
+        $rgt = (int) $rawRgt;
+
+        // Interior hard-delete: skip. Children are orphaned but their
+        // bounds at least stay inside their (now-vanished) parent's
+        // former range — fixTree can recover from that. Closing the
+        // gap would shift the orphans into invalid positions.
+        if ($rgt - $lft !== 1) {
+            return;
+        }
+
+        $this->newTreeMutator()->closeGap($lft, 2);
+    }
+
     private function actMakeRoot(): void
     {
         // Scope the max-rgt lookup to this node's scope. Without the

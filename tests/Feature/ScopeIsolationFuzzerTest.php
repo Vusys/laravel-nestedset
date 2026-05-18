@@ -267,39 +267,47 @@ final class ScopeIsolationFuzzerTest extends TestCase
 
     private function assertMenuValid(int $menuId, string $tag): void
     {
-        // The package's contract: countErrors reports zero for the
-        // scope. Gaps in lft/rgt are *not* errors — `delete()` on a
-        // non-soft-delete model intentionally leaves gaps rather than
-        // compacting (the cost of rewriting every row in the scope
-        // is rarely worth it). Verified by the existing DeletionTest's
-        // force-delete behaviour.
         $this->assertFalse(
             MenuItem::isBroken(new MenuItem(['menu_id' => $menuId])),
             "{$tag}: tree broken: ".json_encode(MenuItem::countErrors(new MenuItem(['menu_id' => $menuId]))),
         );
 
-        // bounds must be unique within the scope (any duplicate is a
-        // hard correctness break; isBroken does check this but we
-        // assert directly so the failure message names the scope).
-        /** @var list<object{lft: int, rgt: int}> $rows */
+        // Leaf hard-delete compacts via closeGap (HasTreeMutation::
+        // applyStructuralCleanupOnDelete) so the bounds sequence stays
+        // contiguous. Per-root: {lft, rgt} must be a permutation of
+        // rootLft..rootRgt.
+        /** @var list<object{id: int, lft: int, rgt: int, parent_id: int|null}> $rows */
         $rows = DB::table('menu_items')
             ->where('menu_id', $menuId)
-            ->get(['lft', 'rgt'])
+            ->get(['id', 'lft', 'rgt', 'parent_id'])
             ->all();
 
         if ($rows === []) {
             return;
         }
 
-        $bounds = [];
+        $rootRanges = [];
         foreach ($rows as $r) {
-            $bounds[] = (int) $r->lft;
-            $bounds[] = (int) $r->rgt;
+            if ($r->parent_id === null) {
+                $rootRanges[(int) $r->id] = [(int) $r->lft, (int) $r->rgt];
+            }
         }
-        $this->assertSame(
-            count($bounds),
-            count(array_unique($bounds)),
-            "{$tag}: duplicate lft/rgt in scope",
-        );
+
+        foreach ($rootRanges as $rootId => [$rootLft, $rootRgt]) {
+            $bounds = [];
+            foreach ($rows as $r) {
+                if ((int) $r->lft >= $rootLft && (int) $r->rgt <= $rootRgt) {
+                    $bounds[] = (int) $r->lft;
+                    $bounds[] = (int) $r->rgt;
+                }
+            }
+            sort($bounds);
+            $expected = range($rootLft, $rootRgt);
+            $this->assertSame(
+                $expected,
+                $bounds,
+                "{$tag}: root #{$rootId} bounds aren't a perm of {$rootLft}..{$rootRgt}",
+            );
+        }
     }
 }
