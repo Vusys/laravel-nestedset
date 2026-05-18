@@ -98,17 +98,24 @@ trait HasNestedSetAggregates
     private array $capturedListenerRecomputes = [];
 
     /**
-     * Aggregate definitions with a Raw-SQL filter predicate that need an
-     * ancestor-chain recompute. The package cannot evaluate the predicate
-     * in PHP, so delta arithmetic is unavailable — when any watched
-     * column on a row changes, we bulk-recompute the whole column on the
-     * affected ancestor chain via {@see RecomputeMaintenance}. The cost
-     * is bounded to O(depth × subtree-size) per save, same as the
-     * extremum-lost branch for MIN/MAX.
+     * Aggregate definitions that need an ancestor-chain recompute on
+     * the next applyAggregateDeltas() pass. Covers two cases the
+     * delta path can't (or doesn't) handle:
+     *
+     *  - **Raw-SQL filter** definitions, where the package can't
+     *    evaluate the predicate in PHP to produce a signed delta.
+     *  - **Exclusive** definitions, whose subtree-contribution math
+     *    is per-function and per-filter; the chain recompute path
+     *    handles every function (SUM/COUNT/AVG/MIN/MAX) uniformly
+     *    and with any filter kind — same machinery as raw filters.
+     *
+     * Cost: bounded to O(depth × subtree-size) per save, same as the
+     * MIN/MAX extremum-lost path. Mutations that don't touch a watched
+     * column skip the recompute entirely.
      *
      * @var array<string, AggregateDefinition>
      */
-    private array $capturedRawFilterRecomputes = [];
+    private array $capturedChainRecomputes = [];
 
     /**
      * The user-facing aggregate definitions declared on this model.
@@ -233,7 +240,7 @@ trait HasNestedSetAggregates
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
         $this->capturedListenerRecomputes = [];
-        $this->capturedRawFilterRecomputes = [];
+        $this->capturedChainRecomputes = [];
 
         if (! $this->exists) {
             return;
@@ -241,6 +248,22 @@ trait HasNestedSetAggregates
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+
+            // Exclusive aggregates: queue a chain recompute when a
+            // watched column is dirty. Delta arithmetic would need
+            // per-function subtree-contribution composition; recompute
+            // is uniform across functions.
+            if (! $definition->inclusive) {
+                $watchCols = array_unique(array_merge(
+                    $definition->source !== null ? [$definition->source] : [],
+                    $definition->filter?->watchColumns() ?? [],
+                ));
+                if ($watchCols !== [] && $this->isDirty($watchCols)) {
+                    $this->capturedChainRecomputes[$definition->column] = $definition;
+                }
+
                 continue;
             }
 
@@ -254,7 +277,7 @@ trait HasNestedSetAggregates
                     $definition->filter->watchColumns(),
                 ));
                 if ($watchCols !== [] && $this->isDirty($watchCols)) {
-                    $this->capturedRawFilterRecomputes[$definition->column] = $definition;
+                    $this->capturedChainRecomputes[$definition->column] = $definition;
                 }
 
                 continue;
@@ -401,6 +424,16 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Exclusive listener: route to chain recompute (uniform
+            // across operations; subtree-contribution composition is
+            // function-specific and we don't want to duplicate that
+            // here).
+            if (! $definition->isInclusive()) {
+                $this->capturedListenerRecomputes[$definition->column] = $definition;
+
+                continue;
+            }
+
             // Old contribution: snapshot of pre-save attributes
             $oldSnapshot = new static;
             $oldSnapshot->setRawAttributes($this->getOriginal(), true);
@@ -455,15 +488,15 @@ trait HasNestedSetAggregates
         $extremes = $this->capturedExtremes;
         $recomputes = $this->capturedRecomputes;
         $listenerRecomputes = $this->capturedListenerRecomputes;
-        $rawFilterRecomputes = $this->capturedRawFilterRecomputes;
+        $chainRecomputes = $this->capturedChainRecomputes;
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
         $this->capturedListenerRecomputes = [];
-        $this->capturedRawFilterRecomputes = [];
+        $this->capturedChainRecomputes = [];
 
-        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $rawFilterRecomputes === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === []) {
             return;
         }
 
@@ -492,12 +525,12 @@ trait HasNestedSetAggregates
             $this->applyCapturedRecomputes($recomputes, $scope);
         }
 
-        if ($rawFilterRecomputes !== []) {
-            $this->applyRawFilterChainRecompute($this->getBounds(), $scope, $rawFilterRecomputes);
+        if ($chainRecomputes !== []) {
+            $this->applyChainRecompute($this->getBounds(), $scope, $chainRecomputes);
         }
 
         if ($listenerRecomputes !== []) {
-            $this->applyListenerMinMaxRecomputes(
+            $this->applyListenerChainRecompute(
                 bounds: $this->getBounds(),
                 scope: $scope,
                 definitions: $listenerRecomputes,
@@ -552,7 +585,7 @@ trait HasNestedSetAggregates
      * @param  array<string, AggregateDefinition>  $definitions
      * @param  array<string, mixed>  $scope
      */
-    private function applyRawFilterChainRecompute(
+    private function applyChainRecompute(
         NodeBounds $bounds,
         array $scope,
         array $definitions,
@@ -623,16 +656,23 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $extremes = [];
-        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
-        $rawFilterRecomputes = [];
+        /** @var array<string, AggregateDefinition> $chainRecomputes */
+        $chainRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
                 continue;
             }
+
+            // Exclusive aggregates: route through the chain-recompute
+            // path. The delta math differs per-function and per-filter
+            // (subtree contribution is `descendants-only + self` for
+            // SUM/COUNT, but min/max of those for MIN/MAX, derived
+            // from companions for AVG). The recompute path handles
+            // every shape uniformly.
             if (! $definition->inclusive) {
-                // Exclusive aggregates have different self-handling;
-                // inclusive-only for now. Exclusive support arrives in Phase G.
+                $chainRecomputes[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -642,7 +682,7 @@ trait HasNestedSetAggregates
             // logic for this definition.
             if ($definition->filter instanceof FilterPredicate
                 && $definition->filter->getKind() === FilterPredicateKind::Raw) {
-                $rawFilterRecomputes[$definition->column] = $definition;
+                $chainRecomputes[$definition->column] = $definition;
 
                 continue;
             }
@@ -690,11 +730,20 @@ trait HasNestedSetAggregates
             }
         }
 
+        /** @var array<string, ListenerAggregateDefinition> $exclusiveListenerDefs */
+        $exclusiveListenerDefs = [];
+
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof ListenerAggregateDefinition) {
                 continue;
             }
+
             if (! $definition->isInclusive()) {
+                // Exclusive listener defs use the chain-recompute path —
+                // delta math would need per-function subtree-contribution
+                // composition; recompute is uniform across operations.
+                $exclusiveListenerDefs[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -713,7 +762,7 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($deltas === [] && $extremes === [] && $rawFilterRecomputes === []) {
+        if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $exclusiveListenerDefs === []) {
             return;
         }
 
@@ -734,8 +783,16 @@ trait HasNestedSetAggregates
             );
         }
 
-        if ($rawFilterRecomputes !== []) {
-            $this->applyRawFilterChainRecompute($this->getBounds(), $scope, $rawFilterRecomputes);
+        if ($chainRecomputes !== []) {
+            $this->applyChainRecompute($this->getBounds(), $scope, $chainRecomputes);
+        }
+
+        if ($exclusiveListenerDefs !== []) {
+            $this->applyListenerChainRecompute(
+                bounds: $this->getBounds(),
+                scope: $scope,
+                definitions: $exclusiveListenerDefs,
+            );
         }
     }
 
@@ -763,14 +820,22 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $minMaxRecomputes = [];
-        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
-        $rawFilterRecomputes = [];
+        /** @var array<string, AggregateDefinition> $chainRecomputes */
+        $chainRecomputes = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
                 continue;
             }
+
+            // Exclusive aggregate: chain-recompute the column over the
+            // ancestor chain. The subtree-contribution math differs by
+            // function (e.g. exclusive_col represents descendants-only;
+            // the deleted node's own contribution composes differently
+            // per function). Chain recompute handles every shape.
             if (! $definition->inclusive) {
+                $chainRecomputes[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -778,7 +843,7 @@ trait HasNestedSetAggregates
             // predicate. Recompute the column on the ancestor chain.
             if ($definition->filter instanceof FilterPredicate
                 && $definition->filter->getKind() === FilterPredicateKind::Raw) {
-                $rawFilterRecomputes[$definition->column] = $definition;
+                $chainRecomputes[$definition->column] = $definition;
 
                 continue;
             }
@@ -811,14 +876,18 @@ trait HasNestedSetAggregates
             }
         }
 
-        /** @var array<string, ListenerAggregateDefinition> $listenerMinMaxDefs */
-        $listenerMinMaxDefs = [];
+        /** @var array<string, ListenerAggregateDefinition> $listenerChainDefs */
+        $listenerChainDefs = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof ListenerAggregateDefinition) {
                 continue;
             }
+
             if (! $definition->isInclusive()) {
+                // Exclusive listener: chain recompute (any function).
+                $listenerChainDefs[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -836,7 +905,7 @@ trait HasNestedSetAggregates
             }
 
             if ($op === AggregateFunction::Max || $op === AggregateFunction::Min) {
-                $listenerMinMaxDefs[$definition->column] = $definition;
+                $listenerChainDefs[$definition->column] = $definition;
             }
         }
 
@@ -860,23 +929,23 @@ trait HasNestedSetAggregates
             $this->applyCapturedRecomputes($minMaxRecomputes, $scope);
         }
 
-        if ($rawFilterRecomputes !== []) {
+        if ($chainRecomputes !== []) {
             // The deleted row is already gone from the table at this
             // point, so the subquery naturally excludes it. Recompute
             // the chain (skip self — its row is gone for hard deletes /
             // soft-deleted for soft deletes).
-            $this->applyRawFilterChainRecompute(
+            $this->applyChainRecompute(
                 bounds: $this->getBounds(),
                 scope: $scope,
-                definitions: $rawFilterRecomputes,
+                definitions: $chainRecomputes,
             );
         }
 
-        if ($listenerMinMaxDefs !== []) {
-            $this->applyListenerMinMaxRecomputes(
+        if ($listenerChainDefs !== []) {
+            $this->applyListenerChainRecompute(
                 bounds: $this->getBounds(),
                 scope: $scope,
-                definitions: $listenerMinMaxDefs,
+                definitions: $listenerChainDefs,
                 includeSelf: false,   // deleted row not in DB anymore
             );
         }
@@ -928,44 +997,53 @@ trait HasNestedSetAggregates
             $this->applyMoveRecomputes($from, $minMaxByFunction, $scope, excludeBounds: $from);
         }
 
-        /** @var array<string, ListenerAggregateDefinition> $listenerMinMaxMoveSpecs */
-        $listenerMinMaxMoveSpecs = [];
+        /** @var array<string, ListenerAggregateDefinition> $listenerChainSpecs */
+        $listenerChainSpecs = [];
         foreach (AggregateRegistry::for(static::class) as $def) {
-            if ($def instanceof ListenerAggregateDefinition
-                && $def->isInclusive()
-                && ($def->operation === AggregateFunction::Max || $def->operation === AggregateFunction::Min)
-            ) {
-                $listenerMinMaxMoveSpecs[$def->column] = $def;
+            if (! $def instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+            // Exclusive listener defs (any function), and inclusive
+            // Min/Max listener defs (extremum may have been held by
+            // the moving subtree) both need a chain recompute on the
+            // old chain.
+            if (! $def->isInclusive()
+                || $def->operation === AggregateFunction::Max
+                || $def->operation === AggregateFunction::Min) {
+                $listenerChainSpecs[$def->column] = $def;
             }
         }
-        if ($listenerMinMaxMoveSpecs !== []) {
-            $this->applyListenerMinMaxRecomputes(
+        if ($listenerChainSpecs !== []) {
+            $this->applyListenerChainRecompute(
                 bounds: $from,
                 scope: $scope,
-                definitions: $listenerMinMaxMoveSpecs,
+                definitions: $listenerChainSpecs,
                 includeSelf: false,
                 excludeBounds: $from,   // exclude moving subtree from scan
             );
         }
 
-        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
-        $rawFilterRecomputes = [];
+        /** @var array<string, AggregateDefinition> $chainRecomputes */
+        $chainRecomputes = [];
         foreach (AggregateRegistry::for(static::class) as $def) {
-            if ($def instanceof AggregateDefinition
-                && $def->inclusive
-                && $def->filter instanceof FilterPredicate
-                && $def->filter->getKind() === FilterPredicateKind::Raw
-            ) {
-                $rawFilterRecomputes[$def->column] = $def;
+            if (! $def instanceof AggregateDefinition) {
+                continue;
+            }
+            // Exclusive defs (any function/filter) and inclusive defs
+            // with a raw filter both ride the chain-recompute path on
+            // the old chain. The moving subtree is logically excluded
+            // via excludeBounds since the structural SQL hasn't run.
+            $isRawFilter = $def->filter instanceof FilterPredicate
+                && $def->filter->getKind() === FilterPredicateKind::Raw;
+            if (! $def->inclusive || $isRawFilter) {
+                $chainRecomputes[$def->column] = $def;
             }
         }
-        if ($rawFilterRecomputes !== []) {
-            // Old-chain recompute pre-move: the moving subtree is still
-            // physically in the table, so we logically exclude it.
-            $this->applyRawFilterChainRecompute(
+        if ($chainRecomputes !== []) {
+            $this->applyChainRecompute(
                 bounds: $from,
                 scope: $scope,
-                definitions: $rawFilterRecomputes,
+                definitions: $chainRecomputes,
                 excludeBounds: $from,
             );
         }
@@ -988,19 +1066,29 @@ trait HasNestedSetAggregates
 
         [$sumCountDeltas, , $candidateExtremes] = $this->collectMoveSubtreeContribution();
 
-        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
-        $rawFilterRecomputes = [];
+        /** @var array<string, AggregateDefinition> $chainRecomputes */
+        $chainRecomputes = [];
+        /** @var array<string, ListenerAggregateDefinition> $listenerChainSpecs */
+        $listenerChainSpecs = [];
+
         foreach (AggregateRegistry::for(static::class) as $def) {
-            if ($def instanceof AggregateDefinition
-                && $def->inclusive
-                && $def->filter instanceof FilterPredicate
-                && $def->filter->getKind() === FilterPredicateKind::Raw
-            ) {
-                $rawFilterRecomputes[$def->column] = $def;
+            if ($def instanceof AggregateDefinition) {
+                $isRawFilter = $def->filter instanceof FilterPredicate
+                    && $def->filter->getKind() === FilterPredicateKind::Raw;
+                if (! $def->inclusive || $isRawFilter) {
+                    $chainRecomputes[$def->column] = $def;
+                }
+            } elseif ($def instanceof ListenerAggregateDefinition) {
+                if (! $def->isInclusive()
+                    || $def->operation === AggregateFunction::Max
+                    || $def->operation === AggregateFunction::Min) {
+                    $listenerChainSpecs[$def->column] = $def;
+                }
             }
         }
 
-        if ($sumCountDeltas === [] && $candidateExtremes === [] && $rawFilterRecomputes === []) {
+        if ($sumCountDeltas === [] && $candidateExtremes === []
+            && $chainRecomputes === [] && $listenerChainSpecs === []) {
             return;
         }
 
@@ -1021,13 +1109,24 @@ trait HasNestedSetAggregates
             );
         }
 
-        if ($rawFilterRecomputes !== []) {
+        if ($chainRecomputes !== []) {
             // New-chain recompute post-move: subtree is at $to now,
             // so a normal recompute over the new chain captures it.
-            $this->applyRawFilterChainRecompute(
+            $this->applyChainRecompute(
                 bounds: $to,
                 scope: $scope,
-                definitions: $rawFilterRecomputes,
+                definitions: $chainRecomputes,
+            );
+        }
+
+        if ($listenerChainSpecs !== []) {
+            // Same for listener aggregates: re-evaluate over the new
+            // chain's ancestors using each listener's contribution()
+            // PHP function.
+            $this->applyListenerChainRecompute(
+                bounds: $to,
+                scope: $scope,
+                definitions: $listenerChainSpecs,
             );
         }
     }
@@ -1183,20 +1282,27 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $extremes = [];
-        /** @var array<string, AggregateDefinition> $rawFilterRecomputes */
-        $rawFilterRecomputes = [];
+        /** @var array<string, AggregateDefinition> $chainRecomputes */
+        $chainRecomputes = [];
+
+        /** @var array<string, ListenerAggregateDefinition> $listenerChainSpecs */
+        $listenerChainSpecs = [];
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
                 continue;
             }
+
+            // Exclusive defs: chain recompute (uniform across functions).
             if (! $definition->inclusive) {
+                $chainRecomputes[$definition->column] = $definition;
+
                 continue;
             }
 
             if ($definition->filter instanceof FilterPredicate
                 && $definition->filter->getKind() === FilterPredicateKind::Raw) {
-                $rawFilterRecomputes[$definition->column] = $definition;
+                $chainRecomputes[$definition->column] = $definition;
 
                 continue;
             }
@@ -1227,7 +1333,11 @@ trait HasNestedSetAggregates
             if (! $definition instanceof ListenerAggregateDefinition) {
                 continue;
             }
+
             if (! $definition->isInclusive()) {
+                // Exclusive listener (any function): chain recompute.
+                $listenerChainSpecs[$definition->column] = $definition;
+
                 continue;
             }
 
@@ -1248,7 +1358,7 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($deltas === [] && $extremes === [] && $rawFilterRecomputes === []) {
+        if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $listenerChainSpecs === []) {
             return;
         }
 
@@ -1269,8 +1379,16 @@ trait HasNestedSetAggregates
             );
         }
 
-        if ($rawFilterRecomputes !== []) {
-            $this->applyRawFilterChainRecompute($this->getBounds(), $scope, $rawFilterRecomputes);
+        if ($chainRecomputes !== []) {
+            $this->applyChainRecompute($this->getBounds(), $scope, $chainRecomputes);
+        }
+
+        if ($listenerChainSpecs !== []) {
+            $this->applyListenerChainRecompute(
+                bounds: $this->getBounds(),
+                scope: $scope,
+                definitions: $listenerChainSpecs,
+            );
         }
     }
 
@@ -1322,7 +1440,7 @@ trait HasNestedSetAggregates
      * @param  array<string, ListenerAggregateDefinition>  $definitions  column => definition
      * @param  array<string, mixed>  $scope
      */
-    private function applyListenerMinMaxRecomputes(
+    private function applyListenerChainRecompute(
         NodeBounds $bounds,
         array $scope,
         array $definitions,
@@ -1455,11 +1573,7 @@ trait HasNestedSetAggregates
                     }
                 }
 
-                $updates[$column] = $candidates === []
-                    ? null
-                    : ($definition->operation === AggregateFunction::Max
-                        ? max($candidates)
-                        : min($candidates));
+                $updates[$column] = self::applyListenerOperation($definition, $candidates);
             }
 
             $this->getConnection()->table($this->getTable())
