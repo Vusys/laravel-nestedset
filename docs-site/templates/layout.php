@@ -3,20 +3,20 @@
 /** @var string $siteName */
 /** @var string $content */
 /** @var string $toc */
-/** @var array  $nav */
+/** @var array $nav */
 /** @var string $current */
 /** @var ?array $prev */
 /** @var ?array $next */
 /** @var string $baseUrl */
-/** @var int    $builtAt */
-
-if (!function_exists('navLink')) {
+/** @var int $builtAt */
+if (! function_exists('navLink')) {
     function navLink(string $baseUrl, string $file): string
     {
         if ($file === 'index.md') {
-            return $baseUrl . 'index.html';
+            return $baseUrl.'index.html';
         }
-        return $baseUrl . preg_replace('/\.md$/', '.html', $file);
+
+        return $baseUrl.preg_replace('/\.md$/', '.html', $file);
     }
 }
 ?>
@@ -44,21 +44,21 @@ if (!function_exists('navLink')) {
 <aside class="sidebar" aria-label="Documentation navigation">
     <a href="<?= $baseUrl ?>index.html" class="sidebar-brand"><?= htmlspecialchars($siteName) ?></a>
     <nav class="sidebar-nav">
-        <?php foreach ($nav as $section): ?>
+        <?php foreach ($nav as $section) { ?>
             <div class="nav-section">
                 <h4><?= htmlspecialchars($section['title']) ?></h4>
                 <ul>
-                    <?php foreach ($section['pages'] as $page): ?>
+                    <?php foreach ($section['pages'] as $page) { ?>
                         <li>
                             <a
                                 href="<?= navLink($baseUrl, $page['file']) ?>"
                                 class="<?= $page['file'] === $current ? 'active' : '' ?>"
                             ><?= htmlspecialchars($page['title']) ?></a>
                         </li>
-                    <?php endforeach ?>
+                    <?php } ?>
                 </ul>
             </div>
-        <?php endforeach ?>
+        <?php } ?>
     </nav>
 </aside>
 
@@ -71,27 +71,27 @@ if (!function_exists('navLink')) {
         </article>
 
         <nav class="page-nav" aria-label="Previous and next page">
-            <?php if ($prev): ?>
+            <?php if ($prev) { ?>
                 <a class="page-nav-prev" href="<?= navLink($baseUrl, $prev['file']) ?>">
                     <span class="page-nav-label">Previous</span>
                     <span class="page-nav-title"><?= htmlspecialchars($prev['title']) ?></span>
                 </a>
-            <?php else: ?><span></span><?php endif ?>
-            <?php if ($next): ?>
+            <?php } else { ?><span></span><?php } ?>
+            <?php if ($next) { ?>
                 <a class="page-nav-next" href="<?= navLink($baseUrl, $next['file']) ?>">
                     <span class="page-nav-label">Next</span>
                     <span class="page-nav-title"><?= htmlspecialchars($next['title']) ?></span>
                 </a>
-            <?php else: ?><span></span><?php endif ?>
+            <?php } else { ?><span></span><?php } ?>
         </nav>
     </main>
 
-    <?php if ($toc !== ''): ?>
+    <?php if ($toc !== '') { ?>
         <aside class="toc-sidebar" aria-label="On this page">
             <h4>On this page</h4>
             <?= $toc ?>
         </aside>
-    <?php endif ?>
+    <?php } ?>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
