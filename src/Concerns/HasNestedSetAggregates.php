@@ -10,6 +10,8 @@ use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\FilterPredicate;
+use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
@@ -77,7 +79,7 @@ trait HasNestedSetAggregates
      * delta UPDATE commits, filtered by `stored = previous_value` so
      * unaffected ancestors are skipped.
      *
-     * @var array<string, array{function: AggregateFunction, source: string, filterValue: int}>
+     * @var array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>
      */
     private array $capturedRecomputes = [];
 
@@ -167,59 +169,133 @@ trait HasNestedSetAggregates
             if (! $definition instanceof AggregateDefinition) {
                 continue;
             }
-            if ($definition->source === null) {
-                continue;
-            }
-            if (! $this->isDirty($definition->source)) {
-                continue;
-            }
 
-            $new = self::numeric($this->getAttribute($definition->source));
-            $old = self::numeric($this->getOriginal($definition->source));
-            $delta = $new - $old;
-
-            if ($delta === 0) {
+            // Skip Raw predicates — they cannot be evaluated in PHP.
+            if ($definition->filter?->getKind() === FilterPredicateKind::Raw) {
                 continue;
             }
 
-            if ($definition->function === AggregateFunction::Sum) {
-                $this->capturedAggregateDeltas[$definition->column] = $delta;
+            // Determine trigger columns: source column + filter watch columns.
+            $watchCols = $definition->filter?->watchColumns() ?? [];
+            $triggerCols = array_unique(array_merge(
+                $definition->source !== null ? [$definition->source] : [],
+                $watchCols,
+            ));
 
+            // Skip if nothing relevant is dirty.
+            if ($triggerCols === [] || ! $this->isDirty($triggerCols)) {
                 continue;
             }
 
-            if ($definition->function === AggregateFunction::Max) {
-                if ($delta > 0) {
-                    // New value is larger — max can only stay or rise. Cheap delta.
-                    $this->capturedExtremes[$definition->column] = [
-                        'function' => AggregateFunction::Max,
-                        'value' => $new,
-                    ];
-                } else {
-                    // New value is smaller — old may have been the holder; recompute
-                    // ancestors whose stored_max equals the old value.
-                    $this->capturedRecomputes[$definition->column] = [
-                        'function' => AggregateFunction::Max,
-                        'source' => $definition->source,
-                        'filterValue' => $old,
-                    ];
+            // Evaluate filter against new and old attribute sets.
+            $newPred = $definition->filter !== null
+                ? ($definition->filter->evaluateFor($this->getAttributes()) ?? true)
+                : true;
+            $oldPred = $definition->filter !== null
+                ? ($definition->filter->evaluateFor($this->getOriginal()) ?? true)
+                : true;
+
+            $source = $definition->source;
+
+            if ($definition->function === AggregateFunction::Sum && $source !== null) {
+                $newSource = self::numeric($this->getAttribute($source));
+                $oldSource = self::numeric($this->getOriginal($source));
+                $delta = ($newPred ? $newSource : 0) - ($oldPred ? $oldSource : 0);
+
+                if ($delta !== 0) {
+                    $this->capturedAggregateDeltas[$definition->column] = $delta;
                 }
 
                 continue;
             }
 
-            if ($definition->function === AggregateFunction::Min) {
-                if ($delta < 0) {
+            if ($definition->function === AggregateFunction::Count) {
+                if ($source === null) {
+                    $delta = ($newPred ? 1 : 0) - ($oldPred ? 1 : 0);
+                } else {
+                    $newContrib = ($newPred && ($this->getAttribute($source) !== null)) ? 1 : 0;
+                    $oldContrib = ($oldPred && ($this->getOriginal($source) !== null)) ? 1 : 0;
+                    $delta = $newContrib - $oldContrib;
+                }
+
+                if ($delta !== 0) {
+                    $this->capturedAggregateDeltas[$definition->column] = $delta;
+                }
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::Max && $source !== null) {
+                $newSource = self::numeric($this->getAttribute($source));
+                $oldSource = self::numeric($this->getOriginal($source));
+
+                if ($newPred && ! $oldPred) {
+                    // Entered filter — can only extend the max.
+                    $this->capturedExtremes[$definition->column] = [
+                        'function' => AggregateFunction::Max,
+                        'value' => $newSource,
+                    ];
+                } elseif (! $newPred && $oldPred) {
+                    // Exited filter — old value may have been the holder.
+                    $this->capturedRecomputes[$definition->column] = [
+                        'function' => AggregateFunction::Max,
+                        'source' => $source,
+                        'filterValue' => $oldSource,
+                        'filter' => $definition->filter,
+                    ];
+                } elseif ($newPred && $oldPred) {
+                    $delta = $newSource - $oldSource;
+                    if ($delta > 0) {
+                        $this->capturedExtremes[$definition->column] = [
+                            'function' => AggregateFunction::Max,
+                            'value' => $newSource,
+                        ];
+                    } elseif ($delta < 0) {
+                        $this->capturedRecomputes[$definition->column] = [
+                            'function' => AggregateFunction::Max,
+                            'source' => $source,
+                            'filterValue' => $oldSource,
+                            'filter' => $definition->filter,
+                        ];
+                    }
+                }
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::Min && $source !== null) {
+                $newSource = self::numeric($this->getAttribute($source));
+                $oldSource = self::numeric($this->getOriginal($source));
+
+                if ($newPred && ! $oldPred) {
+                    // Entered filter — can only extend the min.
                     $this->capturedExtremes[$definition->column] = [
                         'function' => AggregateFunction::Min,
-                        'value' => $new,
+                        'value' => $newSource,
                     ];
-                } else {
+                } elseif (! $newPred && $oldPred) {
+                    // Exited filter — old value may have been the holder.
                     $this->capturedRecomputes[$definition->column] = [
                         'function' => AggregateFunction::Min,
-                        'source' => $definition->source,
-                        'filterValue' => $old,
+                        'source' => $source,
+                        'filterValue' => $oldSource,
+                        'filter' => $definition->filter,
                     ];
+                } elseif ($newPred && $oldPred) {
+                    $delta = $newSource - $oldSource;
+                    if ($delta < 0) {
+                        $this->capturedExtremes[$definition->column] = [
+                            'function' => AggregateFunction::Min,
+                            'value' => $newSource,
+                        ];
+                    } elseif ($delta > 0) {
+                        $this->capturedRecomputes[$definition->column] = [
+                            'function' => AggregateFunction::Min,
+                            'source' => $source,
+                            'filterValue' => $oldSource,
+                            'filter' => $definition->filter,
+                        ];
+                    }
                 }
             }
         }
@@ -275,7 +351,7 @@ trait HasNestedSetAggregates
     }
 
     /**
-     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int}>  $recomputes
+     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>  $recomputes
      * @param  array<string, mixed>  $scope
      */
     private function applyCapturedRecomputes(array $recomputes, array $scope): void
@@ -289,6 +365,7 @@ trait HasNestedSetAggregates
                 'function' => $spec['function'],
                 'source' => $spec['source'],
                 'inclusive' => true,
+                'filter' => $spec['filter'],
             ];
             $filterEquals[$aggregateColumn] = $spec['filterValue'];
         }
@@ -351,6 +428,14 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Sum && $definition->source !== null) {
+                if ($definition->filter !== null) {
+                    if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
+                        continue;
+                    }
+                    if ($definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                        continue;
+                    }
+                }
                 $value = self::numeric($this->getAttribute($definition->source));
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
@@ -360,6 +445,20 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Count) {
+                if ($definition->filter !== null) {
+                    if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
+                        continue;
+                    }
+                    if ($definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                        continue;
+                    }
+                }
+                if ($definition->source !== null) {
+                    // COUNT(source) — only contribute if source is non-null.
+                    if ($this->getAttribute($definition->source) === null) {
+                        continue;
+                    }
+                }
                 $deltas[$definition->column] = 1;
 
                 continue;
@@ -369,6 +468,14 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
+                if ($definition->filter !== null) {
+                    if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
+                        continue;
+                    }
+                    if ($definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                        continue;
+                    }
+                }
                 $value = self::numeric($this->getAttribute($definition->source));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
@@ -451,6 +558,7 @@ trait HasNestedSetAggregates
                     'function' => $definition->function,
                     'source' => $definition->source,
                     'filterValue' => $stored,
+                    'filter' => $definition->filter,
                 ];
             }
         }
@@ -569,7 +677,7 @@ trait HasNestedSetAggregates
      * Same data is read by both before- and after-move hooks; this
      * helper keeps them in sync.
      *
-     * @return array{0: array<string, int>, 1: array<string, array{function: AggregateFunction, source: string, filterValue: int}>, 2: array<string, array{function: AggregateFunction, value: int}>}
+     * @return array{0: array<string, int>, 1: array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>, 2: array<string, array{function: AggregateFunction, value: int}>}
      */
     private function collectMoveSubtreeContribution(): array
     {
@@ -604,6 +712,7 @@ trait HasNestedSetAggregates
                     'function' => $definition->function,
                     'source' => $definition->source,
                     'filterValue' => $stored,
+                    'filter' => $definition->filter,
                 ];
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
@@ -616,7 +725,7 @@ trait HasNestedSetAggregates
     }
 
     /**
-     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int}>  $minMaxByFunction
+     * @param  array<string, array{function: AggregateFunction, source: string, filterValue: int, filter: FilterPredicate|null}>  $minMaxByFunction
      * @param  array<string, mixed>  $scope
      */
     private function applyMoveRecomputes(
@@ -634,6 +743,7 @@ trait HasNestedSetAggregates
                 'function' => $spec['function'],
                 'source' => $spec['source'],
                 'inclusive' => true,
+                'filter' => $spec['filter'],
             ];
             $filterEquals[$aggregateColumn] = $spec['filterValue'];
         }
