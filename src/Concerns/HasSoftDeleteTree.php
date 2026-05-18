@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -34,30 +35,35 @@ trait HasSoftDeleteTree
             return;
         }
 
-        // Use registerModelEvent so PHPStan doesn't need to know that
-        // SoftDeletes adds the restoring/restored static accessors —
-        // those are dynamic-trait methods Larastan can't see through
-        // our class_uses_recursive guard above.
-        static::registerModelEvent('deleted', static function (Model $node): void {
-            self::cascadeSoftDelete($node);
-        });
-
+        // The `deleted` cascade is invoked directly from NodeTrait's
+        // deleted listener — it must run *before* the aggregate hook so
+        // chain recomputes (listener Min/Max, exclusive aggregates) see
+        // descendants as trashed instead of stale-live.
+        //
         static::registerModelEvent('restoring', static function (Model $node): void {
             self::captureRestoreMarker($node);
         });
 
-        static::registerModelEvent('restored', static function (Model $node): void {
-            self::cascadeRestore($node);
-        });
+        // `restored` cascade is invoked directly from NodeTrait so it
+        // runs *before* the aggregate hook — same reason as the
+        // `deleted` cascade: aggregate chain recomputes need the
+        // descendants in their final (post-cascade) trashed state.
     }
 
-    private static function cascadeSoftDelete(Model $node): void
+    /** @internal Called from NodeTrait's deleted listener to keep ordering deterministic. */
+    public static function applySoftDeleteCascade(Model $node): void
     {
         if (! $node instanceof HasNestedSet) {
             return;
         }
 
-        $deletedAt = self::stringifyTimestamp($node->getAttribute('deleted_at'));
+        $deletedAtColumn = self::deletedAtColumnFor($node);
+
+        if ($deletedAtColumn === null) {
+            return;
+        }
+
+        $deletedAt = self::stringifyTimestamp($node->getAttribute($deletedAtColumn));
 
         if ($deletedAt === null) {
             return;
@@ -66,8 +72,8 @@ trait HasSoftDeleteTree
         $bounds = $node->getBounds();
 
         self::descendantQuery($node, $bounds->lft, $bounds->rgt)
-            ->whereNull('deleted_at')
-            ->update(['deleted_at' => $deletedAt]);
+            ->whereNull($deletedAtColumn)
+            ->update([$deletedAtColumn => $deletedAt]);
     }
 
     private static function captureRestoreMarker(Model $node): void
@@ -76,7 +82,13 @@ trait HasSoftDeleteTree
             return;
         }
 
-        $deletedAt = self::stringifyTimestamp($node->getAttribute('deleted_at'));
+        $deletedAtColumn = self::deletedAtColumnFor($node);
+
+        if ($deletedAtColumn === null) {
+            return;
+        }
+
+        $deletedAt = self::stringifyTimestamp($node->getAttribute($deletedAtColumn));
 
         // Static event closures can only access the receiver via Model API;
         // the buffer methods are on the trait so we know they exist when
@@ -86,13 +98,20 @@ trait HasSoftDeleteTree
         }
     }
 
-    private static function cascadeRestore(Model $node): void
+    /** @internal Called from NodeTrait's restored listener to keep ordering deterministic. */
+    public static function applyRestoreCascade(Model $node): void
     {
         if (! $node instanceof HasNestedSet) {
             return;
         }
 
         if (! method_exists($node, 'takeRestoreMarker')) {
+            return;
+        }
+
+        $deletedAtColumn = self::deletedAtColumnFor($node);
+
+        if ($deletedAtColumn === null) {
             return;
         }
 
@@ -105,8 +124,8 @@ trait HasSoftDeleteTree
         $bounds = $node->getBounds();
 
         self::descendantQuery($node, $bounds->lft, $bounds->rgt)
-            ->where('deleted_at', $marker)
-            ->update(['deleted_at' => null]);
+            ->where($deletedAtColumn, $marker)
+            ->update([$deletedAtColumn => null]);
     }
 
     /**
@@ -136,6 +155,24 @@ trait HasSoftDeleteTree
         }
 
         return is_string($value) ? $value : null;
+    }
+
+    /**
+     * Resolves the model's soft-delete column. Returns null for models
+     * that don't use SoftDeletes. Matches the reflection pattern used in
+     * {@see TreeAggregateBuilder::softDeletedColumnFor()}
+     * and {@see HasNestedSetAggregates::softDeleteColumn()}
+     * — reflection avoids a PHPStan complaint on non-soft-delete fixtures.
+     */
+    private static function deletedAtColumnFor(Model $node): ?string
+    {
+        if (! in_array(SoftDeletes::class, class_uses_recursive($node), true)) {
+            return null;
+        }
+
+        $column = (new \ReflectionMethod($node, 'getDeletedAtColumn'))->invoke($node);
+
+        return is_string($column) ? $column : null;
     }
 
     /** @internal */

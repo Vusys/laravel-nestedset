@@ -48,6 +48,10 @@
         "pint:check": "pint --test",
         "test": "phpunit",
         "test:coverage": "XDEBUG_MODE=coverage phpunit --coverage-text",
-        "test:coverage-html": "XDEBUG_MODE=coverage phpunit --coverage-html=build/coverage"
+        "test:coverage-html": "XDEBUG_MODE=coverage phpunit --coverage-html=build/coverage",
+        "fuzz": "phpunit --group fuzzer"
+    },
+    "scripts-descriptions": {
+        "fuzz": "Run the seeded fuzzers (skipped by default). Configure via FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars; set FUZZER_SEEDS=random for non-deterministic exploration."
     }
 }

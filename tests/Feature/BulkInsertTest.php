@@ -243,6 +243,42 @@ final class BulkInsertTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
+    public function test_aggregates_on_ancestors_above_the_anchor_are_refreshed(): void
+    {
+        // Regression: the post-bulk fixAggregates pass needs to cover
+        // the anchor's ancestors, not just the inserted subtree. If it
+        // only fixes the subtree rooted at $appendTo, ancestors keep
+        // their stale stored aggregates (descendant count + sums) and
+        // we silently drift.
+        $root = new Area(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        // Mid is the anchor — it sits between the new rows and the root.
+        $mid = new Area(['name' => 'mid', 'tickets' => 0]);
+        $mid->appendToNode($root)->save();
+        $mid->refresh();
+
+        Area::bulkInsertTree([
+            ['name' => 'x', 'tickets' => 7],
+            ['name' => 'y', 'tickets' => 13],
+        ], appendTo: $mid);
+
+        $root->refresh();
+        $mid->refresh();
+
+        // Root contains: root(0) + mid(0) + x(7) + y(13) = 20, count 4.
+        $this->assertSame(20, $root->tickets_total);
+        $this->assertSame(4, $root->tickets_count_all);
+        $this->assertSame(13, $root->tickets_max);
+
+        // Mid contains: mid(0) + x(7) + y(13) = 20, count 3.
+        $this->assertSame(20, $mid->tickets_total);
+        $this->assertSame(3, $mid->tickets_count_all);
+
+        $this->assertFalse(Area::aggregatesAreBroken());
+    }
+
     // ----------------------------------------------------------------
     // Transactional rollback
     // ----------------------------------------------------------------

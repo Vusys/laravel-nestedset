@@ -278,6 +278,10 @@ trait HasTreeMutation
 
     private function actSibling(Model&HasNestedSet $sibling, Position $position): void
     {
+        if ($this->exists && $sibling->getKey() === $this->getKey()) {
+            throw new LogicException('Cannot position node as a sibling of itself.');
+        }
+
         $bounds = $this->freshBoundsOf($sibling);
         $insertAt = $position === Position::Before ? $bounds->lft : $bounds->rgt + 1;
         $newDepth = $bounds->depth;

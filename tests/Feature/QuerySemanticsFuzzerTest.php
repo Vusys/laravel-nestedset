@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -41,6 +43,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * actually catches divergence rather than checking SQL against
  * itself.
  */
+#[Group('fuzzer')]
 final class QuerySemanticsFuzzerTest extends TestCase
 {
     /**
@@ -48,15 +51,12 @@ final class QuerySemanticsFuzzerTest extends TestCase
      */
     public static function seedProvider(): iterable
     {
-        yield 'seed 1, 12 nodes' => ['seed' => 1, 'plantSize' => 12];
+        $seeds = FuzzerConfig::seeds([1, 42, 1337, 9999, 314159]);
+        $plantSize = FuzzerConfig::steps(20);
 
-        yield 'seed 42, 15 nodes' => ['seed' => 42, 'plantSize' => 15];
-
-        yield 'seed 1337, 20 nodes' => ['seed' => 1337, 'plantSize' => 20];
-
-        yield 'seed 9999, 25 nodes' => ['seed' => 9999, 'plantSize' => 25];
-
-        yield 'seed 314159, 30 nodes' => ['seed' => 314159, 'plantSize' => 30];
+        foreach ($seeds as $seed) {
+            yield "seed {$seed}, {$plantSize} nodes" => ['seed' => $seed, 'plantSize' => $plantSize];
+        }
     }
 
     #[DataProvider('seedProvider')]
