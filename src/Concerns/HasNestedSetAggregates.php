@@ -1556,9 +1556,7 @@ trait HasNestedSetAggregates
             if ($definition instanceof ListenerAggregateDefinition) {
                 $clone->setAttribute(
                     $definition->column,
-                    ($definition->operation === AggregateFunction::Min
-                        || $definition->operation === AggregateFunction::Max
-                        || $definition->operation === AggregateFunction::Avg)
+                    (in_array($definition->operation, [AggregateFunction::Min, AggregateFunction::Max, AggregateFunction::Avg], true))
                         ? null
                         : 0,
                 );

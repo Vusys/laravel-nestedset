@@ -57,7 +57,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
         for ($i = 0; $i < 5; $i++) {
             $parent = $this->randomLiveNode();
-            if ($parent === null) {
+            if (! $parent instanceof Monster) {
                 continue;
             }
             $node = new Monster([
@@ -117,7 +117,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         switch ($action) {
             case 'append':
                 $parent = $this->randomLiveNode();
-                if ($parent === null) {
+                if (! $parent instanceof Monster) {
                     return;
                 }
                 $node = new Monster([
@@ -132,7 +132,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'soft_delete':
                 $target = $this->randomLiveNonRootNode();
-                if ($target === null) {
+                if (! $target instanceof Monster) {
                     return;
                 }
                 $target->delete();
@@ -141,7 +141,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'restore':
                 $target = $this->randomTrashedNode();
-                if ($target === null) {
+                if (! $target instanceof Monster) {
                     return;
                 }
                 $target->restore();
@@ -150,7 +150,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'mutate_source':
                 $target = $this->randomLiveNode();
-                if ($target === null) {
+                if (! $target instanceof Monster) {
                     return;
                 }
                 $target->base_power = mt_rand(0, 12);
@@ -185,7 +185,7 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
 
             case 'force_delete_trashed':
                 $target = $this->randomTrashedNode();
-                if ($target === null) {
+                if (! $target instanceof Monster) {
                     return;
                 }
                 // Stick to leaves so we don't intentionally corrupt the

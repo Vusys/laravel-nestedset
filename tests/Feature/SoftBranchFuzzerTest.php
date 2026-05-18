@@ -55,7 +55,7 @@ final class SoftBranchFuzzerTest extends TestCase
 
         for ($i = 0; $i < 5; $i++) {
             $parent = $this->randomLiveNode();
-            if ($parent === null) {
+            if (! $parent instanceof SoftBranch) {
                 continue;
             }
             $node = new SoftBranch([
@@ -114,7 +114,7 @@ final class SoftBranchFuzzerTest extends TestCase
         switch ($action) {
             case 'append':
                 $parent = $this->randomLiveNode();
-                if ($parent === null) {
+                if (! $parent instanceof SoftBranch) {
                     return;
                 }
                 $node = new SoftBranch([
@@ -128,7 +128,7 @@ final class SoftBranchFuzzerTest extends TestCase
 
             case 'soft_delete':
                 $target = $this->randomLiveNonRootNode();
-                if ($target === null) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
                 $target->delete();
@@ -137,7 +137,7 @@ final class SoftBranchFuzzerTest extends TestCase
 
             case 'restore':
                 $target = $this->randomTrashedNode();
-                if ($target === null) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
                 $target->restore();
@@ -146,7 +146,7 @@ final class SoftBranchFuzzerTest extends TestCase
 
             case 'mutate_source':
                 $target = $this->randomLiveNode();
-                if ($target === null) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
                 $target->tickets = mt_rand(0, 30);
@@ -181,7 +181,7 @@ final class SoftBranchFuzzerTest extends TestCase
 
             case 'force_delete_trashed':
                 $target = $this->randomTrashedNode();
-                if ($target === null) {
+                if (! $target instanceof SoftBranch) {
                     return;
                 }
                 if ($target->rgt - $target->lft !== 1) {
