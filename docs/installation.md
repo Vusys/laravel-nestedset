@@ -2,8 +2,8 @@
 
 ## Requirements
 
-- PHP 8.2+
-- Laravel 10, 11, or 12
+- PHP 8.3+
+- Laravel 11, 12, or 13
 
 ## Install via Composer
 
@@ -13,30 +13,37 @@ composer require vusys/laravel-nestedset
 
 ## Add the columns to your migration
 
-A nested-set table needs four extra columns: `_lft`, `_rgt`, `parent_id`,
-and (optionally) `depth`. The package ships a migration helper:
+A nested-set table needs `lft`, `rgt`, `parent_id`, and `depth`. The
+package registers a `nestedSet()` macro on Laravel's `Blueprint` that
+adds all four with the right indexes:
 
 ```php
-use Kalnoy\Nestedset\NestedSet;
-
-Schema::create('categories', function (Blueprint $table) {
+Schema::create('categories', function (Blueprint $table): void {
     $table->id();
     $table->string('name');
-    NestedSet::columns($table);
+    $table->nestedSet();   // lft, rgt, parent_id (nullable), depth + index
     $table->timestamps();
 });
 ```
 
-`NestedSet::columns()` adds the four columns and the indexes you want for
-fast range scans.
+For a **scoped (multi-tree)** table, declare the scope column first in
+the composite index so each tree gets its own index slice:
 
-## Add the trait to your model
+```php
+$table->index(['post_id', 'lft', 'rgt', 'parent_id']);
+```
+
+## Wire up your model
+
+Implement the `HasNestedSet` contract and use the `NodeTrait`. The
+trait provides defaults for every contract method:
 
 ```php
 use Illuminate\Database\Eloquent\Model;
-use Kalnoy\Nestedset\NodeTrait;
+use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\NodeTrait;
 
-class Category extends Model
+class Category extends Model implements HasNestedSet
 {
     use NodeTrait;
 

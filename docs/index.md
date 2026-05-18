@@ -11,7 +11,7 @@ with [Installation](installation.html) if you're new.
 
 A **nested set** is a way to store hierarchical data in a single SQL table
 that makes ancestor/descendant queries fast and indexable. Each row gets a
-`_lft` and `_rgt` value defining its range; a row whose range is contained
+`lft` and `rgt` value defining its range; a row whose range is contained
 inside another row's range is a descendant of it.
 
 Compared with the alternatives:
