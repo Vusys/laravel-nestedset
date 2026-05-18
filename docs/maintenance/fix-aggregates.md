@@ -7,13 +7,13 @@ worker instead:
 
 ```php
 // Fire and forget — uses Laravel's default queue connection / queue name.
-Area::queueFixAggregates();
+Category::queueFixAggregates();
 
 // Scoped models: anchor required (same rule as the sync method).
 MenuItem::queueFixAggregates($anchor);
 
 // Per-call routing overrides (also configurable globally — see below).
-Area::queueFixAggregates(onConnection: 'redis', onQueue: 'aggregates-low');
+Category::queueFixAggregates(onConnection: 'redis', onQueue: 'aggregates-low');
 ```
 
 Defaults come from `config/nestedset.php`:
@@ -42,7 +42,7 @@ the table is covered:
 ```php
 // Process 1,000 outer rows per dispatch. The job re-queues itself
 // (on the same connection/queue) after each chunk until done.
-Area::queueFixAggregates(chunkSize: 1_000);
+Category::queueFixAggregates(chunkSize: 1_000);
 ```
 
 Each chunk runs one chunked `fixAggregates` constrained to its outer-id
@@ -62,12 +62,12 @@ suspends those side-effects for the duration of a closure and fires one
 `fixAggregates()` at the end:
 
 ```php
-Area::withDeferredAggregateMaintenance(function () use ($csv, $parent) {
+Category::withDeferredAggregateMaintenance(function () use ($csv, $parent) {
     foreach ($csv as $row) {
-        $area = new Area($row);
-        $area->appendToNode($parent)->save();  // saving/created/saved fire,
-    }                                           // aggregate side-effects deferred
-}, $rootAnchor);                                // one fixAggregates($root) at the end
+        $category = new Category($row);
+        $category->appendToNode($parent)->save();  // saving/created/saved fire,
+    }                                              // aggregate side-effects deferred
+}, $rootAnchor);                                   // one fixAggregates($root) at the end
 ```
 
 **What still fires inside the closure:**
@@ -78,7 +78,7 @@ Area::withDeferredAggregateMaintenance(function () use ($csv, $parent) {
 
 **What's deferred:**
 - The trait's per-row aggregate-column updates on the ancestor chain
-  (`tickets_total`, `tickets_count_all`, etc.)
+  (`articles_total`, `articles_count_all`, etc.)
 - All the MIN/MAX recompute and AVG companion writes that normally
   piggy-back on each save
 
@@ -101,7 +101,7 @@ progress to stdout — pass the same `chunkSize` to the synchronous
 `fixAggregates()` plus an `onChunk` callback:
 
 ```php
-$result = Area::fixAggregates(
+$result = Category::fixAggregates(
     chunkSize: 1_000,
     onChunk: function ($chunkResult, int $chunkIndex, ?int $cursor) {
         $this->output->writeln(sprintf(

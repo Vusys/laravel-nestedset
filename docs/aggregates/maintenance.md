@@ -20,12 +20,12 @@ have invalidated the stored extremum — controlled by the
 Mirrors the tree-repair API:
 
 ```php
-Area::aggregateErrors();
-// ['tickets_total' => 0, 'tickets_count_all' => 0, 'tickets_avg' => 0, ...]
+Category::aggregateErrors();
+// ['articles_total' => 0, 'articles_count_all' => 0, 'articles_avg' => 0, ...]
 
-Area::aggregatesAreBroken();    // bool
+Category::aggregatesAreBroken();    // bool
 
-Area::fixAggregates();
+Category::fixAggregates();
 // → AggregateFixResult { totalRowsUpdated: 0, perColumn: [...] }
 ```
 
@@ -34,7 +34,7 @@ plus drifted aggregates are repairable in one call. The result carries
 the aggregate stats alongside the tree stats:
 
 ```php
-$result = Area::fixTree();
+$result = Category::fixTree();
 $result->nodesUpdated;       // tree side
 $result->errors;             // post-repair tree errors
 $result->aggregatesFixed;    // AggregateFixResult — null on no-aggregate models

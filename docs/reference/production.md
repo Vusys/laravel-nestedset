@@ -7,7 +7,7 @@ balanced-fanout tree at N=10K it's the most expensive read the package
 emits. If you have read replicas, route these reads off the primary:
 
 ```php
-Area::query()
+Category::query()
     ->withFreshAggregates()
     ->useReadPdo()        // ← stays on Laravel's read connection
     ->get();

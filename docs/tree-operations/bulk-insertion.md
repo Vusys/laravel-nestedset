@@ -8,21 +8,24 @@ insert. `bulkInsertTree()` collapses that to one `makeGap` plus one
 mutators, casts, mass-assignment) and returning fully hydrated models:
 
 ```php
-$root = new Area(['name' => 'Engineering', 'tickets' => 0]);
+$root = new Category(['name' => 'All categories']);
 $root->saveAsRoot();
 $root = $root->refresh();
 
-[$backend, $api, $db, $frontend] = Area::bulkInsertTree([
-    ['name' => 'Backend', 'tickets' => 5, 'children' => [
-        ['name' => 'API',      'tickets' => 3],
-        ['name' => 'Database', 'tickets' => 2],
+[$electronics, $computers, $laptops, $desktops, $phones, $books] = Category::bulkInsertTree([
+    ['name' => 'Electronics', 'children' => [
+        ['name' => 'Computers', 'children' => [
+            ['name' => 'Laptops'],
+            ['name' => 'Desktops'],
+        ]],
+        ['name' => 'Phones'],
     ]],
-    ['name' => 'Frontend', 'tickets' => 1],
+    ['name' => 'Books'],
 ], appendTo: $root);
 
-$backend->name;            // 'Backend' — mass-assigned via $fillable
-$backend->wasRecentlyCreated; // true
-$api->parent_id === $backend->getKey(); // true
+$electronics->name;                            // 'Electronics' — mass-assigned via $fillable
+$electronics->wasRecentlyCreated;              // true
+$laptops->parent_id === $computers->getKey();  // true
 ```
 
 Each row goes through a normal `save()`, so per-row `creating` /
@@ -51,7 +54,7 @@ from a CSV with no observer side-effects), the standard Laravel escape
 hatch composes:
 
 ```php
-Model::withoutEvents(static fn () => Area::bulkInsertTree($rows, appendTo: $root));
+Model::withoutEvents(static fn () => Category::bulkInsertTree($rows, appendTo: $root));
 ```
 
 ## Constraints
