@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
-use Vusys\NestedSet\Tests\Fixtures\Models\Pokemon;
+use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -35,17 +35,17 @@ final class ListenerAggregateRepairTest extends TestCase
      * Build a simple root + children tree via Eloquent (lifecycle hooks fire
      * so all aggregates are correct), then corrupt a column via raw SQL.
      *
-     * @return array{root: Pokemon, children: list<Pokemon>}
+     * @return array{root: Monster, children: list<Monster>}
      */
     private function buildTreeWithChildren(int $childCount = 2): array
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'fire', 'base_power' => 10, 'level' => 2]);
+        $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 10, 'level' => 2]);
         $root->saveAsRoot();
         $root->refresh();
 
         $children = [];
         for ($i = 0; $i < $childCount; $i++) {
-            $child = new Pokemon([
+            $child = new Monster([
                 'name' => "Child{$i}",
                 'type' => 'fire',
                 'base_power' => 5,
@@ -69,12 +69,12 @@ final class ListenerAggregateRepairTest extends TestCase
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(2);
 
         // Corrupt the root's weighted_power to a wrong value.
-        DB::table('pokemon')->where('id', $root->id)->update(['weighted_power' => 999]);
+        DB::table('monsters')->where('id', $root->id)->update(['weighted_power' => 999]);
 
         $root->refresh();
         $this->assertSame(999, $this->asInt($root->weighted_power));
 
-        Pokemon::fixAggregates();
+        Monster::fixAggregates();
 
         $root->refresh();
 
@@ -91,12 +91,12 @@ final class ListenerAggregateRepairTest extends TestCase
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(2);
 
         // Corrupt fire_count on root.
-        DB::table('pokemon')->where('id', $root->id)->update(['fire_count' => 42]);
+        DB::table('monsters')->where('id', $root->id)->update(['fire_count' => 42]);
 
         $root->refresh();
         $this->assertSame(42, $this->asInt($root->fire_count));
 
-        Pokemon::fixAggregates();
+        Monster::fixAggregates();
 
         $root->refresh();
 
@@ -113,16 +113,16 @@ final class ListenerAggregateRepairTest extends TestCase
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(3);
 
         // Drift weighted_power on root + child0 + child1 (3 rows)
-        DB::table('pokemon')
+        DB::table('monsters')
             ->whereIn('id', [$root->id, $children[0]->id, $children[1]->id])
             ->update(['weighted_power' => 999]);
 
         // Drift fire_count on root + child0 (2 rows)
-        DB::table('pokemon')
+        DB::table('monsters')
             ->whereIn('id', [$root->id, $children[0]->id])
             ->update(['fire_count' => 77]);
 
-        $result = Pokemon::fixAggregates();
+        $result = Monster::fixAggregates();
 
         $this->assertSame(3, $result->perColumn['weighted_power'] ?? null);
         $this->assertSame(2, $result->perColumn['fire_count'] ?? null);
@@ -137,11 +137,11 @@ final class ListenerAggregateRepairTest extends TestCase
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(2);
 
         // Drift weighted_power on 2 rows
-        DB::table('pokemon')
+        DB::table('monsters')
             ->whereIn('id', [$root->id, $children[0]->id])
             ->update(['weighted_power' => 0]);
 
-        $errors = Pokemon::aggregateErrors();
+        $errors = Monster::aggregateErrors();
 
         $this->assertGreaterThanOrEqual(2, $errors['weighted_power'] ?? 0);
     }
@@ -154,7 +154,7 @@ final class ListenerAggregateRepairTest extends TestCase
     {
         $this->buildTreeWithChildren(3);
 
-        $errors = Pokemon::aggregateErrors();
+        $errors = Monster::aggregateErrors();
 
         $this->assertSame(0, $errors['weighted_power'] ?? 1);
         $this->assertSame(0, $errors['fire_count'] ?? 1);
@@ -166,16 +166,16 @@ final class ListenerAggregateRepairTest extends TestCase
 
     public function test_fresh_aggregate_returns_correct_value_for_listener_column(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'fire', 'base_power' => 4, 'level' => 5]);
+        $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 4, 'level' => 5]);
         $root->saveAsRoot();
         $root->refresh();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 3, 'level' => 2]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 3, 'level' => 2]);
         $child->appendToNode($root)->save();
         $root->refresh();
 
         // Corrupt stored value
-        DB::table('pokemon')->where('id', $root->id)->update(['weighted_power' => 0]);
+        DB::table('monsters')->where('id', $root->id)->update(['weighted_power' => 0]);
         $root->refresh();
 
         // freshAggregate should re-compute in PHP: root(4*5=20) + child(3*2=6) = 26
@@ -190,12 +190,12 @@ final class ListenerAggregateRepairTest extends TestCase
 
     public function test_replicate_resets_listener_aggregate_columns(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'fire', 'base_power' => 5, 'level' => 3]);
+        $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 5, 'level' => 3]);
         $root->saveAsRoot();
         $root->refresh();
 
         // Manually inject known aggregate values
-        DB::table('pokemon')->where('id', $root->id)->update([
+        DB::table('monsters')->where('id', $root->id)->update([
             'weighted_power' => 42,
             'fire_count' => 3,
         ]);
@@ -218,7 +218,7 @@ final class ListenerAggregateRepairTest extends TestCase
     {
         $this->buildTreeWithChildren(3);
 
-        $result = Pokemon::fixAggregates();
+        $result = Monster::fixAggregates();
 
         $this->assertSame(0, $result->totalRowsUpdated);
     }

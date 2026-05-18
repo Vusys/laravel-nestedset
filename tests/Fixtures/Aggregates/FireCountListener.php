@@ -11,7 +11,7 @@ use Vusys\NestedSet\Aggregates\TreeAggregateListener;
  * Returns 1 when a node's type is 'fire', 0 otherwise.
  *
  * Used with a Sum operation to simulate a count of fire-type nodes.
- * Populates the `fire_count` column on the Pokemon fixture model.
+ * Populates the `fire_count` column on the Monster fixture model.
  */
 final class FireCountListener implements TreeAggregateListener
 {

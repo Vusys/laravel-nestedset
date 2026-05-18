@@ -660,15 +660,23 @@ Three filter forms:
 |------|----------------|---------|
 | Equality | `filter: ['col' => value, ...]` | All listed columns must match |
 | Not-null | `filterNotNull: 'col'` | `col IS NOT NULL` |
-| Raw SQL | `filterRaw: 'active = 1'`, `filterRawWatches: ['active']` | Arbitrary SQL predicate |
+| Raw SQL | `filterRaw: '{q}active = 1'`, `filterRawWatches: ['active']` | Arbitrary SQL predicate |
 
 The fluent builder equivalents:
 
 ```php
 Aggregate::sum('tickets')->filter(['type' => 'fire'])->into('fire_tickets')
 Aggregate::count()->filterNotNull('tickets')->into('has_tickets')
-Aggregate::max('tickets')->filterRaw('active = 1', watches: ['active'])->into('active_max')
+Aggregate::max('tickets')->filterRaw('{q}active = 1', watches: ['active'])->into('active_max')
 ```
+
+Raw SQL is interpolated verbatim into the generated aggregate query.
+The package renders against self-joined aliases (one for the outer row,
+one for the inner subtree scan) so unqualified column references are
+ambiguous. Use the `{q}` placeholder to mark where the package should
+inject the appropriate table qualifier at render time — e.g.
+`{q}active = 1` becomes `inner_a.active = 1` inside the inner scan.
+Omit the token for predicates that don't reference columns at all.
 
 Filtered columns use the same `$table->nestedSetAggregate(...)` migration
 macro as unfiltered ones — the migration doesn't know about filter logic.

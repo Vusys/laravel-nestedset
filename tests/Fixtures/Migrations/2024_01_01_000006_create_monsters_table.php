@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('pokemon', function (Blueprint $table): void {
+        Schema::create('monsters', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
             $table->string('type')->nullable();
@@ -31,11 +31,14 @@ return new class extends Migration
             $table->integer('weakest_level')->nullable();
 
             $table->timestamps();
+            // Soft deletes so restore-path tests can exercise
+            // applyAggregateOnRestore for listener aggregates.
+            $table->softDeletes();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('pokemon');
+        Schema::dropIfExists('monsters');
     }
 };
