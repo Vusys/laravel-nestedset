@@ -80,8 +80,10 @@ function makeConverter(): MarkdownConverter
 {
     $env = new Environment([
         'heading_permalink' => [
-            'symbol'   => '#',
+            'symbol'    => '#',
             'html_class' => 'heading-anchor',
+            'id_prefix'  => '',
+            'fragment_prefix' => '',
         ],
         'table_of_contents' => [
             'html_class' => 'toc',
