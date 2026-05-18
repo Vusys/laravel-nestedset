@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
@@ -33,11 +34,12 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 #[NestedSetAggregateListener(column: 'fire_count', listener: FireCountListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'half_weighted_power', listener: HalfWeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'weakest_level', listener: WeakestLevelListener::class, operation: AggregateFunction::Min)]
-final class Pokemon extends Model implements HasNestedSet
+final class Monster extends Model implements HasNestedSet
 {
     use NodeTrait;
+    use SoftDeletes;
 
-    protected $table = 'pokemon';
+    protected $table = 'monsters';
 
     /** @var list<string> */
     protected $fillable = ['name', 'type', 'base_power', 'level'];

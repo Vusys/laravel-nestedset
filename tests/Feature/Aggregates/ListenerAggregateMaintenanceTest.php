@@ -6,15 +6,15 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
-use Vusys\NestedSet\Tests\Fixtures\Models\Pokemon;
+use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
  * Phase 8 maintenance tests: listener-based aggregate columns
- * (weighted_power, fire_count) stay in sync as Pokemon nodes are
+ * (weighted_power, fire_count) stay in sync as Monster nodes are
  * created, updated, and deleted.
  *
- * The Pokemon fixture declares:
+ * The Monster fixture declares:
  *   - weighted_power: Sum of (base_power × level) via WeightedPowerListener
  *   - fire_count: Sum of 1-when-fire via FireCountListener
  */
@@ -39,16 +39,16 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // Create: listener aggregates initialise correctly on creation
     // ----------------------------------------------------------------
 
-    public function test_create_pokemon_updates_weighted_power_on_ancestors(): void
+    public function test_create_monster_updates_weighted_power_on_ancestors(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();
         $root->refresh();
 
         // Root's own weighted_power = 2 * 5 = 10
         $this->assertSame(10, $this->asInt($root->weighted_power));
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 10, 'level' => 3]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 10, 'level' => 3]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -61,16 +61,16 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(30, $this->asInt($child->weighted_power));
     }
 
-    public function test_create_pokemon_updates_fire_count_on_ancestors(): void
+    public function test_create_monster_updates_fire_count_on_ancestors(): void
     {
-        $root = new Pokemon(['name' => 'RootFire', 'type' => 'fire', 'base_power' => 5, 'level' => 1]);
+        $root = new Monster(['name' => 'RootFire', 'type' => 'fire', 'base_power' => 5, 'level' => 1]);
         $root->saveAsRoot();
         $root->refresh();
 
         // Root is fire → fire_count = 1
         $this->assertSame(1, $this->asInt($root->fire_count));
 
-        $child = new Pokemon(['name' => 'ChildFire', 'type' => 'fire', 'base_power' => 5, 'level' => 1]);
+        $child = new Monster(['name' => 'ChildFire', 'type' => 'fire', 'base_power' => 5, 'level' => 1]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -85,10 +85,10 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_update_base_power_updates_weighted_power_on_ancestors(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 2]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 2]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -109,10 +109,10 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_update_type_to_fire_increments_fire_count(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -128,10 +128,10 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_update_type_from_fire_decrements_fire_count(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'fire', 'base_power' => 1, 'level' => 1]);
+        $child = new Monster(['name' => 'Child', 'type' => 'fire', 'base_power' => 1, 'level' => 1]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -149,13 +149,13 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // Delete: listener aggregates subtract contributions on deletion
     // ----------------------------------------------------------------
 
-    public function test_delete_pokemon_updates_listener_aggregates_on_ancestors(): void
+    public function test_delete_monster_updates_listener_aggregates_on_ancestors(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
         $root->saveAsRoot();
 
         // child: base_power=3, level=4 → weighted_power contrib = 12; type='fire' → fire_count contrib = 1
-        $child = new Pokemon(['name' => 'Child', 'type' => 'fire', 'base_power' => 3, 'level' => 4]);
+        $child = new Monster(['name' => 'Child', 'type' => 'fire', 'base_power' => 3, 'level' => 4]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -180,10 +180,10 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_listener_aggregate_not_updated_when_watch_column_unchanged(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 2]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 2]);
         $child->appendToNode($root)->save();
 
         $root->refresh();
@@ -217,14 +217,14 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_float_listener_preserves_half_on_create(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 3, 'level' => 5]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 3, 'level' => 5]);
         $root->saveAsRoot();
         $root->refresh();
 
         // Root's half_weighted_power = (3 * 5) / 2 = 7.5
         $this->assertSame(7.5, $this->asFloat($root->half_weighted_power));
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 3]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 5, 'level' => 3]);
         $child->appendToNode($root)->save();
         $root->refresh();
 
@@ -234,10 +234,10 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_float_listener_preserves_half_on_update(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 4]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 4]);
         $root->saveAsRoot();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
         $child->appendToNode($root)->save();
         $root->refresh();
 
@@ -265,10 +265,10 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_float_listener_preserves_half_on_delete(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
         $root->saveAsRoot();
 
-        $child = new Pokemon(['name' => 'Child', 'type' => 'water', 'base_power' => 3, 'level' => 1]);
+        $child = new Monster(['name' => 'Child', 'type' => 'water', 'base_power' => 3, 'level' => 1]);
         $child->appendToNode($root)->save();
         $root->refresh();
         // Refresh child so its stored aggregate columns are loaded before
@@ -294,13 +294,13 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_min_listener_recomputes_on_delete_of_extremum_holder(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
         $root->saveAsRoot();
 
-        $a = new Pokemon(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 3]);
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 3]);
         $a->appendToNode($root)->save();
 
-        $b = new Pokemon(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 7]);
+        $b = new Monster(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 7]);
         $b->appendToNode($root)->save();
 
         $root->refresh();
@@ -320,17 +320,17 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
     public function test_min_listener_recompute_batches_subtree_reads(): void
     {
-        $root = new Pokemon(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 10]);
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 10]);
         $root->saveAsRoot();
 
         // Two intermediate ancestors deep, with a leaf at the bottom.
-        $a = new Pokemon(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 8]);
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 8]);
         $a->appendToNode($root)->save();
 
-        $b = new Pokemon(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 6]);
+        $b = new Monster(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 6]);
         $b->appendToNode($a)->save();
 
-        $c = new Pokemon(['name' => 'C', 'type' => 'water', 'base_power' => 1, 'level' => 4]);
+        $c = new Monster(['name' => 'C', 'type' => 'water', 'base_power' => 1, 'level' => 4]);
         $c->appendToNode($b)->save();
 
         $root->refresh();
@@ -354,7 +354,7 @@ final class ListenerAggregateMaintenanceTest extends TestCase
 
         $selectCount = 0;
         foreach ($queries as $entry) {
-            if (stripos($entry['query'], 'select') === 0) {
+            if (stripos((string) $entry['query'], 'select') === 0) {
                 $selectCount++;
             }
         }
@@ -375,5 +375,84 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $root->refresh();
         // After deleting C (level=4), root's weakest_level = min(10, 8, 6) = 6.
         $this->assertSame(6, $this->asInt($root->weakest_level));
+    }
+
+    public function test_min_listener_recomputes_after_soft_delete_and_restore(): void
+    {
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 2]);
+        $a->appendToNode($root)->save();
+
+        $b = new Monster(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 9]);
+        $b->appendToNode($root)->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        // weakest_level = min(5, 2, 9) = 2 (held by A).
+        $this->assertSame(2, $this->asInt($root->weakest_level));
+
+        // Soft-delete A — the listener recompute runs as part of the
+        // deletion cascade; root.weakest_level becomes min(5, 9) = 5.
+        $a->delete();
+        $root->refresh();
+        $this->assertSame(5, $this->asInt($root->weakest_level));
+
+        // Restore A — applyAggregateOnRestore must add the subtree
+        // contribution back to the ancestor chain. Root's weakest_level
+        // returns to 2 (A's stored value, picked up via the listener
+        // extreme path during restore).
+        $a->restore();
+        $root->refresh();
+        $this->assertSame(2, $this->asInt($root->weakest_level));
+    }
+
+    public function test_min_listener_recomputes_after_structural_move(): void
+    {
+        // Two sibling subtrees under a single root. Move a child from
+        // one subtree to another and verify both ancestor chains' Min
+        // recomputes correctly via the Path A move hooks.
+        //
+        //   Root(level=10)
+        //   ├── LeftParent(level=8)
+        //   │   └── LeftChild(level=3)  ← will move
+        //   └── RightParent(level=9)
+        //       └── RightChild(level=6)
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 10]);
+        $root->saveAsRoot();
+
+        $leftParent = new Monster(['name' => 'LeftParent', 'type' => 'water', 'base_power' => 1, 'level' => 8]);
+        $leftParent->appendToNode($root)->save();
+
+        $leftChild = new Monster(['name' => 'LeftChild', 'type' => 'water', 'base_power' => 1, 'level' => 3]);
+        $leftChild->appendToNode($leftParent)->save();
+
+        $rightParent = new Monster(['name' => 'RightParent', 'type' => 'water', 'base_power' => 1, 'level' => 9]);
+        $rightParent->appendToNode($root)->save();
+
+        $rightChild = new Monster(['name' => 'RightChild', 'type' => 'water', 'base_power' => 1, 'level' => 6]);
+        $rightChild->appendToNode($rightParent)->save();
+
+        $leftParent->refresh();
+        $rightParent->refresh();
+
+        // Before move: LeftParent's weakest = min(8, 3) = 3.
+        //              RightParent's weakest = min(9, 6) = 6.
+        $this->assertSame(3, $this->asInt($leftParent->weakest_level));
+        $this->assertSame(6, $this->asInt($rightParent->weakest_level));
+
+        // Move LeftChild → RightParent.
+        $leftChild->refresh();
+        $leftChild->appendToNode($rightParent)->save();
+
+        $leftParent->refresh();
+        $rightParent->refresh();
+
+        // After move: LeftParent loses level=3 → recompute = min(8) = 8.
+        // RightParent gains level=3 → cheap-delta = min(9, 6, 3) = 3.
+        $this->assertSame(8, $this->asInt($leftParent->weakest_level));
+        $this->assertSame(3, $this->asInt($rightParent->weakest_level));
     }
 }

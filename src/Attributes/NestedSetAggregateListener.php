@@ -17,7 +17,7 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *
  *     #[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class)]
  *     #[NestedSetAggregateListener(column: 'fire_count', listener: FireCountListener::class)]
- *     class Pokemon extends Model implements HasNestedSet { use NodeTrait; }
+ *     class Monster extends Model implements HasNestedSet { use NodeTrait; }
  *
  * Unlike {@see NestedSetAggregate}, this attribute accepts a PHP listener
  * class rather than a SQL source column, enabling aggregations that require

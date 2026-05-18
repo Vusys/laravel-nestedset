@@ -10,7 +10,7 @@ use Vusys\NestedSet\Aggregates\TreeAggregateListener;
 /**
  * Computes base_power × level as a node's contribution to a SUM aggregate.
  *
- * Used to populate the `weighted_power` column on the Pokemon fixture model.
+ * Used to populate the `weighted_power` column on the Monster fixture model.
  */
 final class WeightedPowerListener implements TreeAggregateListener
 {
