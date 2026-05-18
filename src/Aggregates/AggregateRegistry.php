@@ -116,39 +116,68 @@ final class AggregateRegistry
     {
         $definitions = self::for($class);
         $bySource = self::indexBySource($definitions);
+        $listenerBySource = self::indexListenersByClassAndInclusive($definitions);
 
         $result = [];
 
         foreach ($definitions as $definition) {
-            if (! $definition instanceof AggregateDefinition) {
-                continue;
-            }
-            if ($definition->function !== AggregateFunction::Avg) {
-                continue;
-            }
-            if (! $definition->inclusive) {
-                // Phase E covers inclusive AVG only; exclusive arrives in Phase G.
-                continue;
-            }
-            if ($definition->source === null) {
-                continue;
-            }
-
-            $companions = $bySource[$definition->source] ?? [];
-            $sumColumn = null;
-            $countColumn = null;
-
-            foreach ($companions as $companion) {
-                if ($companion->function === AggregateFunction::Sum && $sumColumn === null) {
-                    $sumColumn = $companion->column;
+            if ($definition instanceof AggregateDefinition) {
+                if ($definition->function !== AggregateFunction::Avg) {
+                    continue;
                 }
-                if ($companion->function === AggregateFunction::Count && $countColumn === null) {
-                    $countColumn = $companion->column;
+                if ($definition->source === null) {
+                    continue;
                 }
+                // Exclusive AVG is routed through the chain-recompute
+                // path in the lifecycle hooks; it doesn't need the
+                // delta-time SET clause.
+                if (! $definition->inclusive) {
+                    continue;
+                }
+
+                $companions = $bySource[$definition->source] ?? [];
+                $sumColumn = null;
+                $countColumn = null;
+
+                foreach ($companions as $companion) {
+                    if ($companion->function === AggregateFunction::Sum && $sumColumn === null) {
+                        $sumColumn = $companion->column;
+                    }
+                    if ($companion->function === AggregateFunction::Count && $countColumn === null) {
+                        $countColumn = $companion->column;
+                    }
+                }
+
+                if ($sumColumn !== null && $countColumn !== null) {
+                    $result[$definition->column] = ['sum' => $sumColumn, 'count' => $countColumn];
+                }
+
+                continue;
             }
 
-            if ($sumColumn !== null && $countColumn !== null) {
-                $result[$definition->column] = ['sum' => $sumColumn, 'count' => $countColumn];
+            if ($definition instanceof ListenerAggregateDefinition
+                && $definition->operation === AggregateFunction::Avg) {
+                if (! $definition->inclusive) {
+                    continue;   // exclusive listener AVG handled via chain recompute
+                }
+
+                $key = $definition->listenerClass.'|inc';
+                $companions = $listenerBySource[$key] ?? [];
+
+                $sumColumn = null;
+                $countColumn = null;
+                foreach ($companions as $companion) {
+                    if ($companion->operation === AggregateFunction::Sum && $sumColumn === null) {
+                        $sumColumn = $companion->column;
+                    }
+                    if ($companion->operation === AggregateFunction::Count && $countColumn === null) {
+                        $countColumn = $companion->column;
+                    }
+                }
+
+                if ($sumColumn !== null && $countColumn !== null) {
+                    $result[$definition->column] = ['sum' => $sumColumn, 'count' => $countColumn];
+                }
             }
         }
 
@@ -292,56 +321,123 @@ final class AggregateRegistry
     private static function autoPromoteAvgCompanions(array $definitions): array
     {
         $bySource = self::indexBySource($definitions);
+        $listenerBySource = self::indexListenersByClassAndInclusive($definitions);
 
-        /** @var list<AggregateDefinition> $extras */
+        /** @var list<AggregateDefinitionContract> $extras */
         $extras = [];
 
         foreach ($definitions as $definition) {
-            if (! $definition instanceof AggregateDefinition) {
+            if ($definition instanceof AggregateDefinition) {
+                if ($definition->function !== AggregateFunction::Avg) {
+                    continue;
+                }
+
+                if ($definition->source === null) {
+                    throw new AggregateConfigurationException(sprintf(
+                        'AggregateDefinition for column "%s": AVG requires a source column.',
+                        $definition->column,
+                    ));
+                }
+
+                $source = $definition->source;
+                $companionsForSource = $bySource[$source] ?? [];
+
+                $hasSum = self::hasFunction($companionsForSource, AggregateFunction::Sum);
+                $hasCount = self::hasFunction($companionsForSource, AggregateFunction::Count);
+
+                if (! $hasSum) {
+                    $extras[] = new AggregateDefinition(
+                        column: $definition->column.self::AVG_SUM_SUFFIX,
+                        function: AggregateFunction::Sum,
+                        source: $source,
+                        inclusive: $definition->inclusive,
+                        internal: true,
+                        filter: $definition->filter,
+                    );
+                }
+
+                if (! $hasCount) {
+                    $extras[] = new AggregateDefinition(
+                        column: $definition->column.self::AVG_COUNT_SUFFIX,
+                        function: AggregateFunction::Count,
+                        source: $source,
+                        inclusive: $definition->inclusive,
+                        internal: true,
+                        filter: $definition->filter,
+                    );
+                }
+
                 continue;
             }
 
-            if ($definition->function !== AggregateFunction::Avg) {
-                continue;
-            }
+            if ($definition instanceof ListenerAggregateDefinition
+                && $definition->operation === AggregateFunction::Avg) {
+                // Listener AVG: auto-promote Sum + Count companions
+                // over the same listener class, same inclusivity. The
+                // AVG display column is maintained as
+                // `sum_col / NULLIF(count_col, 0)` after every delta
+                // — same recipe as SQL AVG.
+                $key = $definition->listenerClass.'|'.($definition->inclusive ? 'inc' : 'exc');
+                $companions = $listenerBySource[$key] ?? [];
 
-            if ($definition->source === null) {
-                throw new AggregateConfigurationException(sprintf(
-                    'AggregateDefinition for column "%s": AVG requires a source column.',
-                    $definition->column,
-                ));
-            }
+                $hasSum = false;
+                $hasCount = false;
+                foreach ($companions as $companion) {
+                    if ($companion->operation === AggregateFunction::Sum) {
+                        $hasSum = true;
+                    }
+                    if ($companion->operation === AggregateFunction::Count) {
+                        $hasCount = true;
+                    }
+                }
 
-            $source = $definition->source;
-            $companionsForSource = $bySource[$source] ?? [];
+                if (! $hasSum) {
+                    $extras[] = new ListenerAggregateDefinition(
+                        column: $definition->column.self::AVG_SUM_SUFFIX,
+                        listenerClass: $definition->listenerClass,
+                        operation: AggregateFunction::Sum,
+                        inclusive: $definition->inclusive,
+                        internal: true,
+                    );
+                }
 
-            $hasSum = self::hasFunction($companionsForSource, AggregateFunction::Sum);
-            $hasCount = self::hasFunction($companionsForSource, AggregateFunction::Count);
-
-            if (! $hasSum) {
-                $extras[] = new AggregateDefinition(
-                    column: $definition->column.self::AVG_SUM_SUFFIX,
-                    function: AggregateFunction::Sum,
-                    source: $source,
-                    inclusive: $definition->inclusive,
-                    internal: true,
-                    filter: $definition->filter,
-                );
-            }
-
-            if (! $hasCount) {
-                $extras[] = new AggregateDefinition(
-                    column: $definition->column.self::AVG_COUNT_SUFFIX,
-                    function: AggregateFunction::Count,
-                    source: $source,
-                    inclusive: $definition->inclusive,
-                    internal: true,
-                    filter: $definition->filter,
-                );
+                if (! $hasCount) {
+                    $extras[] = new ListenerAggregateDefinition(
+                        column: $definition->column.self::AVG_COUNT_SUFFIX,
+                        listenerClass: $definition->listenerClass,
+                        operation: AggregateFunction::Count,
+                        inclusive: $definition->inclusive,
+                        internal: true,
+                    );
+                }
             }
         }
 
         return array_merge($definitions, $extras);
+    }
+
+    /**
+     * Group listener definitions by `listenerClass|inclusive` so AVG
+     * auto-promotion can detect already-declared Sum/Count companions
+     * (a user might declare Sum + Count + Avg manually for the same
+     * listener; we skip promotion in that case).
+     *
+     * @param  list<AggregateDefinitionContract>  $definitions
+     * @return array<string, list<ListenerAggregateDefinition>>
+     */
+    private static function indexListenersByClassAndInclusive(array $definitions): array
+    {
+        $index = [];
+
+        foreach ($definitions as $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                continue;
+            }
+            $key = $definition->listenerClass.'|'.($definition->inclusive ? 'inc' : 'exc');
+            $index[$key][] = $definition;
+        }
+
+        return $index;
     }
 
     /**

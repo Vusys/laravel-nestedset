@@ -30,6 +30,14 @@ return new class extends Migration
             // Min/Max recompute path on delete.
             $table->integer('weakest_level')->nullable();
 
+            // Listener AVG: display column + auto-promoted Sum + Count
+            // companions. Decimal display column to preserve fractional
+            // averages; integer sum/count companions because the
+            // WeightedPowerListener returns integer contributions.
+            $table->decimal('weighted_avg', 14, 4)->nullable();
+            $table->nestedSetAggregate('weighted_avg__sum');
+            $table->nestedSetAggregate('weighted_avg__count');
+
             $table->timestamps();
             // Soft deletes so restore-path tests can exercise
             // applyAggregateOnRestore for listener aggregates.

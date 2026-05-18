@@ -109,18 +109,21 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertFalse($definition->isInclusive());
     }
 
-    public function test_avg_operation_throws(): void
+    public function test_avg_operation_produces_definition(): void
     {
+        // AVG listener defs are supported; the registry auto-promotes
+        // Sum + Count companions over the same listener class so the
+        // delta machinery can maintain the AVG display column.
         $attribute = new NestedSetAggregateListener(
             column: 'avg_power',
             listener: WeightedPowerListener::class,
             operation: AggregateFunction::Avg,
         );
 
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('Avg is not supported');
+        $definition = $attribute->toDefinition();
 
-        $attribute->toDefinition();
+        $this->assertSame('avg_power', $definition->column);
+        $this->assertSame(AggregateFunction::Avg, $definition->operation);
     }
 
     public function test_empty_column_throws(): void

@@ -26,8 +26,11 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  * `exclusive: true` opts out of self-inclusion — a leaf's stored value for
  * an exclusive aggregate is always the function's zero/null element.
  *
- * Avg is not supported for listener aggregates; use Sum and Count companions
- * manually if you need an average.
+ * Operations: Sum, Count, Min, Max, Avg. AVG is maintained as a derived
+ * value — the registry auto-promotes hidden Sum + Count companions over
+ * the same listener class; the AVG column is written as `sum / NULLIF(count, 0)`
+ * after every delta. Migrations for AVG listener columns must declare the
+ * companion columns (avg-col `__sum` and `__count`) alongside the AVG column.
  */
 #[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 final readonly class NestedSetAggregateListener
@@ -45,8 +48,7 @@ final readonly class NestedSetAggregateListener
     /**
      * Materialises this declaration as a {@see ListenerAggregateDefinition}.
      *
-     * @throws AggregateConfigurationException when $column is empty or
-     *                                         when the operation is Avg.
+     * @throws AggregateConfigurationException when $column is empty.
      */
     public function toDefinition(): ListenerAggregateDefinition
     {
@@ -54,14 +56,6 @@ final readonly class NestedSetAggregateListener
             throw new AggregateConfigurationException(
                 'NestedSetAggregateListener: `column` must not be empty.',
             );
-        }
-
-        if ($this->operation === AggregateFunction::Avg) {
-            throw new AggregateConfigurationException(sprintf(
-                'NestedSetAggregateListener for column "%s": Avg is not supported for listener aggregates. '
-                .'Use Sum and Count companions manually.',
-                $this->column,
-            ));
         }
 
         return new ListenerAggregateDefinition(

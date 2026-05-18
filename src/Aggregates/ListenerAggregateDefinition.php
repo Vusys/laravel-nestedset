@@ -22,12 +22,20 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
 {
     /**
      * @param  string  $listenerClass  class-string<TreeAggregateListener>
+     * @param  bool  $internal  true when this definition was auto-added
+     *                          by the registry as a companion to a
+     *                          listener AVG declaration. Internal
+     *                          companions are maintained by the engine
+     *                          but excluded from the user-facing
+     *                          inspection API (getAggregateDefinitions(),
+     *                          aggregateErrors() output).
      */
     public function __construct(
         public string $column,
         public string $listenerClass,
         public AggregateFunction $operation,
         public bool $inclusive = true,
+        public bool $internal = false,
     ) {}
 
     public function getColumn(): string
@@ -41,11 +49,12 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
     }
 
     /**
-     * Listener aggregates are never auto-generated internal companions.
+     * True when this definition was auto-added by the registry as a
+     * companion to a listener AVG declaration.
      */
     public function isInternal(): bool
     {
-        return false;
+        return $this->internal;
     }
 
     /**

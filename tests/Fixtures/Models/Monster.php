@@ -29,11 +29,15 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
  * @property int $fire_count
  * @property float $half_weighted_power
  * @property int|null $weakest_level
+ * @property float|null $weighted_avg
+ * @property int $weighted_avg__sum
+ * @property int $weighted_avg__count
  */
 #[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'fire_count', listener: FireCountListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'half_weighted_power', listener: HalfWeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'weakest_level', listener: WeakestLevelListener::class, operation: AggregateFunction::Min)]
+#[NestedSetAggregateListener(column: 'weighted_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
 final class Monster extends Model implements HasNestedSet
 {
     use NodeTrait;
@@ -56,5 +60,8 @@ final class Monster extends Model implements HasNestedSet
         'fire_count' => 'integer',
         'half_weighted_power' => 'float',
         'weakest_level' => 'integer',
+        'weighted_avg' => 'float',
+        'weighted_avg__sum' => 'integer',
+        'weighted_avg__count' => 'integer',
     ];
 }
