@@ -107,7 +107,7 @@ jobs:
           echo "Skipping ${{ matrix.db }} — workflow input requested ${{ github.event.inputs.database }} only."
           exit 0
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
