@@ -4,11 +4,11 @@ Add a filter to any `#[NestedSetAggregate]` declaration so only nodes
 that match a condition contribute to the rollup:
 
 ```php
-#[NestedSetAggregate(column: 'fire_tickets', sum:   'tickets', filter: ['type' => 'fire'])]
-#[NestedSetAggregate(column: 'fire_count',   count: true,      filter: ['type' => 'fire'])]
-#[NestedSetAggregate(column: 'water_max',    max:   'tickets', filter: ['type' => 'water'])]
-#[NestedSetAggregate(column: 'has_tickets',  count: true,      filterNotNull: 'tickets')]
-class Area extends Model implements HasNestedSet { use NodeTrait; }
+#[NestedSetAggregate(column: 'published_articles', sum:   'articles', filter: ['visibility' => 'public'])]
+#[NestedSetAggregate(column: 'public_count',       count: true,        filter: ['visibility' => 'public'])]
+#[NestedSetAggregate(column: 'public_max',         max:   'articles', filter: ['visibility' => 'public'])]
+#[NestedSetAggregate(column: 'has_articles',       count: true,        filterNotNull: 'articles')]
+class Category extends Model implements HasNestedSet { use NodeTrait; }
 ```
 
 ## Filter forms
@@ -24,11 +24,11 @@ Three filter forms:
 The fluent builder equivalents:
 
 ```php
-Aggregate::sum('tickets')->filter(['type' => 'fire'])->into('fire_tickets')
-Aggregate::count()->filterNotNull('tickets')->into('has_tickets')
-Aggregate::max('tickets')->filterRaw('active = 1', watches: ['active'])->into('active_max')
+Aggregate::sum('articles')->filter(['visibility' => 'public'])->into('published_articles')
+Aggregate::count()->filterNotNull('articles')->into('has_articles')
+Aggregate::max('articles')->filterRaw('active = 1', watches: ['active'])->into('active_max')
 // Or with DB::raw — reads as obviously-SQL at the call site:
-Aggregate::max('tickets')->filterRaw(DB::raw('active = 1'), watches: ['active'])->into('active_max')
+Aggregate::max('articles')->filterRaw(DB::raw('active = 1'), watches: ['active'])->into('active_max')
 ```
 
 `filterRaw()` accepts either a string or a Laravel
@@ -79,8 +79,8 @@ non-covering scan that fetches each candidate row through the
 clustered index (~40× slower at N=10K).
 
 ```php
-$table->nestedSet(cover: ['tickets', 'status', 'priority']);
-$table->nestedSetAggregate('open_tickets');  // filtered on status
+$table->nestedSet(cover: ['articles', 'visibility', 'status']);
+$table->nestedSetAggregate('public_articles');  // filtered on visibility
 ```
 
 For trees over ~5K rows with raw-filter aggregates declared, prefer

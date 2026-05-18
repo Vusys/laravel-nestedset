@@ -6,16 +6,25 @@ counterpart recomputes from the source column via a correlated subquery
 
 ```php
 // Single-row fresh recomputation
-$area->tickets_total;                        // stored
-$area->freshAggregate('tickets_total');      // recomputed from source
+$category->articles_total;                        // stored
+$category->freshAggregate('articles_total');      // recomputed from source
 
 // Collection-level fresh selects (overlay stored values)
-Area::query()->withFreshAggregates()->get();
-Area::query()->withFreshAggregates(['tickets_total', 'tickets_max'])->get();
+Category::query()->withFreshAggregates()->get();
+Category::query()->withFreshAggregates(['articles_total', 'articles_max'])->get();
 
 // Ad-hoc fresh aggregate without declaring a column
 use Vusys\NestedSet\Aggregates\Aggregate;
-Area::query()->withFreshAggregates([
-    'descendants_total' => Aggregate::sum('tickets')->exclusive(),
+Category::query()->withFreshAggregates([
+    'descendants_total' => Aggregate::sum('articles')->exclusive(),
 ])->get();
 ```
+
+## When to reach for `freshAggregate()`
+
+| Situation | Use |
+|---|---|
+| Rendering a tree, hundreds of nodes | stored column — it's already there |
+| Drift audit / scheduled health check | `freshAggregate()` or `aggregateErrors()` |
+| One-off report with a predicate you haven't declared | `withFreshAggregates([alias => Aggregate::…])` |
+| Source column was just touched outside Eloquent | `freshAggregate()` until the next [repair pass](../maintenance/fix-aggregates.html) |

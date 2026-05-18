@@ -10,7 +10,7 @@ For runtime-conditional aggregates (or large declaration sets that
 would clutter the class header), override `nestedSetAggregates()`:
 
 ```php
-class Area extends Model implements HasNestedSet
+class Category extends Model implements HasNestedSet
 {
     use NodeTrait;
 
@@ -18,9 +18,9 @@ class Area extends Model implements HasNestedSet
     protected function nestedSetAggregates(): array
     {
         return [
-            Aggregate::sum('tickets')->into('tickets_total'),
-            Aggregate::count()->into('tickets_count'),
-            Aggregate::avg('tickets')->into('tickets_avg'),
+            Aggregate::sum('articles')->into('articles_total'),
+            Aggregate::count()->into('articles_count'),
+            Aggregate::avg('articles')->into('articles_avg'),
         ];
     }
 }

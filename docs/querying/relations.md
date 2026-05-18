@@ -1,22 +1,45 @@
 # Eloquent Relations
 
+`NodeTrait` registers four relations on every node:
+
+| Relation | Type | Returns |
+|---|---|---|
+| `parent` | `BelongsTo` | The immediate parent, or `null` for a root |
+| `children` | `HasMany` | Immediate children (one level down) |
+| `ancestors` | custom (eager-loadable) | Every node above this one |
+| `descendants` | custom (eager-loadable) | Every node below this one |
+
 ```php
-$node->parent;        // BelongsTo
-$node->children;      // HasMany — scope-applied
-$node->ancestors;     // custom relation (eager-loadable)
-$node->descendants;   // custom relation (eager-loadable)
+$laptops->parent->name;             // 'Computers'
+$computers->children->pluck('name'); // ['Laptops', 'Desktops']
 
-// Eager loading is 2 queries total, no N+1:
-Category::with('ancestors')->get();
-Category::with('descendants')->get();
+$laptops->ancestors->pluck('name');
+// → ['Electronics', 'Computers']   — ordered root-to-parent
 
-// whereHas works too:
+$electronics->descendants->pluck('name');
+// → ['Computers', 'Laptops', 'Desktops', 'Phones', 'Android']
+```
+
+## Eager loading
+
+The custom relations work with `with(...)` and load in two queries
+total — no N+1, regardless of how many rows you select:
+
+```php
+Category::with('ancestors')->get();      // breadcrumbs for every row, 2 queries
+Category::with('descendants')->get();    // subtree for every row, 2 queries
+```
+
+`whereHas` and `withCount` work too:
+
+```php
 Category::whereHas('descendants', fn ($q) => $q->where('active', true))->get();
+Category::withCount('descendants')->get();   // each row gets descendants_count
 ```
 
 ## Bounding the descendants relation
 
-The descendants relation is unbounded by default — it pulls every
+The descendants relation is **unbounded by default** — it pulls every
 descendant of every selected row. For trees with deep, wide subtrees
 this can be a lot more data than the UI needs. Bound the load to the
 first N levels by composing a `where` on the relation's `depth` column
@@ -24,7 +47,9 @@ first N levels by composing a `where` on the relation's `depth` column
 
 ```php
 // Just children + grandchildren of $root (depth 1 + 2 relative to root)
-$root->load(['descendants' => fn ($q) => $q->where('depth', '<=', $root->depth + 2)]);
+$root->load([
+    'descendants' => fn ($q) => $q->where('depth', '<=', $root->depth + 2),
+]);
 
 // Or on a top-level query — load every root with its first two levels
 Category::with([
@@ -34,3 +59,17 @@ Category::with([
 
 The composite index already covers `depth`, so the bounded `WHERE`
 costs no more than the unbounded eager load on the same rows.
+
+## Combining with tree query scopes
+
+Relations stack with the [tree-query scopes](queries.html) freely.
+This pattern is common for category-tree pages: load every root with
+its first two levels, ordered for display:
+
+```php
+$tree = Category::query()
+    ->whereIsRoot()
+    ->with(['descendants' => fn ($q) => $q->where('depth', '<=', 2)->defaultOrder()])
+    ->defaultOrder()
+    ->get();
+```
