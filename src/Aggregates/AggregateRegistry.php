@@ -79,6 +79,7 @@ final class AggregateRegistry
         $definitions = self::autoPromoteAvgCompanions($definitions);
 
         self::assertNoDuplicateColumns($definitions, $class);
+        self::assertNoAggregateColumnsInFillable($definitions, $class);
 
         return self::$cache[$class] = $definitions;
     }
@@ -399,5 +400,79 @@ final class AggregateRegistry
             }
             $seen[$column] = true;
         }
+    }
+
+    /**
+     * Aggregate columns are derived state — every mutation overwrites
+     * them via the maintenance machinery. Listing them in `$fillable`
+     * means mass-assignment briefly writes user-supplied values that
+     * the next save silently clobbers, producing apparent data loss
+     * with no error trail.
+     *
+     * Catch this at registry-build time so models fail loudly during
+     * boot rather than silently the first time someone passes a
+     * request body through `Model::create($request->all())`.
+     *
+     * Excluded from the check:
+     *  - Internal AVG companions: never user-declared, so users
+     *    can't put them in `$fillable` by mistake. Skip to keep the
+     *    error message focused on user-facing columns.
+     *
+     * @param  list<AggregateDefinitionContract>  $definitions
+     * @param  class-string  $class
+     */
+    private static function assertNoAggregateColumnsInFillable(array $definitions, string $class): void
+    {
+        if ($definitions === []) {
+            return;
+        }
+
+        // Eloquent stores `$fillable` as a protected property. Read
+        // via reflection on the prototype — instantiating the model
+        // for a property read is wasteful but matches the registry's
+        // existing method-override pattern.
+        try {
+            $reflection = new ReflectionClass($class);
+            if (! $reflection->hasProperty('fillable')) {
+                return;
+            }
+            $prop = $reflection->getProperty('fillable');
+            $instance = new $class;
+            $value = $prop->getValue($instance);
+            if (! is_array($value)) {
+                return;
+            }
+            /** @var list<string> $fillable */
+            $fillable = array_values(array_filter($value, is_string(...)));
+        } catch (\ReflectionException) {
+            return;
+        }
+
+        if ($fillable === []) {
+            return;
+        }
+
+        $conflicts = [];
+        foreach ($definitions as $definition) {
+            if ($definition instanceof AggregateDefinition && $definition->isInternal()) {
+                continue;
+            }
+            $column = $definition->getColumn();
+            if (in_array($column, $fillable, true)) {
+                $conflicts[] = $column;
+            }
+        }
+
+        if ($conflicts === []) {
+            return;
+        }
+
+        throw new AggregateConfigurationException(sprintf(
+            '%s: aggregate column(s) [%s] appear in $fillable. Aggregate columns are derived state — '
+            .'the package overwrites them on every mutation, so mass-assigning to them is silently undone. '
+            .'Remove from $fillable; the column stays usable on the model (cast, hidden, etc. all still apply).',
+            $class,
+            implode(', ', $conflicts),
+        ));
     }
 }

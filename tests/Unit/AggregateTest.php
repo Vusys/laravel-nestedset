@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
+use Illuminate\Database\Query\Expression;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -144,6 +145,20 @@ final class AggregateTest extends TestCase
         $this->assertNotNull($aggregate->filter);
         $this->assertSame(FilterPredicateKind::Raw, $aggregate->filter->getKind());
         $this->assertSame('status = 1', $aggregate->filter->getRawSql());
+    }
+
+    public function test_filter_raw_accepts_db_raw_expression(): void
+    {
+        // DB::raw() returns a Laravel Expression — the package extracts
+        // the underlying SQL string via reflection (Expression::getValue
+        // requires a Grammar instance the fluent call site doesn't have).
+        $expr = new Expression('status = 1');
+        $aggregate = Aggregate::sum('tickets')->filterRaw($expr, ['status']);
+
+        $this->assertNotNull($aggregate->filter);
+        $this->assertSame(FilterPredicateKind::Raw, $aggregate->filter->getKind());
+        $this->assertSame('status = 1', $aggregate->filter->getRawSql());
+        $this->assertSame(['status'], $aggregate->filter->watchColumns());
     }
 
     public function test_filter_modifier_returns_new_instance(): void

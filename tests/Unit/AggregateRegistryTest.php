@@ -11,6 +11,7 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\AggregateInFillableArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AttributeOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithCompanionsArea;
@@ -223,5 +224,13 @@ final class AggregateRegistryTest extends TestCase
         $this->expectExceptionMessage('entry at index 0 is not a ListenerAggregateDefinition');
 
         AggregateRegistry::for(BadListenerMethodEntryArea::class);
+    }
+
+    public function test_aggregate_column_in_fillable_throws(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('aggregate column(s) [tickets_total] appear in $fillable');
+
+        AggregateRegistry::for(AggregateInFillableArea::class);
     }
 }
