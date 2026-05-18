@@ -159,11 +159,16 @@ an arbitrary predicate.
 $rows = Project::query()
     ->whereDescendantOf($rootBounds)
     ->withFreshAggregates([
-        'p1_count'    => Aggregate::count()->filter(['priority' => 1]),
-        'recent_sum'  => Aggregate::sum('amount')->filterRaw('created_at >= ?', watches: []),
+        'p1_count'   => Aggregate::count()->filter(['priority' => 1]),
+        'recent_sum' => Aggregate::sum('amount')
+            ->filterRaw('created_at >= CURRENT_DATE - INTERVAL 30 DAY'),
     ])
     ->get();
 ```
+
+`filterRaw()` inlines its SQL verbatim — there is no parameter binding,
+so `?` placeholders are emitted literally. Pass only trusted constants
+written into the predicate; never user input.
 
 The returned models have `p1_count` and `recent_sum` as computed
 attributes. Nothing's persisted; subsequent reads pay the

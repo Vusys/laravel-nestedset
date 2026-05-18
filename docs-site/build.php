@@ -2,77 +2,74 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__.'/vendor/autoload.php';
 
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Extension\Attributes\AttributesExtension;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
-use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
-use League\CommonMark\Extension\CommonMark\Node\Block\IndentedCode;
 use League\CommonMark\Extension\GithubFlavoredMarkdownExtension;
 use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
 use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\MarkdownConverter;
 use League\CommonMark\Node\Block\Document;
-use League\CommonMark\Node\Query;
 
-$repoRoot   = realpath(__DIR__ . '/..');
-$docsDir    = $repoRoot . '/docs';
-$siteRoot   = $repoRoot . '/site';
-$siteDir    = $siteRoot;
-$publicSrc  = __DIR__ . '/public';
-$layoutFile = __DIR__ . '/templates/layout.php';
-$nav        = parseSummary($docsDir . '/summary.md');
+$repoRoot = realpath(__DIR__.'/..');
+$docsDir = $repoRoot.'/docs';
+$siteRoot = $repoRoot.'/site';
+$siteDir = $siteRoot;
+$publicSrc = __DIR__.'/public';
+$layoutFile = __DIR__.'/templates/layout.php';
+$nav = parseSummary($docsDir.'/summary.md');
 
 $converter = makeConverter();
 
 resetDir($siteDir);
 copyPublic($publicSrc, $siteDir);
 
-$pages    = flattenNav($nav);
-$builtAt  = time();
+$pages = flattenNav($nav);
+$builtAt = time();
 
 foreach ($pages as $i => $page) {
-    $sourcePath = $docsDir . '/' . $page['file'];
-    if (!is_file($sourcePath)) {
+    $sourcePath = $docsDir.'/'.$page['file'];
+    if (! is_file($sourcePath)) {
         fwrite(STDERR, "warn: missing source {$page['file']}\n");
         renderMissing($page, $nav, $siteDir, $layoutFile, $builtAt, $pages, $i);
+
         continue;
     }
 
-    $raw      = file_get_contents($sourcePath);
-    $expanded = expandSnippets($raw, $repoRoot, $sourcePath);
-    $result   = $converter->convert($expanded);
-    $html     = (string) $result;
-    $toc      = extractToc($html);
+    $raw = file_get_contents($sourcePath);
+    $result = $converter->convert($raw);
+    $html = (string) $result;
+    $toc = extractToc($html);
     $bodyHtml = stripFirstToc($html);
 
-    $title  = $page['title'];
+    $title = $page['title'];
     $outRel = relativeOutputPath($page['file'], $i === 0);
-    $outAbs = $siteDir . '/' . $outRel;
+    $outAbs = $siteDir.'/'.$outRel;
 
     @mkdir(dirname($outAbs), 0777, true);
 
     $rendered = renderLayout($layoutFile, [
-        'title'    => $title,
+        'title' => $title,
         'siteName' => 'laravel-nestedset',
-        'content'  => $bodyHtml,
-        'toc'      => $toc,
-        'nav'      => $nav,
-        'current'  => $page['file'],
-        'prev'     => $pages[$i - 1] ?? null,
-        'next'     => $pages[$i + 1] ?? null,
-        'baseUrl'  => baseUrlFor($outRel),
-        'builtAt'  => $builtAt,
+        'content' => $bodyHtml,
+        'toc' => $toc,
+        'nav' => $nav,
+        'current' => $page['file'],
+        'prev' => $pages[$i - 1] ?? null,
+        'next' => $pages[$i + 1] ?? null,
+        'baseUrl' => baseUrlFor($outRel),
+        'builtAt' => $builtAt,
     ]);
 
     file_put_contents($outAbs, $rendered);
     echo "  wrote {$outRel}\n";
 }
 
-file_put_contents($siteDir . '/_build.json', json_encode(['builtAt' => $builtAt]));
+file_put_contents($siteDir.'/_build.json', json_encode(['builtAt' => $builtAt]));
 
-echo "Built " . count($pages) . " pages to {$siteDir}\n";
+echo 'Built '.count($pages)." pages to {$siteDir}\n";
 
 // ---------------------------------------------------------------------------
 
@@ -80,25 +77,25 @@ function makeConverter(): MarkdownConverter
 {
     $env = new Environment([
         'heading_permalink' => [
-            'symbol'    => '#',
+            'symbol' => '#',
             'html_class' => 'heading-anchor',
-            'id_prefix'  => '',
+            'id_prefix' => '',
             'fragment_prefix' => '',
         ],
         'table_of_contents' => [
             'html_class' => 'toc',
-            'position'   => 'top',
+            'position' => 'top',
             'min_heading_level' => 2,
             'max_heading_level' => 3,
-            'normalize'  => 'relative',
+            'normalize' => 'relative',
         ],
     ]);
 
-    $env->addExtension(new CommonMarkCoreExtension());
-    $env->addExtension(new GithubFlavoredMarkdownExtension());
-    $env->addExtension(new AttributesExtension());
-    $env->addExtension(new HeadingPermalinkExtension());
-    $env->addExtension(new TableOfContentsExtension());
+    $env->addExtension(new CommonMarkCoreExtension);
+    $env->addExtension(new GithubFlavoredMarkdownExtension);
+    $env->addExtension(new AttributesExtension);
+    $env->addExtension(new HeadingPermalinkExtension);
+    $env->addExtension(new TableOfContentsExtension);
 
     return new MarkdownConverter($env);
 }
@@ -111,6 +108,7 @@ function flattenNav(array $nav): array
             $out[] = $page + ['section' => $section['title']];
         }
     }
+
     return $out;
 }
 
@@ -127,21 +125,22 @@ function flattenNav(array $nav): array
  */
 function parseSummary(string $path): array
 {
-    if (!is_file($path)) {
+    if (! is_file($path)) {
         fwrite(STDERR, "fatal: nav summary missing at {$path}\n");
         exit(1);
     }
 
-    $sections    = [];
-    $sectionIdx  = -1;
+    $sections = [];
+    $sectionIdx = -1;
 
     foreach (file($path, FILE_IGNORE_NEW_LINES) as $line) {
         if (preg_match('/^#\s+(.+?)\s*$/', $line, $m)) {
             if ($sectionIdx === -1 && strcasecmp(trim($m[1]), 'Summary') === 0) {
                 continue;
             }
-            $sections[]  = ['title' => $m[1], 'pages' => []];
-            $sectionIdx  = count($sections) - 1;
+            $sections[] = ['title' => $m[1], 'pages' => []];
+            $sectionIdx = count($sections) - 1;
+
             continue;
         }
 
@@ -164,12 +163,14 @@ function relativeOutputPath(string $file, bool $isHome): string
         return 'index.html';
     }
     $noExt = preg_replace('/\.md$/i', '', $file);
-    return $noExt . '.html';
+
+    return $noExt.'.html';
 }
 
 function baseUrlFor(string $outRel): string
 {
     $depth = substr_count($outRel, '/');
+
     return $depth === 0 ? './' : str_repeat('../', $depth);
 }
 
@@ -190,7 +191,7 @@ function resetDir(string $dir): void
 
 function copyPublic(string $src, string $dest): void
 {
-    if (!is_dir($src)) {
+    if (! is_dir($src)) {
         return;
     }
     $items = new RecursiveIteratorIterator(
@@ -199,7 +200,7 @@ function copyPublic(string $src, string $dest): void
     );
     foreach ($items as $item) {
         $rel = substr($item->getPathname(), strlen($src) + 1);
-        $target = $dest . '/' . $rel;
+        $target = $dest.'/'.$rel;
         if ($item->isDir()) {
             @mkdir($target, 0777, true);
         } else {
@@ -208,103 +209,57 @@ function copyPublic(string $src, string $dest): void
     }
 }
 
-/**
- * Expand <!-- include: path/to/file.php:tag --> directives.
- *
- * Source files mark snippet regions with comments:
- *   // [docs:tag-name]
- *   ...code...
- *   // [/docs:tag-name]
- *
- * The directive pulls the lines between the markers (exclusive) and
- * inserts them as a fenced code block in the rendered markdown.
- */
-function expandSnippets(string $markdown, string $repoRoot, string $sourceFile): string
+function findTocSpan(string $html): ?array
 {
-    return preg_replace_callback(
-        '/<!--\s*include:\s*([^\s:]+):([A-Za-z0-9_\-]+)(?:\s+lang=([A-Za-z0-9_+\-]+))?\s*-->/',
-        function (array $m) use ($repoRoot, $sourceFile): string {
-            $path = $repoRoot . '/' . $m[1];
-            $tag  = $m[2];
-            $lang = $m[3] ?? guessLang($m[1]);
-
-            if (!is_file($path)) {
-                fwrite(STDERR, "warn: snippet source not found {$m[1]} (in {$sourceFile})\n");
-                return "```\nMISSING SNIPPET: {$m[1]}\n```";
-            }
-
-            $content = file_get_contents($path);
-            $pattern = '/\[docs:' . preg_quote($tag, '/') . '\](.*?)\[\/docs:' . preg_quote($tag, '/') . '\]/s';
-            if (!preg_match($pattern, $content, $match)) {
-                fwrite(STDERR, "warn: snippet tag '{$tag}' not found in {$m[1]} (in {$sourceFile})\n");
-                return "```\nMISSING SNIPPET TAG: {$m[1]}:{$tag}\n```";
-            }
-
-            $body = trim($match[1], "\r\n");
-            $body = stripCommentLine($body);
-            $body = dedent($body);
-
-            return "```{$lang}\n{$body}\n```";
-        },
-        $markdown
-    );
-}
-
-function guessLang(string $path): string
-{
-    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-    return match ($ext) {
-        'php'              => 'php',
-        'js', 'mjs', 'cjs' => 'js',
-        'ts'               => 'ts',
-        'json'             => 'json',
-        'sh', 'bash'       => 'bash',
-        'yml', 'yaml'      => 'yaml',
-        'sql'              => 'sql',
-        default            => '',
-    };
-}
-
-function stripCommentLine(string $body): string
-{
-    $lines = explode("\n", $body);
-    $first = $lines[0] ?? '';
-    if (preg_match('~^\s*(//|#)~', $first)) {
-        array_shift($lines);
+    $start = strpos($html, '<ul class="toc">');
+    if ($start === false) {
+        return null;
     }
-    return implode("\n", $lines);
-}
 
-function dedent(string $body): string
-{
-    $lines = explode("\n", $body);
-    $min = PHP_INT_MAX;
-    foreach ($lines as $line) {
-        if ($line === '' || ctype_space($line)) {
+    $depth = 0;
+    $cursor = $start;
+    $length = strlen($html);
+
+    while ($cursor < $length) {
+        $nextOpen = strpos($html, '<ul', $cursor);
+        $nextClose = strpos($html, '</ul>', $cursor);
+
+        if ($nextClose === false) {
+            return null;
+        }
+
+        if ($nextOpen !== false && $nextOpen < $nextClose) {
+            $depth++;
+            $cursor = $nextOpen + 3;
+
             continue;
         }
-        $min = min($min, strlen($line) - strlen(ltrim($line, ' ')));
+
+        $depth--;
+        if ($depth === 0) {
+            $end = $nextClose + strlen('</ul>');
+
+            return [$start, $end - $start];
+        }
+
+        $cursor = $nextClose + strlen('</ul>');
     }
-    if ($min === PHP_INT_MAX || $min === 0) {
-        return $body;
-    }
-    return implode("\n", array_map(
-        fn ($l) => substr($l, $min) === false ? $l : (strlen($l) >= $min ? substr($l, $min) : $l),
-        $lines
-    ));
+
+    return null;
 }
 
 function extractToc(string $html): string
 {
-    if (preg_match('/<ul class="toc">.*?<\/ul>/s', $html, $m)) {
-        return $m[0];
-    }
-    return '';
+    $span = findTocSpan($html);
+
+    return $span === null ? '' : substr($html, $span[0], $span[1]);
 }
 
 function stripFirstToc(string $html): string
 {
-    return preg_replace('/<ul class="toc">.*?<\/ul>/s', '', $html, 1);
+    $span = findTocSpan($html);
+
+    return $span === null ? $html : substr($html, 0, $span[0]).substr($html, $span[0] + $span[1]);
 }
 
 function renderLayout(string $file, array $vars): string
@@ -312,28 +267,29 @@ function renderLayout(string $file, array $vars): string
     extract($vars, EXTR_SKIP);
     ob_start();
     include $file;
+
     return ob_get_clean();
 }
 
 function renderMissing(array $page, array $nav, string $siteDir, string $layoutFile, int $builtAt, array $pages, int $i): void
 {
     $outRel = relativeOutputPath($page['file'], $i === 0);
-    $outAbs = $siteDir . '/' . $outRel;
+    $outAbs = $siteDir.'/'.$outRel;
     @mkdir(dirname($outAbs), 0777, true);
 
     $bodyHtml = "<h1>{$page['title']}</h1><p><em>This page hasn't been written yet.</em></p>";
 
     $rendered = renderLayout($layoutFile, [
-        'title'    => $page['title'] . ' (placeholder)',
+        'title' => $page['title'].' (placeholder)',
         'siteName' => 'laravel-nestedset',
-        'content'  => $bodyHtml,
-        'toc'      => '',
-        'nav'      => $nav,
-        'current'  => $page['file'],
-        'prev'     => $pages[$i - 1] ?? null,
-        'next'     => $pages[$i + 1] ?? null,
-        'baseUrl'  => baseUrlFor($outRel),
-        'builtAt'  => $builtAt,
+        'content' => $bodyHtml,
+        'toc' => '',
+        'nav' => $nav,
+        'current' => $page['file'],
+        'prev' => $pages[$i - 1] ?? null,
+        'next' => $pages[$i + 1] ?? null,
+        'baseUrl' => baseUrlFor($outRel),
+        'builtAt' => $builtAt,
     ]);
 
     file_put_contents($outAbs, $rendered);

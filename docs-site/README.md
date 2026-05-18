@@ -42,43 +42,15 @@ Pass `--no-watch` to skip the watcher and just serve. Pass
 ## Authoring
 
 - Pages live in `../docs/` as plain Markdown.
-- Navigation is defined in `../docs/nav.php` — an ordered list of sections
-  and pages. Add a new page by adding it to that file.
-- Pages listed in `nav.php` that don't yet exist render as placeholders, so
-  you can plan the site upfront and fill it in incrementally.
-
-## Embedding code from tests
-
-Examples in the docs should be backed by real tests. Mark a region in a
-test file:
-
-```php
-public function test_filtered_aggregate(): void
-{
-    // [docs:filtered-aggregate]
-    $count = Category::root()
-        ->descendants()
-        ->where('active', true)
-        ->count();
-    // [/docs:filtered-aggregate]
-
-    $this->assertSame(3, $count);
-}
-```
-
-Then pull it into Markdown:
-
-```markdown
-<!-- include: tests/Documentation/AggregatesTest.php:filtered-aggregate -->
-```
-
-The build inserts a fenced PHP code block with the lines between the
-markers. If a tag goes missing, the build prints a warning and renders a
-visible placeholder so it can't be silently lost.
+- Navigation is defined in `../docs/summary.md` — top-level `#` headings
+  are sections, list items are pages: `- [Title](path/to/file.md)`. Add
+  a new page by adding a line there.
+- Pages listed in `summary.md` that don't yet exist render as placeholders,
+  so you can plan the site upfront and fill it in incrementally.
 
 ## Layout
 
-```
+```text
 docs-site/
 ├── build.php           # Markdown → HTML, applies layout, expands snippets
 ├── serve.php           # Build + dev server + file watcher

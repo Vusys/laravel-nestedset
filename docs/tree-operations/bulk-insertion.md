@@ -50,7 +50,7 @@ O(N²). At N=10,000 on MariaDB the naive loop runs for many minutes;
 ## Event-free seeding
 
 If you specifically need event-free seeding (e.g. backfilling 100K rows
-from a CSV with no observer side-effects), the standard Laravel escape
+from a CSV with no observer side effects), the standard Laravel escape
 hatch composes:
 
 ```php
