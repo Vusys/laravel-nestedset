@@ -1394,8 +1394,21 @@ final class TreeAggregateBuilder
         // entirely. The fast-path is opt-out only — chunked paths
         // (`outerIds !== null`) keep the slow path because the chunk's
         // shape is a subset and chain detection there would be unsafe.
+        // Filtered definitions also skip — the fold doesn't evaluate
+        // filter predicates, so it would silently produce the unfiltered
+        // value for every filtered column (regression spotted by the
+        // all-no-match parametric provider).
+        $anyFiltered = false;
+        foreach ($definitions as $definition) {
+            if ($definition->filter instanceof FilterPredicate) {
+                $anyFiltered = true;
+                break;
+            }
+        }
+
         if (
-            $outerIds === null
+            ! $anyFiltered
+            && $outerIds === null
             && $parentIdCol !== null
             && $depthCol !== null
             && self::isChainShape($connection, $table, $parentIdCol, $lftCol, $rgtCol, $scope, $rootId)
