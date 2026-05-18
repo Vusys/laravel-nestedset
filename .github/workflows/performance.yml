@@ -107,7 +107,7 @@ jobs:
           echo "Skipping ${{ matrix.db }} — workflow input requested ${{ github.event.inputs.database }} only."
           exit 0
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -129,7 +129,7 @@ jobs:
         run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.composer/cache/files
           key: composer-perf-php${{ matrix.php }}-laravel${{ matrix.laravel }}-${{ hashFiles('composer.json') }}
@@ -174,7 +174,7 @@ jobs:
           stdbuf -oL -eL vendor/bin/phpunit --testsuite Performance --testdox 2>&1 | tee perf-output.txt
 
       - name: Upload raw results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-${{ matrix.db }}-${{ github.run_id }}
           path: perf-output.txt
@@ -196,7 +196,7 @@ jobs:
 
     steps:
       - name: Download all benchmark outputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: perf-results
           pattern: perf-*
