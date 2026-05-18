@@ -103,6 +103,7 @@ final class TreeAggregateBuilder
                 $lftCol,
                 $rgtCol,
                 "({$sql})",
+                $softDeletedColumn,
             );
 
             $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
@@ -265,7 +266,7 @@ final class TreeAggregateBuilder
                     AggregateFunction::Count => "COALESCE({$derivedAlias}.{$colAlias}, 0)",
                     default => "{$derivedAlias}.{$colAlias}",
                 };
-                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr);
+                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn);
                 $columns[] = new TreeExpression("{$cased} as {$colAlias}");
             }
             $builder->addSelect($columns);
@@ -354,7 +355,7 @@ final class TreeAggregateBuilder
             $columns = ['*'];
             foreach ($group as $colAlias => $definition) {
                 $joinExpr = "{$lateralAlias}.{$colAlias}";
-                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr);
+                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn);
                 $columns[] = new TreeExpression("{$cased} as {$colAlias}");
             }
             $builder->addSelect($columns);
@@ -1046,8 +1047,11 @@ final class TreeAggregateBuilder
      * in a `CASE WHEN rgt = lft + 1 THEN <inline> ELSE <join-derived>
      * END` so each row pays JOIN cost only when it has descendants.
      */
-    private static function leafInlineExpression(AggregateDefinition $definition, string $tableQualifier): string
-    {
+    private static function leafInlineExpression(
+        AggregateDefinition $definition,
+        string $tableQualifier,
+        ?string $softDeletedColumn = null,
+    ): string {
         if (! $definition->inclusive) {
             return match ($definition->function) {
                 AggregateFunction::Sum, AggregateFunction::Count => '0',
@@ -1055,31 +1059,51 @@ final class TreeAggregateBuilder
             };
         }
 
-        if ($definition->filter instanceof FilterPredicate) {
-            return self::filteredLeafInlineExpression($definition, $tableQualifier, $definition->filter);
+        $inline = $definition->filter instanceof FilterPredicate
+            ? self::filteredLeafInlineExpression($definition, $tableQualifier, $definition->filter)
+            : match ($definition->function) {
+                AggregateFunction::Sum => sprintf(
+                    'COALESCE(%s%s, 0)',
+                    $tableQualifier,
+                    self::requireSource($definition),
+                ),
+                AggregateFunction::Count => $definition->source === null
+                    ? '1'
+                    : sprintf(
+                        'CASE WHEN %s%s IS NULL THEN 0 ELSE 1 END',
+                        $tableQualifier,
+                        $definition->source,
+                    ),
+                AggregateFunction::Avg,
+                AggregateFunction::Min,
+                AggregateFunction::Max => sprintf(
+                    '%s%s',
+                    $tableQualifier,
+                    self::requireSource($definition),
+                ),
+            };
+
+        if ($softDeletedColumn === null) {
+            return $inline;
         }
 
-        return match ($definition->function) {
-            AggregateFunction::Sum => sprintf(
-                'COALESCE(%s%s, 0)',
-                $tableQualifier,
-                self::requireSource($definition),
-            ),
-            AggregateFunction::Count => $definition->source === null
-                ? '1'
-                : sprintf(
-                    'CASE WHEN %s%s IS NULL THEN 0 ELSE 1 END',
-                    $tableQualifier,
-                    $definition->source,
-                ),
-            AggregateFunction::Avg,
-            AggregateFunction::Min,
-            AggregateFunction::Max => sprintf(
-                '%s%s',
-                $tableQualifier,
-                self::requireSource($definition),
-            ),
+        // A trashed leaf contributes nothing to its own inclusive aggregate
+        // — the soft-delete-filtered subquery would return 0 (SUM/COUNT) or
+        // NULL (MIN/MAX/AVG) for it. Match that semantics here so the leaf
+        // fast-path stays consistent with the join path on `withTrashed()`
+        // queries.
+        $emptyResult = match ($definition->function) {
+            AggregateFunction::Sum, AggregateFunction::Count => '0',
+            AggregateFunction::Avg, AggregateFunction::Min, AggregateFunction::Max => 'NULL',
         };
+
+        return sprintf(
+            '(CASE WHEN %s%s IS NULL THEN %s ELSE %s END)',
+            $tableQualifier,
+            $softDeletedColumn,
+            $inline,
+            $emptyResult,
+        );
     }
 
     private static function filteredLeafInlineExpression(
@@ -1132,8 +1156,9 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         string $joinExpr,
+        ?string $softDeletedColumn = null,
     ): string {
-        $inline = self::leafInlineExpression($definition, $tableQualifier);
+        $inline = self::leafInlineExpression($definition, $tableQualifier, $softDeletedColumn);
 
         return sprintf(
             'CASE WHEN %s%s = %s%s + 1 THEN %s ELSE %s END',

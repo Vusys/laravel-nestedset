@@ -123,6 +123,32 @@ final class CustomDeletedAtColumnTest extends TestCase
         );
     }
 
+    public function test_with_fresh_aggregates_returns_zero_for_trashed_leaf_in_with_trashed_query(): void
+    {
+        // The leaf fast-path inlines the outer row's own source value
+        // instead of running the subquery. On a trashed leaf surfaced
+        // via withTrashed(), the inline must collapse to 0 (the empty-
+        // set semantics of the soft-delete-filtered subquery) rather
+        // than leaking the leaf's own ticket count.
+        [, $left] = $this->seedThreeNodeTree();
+        $leftTickets = (int) $left->tickets;
+        $this->assertGreaterThan(0, $leftTickets, 'precondition: left must have a non-zero ticket count');
+
+        $left->delete();
+
+        $leafFresh = ArchivedBranch::query()
+            ->withTrashed()
+            ->withFreshAggregates(['tickets_total'])
+            ->where('id', $left->id)
+            ->firstOrFail();
+
+        $this->assertSame(
+            0,
+            (int) $leafFresh->tickets_total,
+            'trashed leaf must report zero — inline fast-path must honour soft-delete filtering',
+        );
+    }
+
     /**
      * @return array{0: ArchivedBranch, 1: ArchivedBranch, 2: ArchivedBranch}
      */
