@@ -1214,7 +1214,15 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $stored = self::numeric($this->getAttribute($definition->column));
+                // Stored NULL means the subtree has no matching candidates
+                // (filtered MIN/MAX with no in-filter descendants, or empty
+                // subtree). Propagating a 0 candidate would clobber the
+                // destination's NULL into 0 via the cheap-delta path.
+                $rawStored = $this->getAttribute($definition->column);
+                if ($rawStored === null) {
+                    continue;
+                }
+                $stored = self::numeric($rawStored);
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
@@ -1258,7 +1266,14 @@ trait HasNestedSetAggregates
             // Min / Max — only remaining ops after Sum/Count/Avg above.
             // Use stored extremum for cheap-delta (extend new chain) and
             // as the recompute filterValue for old chain.
-            $stored = self::numericPreserveType($this->getAttribute($definition->column));
+            // Stored NULL means the moved subtree has no matching
+            // contributions; skip so the cheap-delta doesn't propagate
+            // a fake 0 candidate (would clobber the destination's NULL).
+            $rawStored = $this->getAttribute($definition->column);
+            if ($rawStored === null) {
+                continue;
+            }
+            $stored = self::numericPreserveType($rawStored);
             $minMaxRecomputes[$definition->column] = [
                 'function' => $op,
                 'source' => $definition->column,   // sentinel — not used by listener recompute

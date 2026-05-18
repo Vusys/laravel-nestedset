@@ -161,4 +161,48 @@ final class FilteredDeltaMaintenanceTest extends TestCase
         $this->assertNotNull($parent);
         $this->assertSame(0, $this->asInt($parent->fire_tickets));
     }
+
+    /**
+     * Regression: moving a non-matching subtree into a node whose
+     * filtered MIN/MAX is NULL must leave the destination's stored
+     * value at NULL — not 0.
+     *
+     * The pre-fix bug: `collectMoveSubtreeContribution` ran
+     * `self::numeric($node->getAttribute('water_max'))` on the moving
+     * node. When the moving node's `water_max` was NULL (no matching
+     * descendants in the moved subtree), `numeric()` returned 0,
+     * propagated as a fake candidate extreme into the new chain's
+     * cheap-delta MAX, which then overwrote the destination's NULL
+     * with 0. Caught by the multi-mutation random walk's seed=1
+     * step 33.
+     */
+    public function test_move_subtree_with_null_filtered_max_leaves_destination_null(): void
+    {
+        // A is type=null (so own type='water' filter does not match);
+        // A starts as a leaf with no water descendants → water_max = NULL.
+        $root = new TypedArea(['name' => 'r', 'tickets' => 10, 'type' => 'fire']);
+        $root->saveAsRoot();
+        $a = new TypedArea(['name' => 'A', 'tickets' => 1, 'type' => null]);
+        $a->appendToNode($root->refresh())->save();
+
+        $aBefore = TypedArea::find($a->id);
+        $this->assertNotNull($aBefore);
+        $this->assertNull($aBefore->water_max, 'precondition: A.water_max starts NULL');
+
+        // Add a fire sibling at the root.
+        $b = new TypedArea(['name' => 'B', 'tickets' => 1, 'type' => 'fire']);
+        $b->appendToNode($root->refresh())->save();
+
+        // Move B (a non-water node with no water descendants) under A.
+        // A's water_max must stay NULL.
+        $b->refresh();
+        $b->appendToNode($a->refresh())->save();
+
+        $aAfter = TypedArea::find($a->id);
+        $this->assertNotNull($aAfter);
+        $this->assertNull(
+            $aAfter->water_max,
+            'A.water_max should stay NULL after moving a non-water leaf under it',
+        );
+    }
 }

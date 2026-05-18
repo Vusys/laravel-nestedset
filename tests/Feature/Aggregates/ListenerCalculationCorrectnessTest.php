@@ -332,7 +332,7 @@ final class ListenerCalculationCorrectnessTest extends TestCase
             'base_power' => $basePower,
             'level' => $level,
         ]);
-        if (!$parent instanceof \Vusys\NestedSet\Tests\Fixtures\Models\Monster) {
+        if (! $parent instanceof Monster) {
             $node->saveAsRoot();
         } else {
             $node->appendToNode($parent->refresh())->save();

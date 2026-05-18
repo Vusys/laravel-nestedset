@@ -473,7 +473,7 @@ final class AggregateCalculationCorrectnessTest extends TestCase
         $tickets = $spec['value'] ?? 0;
 
         $node = new Area(['name' => $name, 'tickets' => $tickets]);
-        if (!$parent instanceof \Vusys\NestedSet\Tests\Fixtures\Models\Area) {
+        if (! $parent instanceof Area) {
             $node->saveAsRoot();
         } else {
             $node->appendToNode($parent->refresh())->save();
@@ -513,7 +513,7 @@ final class AggregateCalculationCorrectnessTest extends TestCase
         $active = $this->specInt($spec, 'active');
 
         $node = new Branch(['name' => $name, 'tickets' => $tickets, 'active' => $active]);
-        if (!$parent instanceof \Vusys\NestedSet\Tests\Fixtures\Models\Branch) {
+        if (! $parent instanceof Branch) {
             $node->saveAsRoot();
         } else {
             $node->appendToNode($parent->refresh())->save();
@@ -553,7 +553,7 @@ final class AggregateCalculationCorrectnessTest extends TestCase
         $type = $this->specNullableString($spec, 'type');
 
         $node = new TypedArea(['name' => $name, 'tickets' => $tickets, 'type' => $type]);
-        if (!$parent instanceof \Vusys\NestedSet\Tests\Fixtures\Models\TypedArea) {
+        if (! $parent instanceof TypedArea) {
             $node->saveAsRoot();
         } else {
             $node->appendToNode($parent->refresh())->save();
