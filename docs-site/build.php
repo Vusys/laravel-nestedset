@@ -22,7 +22,7 @@ $siteRoot   = $repoRoot . '/site';
 $siteDir    = $siteRoot;
 $publicSrc  = __DIR__ . '/public';
 $layoutFile = __DIR__ . '/templates/layout.php';
-$nav        = require $docsDir . '/nav.php';
+$nav        = parseSummary($docsDir . '/summary.md');
 
 $converter = makeConverter();
 
@@ -110,6 +110,50 @@ function flattenNav(array $nav): array
         }
     }
     return $out;
+}
+
+/**
+ * Parse docs/summary.md into a section/pages tree.
+ *
+ *   # Section Title
+ *
+ *   - [Page Title](page.md)
+ *
+ * A leading "# Summary" header is treated as the document title and
+ * skipped. Everything outside a section (prose, format notes, etc.)
+ * is ignored — only `#` headers and list-item links matter.
+ */
+function parseSummary(string $path): array
+{
+    if (!is_file($path)) {
+        fwrite(STDERR, "fatal: nav summary missing at {$path}\n");
+        exit(1);
+    }
+
+    $sections    = [];
+    $sectionIdx  = -1;
+
+    foreach (file($path, FILE_IGNORE_NEW_LINES) as $line) {
+        if (preg_match('/^#\s+(.+?)\s*$/', $line, $m)) {
+            if ($sectionIdx === -1 && strcasecmp(trim($m[1]), 'Summary') === 0) {
+                continue;
+            }
+            $sections[]  = ['title' => $m[1], 'pages' => []];
+            $sectionIdx  = count($sections) - 1;
+            continue;
+        }
+
+        if ($sectionIdx !== -1 && preg_match('/^\s*-\s*\[(.+?)\]\((.+?)\)\s*$/', $line, $m)) {
+            $sections[$sectionIdx]['pages'][] = ['title' => $m[1], 'file' => $m[2]];
+        }
+    }
+
+    if ($sections === []) {
+        fwrite(STDERR, "fatal: summary.md parsed but no sections found\n");
+        exit(1);
+    }
+
+    return $sections;
 }
 
 function relativeOutputPath(string $file, bool $isHome): string

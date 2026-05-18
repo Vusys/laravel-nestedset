@@ -1,0 +1,123 @@
+# Repairing Aggregates
+
+`fixAggregates()` is fast on most trees but a heavily-drifted 1M-row
+table still measures in tens of seconds — not the kind of work you want
+on the synchronous response path. `queueFixAggregates()` hands it to a
+worker instead:
+
+```php
+// Fire and forget — uses Laravel's default queue connection / queue name.
+Area::queueFixAggregates();
+
+// Scoped models: anchor required (same rule as the sync method).
+MenuItem::queueFixAggregates($anchor);
+
+// Per-call routing overrides (also configurable globally — see below).
+Area::queueFixAggregates(onConnection: 'redis', onQueue: 'aggregates-low');
+```
+
+Defaults come from `config/nestedset.php`:
+
+```php
+'queue' => [
+    'connection' => env('NESTEDSET_QUEUE_CONNECTION'),  // null → default connection
+    'queue' => env('NESTEDSET_QUEUE'),                   // null → default queue
+],
+```
+
+The dispatched `Vusys\NestedSet\Jobs\FixAggregatesJob` carries the model
+class and an optional anchor id; its `handle()` just calls the same
+`Model::fixAggregates($anchor)` you'd call synchronously, so it inherits
+every Phase K+ optimisation automatically. The job is **idempotent** — a
+second run on a clean tree finds zero drift and writes nothing — so
+dispatching defensively after a batch operation is safe.
+
+## Chunked self-redispatch
+
+For very large trees where even a single repair job would exceed your
+queue's per-job time budget, pass a `chunkSize` and the job will process
+one bounded slice and re-dispatch itself with an advanced cursor until
+the table is covered:
+
+```php
+// Process 1,000 outer rows per dispatch. The job re-queues itself
+// (on the same connection/queue) after each chunk until done.
+Area::queueFixAggregates(chunkSize: 1_000);
+```
+
+Each chunk runs one chunked `fixAggregates` constrained to its outer-id
+slice, so total work scales linearly in `chunkSize` regardless of total
+table size. The chain terminates automatically when a chunk returns
+fewer rows than `chunkSize` — no completion handler to register, no
+manual cursor to track. Combine with a smaller chunk size to keep
+individual jobs well under your worker's `--timeout`.
+
+## Deferred maintenance for batch mutations
+
+If you're doing many small mutations through Eloquent — a CSV import, a
+re-parenting script, a re-numbering migration — every save normally
+triggers a per-row aggregate update on the ancestor chain. For N saves
+that's N × ancestor-chain UPDATEs. `withDeferredAggregateMaintenance()`
+suspends those side-effects for the duration of a closure and fires one
+`fixAggregates()` at the end:
+
+```php
+Area::withDeferredAggregateMaintenance(function () use ($csv, $parent) {
+    foreach ($csv as $row) {
+        $area = new Area($row);
+        $area->appendToNode($parent)->save();  // saving/created/saved fire,
+    }                                           // aggregate side-effects deferred
+}, $rootAnchor);                                // one fixAggregates($root) at the end
+```
+
+**What still fires inside the closure:**
+- Every Eloquent event (`saving` / `created` / `saved` / `deleted` /
+  `restoring` / `restored`)
+- Mutators, casts, mass-assignment guards, observers — exactly as they
+  would outside the block
+
+**What's deferred:**
+- The trait's per-row aggregate-column updates on the ancestor chain
+  (`tickets_total`, `tickets_count_all`, etc.)
+- All the MIN/MAX recompute and AVG companion writes that normally
+  piggy-back on each save
+
+The wrapper is re-entrant (nested calls share one counter, only the
+outermost call triggers the final fix) and **failure-safe** — if the
+closure throws, the counter still decrements and `fixAggregates()` still
+fires before the exception propagates. Leaving the table half-repaired
+would be worse than spending the fix cost. The closure's return value
+is what the wrapper returns.
+
+Trade-off: this trades N small ancestor UPDATEs for one all-at-once
+repair pass. The repair touches every row whose stored aggregates may
+have drifted, so it's worth it when N is large (CSV imports, scripts)
+and a poor fit for one-or-two saves.
+
+## Sync chunked repair with progress
+
+When you'd rather drive the loop yourself — e.g. a CLI command streaming
+progress to stdout — pass the same `chunkSize` to the synchronous
+`fixAggregates()` plus an `onChunk` callback:
+
+```php
+$result = Area::fixAggregates(
+    chunkSize: 1_000,
+    onChunk: function ($chunkResult, int $chunkIndex, ?int $cursor) {
+        $this->output->writeln(sprintf(
+            'Chunk %d: %d rows updated (cursor=%s)',
+            $chunkIndex,
+            $chunkResult->totalRowsUpdated,
+            $cursor ?? 'end',
+        ));
+    },
+);
+
+// $result is the merged total across every chunk.
+```
+
+The callback receives the per-chunk `AggregateFixResult`, the zero-based
+chunk index, and the cursor (last id processed, or `null` on the final
+chunk). Each chunk is independently atomic at the database level — if
+the process is killed mid-loop you can re-run and the remaining drift
+will be detected and repaired on the next pass.
