@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Aggregates;
 use Illuminate\Database\Eloquent\Model;
 use ReflectionClass;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -18,7 +19,9 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  * Resolution order (mirrors {@see NestedSetScopeResolver}):
  *   1. `#[NestedSetAggregate(...)]` attribute instances on the class.
  *   2. `nestedSetAggregates(): array` method override on the model.
- *   3. Auto-promotion: each AVG declaration without explicit companion
+ *   3. `#[NestedSetAggregateListener(...)]` attribute instances on the class.
+ *   4. `nestedSetListenerAggregates(): array` method override on the model.
+ *   5. Auto-promotion: each AVG declaration without explicit companion
  *      SUM and COUNT for the same source gets two internal companion
  *      definitions auto-added with predictable column names.
  *
@@ -65,9 +68,12 @@ final class AggregateRegistry
             return self::$cache[$class];
         }
 
+        /** @var list<AggregateDefinitionContract> $definitions */
         $definitions = array_merge(
             self::fromAttributes($class),
             self::fromMethodOverride($class),
+            self::fromListenerAttributes($class),
+            self::fromListenerMethodOverride($class),
         );
 
         $definitions = self::autoPromoteAvgCompanions($definitions);
@@ -210,6 +216,63 @@ final class AggregateRegistry
     }
 
     /**
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return list<ListenerAggregateDefinition>
+     */
+    private static function fromListenerAttributes(string $class): array
+    {
+        $reflection = new ReflectionClass($class);
+        $attributes = $reflection->getAttributes(NestedSetAggregateListener::class);
+
+        $definitions = [];
+
+        foreach ($attributes as $attribute) {
+            $definitions[] = $attribute->newInstance()->toDefinition();
+        }
+
+        return $definitions;
+    }
+
+    /**
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return list<ListenerAggregateDefinition>
+     */
+    private static function fromListenerMethodOverride(string $class): array
+    {
+        if (! method_exists($class, 'nestedSetListenerAggregates')) {
+            return [];
+        }
+
+        $instance = new $class;
+        $method = (new ReflectionClass($class))->getMethod('nestedSetListenerAggregates');
+        $raw = $method->invoke($instance);
+
+        if (! is_array($raw)) {
+            throw new AggregateConfigurationException(sprintf(
+                '%s::nestedSetListenerAggregates() must return an array of ListenerAggregateDefinition.',
+                $class,
+            ));
+        }
+
+        $definitions = [];
+
+        foreach ($raw as $index => $definition) {
+            if (! $definition instanceof ListenerAggregateDefinition) {
+                throw new AggregateConfigurationException(sprintf(
+                    '%s::nestedSetListenerAggregates(): entry at index %s is not a ListenerAggregateDefinition. '
+                    .'Use ListenerAggregate::sum(...)->into(...) to produce one.',
+                    $class,
+                    (string) $index,
+                ));
+            }
+
+            $definitions[] = $definition;
+        }
+
+        return $definitions;
+    }
+
+    /**
      * For each AVG definition that lacks a sibling SUM and COUNT on the
      * same source, adds internal companions. If the user has already
      * declared compatible companions (a SUM(source) and a COUNT(source)
@@ -218,16 +281,25 @@ final class AggregateRegistry
      * is made by source-column match; the actual reference resolution
      * lives in later phases.
      *
-     * @param  list<AggregateDefinition>  $definitions
-     * @return list<AggregateDefinition>
+     * Non-{@see AggregateDefinition} entries (e.g. {@see ListenerAggregateDefinition})
+     * are passed through unchanged; only SQL-function definitions participate
+     * in AVG companion promotion.
+     *
+     * @param  list<AggregateDefinitionContract>  $definitions
+     * @return list<AggregateDefinitionContract>
      */
     private static function autoPromoteAvgCompanions(array $definitions): array
     {
         $bySource = self::indexBySource($definitions);
 
+        /** @var list<AggregateDefinition> $extras */
         $extras = [];
 
         foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+
             if ($definition->function !== AggregateFunction::Avg) {
                 continue;
             }
