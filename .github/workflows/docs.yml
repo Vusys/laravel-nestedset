@@ -52,7 +52,7 @@ jobs:
           restore-keys: |
             composer-docs-
 
-      - name: Install docs-site dependencies
+      - name: Install Composer dependencies
         working-directory: docs-site
         run: composer install --prefer-dist --no-interaction --no-progress
 
