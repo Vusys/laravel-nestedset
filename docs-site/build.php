@@ -41,8 +41,7 @@ foreach ($pages as $i => $page) {
     }
 
     $raw      = file_get_contents($sourcePath);
-    $expanded = expandSnippets($raw, $repoRoot, $sourcePath);
-    $result   = $converter->convert($expanded);
+    $result   = $converter->convert($raw);
     $html     = (string) $result;
     $toc      = extractToc($html);
     $bodyHtml = stripFirstToc($html);
@@ -206,92 +205,6 @@ function copyPublic(string $src, string $dest): void
             copy($item->getPathname(), $target);
         }
     }
-}
-
-/**
- * Expand <!-- include: path/to/file.php:tag --> directives.
- *
- * Source files mark snippet regions with comments:
- *   // [docs:tag-name]
- *   ...code...
- *   // [/docs:tag-name]
- *
- * The directive pulls the lines between the markers (exclusive) and
- * inserts them as a fenced code block in the rendered markdown.
- */
-function expandSnippets(string $markdown, string $repoRoot, string $sourceFile): string
-{
-    return preg_replace_callback(
-        '/<!--\s*include:\s*([^\s:]+):([A-Za-z0-9_\-]+)(?:\s+lang=([A-Za-z0-9_+\-]+))?\s*-->/',
-        function (array $m) use ($repoRoot, $sourceFile): string {
-            $path = $repoRoot . '/' . $m[1];
-            $tag  = $m[2];
-            $lang = $m[3] ?? guessLang($m[1]);
-
-            if (!is_file($path)) {
-                fwrite(STDERR, "warn: snippet source not found {$m[1]} (in {$sourceFile})\n");
-                return "```\nMISSING SNIPPET: {$m[1]}\n```";
-            }
-
-            $content = file_get_contents($path);
-            $pattern = '/\[docs:' . preg_quote($tag, '/') . '\](.*?)\[\/docs:' . preg_quote($tag, '/') . '\]/s';
-            if (!preg_match($pattern, $content, $match)) {
-                fwrite(STDERR, "warn: snippet tag '{$tag}' not found in {$m[1]} (in {$sourceFile})\n");
-                return "```\nMISSING SNIPPET TAG: {$m[1]}:{$tag}\n```";
-            }
-
-            $body = trim($match[1], "\r\n");
-            $body = stripCommentLine($body);
-            $body = dedent($body);
-
-            return "```{$lang}\n{$body}\n```";
-        },
-        $markdown
-    );
-}
-
-function guessLang(string $path): string
-{
-    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-    return match ($ext) {
-        'php'              => 'php',
-        'js', 'mjs', 'cjs' => 'js',
-        'ts'               => 'ts',
-        'json'             => 'json',
-        'sh', 'bash'       => 'bash',
-        'yml', 'yaml'      => 'yaml',
-        'sql'              => 'sql',
-        default            => '',
-    };
-}
-
-function stripCommentLine(string $body): string
-{
-    $lines = explode("\n", $body);
-    $first = $lines[0] ?? '';
-    if (preg_match('~^\s*(//|#)~', $first)) {
-        array_shift($lines);
-    }
-    return implode("\n", $lines);
-}
-
-function dedent(string $body): string
-{
-    $lines = explode("\n", $body);
-    $min = PHP_INT_MAX;
-    foreach ($lines as $line) {
-        if ($line === '' || ctype_space($line)) {
-            continue;
-        }
-        $min = min($min, strlen($line) - strlen(ltrim($line, ' ')));
-    }
-    if ($min === PHP_INT_MAX || $min === 0) {
-        return $body;
-    }
-    return implode("\n", array_map(
-        fn ($l) => substr($l, $min) === false ? $l : (strlen($l) >= $min ? substr($l, $min) : $l),
-        $lines
-    ));
 }
 
 function extractToc(string $html): string
