@@ -1,47 +1,39 @@
-# laravel-nestedset
+# Introduction
 
-A nested-set implementation for Laravel Eloquent models, with built-in tree
-maintenance, aggregate columns, and tooling for detecting and repairing
-corruption in production trees.
+A modern Laravel implementation of the nested-set model for hierarchical
+data — strict types throughout, PHPStan level 9, atomic CASE-WHEN
+mutations, multi-tree scoping, soft-delete cascade, and an opinionated
+repair toolkit.
 
-This is the documentation home. Pick a section from the sidebar, or start
-with [Installation](installation.html) if you're new.
+Target: **PHP 8.3+** / **Laravel 11, 12, 13**.
 
-## What is a nested set?
+```php
+$root = Category::create(['name' => 'Root']);
+$root->saveAsRoot();
 
-A **nested set** is a way to store hierarchical data in a single SQL table
-that makes ancestor/descendant queries fast and indexable. Each row gets a
-`lft` and `rgt` value defining its range; a row whose range is contained
-inside another row's range is a descendant of it.
+$child = Category::create(['name' => 'Child']);
+$child->appendToNode($root)->save();
 
-Compared with the alternatives:
+Category::query()->whereDescendantOf($root->getBounds())->get();
+$root->descendants()->orderBy('lft')->get();
+$root->refresh()->getNodeHeight();   // rgt - lft + 1
+```
 
-| Model            | Reads (ancestors / descendants) | Writes  | Storage |
-|------------------|----------------------------------|---------|---------|
-| Adjacency list   | Slow (recursive)                 | Fast    | Small   |
-| Closure table    | Fast                             | Medium  | Large   |
-| **Nested set**   | **Fast (single range scan)**     | Medium  | Small   |
-| Materialised path| Fast prefix                      | Medium  | Medium  |
+## Why nested set?
 
-Nested sets shine for trees that are **read more than they're written** —
-category trees, menu structures, org charts, threaded comments where the
-shape is mostly stable.
+The nested-set encoding stores `lft` and `rgt` integers on every node so
+any subtree, ancestor chain, or descendant set is a single `BETWEEN`
+query — no recursive CTEs, no N+1 loops. The price is that mutations
+(insert / move / delete) have to shift many rows to keep the lft/rgt
+sequence dense, so it's best suited to **read-heavy hierarchies**:
+category trees, menu structures, org charts, comment threads.
 
-## What this package adds
+This package executes every shift as a single `CASE WHEN UPDATE`, so
+even a subtree move that touches thousands of rows is one round trip.
 
-On top of the core nested-set algorithm, this package provides:
+## What's in this documentation
 
-- **`NodeTrait`** — drop into any Eloquent model to make it a tree node.
-- **Tree-aware query scopes** — ancestors, descendants, siblings, depth.
-- **Aggregate columns** — denormalised counts and sums maintained
-  automatically as the tree changes.
-- **Corruption detection and repair** — `fixTree`, `fixAggregates`, and
-  detailed error reports.
-- **Scoped trees** — multi-tenant trees keyed on one or more columns.
-
-## Conventions in these docs
-
-Examples are also unit tests. Every code block you see in the
-aggregates, querying, and tree-operation pages is pulled byte-for-byte from
-a test file in `tests/Documentation/`. If the public API changes and the
-example breaks, CI fails before the page goes out of date.
+Start with [Installation](getting-started/installation.html), then [Migration](getting-started/migration.html)
+and [Model Setup](getting-started/model-setup.html) to get a working tree. From there the
+sidebar groups material by what you're trying to do — insert/move,
+query, compute aggregates, repair corruption.
