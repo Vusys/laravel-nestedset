@@ -6,6 +6,7 @@ namespace Vusys\NestedSet;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
 use Vusys\NestedSet\Concerns\HasBulkInsert;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
@@ -121,7 +122,25 @@ trait NodeTrait
             if (! $node instanceof HasNestedSet) {
                 return;
             }
-            if (method_exists($node, 'applyAggregateOnDelete')) {
+
+            // Soft-delete cascade FIRST so descendants are marked
+            // trashed before any aggregate chain-recompute runs.
+            // Otherwise listener Min/Max recomputes (and exclusive
+            // aggregates) read a stale "still-live" descendant set and
+            // produce values that don't match the post-cascade state.
+            if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
+                HasSoftDeleteTree::applySoftDeleteCascade($node);
+            }
+
+            // forceDelete on a row that was already soft-deleted fires
+            // this hook a second time. Its aggregate contribution was
+            // removed at the original soft-delete; running the hook
+            // again would double-decrement every ancestor.
+            $alreadyTrashed = method_exists($node, 'isForceDeleting')
+                && $node->isForceDeleting()
+                && $node->getAttribute('deleted_at') !== null;
+
+            if (! $alreadyTrashed && method_exists($node, 'applyAggregateOnDelete')) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
             }
             // Compact lft/rgt for hard-delete-of-a-leaf so the bounds
@@ -134,11 +153,17 @@ trait NodeTrait
         });
 
         // Restored — soft-delete only. Aggregates were decremented by
-        // applyAggregateOnDelete; add them back. HasSoftDeleteTree's
-        // separate `restored` listener cascades timestamps to
-        // descendants in parallel.
+        // applyAggregateOnDelete; add them back here. Cascade-restore
+        // must run *before* the aggregate hook so chain recomputes see
+        // descendants in their final (post-cascade) live state.
         static::registerModelEvent('restored', static function (Model $node): void {
-            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnRestore')) {
+            if (! $node instanceof HasNestedSet) {
+                return;
+            }
+            if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
+                HasSoftDeleteTree::applyRestoreCascade($node);
+            }
+            if (method_exists($node, 'applyAggregateOnRestore')) {
                 self::runAggregateHook($node, 'on_restore', static fn () => $node->applyAggregateOnRestore());
             }
         });

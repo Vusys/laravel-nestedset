@@ -34,24 +34,23 @@ trait HasSoftDeleteTree
             return;
         }
 
-        // Use registerModelEvent so PHPStan doesn't need to know that
-        // SoftDeletes adds the restoring/restored static accessors —
-        // those are dynamic-trait methods Larastan can't see through
-        // our class_uses_recursive guard above.
-        static::registerModelEvent('deleted', static function (Model $node): void {
-            self::cascadeSoftDelete($node);
-        });
-
+        // The `deleted` cascade is invoked directly from NodeTrait's
+        // deleted listener — it must run *before* the aggregate hook so
+        // chain recomputes (listener Min/Max, exclusive aggregates) see
+        // descendants as trashed instead of stale-live.
+        //
         static::registerModelEvent('restoring', static function (Model $node): void {
             self::captureRestoreMarker($node);
         });
 
-        static::registerModelEvent('restored', static function (Model $node): void {
-            self::cascadeRestore($node);
-        });
+        // `restored` cascade is invoked directly from NodeTrait so it
+        // runs *before* the aggregate hook — same reason as the
+        // `deleted` cascade: aggregate chain recomputes need the
+        // descendants in their final (post-cascade) trashed state.
     }
 
-    private static function cascadeSoftDelete(Model $node): void
+    /** @internal Called from NodeTrait's deleted listener to keep ordering deterministic. */
+    public static function applySoftDeleteCascade(Model $node): void
     {
         if (! $node instanceof HasNestedSet) {
             return;
@@ -86,7 +85,8 @@ trait HasSoftDeleteTree
         }
     }
 
-    private static function cascadeRestore(Model $node): void
+    /** @internal Called from NodeTrait's restored listener to keep ordering deterministic. */
+    public static function applyRestoreCascade(Model $node): void
     {
         if (! $node instanceof HasNestedSet) {
             return;
