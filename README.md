@@ -641,6 +641,158 @@ For tooling that needs to enumerate what a model declares at runtime
 `$model->getAggregateDefinitions()`, which returns the user-facing
 `AggregateDefinition` list (internal AVG companions are filtered out).
 
+### Filtered aggregates
+
+Add a filter to any `#[NestedSetAggregate]` declaration so only nodes
+that match a condition contribute to the rollup:
+
+```php
+#[NestedSetAggregate(column: 'fire_tickets', sum:   'tickets', filter: ['type' => 'fire'])]
+#[NestedSetAggregate(column: 'fire_count',   count: true,      filter: ['type' => 'fire'])]
+#[NestedSetAggregate(column: 'water_max',    max:   'tickets', filter: ['type' => 'water'])]
+#[NestedSetAggregate(column: 'has_tickets',  count: true,      filterNotNull: 'tickets')]
+class Area extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+Three filter forms:
+
+| Form | Attribute param | Meaning |
+|------|----------------|---------|
+| Equality | `filter: ['col' => value, ...]` | All listed columns must match |
+| Not-null | `filterNotNull: 'col'` | `col IS NOT NULL` |
+| Raw SQL | `filterRaw: 'active = 1'`, `filterRawWatches: ['active']` | Arbitrary SQL predicate |
+
+The fluent builder equivalents:
+
+```php
+Aggregate::sum('tickets')->filter(['type' => 'fire'])->into('fire_tickets')
+Aggregate::count()->filterNotNull('tickets')->into('has_tickets')
+Aggregate::max('tickets')->filterRaw('active = 1', watches: ['active'])->into('active_max')
+```
+
+Filtered columns use the same `$table->nestedSetAggregate(...)` migration
+macro as unfiltered ones — the migration doesn't know about filter logic.
+
+**Maintenance:** equality and not-null predicates are evaluated in PHP so
+delta maintenance stays incremental. Raw SQL predicates cannot be evaluated
+in PHP — the package skips incremental maintenance for those columns and
+requires a `fixAggregates()` pass to catch up. Schedule a periodic repair
+if raw-predicate watch columns are written frequently.
+
+The fresh-read path (`withFreshAggregates()`, `freshAggregate()`) always
+generates correct SQL — `CASE WHEN pred THEN source ELSE … END` — regardless
+of filter kind.
+
+---
+
+### PHP listener aggregates
+
+When a contribution requires PHP logic that can't be expressed as a SQL
+column reference — for example `SUM(base_power * level)` where the product
+is computed per node — declare a **listener aggregate**:
+
+```php
+use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+
+class WeightedPowerListener implements TreeAggregateListener
+{
+    public function contribution(Model $node): int|float|null
+    {
+        return (int) $node->base_power * (int) $node->level;
+    }
+
+    /** Columns whose changes should trigger re-aggregation on ancestors. */
+    public function watchColumns(): array
+    {
+        return ['base_power', 'level'];
+    }
+}
+```
+
+Declare it on the model with `#[NestedSetAggregateListener]`:
+
+```php
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
+
+#[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
+#[NestedSetAggregateListener(column: 'fire_count',     listener: FireCountListener::class,     operation: AggregateFunction::Sum)]
+class Pokemon extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+`contribution()` returns this node's value. `null` means "exclude this
+node" — useful for Min/Max where some nodes have no meaningful value.
+`watchColumns()` declares which attribute changes trigger incremental
+maintenance.
+
+Supported operations: `Sum`, `Count`, `Min`, `Max`. `Avg` is not
+supported — declare a Sum and Count pair and compute the ratio yourself.
+
+#### Migration
+
+Listener columns use the same macro as SQL aggregates:
+
+```php
+$table->nestedSetAggregate('weighted_power');             // integer, NOT NULL, default 0
+$table->nestedSetAggregate('fire_count');                  // integer, NOT NULL, default 0
+$table->nestedSetAggregate('fire_max', type: 'min_max');  // nullable, for Min/Max
+```
+
+#### Method-override form
+
+```php
+use Vusys\NestedSet\Aggregates\ListenerAggregate;
+
+/** @return list<\Vusys\NestedSet\Aggregates\ListenerAggregateDefinition> */
+protected function nestedSetListenerAggregates(): array
+{
+    return [
+        ListenerAggregate::sum(WeightedPowerListener::class)->into('weighted_power'),
+        ListenerAggregate::max(FireMaxListener::class)->into('fire_max'),
+    ];
+}
+```
+
+Attribute and method-override forms can coexist; attribute declarations
+come first.
+
+#### Maintenance
+
+Listener aggregates ride the same lifecycle hooks as SQL aggregates. On
+each save the package calls `contribution()` on the changed node, computes
+a delta, and propagates it up the ancestor chain. Min/Max listener columns
+that may have been invalidated trigger a PHP-based ancestor recompute
+(loads Eloquent models for each affected ancestor's subtree and recomputes
+in PHP).
+
+`fixAggregates()`, `aggregateErrors()`, and `freshAggregate()` all cover
+listener columns:
+
+```php
+Pokemon::fixAggregates();              // repairs SQL and listener columns together
+Pokemon::aggregateErrors();            // counts drift in both column types
+$node->freshAggregate('weighted_power'); // PHP-computed fresh value for one node
+```
+
+`replicate()` resets listener columns to `0` (Sum/Count) or `null`
+(Min/Max) on clones, matching the SQL-aggregate behaviour.
+
+#### Listener aggregate limitations
+
+- **`withFreshAggregates()` does not cover listener columns** — the
+  collection-level fresh-read path is SQL-only. Use `freshAggregate('col')`
+  for a single node or repair the whole set with `fixAggregates()`.
+- **`fixAggregates()` is O(N²) for listener columns** — it loads every
+  in-scope node and scans each node's subtree in PHP. Use
+  `withDeferredAggregateMaintenance()` for batch mutations to amortise
+  the cost down to one pass.
+- **Filters are encoded in the listener itself** — there is no `filter:`
+  param on `#[NestedSetAggregateListener]`. Return `null` from
+  `contribution()` to exclude a node, or `0` / `1` to count conditionally.
+
+---
+
 ### Maintenance
 
 Aggregates ride the package's existing lifecycle events:
