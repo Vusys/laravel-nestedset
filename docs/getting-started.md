@@ -13,16 +13,20 @@ $root = Category::create(['name' => 'All categories']);
 
 ## Add children
 
-```php
-$electronics = Category::create(['name' => 'Electronics']);
-$root->appendNode($electronics);
+Build the child, then position it relative to its parent. The mutation is
+deferred until `save()` so the lft/rgt shift happens in a single
+transaction.
 
-$root->children()->create(['name' => 'Books']);
+```php
+$electronics = new Category(['name' => 'Electronics']);
+$electronics->appendToNode($root)->save();
+
+$books = new Category(['name' => 'Books']);
+$books->appendToNode($root)->save();
 ```
 
-Both forms work. `appendNode` is useful when you already have the child
-loaded; the relation-style `children()->create()` is closer to how you'd
-build an adjacency tree in plain Eloquent.
+`prependToNode`, `insertBeforeNode`, and `insertAfterNode` give you the
+other positions.
 
 ## Read the tree back
 
@@ -31,7 +35,7 @@ $tree = Category::get()->toTree();
 ```
 
 `toTree()` walks the flat collection and assembles the hierarchy in memory
-using the `_lft` / `_rgt` ranges — one query, full tree.
+using the `lft` / `rgt` ranges — one query, full tree.
 
 ## Move a subtree
 
