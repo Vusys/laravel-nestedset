@@ -1,9 +1,0 @@
-{
-    "name": "laravel-nestedset-docs",
-    "private": true,
-    "description": "Frontend assets for the laravel-nestedset documentation site",
-    "packageManager": "pnpm@9.0.0",
-    "dependencies": {
-        "normalize.css": "8.0.1"
-    }
-}

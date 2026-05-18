@@ -28,9 +28,6 @@ $converter = makeConverter();
 
 resetDir($siteDir);
 copyPublic($publicSrc, $siteDir);
-copyNpmAssets(__DIR__ . '/node_modules', $siteDir, [
-    'normalize.css/normalize.css' => 'normalize.css',
-]);
 
 $pages    = flattenNav($nav);
 $builtAt  = time();
@@ -162,31 +159,6 @@ function copyPublic(string $src, string $dest): void
         } else {
             copy($item->getPathname(), $target);
         }
-    }
-}
-
-/**
- * Copy specific files out of node_modules into the build output.
- *
- * The map is {package-relative source path} => {output path inside site/}.
- * Missing files emit a loud warning so a forgotten `pnpm install` doesn't
- * silently ship a broken stylesheet reference.
- */
-function copyNpmAssets(string $nodeModulesDir, string $siteDir, array $map): void
-{
-    if (!is_dir($nodeModulesDir)) {
-        fwrite(STDERR, "warn: docs-site/node_modules missing — run `pnpm install` in docs-site/\n");
-        return;
-    }
-    foreach ($map as $source => $target) {
-        $sourcePath = $nodeModulesDir . '/' . $source;
-        $targetPath = $siteDir . '/' . $target;
-        if (!is_file($sourcePath)) {
-            fwrite(STDERR, "warn: npm asset missing: {$source}\n");
-            continue;
-        }
-        @mkdir(dirname($targetPath), 0777, true);
-        copy($sourcePath, $targetPath);
     }
 }
 

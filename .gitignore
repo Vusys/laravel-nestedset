@@ -9,5 +9,3 @@
 /site
 /docs-site/vendor
 /docs-site/composer.lock
-/docs-site/node_modules
-/docs-site/pnpm-lock.yaml
