@@ -128,7 +128,7 @@ final class RecomputeMaintenance
             $func = $spec['function'] === AggregateFunction::Max ? 'MAX' : 'MIN';
             $source = $spec['source'];
 
-            $filterPredicate = isset($spec['filter']) ? $spec['filter'] : null;
+            $filterPredicate = $spec['filter'] ?? null;
 
             if ($filterPredicate !== null) {
                 $pred = self::filterPredicateSql($filterPredicate, 'inner_a.');

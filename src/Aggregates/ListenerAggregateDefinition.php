@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**
  * Immutable resolved declaration for a listener-based aggregate column.
  *
  * Produced by {@see ListenerAggregate::into()} (method-override form) or
- * by {@see \Vusys\NestedSet\Attributes\NestedSetAggregateListener::toDefinition()}
+ * by {@see NestedSetAggregateListener::toDefinition()}
  * (attribute form), and stored in the aggregate registry.
  *
  * Implements {@see AggregateDefinitionContract} so it can be handled

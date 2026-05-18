@@ -39,7 +39,7 @@ final readonly class NestedSetAggregate
 {
     /**
      * @param  array<string,mixed>|null  $filter
-     * @param  list<string>              $filterRawWatches
+     * @param  list<string>  $filterRawWatches
      */
     public function __construct(
         public string $column,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Concerns;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
@@ -145,10 +146,10 @@ trait HasNestedSetAggregates
      */
     private function freshListenerAggregate(ListenerAggregateDefinition $definition): int|float|null
     {
-        $bounds   = $this->getBounds();
-        $lftCol   = $this->getLftName();
-        $rgtCol   = $this->getRgtName();
-        $scope    = NestedSetScopeResolver::valuesFor($this);
+        $bounds = $this->getBounds();
+        $lftCol = $this->getLftName();
+        $rgtCol = $this->getRgtName();
+        $scope = NestedSetScopeResolver::valuesFor($this);
         $listener = $definition->makeListener();
 
         $query = static::query();
@@ -158,10 +159,10 @@ trait HasNestedSetAggregates
 
         if ($definition->isInclusive()) {
             $query->where($lftCol, '>=', $bounds->lft)
-                  ->where($rgtCol, '<=', $bounds->rgt);
+                ->where($rgtCol, '<=', $bounds->rgt);
         } else {
             $query->where($lftCol, '>', $bounds->lft)
-                  ->where($rgtCol, '<', $bounds->rgt);
+                ->where($rgtCol, '<', $bounds->rgt);
         }
 
         /** @var list<int|float> $contributions */
@@ -236,17 +237,19 @@ trait HasNestedSetAggregates
                 $definition->source !== null ? [$definition->source] : [],
                 $watchCols,
             ));
-
             // Skip if nothing relevant is dirty.
-            if ($triggerCols === [] || ! $this->isDirty($triggerCols)) {
+            if ($triggerCols === []) {
+                continue;
+            }
+            if (! $this->isDirty($triggerCols)) {
                 continue;
             }
 
             // Evaluate filter against new and old attribute sets.
-            $newPred = $definition->filter !== null
+            $newPred = $definition->filter instanceof FilterPredicate
                 ? ($definition->filter->evaluateFor($this->getAttributes()) ?? true)
                 : true;
-            $oldPred = $definition->filter !== null
+            $oldPred = $definition->filter instanceof FilterPredicate
                 ? ($definition->filter->evaluateFor($this->getOriginal()) ?? true)
                 : true;
 
@@ -362,14 +365,15 @@ trait HasNestedSetAggregates
 
             $listener = $definition->makeListener();
             $watchCols = $listener->watchColumns();
-
-            if ($watchCols === [] || ! $this->isDirty($watchCols)) {
+            if ($watchCols === []) {
+                continue;
+            }
+            if (! $this->isDirty($watchCols)) {
                 continue;
             }
 
             // Old contribution: snapshot of pre-save attributes
-            /** @var static $oldSnapshot */
-            $oldSnapshot = new static();
+            $oldSnapshot = new static;
             $oldSnapshot->setRawAttributes($this->getOriginal(), true);
             $oldRaw = $listener->contribution($oldSnapshot);
             $oldVal = (int) ($oldRaw ?? 0);
@@ -385,6 +389,7 @@ trait HasNestedSetAggregates
                 if ($delta !== 0) {
                     $this->capturedAggregateDeltas[$definition->column] = $delta;
                 }
+
                 continue;
             }
 
@@ -394,6 +399,7 @@ trait HasNestedSetAggregates
                 } elseif ($newVal < $oldVal) {
                     $this->capturedListenerRecomputes[$definition->column] = $definition;
                 }
+
                 continue;
             }
 
@@ -545,7 +551,7 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Sum && $definition->source !== null) {
-                if ($definition->filter !== null) {
+                if ($definition->filter instanceof FilterPredicate) {
                     if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
                         continue;
                     }
@@ -562,7 +568,7 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Count) {
-                if ($definition->filter !== null) {
+                if ($definition->filter instanceof FilterPredicate) {
                     if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
                         continue;
                     }
@@ -570,11 +576,9 @@ trait HasNestedSetAggregates
                         continue;
                     }
                 }
-                if ($definition->source !== null) {
-                    // COUNT(source) — only contribute if source is non-null.
-                    if ($this->getAttribute($definition->source) === null) {
-                        continue;
-                    }
+                // COUNT(source) — only contribute if source is non-null.
+                if ($definition->source !== null && $this->getAttribute($definition->source) === null) {
+                    continue;
                 }
                 $deltas[$definition->column] = 1;
 
@@ -585,7 +589,7 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                if ($definition->filter !== null) {
+                if ($definition->filter instanceof FilterPredicate) {
                     if ($definition->filter->getKind() === FilterPredicateKind::Raw) {
                         continue;
                     }
@@ -722,6 +726,7 @@ trait HasNestedSetAggregates
                 if ($value !== 0) {
                     $deltas[$definition->column] = -$value;
                 }
+
                 continue;
             }
 
@@ -933,6 +938,7 @@ trait HasNestedSetAggregates
                 if ($value !== 0) {
                     $sumCount[$definition->column] = $value;
                 }
+
                 continue;
             }
 
@@ -1057,6 +1063,7 @@ trait HasNestedSetAggregates
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
                 }
+
                 continue;
             }
 
@@ -1249,8 +1256,8 @@ trait HasNestedSetAggregates
      * in PHP, aggregates per outer node, and writes drifted rows.
      *
      * @param  list<ListenerAggregateDefinition>  $definitions
-     * @param  array<string, mixed>               $scope
-     * @param  list<int>|null                     $outerIds  null = fix all
+     * @param  array<string, mixed>  $scope
+     * @param  list<int>|null  $outerIds  null = fix all
      */
     private static function fixListenerAggregatesPhp(
         array $definitions,
@@ -1262,9 +1269,9 @@ trait HasNestedSetAggregates
             return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
         }
 
-        $instance = new static();
-        $lftCol   = $instance->getLftName();
-        $rgtCol   = $instance->getRgtName();
+        $instance = new static;
+        $lftCol = $instance->getLftName();
+        $rgtCol = $instance->getRgtName();
 
         // Load ALL nodes (need every node for contribution-computation, even
         // when outerIds restricts which rows we ultimately write back).
@@ -1328,7 +1335,7 @@ trait HasNestedSetAggregates
 
                     $inBounds = $def->isInclusive()
                         ? ($innerLft >= $outerLft && $innerRgt <= $outerRgt)
-                        : ($innerLft > $outerLft  && $innerRgt < $outerRgt);
+                        : ($innerLft > $outerLft && $innerRgt < $outerRgt);
 
                     if (! $inBounds) {
                         continue;
@@ -1341,7 +1348,7 @@ trait HasNestedSetAggregates
                 }
 
                 $computed = self::applyListenerOperation($def, $innerContribs);
-                $stored   = $outer->getAttribute($def->column);
+                $stored = $outer->getAttribute($def->column);
 
                 if (! TreeAggregateBuilder::aggregatesEqual($stored, $computed)) {
                     $id = $outer->getKey();
@@ -1376,14 +1383,14 @@ trait HasNestedSetAggregates
      * Loads all in-scope Eloquent models for the listener fix/error pass.
      *
      * @param  array<string, mixed>  $scope
-     * @return \Illuminate\Database\Eloquent\Collection<int, static>
+     * @return Collection<int, static>
      */
     private static function loadAllListenerNodes(
         array $scope,
         ?int $rootId,
         string $lftCol,
         string $rgtCol,
-    ): \Illuminate\Database\Eloquent\Collection {
+    ): Collection {
         $query = static::query();
 
         foreach ($scope as $col => $value) {
@@ -1391,15 +1398,15 @@ trait HasNestedSetAggregates
         }
 
         if ($rootId !== null) {
-            $instance = new static();
-            $rootRow  = $instance->getConnection()
+            $instance = new static;
+            $rootRow = $instance->getConnection()
                 ->table($instance->getTable())
                 ->where('id', $rootId)
                 ->first([$lftCol, $rgtCol]);
 
             if ($rootRow !== null) {
                 $query->where($lftCol, '>=', (int) $rootRow->{$lftCol})
-                      ->where($rgtCol, '<=', (int) $rootRow->{$rgtCol});
+                    ->where($rgtCol, '<=', (int) $rootRow->{$rgtCol});
             }
         }
 
@@ -1416,11 +1423,11 @@ trait HasNestedSetAggregates
         array $contributions,
     ): int|float|null {
         return match ($def->operation) {
-            AggregateFunction::Sum   => $contributions === [] ? 0 : array_sum($contributions),
+            AggregateFunction::Sum => $contributions === [] ? 0 : array_sum($contributions),
             AggregateFunction::Count => count($contributions),
-            AggregateFunction::Min   => $contributions === [] ? null : min($contributions),
-            AggregateFunction::Max   => $contributions === [] ? null : max($contributions),
-            AggregateFunction::Avg   => throw new AggregateConfigurationException(
+            AggregateFunction::Min => $contributions === [] ? null : min($contributions),
+            AggregateFunction::Max => $contributions === [] ? null : max($contributions),
+            AggregateFunction::Avg => throw new AggregateConfigurationException(
                 'Listener aggregates do not support AVG operation.',
             ),
         };
@@ -1456,7 +1463,7 @@ trait HasNestedSetAggregates
      * Counts stored-vs-computed disagreements for listener aggregate columns.
      *
      * @param  list<ListenerAggregateDefinition>  $definitions
-     * @param  array<string, mixed>               $scope
+     * @param  array<string, mixed>  $scope
      * @return array<string, int>
      */
     private static function aggregateErrorsForListeners(
@@ -1475,9 +1482,9 @@ trait HasNestedSetAggregates
             return $errors;
         }
 
-        $instance = new static();
-        $lftCol   = $instance->getLftName();
-        $rgtCol   = $instance->getRgtName();
+        $instance = new static;
+        $lftCol = $instance->getLftName();
+        $rgtCol = $instance->getRgtName();
         $allNodes = self::loadAllListenerNodes($scope, $rootId, $lftCol, $rgtCol);
 
         if ($allNodes->isEmpty()) {
@@ -1525,7 +1532,7 @@ trait HasNestedSetAggregates
 
                     $inBounds = $def->isInclusive()
                         ? ($innerLft >= $outerLft && $innerRgt <= $outerRgt)
-                        : ($innerLft > $outerLft  && $innerRgt < $outerRgt);
+                        : ($innerLft > $outerLft && $innerRgt < $outerRgt);
 
                     if (! $inBounds) {
                         continue;
@@ -1538,7 +1545,7 @@ trait HasNestedSetAggregates
                 }
 
                 $computed = self::applyListenerOperation($def, $innerContribs);
-                $stored   = $outer->getAttribute($def->column);
+                $stored = $outer->getAttribute($def->column);
 
                 if (! TreeAggregateBuilder::aggregatesEqual($stored, $computed)) {
                     $errors[$def->column] = ($errors[$def->column] ?? 0) + 1;

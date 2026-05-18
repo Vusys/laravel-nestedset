@@ -524,7 +524,7 @@ final class TreeAggregateBuilder
      */
     private static function aggregateExpression(AggregateDefinition $definition, string $qualifier): string
     {
-        if ($definition->filter !== null) {
+        if ($definition->filter instanceof FilterPredicate) {
             return self::filteredAggregateExpression($definition, $qualifier, $definition->filter);
         }
 
@@ -685,7 +685,7 @@ final class TreeAggregateBuilder
             };
         }
 
-        if ($definition->filter !== null) {
+        if ($definition->filter instanceof FilterPredicate) {
             return self::filteredLeafInlineExpression($definition, $tableQualifier, $definition->filter);
         }
 

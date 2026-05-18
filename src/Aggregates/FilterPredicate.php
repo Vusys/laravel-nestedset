@@ -16,7 +16,7 @@ final readonly class FilterPredicate
 {
     /**
      * @param  array<string,mixed>  $conditions
-     * @param  list<string>         $watches
+     * @param  list<string>  $watches
      */
     private function __construct(
         private FilterPredicateKind $kind,
@@ -31,6 +31,7 @@ final readonly class FilterPredicate
      * At least one condition must be provided.
      *
      * @param  array<string,mixed>  $conditions
+     *
      * @throws AggregateConfigurationException when $conditions is empty.
      */
     public static function equality(array $conditions): self

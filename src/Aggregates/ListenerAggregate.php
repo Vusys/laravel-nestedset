@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**
@@ -18,7 +19,7 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *         ];
  *     }
  *
- * The attribute form ({@see \Vusys\NestedSet\Attributes\NestedSetAggregateListener})
+ * The attribute form ({@see NestedSetAggregateListener})
  * is preferred for static declarations; this class is the escape hatch
  * for runtime / conditional declarations.
  *
