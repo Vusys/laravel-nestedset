@@ -2,7 +2,8 @@
 
 A small, dependency-light static site generator for the project
 documentation. Pure PHP. Reads Markdown from `../docs`, writes HTML to
-`../site`.
+`../site`. Third-party CSS and JS (normalize.css, Prism) are loaded
+from a CDN at runtime, so the only build dep is `league/commonmark`.
 
 ## One-time setup
 
@@ -83,7 +84,8 @@ docs-site/
 ├── serve.php           # Build + dev server + file watcher
 ├── composer.json       # league/commonmark only
 ├── templates/
-│   └── layout.php      # Single page template
+│   └── layout.php      # Single page template — links normalize.css and
+│                       # Prism from jsdelivr CDN
 └── public/
     ├── style.css       # All site styles
     └── app.js          # Theme toggle + live-reload polling
