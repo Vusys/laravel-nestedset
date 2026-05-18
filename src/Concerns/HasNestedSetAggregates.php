@@ -595,6 +595,7 @@ trait HasNestedSetAggregates
             scope: $scope,
             filterEquals: $filterEquals,
             locking: self::aggregateLockingMode(),
+            softDeletedColumn: $this->softDeleteColumn(),
         );
     }
 
@@ -646,6 +647,7 @@ trait HasNestedSetAggregates
             filterEquals: [],   // recompute every ancestor; no cheap-skip
             locking: self::aggregateLockingMode(),
             excludeBounds: $excludeBounds,
+            softDeletedColumn: $this->softDeleteColumn(),
         );
     }
 
@@ -1327,6 +1329,7 @@ trait HasNestedSetAggregates
             filterEquals: $filterEquals,
             locking: self::aggregateLockingMode(),
             excludeBounds: $excludeBounds,
+            softDeletedColumn: $this->softDeleteColumn(),
         );
     }
 
@@ -2147,6 +2150,7 @@ trait HasNestedSetAggregates
             rootId: $rootId,
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
+            softDeletedColumn: $instance->softDeleteColumn(),
         );
 
         $listenerErrors = self::aggregateErrorsForListeners(
@@ -2223,6 +2227,7 @@ trait HasNestedSetAggregates
             rootId: $rootId,
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
+            softDeletedColumn: $instance->softDeleteColumn(),
         );
 
         $listenerResult = self::fixListenerAggregatesPhp(
@@ -2397,6 +2402,7 @@ trait HasNestedSetAggregates
             definitions: AggregateRegistry::for(static::class),
             rootId: $rootId,
             outerIds: $ids,
+            softDeletedColumn: $instance->softDeleteColumn(),
         );
 
         $listenerChunkResult = self::fixListenerAggregatesPhp(
@@ -2637,6 +2643,7 @@ trait HasNestedSetAggregates
             rootId: $rootId,
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
+            softDeletedColumn: $instance->softDeleteColumn(),
         );
 
         $listenerResult = self::fixListenerAggregatesPhp(

@@ -50,7 +50,7 @@ abstract class TestCase extends OrchestraTestCase
     {
         parent::setUp();
 
-        $tables = ['areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters'];
+        $tables = ['areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches'];
 
         foreach ($tables as $table) {
             if (DB::connection()->getSchemaBuilder()->hasTable($table)) {

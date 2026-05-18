@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Query;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
@@ -433,9 +434,31 @@ final class TreeAggregateBuilder
             $bindings[] = $value;
         }
 
-        $sql = "SELECT {$aggregateExpr} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}";
+        $softClause = '';
+        $softDeletedColumn = self::softDeletedColumnFor($node);
+        if ($softDeletedColumn !== null) {
+            $softClause = " AND {$softDeletedColumn} IS NULL";
+        }
+
+        $sql = "SELECT {$aggregateExpr} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
         return $node->getConnection()->scalar($sql, $bindings);
+    }
+
+    /**
+     * Returns the soft-delete column name for models that use Eloquent's
+     * SoftDeletes trait, or null otherwise. Used to filter trashed rows
+     * out of fresh-aggregate reads so the result reflects the live set.
+     */
+    private static function softDeletedColumnFor(Model $node): ?string
+    {
+        if (! in_array(SoftDeletes::class, class_uses_recursive($node), true)) {
+            return null;
+        }
+
+        $column = (new \ReflectionMethod($node, 'getDeletedAtColumn'))->invoke($node);
+
+        return is_string($column) ? $column : null;
     }
 
     /**
@@ -755,7 +778,7 @@ final class TreeAggregateBuilder
      * references the caller should use in JOIN / WHERE / GROUP BY.
      *
      * @param  list<string>  $scopeCols
-     * @return array{from: string, outerLft: string, outerRgt: string, outerId: string, outerScope: array<string, string>}
+     * @return array{from: string, outerLft: string, outerRgt: string, outerId: string, outerScope: array<string, string>, outerSoftDeleted: string|null}
      */
     private static function outerFromFragment(
         string $table,
@@ -765,6 +788,7 @@ final class TreeAggregateBuilder
         bool $rawFilterPresent,
         string $outerAlias,
         string $idCol = 'id',
+        ?string $softDeletedColumn = null,
     ): array {
         if (! $rawFilterPresent) {
             $scopeRefs = [];
@@ -778,6 +802,9 @@ final class TreeAggregateBuilder
                 'outerRgt' => "{$outerAlias}.{$rgtCol}",
                 'outerId' => "{$outerAlias}.{$idCol}",
                 'outerScope' => $scopeRefs,
+                'outerSoftDeleted' => $softDeletedColumn !== null
+                    ? "{$outerAlias}.{$softDeletedColumn}"
+                    : null,
             ];
         }
 
@@ -791,6 +818,11 @@ final class TreeAggregateBuilder
             $projections[] = "{$col} AS ".self::renamedOuterColumn($col);
             $outerScope[$col] = "{$outerAlias}.".self::renamedOuterColumn($col);
         }
+        $outerSoftDeleted = null;
+        if ($softDeletedColumn !== null) {
+            $projections[] = "{$softDeletedColumn} AS ".self::renamedOuterColumn($softDeletedColumn);
+            $outerSoftDeleted = "{$outerAlias}.".self::renamedOuterColumn($softDeletedColumn);
+        }
 
         return [
             'from' => '(SELECT '.implode(', ', $projections)." FROM {$table}) AS {$outerAlias}",
@@ -798,6 +830,7 @@ final class TreeAggregateBuilder
             'outerRgt' => "{$outerAlias}.".self::renamedOuterColumn($rgtCol),
             'outerId' => "{$outerAlias}.".self::renamedOuterColumn($idCol),
             'outerScope' => $outerScope,
+            'outerSoftDeleted' => $outerSoftDeleted,
         ];
     }
 
@@ -1122,6 +1155,7 @@ final class TreeAggregateBuilder
         ?int $rootId = null,
         ?string $parentIdCol = null,
         ?string $depthCol = null,
+        ?string $softDeletedColumn = null,
     ): array {
         $userFacing = [];
         foreach ($definitions as $def) {
@@ -1144,6 +1178,7 @@ final class TreeAggregateBuilder
             rootId: $rootId,
             parentIdCol: $parentIdCol,
             depthCol: $depthCol,
+            softDeletedColumn: $softDeletedColumn,
         );
 
         $errors = [];
@@ -1191,6 +1226,7 @@ final class TreeAggregateBuilder
         ?array $outerIds = null,
         ?string $parentIdCol = null,
         ?string $depthCol = null,
+        ?string $softDeletedColumn = null,
     ): AggregateFixResult {
         $sqlDefinitions = [];
         foreach ($definitions as $def) {
@@ -1228,6 +1264,7 @@ final class TreeAggregateBuilder
             outerIds: $outerIds,
             parentIdCol: $parentIdCol,
             depthCol: $depthCol,
+            softDeletedColumn: $softDeletedColumn,
         );
 
         $perColumn = [];
@@ -1381,6 +1418,7 @@ final class TreeAggregateBuilder
         ?array $outerIds = null,
         ?string $parentIdCol = null,
         ?string $depthCol = null,
+        ?string $softDeletedColumn = null,
     ): array {
         if ($definitions === []) {
             return [];
@@ -1411,7 +1449,7 @@ final class TreeAggregateBuilder
             && $outerIds === null
             && $parentIdCol !== null
             && $depthCol !== null
-            && self::isChainShape($connection, $table, $parentIdCol, $lftCol, $rgtCol, $scope, $rootId)
+            && self::isChainShape($connection, $table, $parentIdCol, $lftCol, $rgtCol, $scope, $rootId, $softDeletedColumn)
         ) {
             return self::selectStoredAndComputedViaChainFold(
                 connection: $connection,
@@ -1423,6 +1461,7 @@ final class TreeAggregateBuilder
                 scope: $scope,
                 definitions: $definitions,
                 rootId: $rootId,
+                softDeletedColumn: $softDeletedColumn,
             );
         }
 
@@ -1448,6 +1487,7 @@ final class TreeAggregateBuilder
                 inclusive: $mode === 'inclusive',
                 rootId: $rootId,
                 outerIds: $outerIds,
+                softDeletedColumn: $softDeletedColumn,
             );
 
             foreach ($rows as $row) {
@@ -1483,6 +1523,7 @@ final class TreeAggregateBuilder
         string $rgtCol,
         array $scope,
         ?int $rootId,
+        ?string $softDeletedColumn = null,
     ): bool {
         $sql = "SELECT 1 FROM {$table} WHERE 1 = 1";
         $bindings = [];
@@ -1490,6 +1531,10 @@ final class TreeAggregateBuilder
         foreach ($scope as $col => $value) {
             $sql .= " AND {$col} = ?";
             $bindings[] = $value;
+        }
+
+        if ($softDeletedColumn !== null) {
+            $sql .= " AND {$softDeletedColumn} IS NULL";
         }
 
         if ($rootId !== null) {
@@ -1528,6 +1573,7 @@ final class TreeAggregateBuilder
         array $scope,
         array $definitions,
         ?int $rootId,
+        ?string $softDeletedColumn = null,
     ): array {
         // Collect every column we need to fetch: source columns (for
         // the fold input), stored aggregate columns (for the diff
@@ -1547,6 +1593,10 @@ final class TreeAggregateBuilder
         foreach ($scope as $col => $value) {
             $sql .= " AND {$col} = ?";
             $bindings[] = $value;
+        }
+
+        if ($softDeletedColumn !== null) {
+            $sql .= " AND {$softDeletedColumn} IS NULL";
         }
 
         if ($rootId !== null) {
@@ -1759,6 +1809,7 @@ final class TreeAggregateBuilder
         bool $inclusive,
         ?int $rootId,
         ?array $outerIds = null,
+        ?string $softDeletedColumn = null,
     ): array {
         $rawFilterContext = self::hasRawFilter($definitions);
         $outer = self::outerFromFragment(
@@ -1768,6 +1819,7 @@ final class TreeAggregateBuilder
             scopeCols: array_keys($scope),
             rawFilterPresent: $rawFilterContext,
             outerAlias: 'o',
+            softDeletedColumn: $softDeletedColumn,
         );
 
         $outerSelects = ['outer_a.id AS id'];
@@ -1812,6 +1864,15 @@ final class TreeAggregateBuilder
             $innerWhere .= " AND {$outer['outerScope'][$col]} = ?";
             $bindings[] = $value;
         }
+        if ($softDeletedColumn !== null) {
+            // Inner descendant rows must skip trashed so the computed
+            // aggregate reflects the live set.
+            $innerWhere .= " AND i.{$softDeletedColumn} IS NULL";
+            // The inner-side outer (alias `o` inside the derived agg
+            // table) must skip trashed too, otherwise we'd compute
+            // values that will never be JOINed to a live outer_a.
+            $innerWhere .= " AND {$outer['outerSoftDeleted']} IS NULL";
+        }
         if ($rootId !== null) {
             $innerWhere .= " AND {$outer['outerLft']} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
             $innerWhere .= " AND {$outer['outerRgt']} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
@@ -1834,6 +1895,12 @@ final class TreeAggregateBuilder
         foreach ($scope as $col => $value) {
             $outerWhere .= " AND outer_a.{$col} = ?";
             $bindings[] = $value;
+        }
+        if ($softDeletedColumn !== null) {
+            // Snapshot semantics: trashed ancestors don't appear in
+            // the stored-vs-computed pairing — their stored values are
+            // frozen by design and shouldn't be flagged as drift.
+            $outerWhere .= " AND outer_a.{$softDeletedColumn} IS NULL";
         }
         if ($rootId !== null) {
             $outerWhere .= " AND outer_a.{$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
