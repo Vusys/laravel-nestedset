@@ -824,6 +824,13 @@ $node->freshAggregate('weighted_power'); // PHP-computed fresh value for one nod
   in-scope node and scans each node's subtree in PHP. Use
   `withDeferredAggregateMaintenance()` for batch mutations to amortise
   the cost down to one pass.
+- **Listener repair / Min-Max recompute holds the bounding-box
+  subtree in PHP memory.** `fixAggregates()` loads every in-scope
+  Eloquent model; the Min/Max recompute path loads every in-scope
+  node under the topmost affected ancestor. At N > ~100K nodes this
+  is the more pressing constraint than CPU. Anchored
+  `fixAggregates($subtreeRoot)` and chunked `fixAggregates(chunkSize: …)`
+  both bound the working set.
 - **Filters are encoded in the listener itself** — there is no `filter:`
   param on `#[NestedSetAggregateListener]`. Return `null` from
   `contribution()` to exclude a node, or `0` / `1` to count conditionally.
@@ -871,6 +878,15 @@ class Department extends Model implements HasNestedSet { use NodeTrait; }
 `budget_below = 0`. A folder with three children each holding
 `budget = 100` reports `budget_inclusive = 300 + own_budget` and
 `budget_below = 300`.
+
+> **Maintenance caveat:** the incremental delta path skips exclusive
+> declarations today (a comment marks the spot for the planned
+> follow-up). Exclusive columns stay at their migration default
+> until `fixAggregates()` runs. `withFreshAggregates()` and
+> `freshAggregate()` *do* compute them on the fly. For dashboards
+> that need exclusive values live, prefer fresh-read or schedule a
+> periodic `fixAggregates()`; for stored-value reads, only the
+> inclusive declaration is reliably maintained on save.
 
 #### Date-window roll-ups via raw filter
 
