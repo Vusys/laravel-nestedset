@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**
@@ -18,7 +19,7 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *         ];
  *     }
  *
- * The attribute form ({@see \Vusys\NestedSet\Attributes\NestedSetAggregateListener})
+ * The attribute form ({@see NestedSetAggregateListener})
  * is preferred for static declarations; this class is the escape hatch
  * for runtime / conditional declarations.
  *
@@ -89,20 +90,13 @@ final readonly class ListenerAggregate
      * Bind this aggregate to a stored column on the model. Returns the
      * immutable resolved definition the registry stores.
      *
-     * @throws AggregateConfigurationException when $column is empty or
-     *                                         when the operation is Avg (not supported for listeners).
+     * @throws AggregateConfigurationException when $column is empty.
      */
     public function into(string $column): ListenerAggregateDefinition
     {
         if ($column === '') {
             throw new AggregateConfigurationException(
                 'ListenerAggregate target column name must not be empty.',
-            );
-        }
-
-        if ($this->operation === AggregateFunction::Avg) {
-            throw new AggregateConfigurationException(
-                'ListenerAggregate does not support Avg. Use Sum and Count companions manually.',
             );
         }
 

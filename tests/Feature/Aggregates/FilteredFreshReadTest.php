@@ -32,6 +32,8 @@ final class FilteredFreshReadTest extends TestCase
             ['id' => 4, 'name' => 'WaterChild', 'tickets' => 15, 'type' => 'water', 'lft' => 5,  'rgt' => 6,  'depth' => 2, 'parent_id' => 3],
             ['id' => 5, 'name' => 'Water1',     'tickets' => 40, 'type' => 'water', 'lft' => 8,  'rgt' => 9,  'depth' => 1, 'parent_id' => 1],
         ]);
+
+        $this->syncSequence('typed_areas');
     }
 
     private function asInt(mixed $value): int

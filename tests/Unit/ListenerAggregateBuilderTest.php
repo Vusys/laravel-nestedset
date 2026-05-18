@@ -107,38 +107,4 @@ final class ListenerAggregateBuilderTest extends TestCase
 
         ListenerAggregate::sum(WeightedPowerListener::class)->into('');
     }
-
-    public function test_into_throws_when_operation_is_avg(): void
-    {
-        // Construct a ListenerAggregateDefinition directly with Avg to simulate
-        // the unsupported operation path from into(). Since there is no static
-        // ListenerAggregate::avg() factory (it is intentionally omitted), we
-        // instead verify via the definition's operation constraint by building
-        // a definition directly with Avg and confirm into() on a builder that
-        // would arrive at Avg is blocked. We test the guard by routing through
-        // a reflection-created instance or by confirming the definition rejects Avg.
-        //
-        // The simplest approach: create a ListenerAggregateDefinition with Avg and
-        // verify it holds (the definition itself doesn't throw — only ListenerAggregate::into()
-        // does). So we verify the into() guard via a workaround: subclass or partial state.
-        //
-        // Actually the cleanest test is: confirm there is no avg() static method on
-        // ListenerAggregate, and that building a definition directly with Avg succeeds
-        // (definition itself is neutral) but into() on a builder reaching Avg throws.
-        //
-        // Since we can't call ListenerAggregate::avg() (it doesn't exist), the into() Avg
-        // guard would only be hit if someone constructs the builder through reflection.
-        // Test the guard exists in ListenerAggregateDefinition indirectly through the
-        // attribute's toDefinition() test (NestedSetAggregateListenerAttributeTest) and
-        // confirm the definition itself stores Avg without throwing:
-        $definition = new ListenerAggregateDefinition(
-            column: 'test_col',
-            listenerClass: WeightedPowerListener::class,
-            operation: AggregateFunction::Avg,
-        );
-
-        // The definition stores it — the guard is in ListenerAggregate::into() and
-        // NestedSetAggregateListener::toDefinition(). The definition is neutral storage.
-        $this->assertSame(AggregateFunction::Avg, $definition->operation);
-    }
 }

@@ -42,6 +42,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
             'water_max' => null,
             'has_tickets' => 0,
         ]);
+
+        $this->syncSequence('typed_areas');
     }
 
     private function asInt(mixed $value): int

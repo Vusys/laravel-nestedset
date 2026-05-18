@@ -46,10 +46,10 @@ final class ListenerAggregateRepairTest extends TestCase
         $children = [];
         for ($i = 0; $i < $childCount; $i++) {
             $child = new Pokemon([
-                'name'       => "Child{$i}",
-                'type'       => 'fire',
+                'name' => "Child{$i}",
+                'type' => 'fire',
                 'base_power' => 5,
-                'level'      => 3,
+                'level' => 3,
             ]);
             $child->appendToNode($root)->save();
             $children[] = $child->refresh();
@@ -197,7 +197,7 @@ final class ListenerAggregateRepairTest extends TestCase
         // Manually inject known aggregate values
         DB::table('pokemon')->where('id', $root->id)->update([
             'weighted_power' => 42,
-            'fire_count'     => 3,
+            'fire_count' => 3,
         ]);
         $root->refresh();
 

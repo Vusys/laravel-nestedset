@@ -21,6 +21,10 @@ return new class extends Migration
 
             $table->nestedSetAggregate('weighted_power');
             $table->nestedSetAggregate('fire_count');
+            // Decimal column for float-listener tests: the listener returns
+            // (base_power * level) / 2 — exercises the int|float path through
+            // captureAggregateDeltas / DeltaMaintenance.
+            $table->decimal('half_weighted_power', 14, 4)->default(0);
 
             $table->timestamps();
         });

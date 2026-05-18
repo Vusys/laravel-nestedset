@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
+use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -14,12 +15,10 @@ use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeTrait;
-use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\ListenerMethodArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\ListenerOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\MixedAggregatesArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
-use Illuminate\Database\Eloquent\Model;
 
 final class ListenerAggregateRegistryTest extends TestCase
 {

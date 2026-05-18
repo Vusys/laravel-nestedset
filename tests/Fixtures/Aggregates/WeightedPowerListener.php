@@ -14,7 +14,7 @@ use Vusys\NestedSet\Aggregates\TreeAggregateListener;
  */
 final class WeightedPowerListener implements TreeAggregateListener
 {
-    public function contribution(Model $node): int|null
+    public function contribution(Model $node): ?int
     {
         $basePower = $node->getAttribute('base_power');
         $level = $node->getAttribute('level');
