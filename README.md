@@ -668,7 +668,15 @@ The fluent builder equivalents:
 Aggregate::sum('tickets')->filter(['type' => 'fire'])->into('fire_tickets')
 Aggregate::count()->filterNotNull('tickets')->into('has_tickets')
 Aggregate::max('tickets')->filterRaw('active = 1', watches: ['active'])->into('active_max')
+// Or with DB::raw — reads as obviously-SQL at the call site:
+Aggregate::max('tickets')->filterRaw(DB::raw('active = 1'), watches: ['active'])->into('active_max')
 ```
+
+`filterRaw()` accepts either a string or a Laravel
+`Illuminate\Contracts\Database\Query\Expression`. The Expression form
+(`DB::raw(...)`) is the conventional Laravel signal for *this is raw
+SQL, I take responsibility for the contents* — useful for code review.
+Both forms produce identical SQL.
 
 Write raw predicates with **bare column names** — the package emits
 them inside a correlated subquery whose only `FROM` is the model's
@@ -772,6 +780,35 @@ $table->nestedSetAggregate('weighted_power');             // integer, NOT NULL, 
 $table->nestedSetAggregate('fire_count');                  // integer, NOT NULL, default 0
 $table->nestedSetAggregate('fire_max', type: 'min_max');  // nullable, for Min/Max
 ```
+
+**Float contributions need a non-integer column type.** A listener's
+`contribution()` returns `int|float|null` and the package threads
+floats end-to-end through the maintenance pipeline. But the *stored
+column* still has to accept them. If you declared the column as
+integer via `nestedSetAggregate()` and your listener returns
+fractional values, the DB will truncate at the write side and your
+column will drift.
+
+Declare a decimal column manually for float-returning listeners:
+
+```php
+// instead of $table->nestedSetAggregate('weighted_score'),
+$table->decimal('weighted_score', 14, 4)->default(0);
+// or for nullable Min/Max-style:
+$table->decimal('weighted_max', 14, 4)->nullable();
+```
+
+Cast as `float` (or `decimal:N`) on the model:
+
+```php
+protected $casts = [
+    'weighted_score' => 'float',
+];
+```
+
+The aggregate machinery doesn't care which Blueprint helper produced
+the column — it cares only that the column exists with the declared
+name and accepts the value range your listener returns.
 
 #### Method-override form
 
@@ -879,14 +916,12 @@ class Department extends Model implements HasNestedSet { use NodeTrait; }
 `budget = 100` reports `budget_inclusive = 300 + own_budget` and
 `budget_below = 300`.
 
-> **Maintenance caveat:** the incremental delta path skips exclusive
-> declarations today (a comment marks the spot for the planned
-> follow-up). Exclusive columns stay at their migration default
-> until `fixAggregates()` runs. `withFreshAggregates()` and
-> `freshAggregate()` *do* compute them on the fly. For dashboards
-> that need exclusive values live, prefer fresh-read or schedule a
-> periodic `fixAggregates()`; for stored-value reads, only the
-> inclusive declaration is reliably maintained on save.
+Exclusive aggregates are maintained incrementally across every
+lifecycle hook (create, update, delete, restore, move). The
+chain-recompute path runs whenever a watched column dirties on save —
+cost shape is O(depth × subtree-size) per mutation, the same as the
+MIN/MAX extremum-lost branch. Mutations that don't touch a watched
+column skip the recompute entirely.
 
 #### Date-window roll-ups via raw filter
 
