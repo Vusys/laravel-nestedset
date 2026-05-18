@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature;
 
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
@@ -145,12 +146,17 @@ final class ReplicateInteractionTest extends TestCase
         );
     }
 
-    public function test_replicated_clone_with_scoped_anchor_inherits_anchor_scope(): void
+    public function test_replicate_preserves_source_scope_and_cross_scope_placement_requires_realignment(): void
     {
-        // MenuItem is scoped by menu_id. Replicating an item from
-        // menu A and placing it under an item from menu B should land
-        // the clone in menu B's tree, not menu A's — the placement
-        // anchor decides the scope.
+        // MenuItem is scoped by menu_id. The package does not auto-inherit
+        // scope from a placement anchor — it enforces consistency via
+        // {@see \Vusys\NestedSet\Scope\NestedSetScopeResolver::assertSameScope()}.
+        // This test pins three contract points:
+        //   1. replicate() preserves the source's scope attributes.
+        //   2. Placing the clone under a different-scope anchor without
+        //      first aligning scope throws ScopeViolationException.
+        //   3. After aligning scope manually, placement succeeds and the
+        //      clone joins the anchor's tree.
         $menuA = Menu::create(['name' => 'A']);
         $menuB = Menu::create(['name' => 'B']);
 
@@ -166,8 +172,21 @@ final class ReplicateInteractionTest extends TestCase
         $bRoot->saveAsRoot();
         $bRoot->refresh();
 
-        // Clone aChild and append under bRoot — clone must inherit menu_id from bRoot.
+        // (1) replicate() retains the source's scope columns — including menu_id.
         $clone = $aChild->replicate();
+        $this->assertSame((int) $menuA->id, (int) $clone->menu_id);
+
+        // (2) Placing into menu B's tree without realigning scope throws.
+        $cloneWithMismatchedScope = $aChild->replicate();
+        try {
+            $cloneWithMismatchedScope->appendToNode($bRoot)->save();
+            $this->fail('cross-scope placement should have thrown ScopeViolationException');
+        } catch (ScopeViolationException $e) {
+            $this->assertStringContainsString('menu_id', $e->getMessage());
+        }
+
+        // (3) After manual realignment, the placement succeeds and the
+        // clone joins menu B's tree under bRoot.
         $clone->menu_id = $menuB->id;
         $clone->appendToNode($bRoot)->save();
         $clone->refresh();

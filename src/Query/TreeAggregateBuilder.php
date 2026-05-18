@@ -69,17 +69,18 @@ final class TreeAggregateBuilder
         $lftCol = $builder->lftColumn();
         $rgtCol = $builder->rgtColumn();
         $scopeCols = NestedSetScopeResolver::columns($model::class);
+        $softDeletedColumn = self::softDeletedColumnFor($model);
 
         $connection = $builder->getQuery()->getConnection();
 
         if (self::supportsLateral($connection)) {
-            self::applyLateralFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols);
+            self::applyLateralFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
 
             return;
         }
 
         if (self::isMariaDb($connection)) {
-            self::applyMariaDbDerivedFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols);
+            self::applyMariaDbDerivedFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
 
             return;
         }
@@ -95,7 +96,7 @@ final class TreeAggregateBuilder
         // leaf rows; SQLite (and the others) skip dead branches in CASE,
         // so on a wideShallow shape only the root pays the subquery cost.
         foreach ($resolved as $alias => $definition) {
-            $sql = self::buildCorrelatedSubquery($table, $lftCol, $rgtCol, $scopeCols, $definition);
+            $sql = self::buildCorrelatedSubquery($table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
             $cased = self::wrapLeafFastPath(
                 $definition,
                 "{$table}.",
@@ -148,6 +149,7 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         array $scopeCols,
+        ?string $softDeletedColumn,
     ): void {
         // Snapshot the user's current WHERE state into a clone, project
         // it down to just the primary key so it can be embedded as
@@ -217,6 +219,10 @@ final class TreeAggregateBuilder
                 $scopeClause .= " AND d.{$col} = {$outerRef}";
             }
 
+            $softClause = $softDeletedColumn === null
+                ? ''
+                : " AND d.{$softDeletedColumn} IS NULL";
+
             // Leaf fast-path: exclude leaves from the materialised derived
             // entirely — the outer SELECT picks an inline value for them
             // via {@see wrapLeafFastPath()}. On a wideShallow shape this
@@ -224,7 +230,7 @@ final class TreeAggregateBuilder
             // root has descendants).
             $innerSql = 'SELECT '.implode(', ', $aggSelects)
                 ." FROM {$outer['from']}"
-                ." INNER JOIN {$table} d ON {$boundsClause}{$scopeClause}"
+                ." INNER JOIN {$table} d ON {$boundsClause}{$scopeClause}{$softClause}"
                 ." WHERE {$outer['outerId']} IN ({$userIdsSql})"
                 ." AND {$outer['outerRgt']} > {$outer['outerLft']} + 1"
                 ." GROUP BY {$outer['outerId']}";
@@ -287,6 +293,7 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         array $scopeCols,
+        ?string $softDeletedColumn,
     ): void {
         $byInclusivity = ['inclusive' => [], 'exclusive' => []];
         foreach ($resolved as $alias => $definition) {
@@ -319,9 +326,13 @@ final class TreeAggregateBuilder
                 $scopeClause .= " AND d.{$col} = {$table}.{$col}";
             }
 
+            $softClause = $softDeletedColumn === null
+                ? ''
+                : " AND d.{$softDeletedColumn} IS NULL";
+
             $innerSql = 'SELECT '.implode(', ', $aggSelects)
                 ." FROM {$table} d"
-                ." WHERE {$boundsClause}{$scopeClause}";
+                ." WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
             // Leaf fast-path: move the leaf check onto the LATERAL's ON
             // clause so backends that respect "ON FALSE skip the LATERAL"
@@ -545,6 +556,7 @@ final class TreeAggregateBuilder
         string $rgtCol,
         array $scopeCols,
         AggregateDefinition $definition,
+        ?string $softDeletedColumn,
     ): string {
         $aggregateExpr = self::aggregateExpression($definition, qualifier: 'd.');
 
@@ -557,7 +569,11 @@ final class TreeAggregateBuilder
             $scopeClause .= " AND d.{$col} = {$table}.{$col}";
         }
 
-        return "SELECT {$aggregateExpr} FROM {$table} d WHERE {$boundsClause}{$scopeClause}";
+        $softClause = $softDeletedColumn === null
+            ? ''
+            : " AND d.{$softDeletedColumn} IS NULL";
+
+        return "SELECT {$aggregateExpr} FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
     }
 
     /**

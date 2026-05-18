@@ -11,8 +11,10 @@
 
         Fuzzers are opt-in too. Tagged with the `fuzzer` PHPUnit group
         and excluded from the default run. Trigger with `composer fuzz`
-        or `vendor/bin/phpunit group fuzzer`. Configure via the env
-        vars FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS; see
+        or `vendor/bin/phpunit` with the `group` CLI flag (the literal
+        double-dash before `group` is omitted here because XML comments
+        cannot contain it). Configure via the env vars
+        FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS; see
         tests/Support/FuzzerConfig.php.
     -->
     <testsuites>

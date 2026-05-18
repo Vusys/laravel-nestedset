@@ -136,9 +136,16 @@ trait NodeTrait
             // this hook a second time. Its aggregate contribution was
             // removed at the original soft-delete; running the hook
             // again would double-decrement every ancestor.
+            //
+            // Resolve the soft-delete column dynamically so models that
+            // override `const DELETED_AT` still trigger the guard.
+            $deletedAtColumn = in_array(SoftDeletes::class, class_uses_recursive(static::class), true)
+                ? (new \ReflectionMethod($node, 'getDeletedAtColumn'))->invoke($node)
+                : null;
             $alreadyTrashed = method_exists($node, 'isForceDeleting')
                 && $node->isForceDeleting()
-                && $node->getAttribute('deleted_at') !== null;
+                && is_string($deletedAtColumn)
+                && $node->getAttribute($deletedAtColumn) !== null;
 
             if (! $alreadyTrashed && method_exists($node, 'applyAggregateOnDelete')) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
