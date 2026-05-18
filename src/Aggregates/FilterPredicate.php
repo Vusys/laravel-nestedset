@@ -80,17 +80,13 @@ final readonly class FilterPredicate
      * explicitly; an empty list is valid for expressions with no column
      * dependencies.
      *
-     * The package generates aggregate SQL with self-joins (one alias for
-     * the outer row, another for the inner subtree). Unqualified column
-     * references in raw SQL are ambiguous in that context. Use the
-     * `{q}` token to mark where the package should inject the table
-     * qualifier at render time:
-     *
-     *     FilterPredicate::raw('{q}active = 1', ['active'])
-     *     // renders inside an inner-side scan as: `inner_a.active = 1`
-     *
-     * For expressions that reference no columns (literals, function
-     * calls without column args), omit the token.
+     * Write the predicate using **bare column names** as if you were
+     * inside a single-table query — `active = 1`, `status IN ('open','triaged')`,
+     * `LOWER(name) LIKE 'foo%'`. The package emits the predicate inside
+     * a correlated subquery whose only `FROM` is the model's table, so
+     * SQL's local-resolution rule unambiguously binds bare references
+     * to the row being evaluated — regardless of whether the calling
+     * context has additional outer aliases of the same table in scope.
      *
      * @param  list<string>  $watches
      */

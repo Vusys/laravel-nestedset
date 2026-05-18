@@ -40,7 +40,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(
     column: 'active_tickets_total',
     sum: 'tickets',
-    filterRaw: '{q}active = 1',
+    filterRaw: 'active = 1',
     filterRawWatches: ['active'],
 )]
 final class Branch extends Model implements HasNestedSet
