@@ -1,0 +1,17 @@
+{
+    "name": "vusys/laravel-nestedset-docs",
+    "description": "Documentation site builder for laravel-nestedset",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "league/commonmark": "^2.5"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "build": "@php build.php",
+        "serve": "@php serve.php",
+        "clean": "rm -rf ../site"
+    }
+}
