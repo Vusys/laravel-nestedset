@@ -1,15 +1,21 @@
 # laravel-nestedset docs site
 
 A small, dependency-light static site generator for the project
-documentation. Pure PHP. Reads Markdown from `../docs`, writes HTML to
-`../site`.
+documentation. Pure PHP for rendering; a single `pnpm` step pulls in
+third-party CSS (currently just `normalize.css`) so we don't vendor it
+into the repo. Reads Markdown from `../docs`, writes HTML to `../site`.
 
 ## One-time setup
 
 ```bash
 cd docs-site
-composer install
+composer install   # league/commonmark for Markdown rendering
+pnpm install       # normalize.css (and future npm-distributed assets)
 ```
+
+If you don't have pnpm, `corepack enable && corepack prepare pnpm@latest --activate`
+sets it up using the Node toolchain you already have. `npm install` works
+too — it'll just produce a different lockfile that we gitignore.
 
 ## Build the site
 
@@ -82,6 +88,7 @@ docs-site/
 ├── build.php           # Markdown → HTML, applies layout, expands snippets
 ├── serve.php           # Build + dev server + file watcher
 ├── composer.json       # league/commonmark only
+├── package.json        # npm-distributed CSS assets (normalize.css)
 ├── templates/
 │   └── layout.php      # Single page template
 └── public/
@@ -90,4 +97,5 @@ docs-site/
 ```
 
 Output lives in `../site/` (gitignored). Static files in `public/` are
-copied as-is at build time.
+copied as-is at build time. Named files from `node_modules/` are copied
+according to the manifest at the top of `build.php`.

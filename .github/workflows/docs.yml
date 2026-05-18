@@ -52,9 +52,25 @@ jobs:
           restore-keys: |
             composer-docs-
 
-      - name: Install docs-site dependencies
+      - name: Install Composer dependencies
         working-directory: docs-site
         run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: docs-site/package.json
+
+      - name: Install npm dependencies
+        working-directory: docs-site
+        run: pnpm install
 
       - name: Build site
         working-directory: docs-site
