@@ -174,7 +174,7 @@ jobs:
           stdbuf -oL -eL vendor/bin/phpunit --testsuite Performance --testdox 2>&1 | tee perf-output.txt
 
       - name: Upload raw results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-${{ matrix.db }}-${{ github.run_id }}
           path: perf-output.txt
