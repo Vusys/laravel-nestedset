@@ -209,11 +209,11 @@ final class QuerySemanticsFuzzerTest extends TestCase
             "{$tag}: getDescendantCount mismatch",
         );
 
-        // getNodeHeight
+        // getSubtreeSize
         $this->assertSame(
             $oracle['height'][$id],
-            $node->getNodeHeight(),
-            "{$tag}: getNodeHeight mismatch",
+            $node->getSubtreeSize(),
+            "{$tag}: getSubtreeSize mismatch",
         );
 
         // Pairwise: isDescendantOf / isAncestorOf / isSiblingOf

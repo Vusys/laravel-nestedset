@@ -55,13 +55,28 @@ trait HasNodeInspection
     }
 
     /**
-     * Returns rgt - lft + 1 — the number of "slots" this node occupies in
-     * the lft/rgt sequence. A leaf has height 2; a node with N descendants
-     * has height 2 * (N + 1).
+     * Returns rgt - lft + 1 — the number of "slots" this subtree
+     * occupies in the lft/rgt sequence. A leaf has size 2; a subtree
+     * of N nodes (counting self) has size 2N.
+     *
+     * Use this when you need the lft/rgt slot count (e.g. computing
+     * the gap size for a bulk insert). For the count of descendants
+     * (not slots), see {@see getDescendantCount()}.
+     */
+    public function getSubtreeSize(): int
+    {
+        return $this->getRgt() - $this->getLft() + 1;
+    }
+
+    /**
+     * @deprecated Use {@see getSubtreeSize()} — the old name suggested
+     *             tree-theory "height" (max depth of a descendant)
+     *             but the method actually returns the lft/rgt slot
+     *             count. Will be removed before 1.0.
      */
     public function getNodeHeight(): int
     {
-        return $this->getRgt() - $this->getLft() + 1;
+        return $this->getSubtreeSize();
     }
 
     /**

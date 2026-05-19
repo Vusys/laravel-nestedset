@@ -112,12 +112,22 @@ final class NodeInspectionTest extends TestCase
         $this->assertFalse($aa->isAncestorOf($aa));
     }
 
-    public function test_get_node_height_returns_rgt_minus_lft_plus_one(): void
+    public function test_get_subtree_size_returns_rgt_minus_lft_plus_one(): void
     {
-        $this->assertSame(10, $this->find(1)->getNodeHeight());   // Root: 10-1+1
-        $this->assertSame(6, $this->find(2)->getNodeHeight());    // Child A: 7-2+1
-        $this->assertSame(2, $this->find(3)->getNodeHeight());    // AA leaf: 4-3+1
-        $this->assertSame(2, $this->find(5)->getNodeHeight());    // Child B leaf: 9-8+1
+        $this->assertSame(10, $this->find(1)->getSubtreeSize());   // Root: 10-1+1
+        $this->assertSame(6, $this->find(2)->getSubtreeSize());    // Child A: 7-2+1
+        $this->assertSame(2, $this->find(3)->getSubtreeSize());    // AA leaf: 4-3+1
+        $this->assertSame(2, $this->find(5)->getSubtreeSize());    // Child B leaf: 9-8+1
+    }
+
+    public function test_get_node_height_is_a_backwards_compatible_alias(): void
+    {
+        // Legacy name. Kept for users on the old API; delegates to
+        // getSubtreeSize() — removal scheduled for 1.0.
+        $this->assertSame(
+            $this->find(1)->getSubtreeSize(),
+            $this->find(1)->getNodeHeight(),
+        );
     }
 
     public function test_get_descendant_count_derives_count_from_bounds(): void

@@ -40,17 +40,22 @@ $node->hasMoved();              // true after a mutation this request
 
 ## Subtree size
 
-`getNodeHeight()` returns the raw `rgt - lft + 1` interval width — two
+`getSubtreeSize()` returns the raw `rgt - lft + 1` interval width — two
 slots per node, so a leaf is `2` and a subtree of `N` nodes is `2 * N`.
 `getDescendantCount()` is the more useful "count of strict descendants"
 view, derived as `(rgt - lft - 1) / 2`.
 
 ```php
-$electronics->getNodeHeight();      // 12   (rgt - lft + 1 = 12 - 1 + 1)
+$electronics->getSubtreeSize();     // 12   (rgt - lft + 1 = 12 - 1 + 1)
 $electronics->getDescendantCount(); // 5    ((12 - 1 - 1) / 2)
-$laptops->getNodeHeight();          // 2
+$laptops->getSubtreeSize();         // 2
 $laptops->getDescendantCount();     // 0
 ```
+
+> `getNodeHeight()` is the legacy name; it still works (it delegates
+> to `getSubtreeSize()`) but is deprecated — the old name suggested
+> tree-theory height (max depth of a descendant) but the method
+> always returned the lft/rgt slot count.
 
 Both are pure arithmetic on the row's columns — they cost nothing.
 
