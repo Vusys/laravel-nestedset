@@ -105,6 +105,29 @@ trait HasTreeMutation
     }
 
     /**
+     * Wraps Eloquent's save() in a transaction when
+     * `config('nestedset.auto_transaction')` is on, so the structural
+     * SQL (makeGap / moveNode), the Eloquent INSERT/UPDATE, and the
+     * aggregate hooks (`saved` / `created` listeners) all commit or
+     * roll back together. Without this wrap, a failed INSERT — unique
+     * constraint, throwing listener, etc. — would leave the gap
+     * committed and produce a permanent hole in the lft/rgt sequence.
+     *
+     * Laravel handles nested calls via savepoints, so wrapping inside
+     * an outer `DB::transaction()` is safe.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function save(array $options = []): bool
+    {
+        if (! config('nestedset.auto_transaction', true)) {
+            return parent::save($options);
+        }
+
+        return (bool) $this->getConnection()->transaction(fn (): bool => parent::save($options));
+    }
+
+    /**
      * Move this node one position up among its siblings (toward smaller lft).
      *
      * Fires {@see NodeMoved} for **both** participants — the moved
@@ -227,16 +250,12 @@ trait HasTreeMutation
 
         $startNs = hrtime(true);
 
-        if (config('nestedset.auto_transaction', true)) {
-            // Wrap makeGap-then-set-attrs (or moveNode-then-getPlainNodeData)
-            // so a thrown exception between the two halves rolls back the
-            // gap rather than leaving the tree corrupt. The aggregate
-            // maintenance hook is inside the transaction too so a failure
-            // there also rolls back the structural mutation.
-            $this->getConnection()->transaction($work);
-        } else {
-            $work();
-        }
+        // The outer transaction is opened by the trait's save() override
+        // when auto_transaction is on; the gap, the Eloquent
+        // INSERT/UPDATE that follows the saving listener, and the
+        // aggregate hooks all commit or roll back as one unit. Nothing
+        // extra to do here.
+        $work();
 
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
@@ -342,13 +361,11 @@ trait HasTreeMutation
      * permutation per root.
      *
      * Only fires when the row was actually removed from the DB
-     * (hard delete — `$this->exists === false`) and the deleted
-     * node was a leaf. Soft-deleted rows still occupy their slots,
-     * so closing the gap would invalidate their bounds. Interior
-     * hard-deletes leave their children orphaned and inside the
-     * vanished range — shifting the surrounding rows would move
-     * those orphans into impossible positions, making the eventual
-     * fixTree call's job harder rather than easier.
+     * (hard delete — `$this->exists === false`). Soft-deleted rows
+     * still occupy their slots, so closing the gap would invalidate
+     * their bounds. For interior hard-deletes the cascade
+     * ({@see applyForceDeleteCascade}) clears every descendant
+     * first, so the entire subtree's width is what we close.
      *
      * Wired into NodeTrait's `deleted` event after the aggregate
      * decrement runs (the aggregate hook reads the deleted node's
@@ -370,19 +387,55 @@ trait HasTreeMutation
         $lft = (int) $rawLft;
         $rgt = (int) $rawRgt;
 
-        // Interior hard-delete: skip. Children are orphaned but their
-        // bounds at least stay inside their (now-vanished) parent's
-        // former range — fixTree can recover from that. Closing the
-        // gap would shift the orphans into invalid positions.
-        if ($rgt - $lft !== 1) {
+        $this->newTreeMutator()->closeGap($lft, $rgt - $lft + 1);
+    }
+
+    /**
+     * `deleted` lifecycle hook: hard-delete every descendant of this
+     * node in the same scope so a `forceDelete()` on an interior
+     * node behaves like the soft-delete cascade — no orphans, no
+     * holes in the lft/rgt sequence after
+     * {@see applyStructuralCleanupOnDelete} runs.
+     *
+     * Issues a raw query-builder DELETE (no Eloquent events for the
+     * descendants), mirroring {@see HasSoftDeleteTree::applySoftDeleteCascade}.
+     * The root row has already been deleted by the time this runs,
+     * so we use its in-memory bounds to scope the query.
+     */
+    public function applyForceDeleteCascade(): void
+    {
+        if ($this->exists) {
             return;
         }
 
-        $this->newTreeMutator()->closeGap($lft, 2);
+        $rawLft = $this->getAttribute($this->getLftName());
+        $rawRgt = $this->getAttribute($this->getRgtName());
+        if (! is_numeric($rawLft) || ! is_numeric($rawRgt)) {
+            return;
+        }
+        $lft = (int) $rawLft;
+        $rgt = (int) $rawRgt;
+
+        if ($rgt - $lft === 1) {
+            return;
+        }
+
+        $query = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getLftName(), '>', $lft)
+            ->where($this->getRgtName(), '<', $rgt);
+
+        foreach (NestedSetScopeResolver::valuesFor($this) as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        $query->delete();
     }
 
     private function actMakeRoot(): void
     {
+        $driver = $this->getConnection()->getDriverName();
+
         // Scope the max-rgt lookup to this node's scope. Without the
         // scope filter, the second scope's first root would land past
         // the first scope's rgt and silently break per-scope lft/rgt
@@ -391,7 +444,29 @@ trait HasTreeMutation
         foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
             $query->where($col, $value);
         }
-        $rawMax = $query->max($this->getRgtName());
+
+        // Serialise concurrent makeRoot calls in the same scope by
+        // locking the row that currently owns the max rgt. Without
+        // the lock, two parallel callers could read the same max and
+        // both insert at the same lft/rgt slot — a duplicate_lft /
+        // duplicate_rgt corruption.
+        //
+        // PostgreSQL rejects FOR UPDATE on aggregate queries
+        // (SQLSTATE 0A000), so we can't `lockForUpdate()->max()`
+        // directly. Locking the single row with the highest rgt via
+        // ORDER BY ... LIMIT 1 FOR UPDATE returns the same value and
+        // works on every backend that supports row locking.
+        // SQLite is single-writer; skip the lock there.
+        if ($driver === 'sqlite') {
+            $rawMax = $query->max($this->getRgtName());
+        } else {
+            $rawMax = $query
+                ->orderBy($this->getRgtName(), 'desc')
+                ->limit(1)
+                ->lockForUpdate()
+                ->value($this->getRgtName());
+        }
+
         $maxRgt = is_numeric($rawMax) ? (int) $rawMax : 0;
 
         // Position at maxRgt + 1 places this node at the end of the table;
@@ -489,6 +564,13 @@ trait HasTreeMutation
 
     /**
      * Sibling immediately before this node (same parent, next-smaller rgt).
+     *
+     * For roots (`parent_id IS NULL`) the parent predicate is not
+     * scope-isolating on its own — every scope has its own NULL-parent
+     * roots and `makeRoot()` restarts lft/rgt at 1 per scope, so two
+     * scopes can independently produce roots whose bounds collide.
+     * The scope predicates added here keep the lookup inside this
+     * node's own partition.
      */
     public function prevSibling(): ?static
     {
@@ -498,6 +580,9 @@ trait HasTreeMutation
 
         if ($parentId === null) {
             $query->whereNull($this->getParentIdName());
+            foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+                $query->where($col, $value);
+            }
         } else {
             $query->where($this->getParentIdName(), $parentId);
         }
@@ -510,6 +595,9 @@ trait HasTreeMutation
 
     /**
      * Sibling immediately after this node (same parent, next-larger lft).
+     *
+     * See {@see prevSibling()} for the per-scope filter rationale on
+     * root siblings.
      */
     public function nextSibling(): ?static
     {
@@ -519,6 +607,9 @@ trait HasTreeMutation
 
         if ($parentId === null) {
             $query->whereNull($this->getParentIdName());
+            foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+                $query->where($col, $value);
+            }
         } else {
             $query->where($this->getParentIdName(), $parentId);
         }

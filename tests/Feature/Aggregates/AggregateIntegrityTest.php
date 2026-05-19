@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -375,6 +376,32 @@ final class AggregateIntegrityTest extends TestCase
         }
     }
 
+    public function test_fix_aggregates_rejects_cross_class_anchor(): void
+    {
+        // Persist a Category so it has a numeric id — the unguarded
+        // path would emit `WHERE id = <category-id>` against the
+        // `areas` table and either resolve to the wrong row or to no
+        // row at all, silently doing the wrong thing.
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::fixAggregates(anchor: $category);
+    }
+
+    public function test_aggregate_errors_rejects_cross_class_anchor(): void
+    {
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::aggregateErrors(anchor: $category);
+    }
+
     public function test_chain_fast_path_bails_when_a_branch_point_appears(): void
     {
         // R(10) -> a(20), with a *second* child of R — not a chain.
@@ -396,5 +423,79 @@ final class AggregateIntegrityTest extends TestCase
         // in the values; here we just confirm the repair ran.
         $this->assertGreaterThan(0, $result->totalRowsUpdated);
         $this->assertFalse(Area::aggregatesAreBroken());
+    }
+
+    public function test_chain_detector_treats_disjoint_chains_as_a_forest(): void
+    {
+        // Two unrelated roots in the same (unscoped) table — both
+        // parent_id IS NULL. The detector groups by parent_id and
+        // sees COUNT(NULL group) = 2, so the chain-fold bails and
+        // the slow path repairs. If a regression accepted multiple
+        // NULL-parent roots as a chain, the fold would walk them as
+        // one strand and produce wrong values for the second root.
+        $r1 = new Area(['name' => 'R1', 'tickets' => 10]);
+        $r1->saveAsRoot();
+        $r1Child = new Area(['name' => 'R1a', 'tickets' => 20]);
+        $r1Child->appendToNode($r1->refresh())->save();
+
+        $r2 = new Area(['name' => 'R2', 'tickets' => 100]);
+        $r2->saveAsRoot();
+        $r2Child = new Area(['name' => 'R2a', 'tickets' => 200]);
+        $r2Child->appendToNode($r2->refresh())->save();
+
+        // Drift every aggregate everywhere so the repair has to
+        // recompute both chains.
+        DB::table('areas')->update([
+            'tickets_total' => 0, 'tickets_count_all' => 0,
+            'tickets_avg' => null, 'tickets_min' => null, 'tickets_max' => null,
+        ]);
+
+        $result = Area::fixAggregates();
+        $this->assertGreaterThan(0, $result->totalRowsUpdated);
+
+        $r1 = Area::query()->where('name', 'R1')->firstOrFail();
+        $r2 = Area::query()->where('name', 'R2')->firstOrFail();
+
+        $this->assertSame(30, $this->asInt($r1->tickets_total), 'first chain repaired in isolation');
+        $this->assertSame(300, $this->asInt($r2->tickets_total), 'second chain repaired in isolation');
+        $this->assertFalse(Area::aggregatesAreBroken(), 'no cross-chain contamination');
+    }
+
+    public function test_chain_detector_handles_empty_scope_cleanly(): void
+    {
+        // No rows at all — the detector's GROUP BY returns zero rows
+        // ("no parent has more than one child" is vacuously true),
+        // so the fast path runs over zero rows. The repair must
+        // exit without errors and report zero updates.
+        $this->assertSame(0, Area::query()->count(), 'precondition: table is empty');
+
+        $result = Area::fixAggregates();
+
+        $this->assertSame(0, $result->totalRowsUpdated, 'empty table → zero updates');
+        $this->assertFalse(Area::aggregatesAreBroken(), 'empty table has no drift');
+    }
+
+    public function test_chain_detector_handles_single_node_tree(): void
+    {
+        // Single row, parent_id IS NULL, COUNT(NULL group) = 1 →
+        // detector returns true (a "chain of one"). The fold runs
+        // over the one row and assigns its own source value as the
+        // inclusive aggregate of its subtree.
+        $solo = new Area(['name' => 'solo', 'tickets' => 42]);
+        $solo->saveAsRoot();
+
+        DB::table('areas')->update([
+            'tickets_total' => 0, 'tickets_count_all' => 0,
+            'tickets_avg' => null, 'tickets_min' => null, 'tickets_max' => null,
+        ]);
+
+        $result = Area::fixAggregates();
+        $this->assertSame(1, $result->totalRowsUpdated, 'single drifted row repaired');
+
+        $solo = Area::query()->where('name', 'solo')->firstOrFail();
+        $this->assertSame(42, $this->asInt($solo->tickets_total));
+        $this->assertSame(1, $this->asInt($solo->tickets_count_all));
+        $this->assertSame(42, $this->asInt($solo->tickets_min));
+        $this->assertSame(42, $this->asInt($solo->tickets_max));
     }
 }

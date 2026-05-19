@@ -38,6 +38,17 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 final readonly class NestedSetAggregate
 {
     /**
+     * `filterRawWatches` must list every column the `filterRaw` SQL
+     * references; otherwise delta maintenance can't notice a row
+     * flipping in/out of the filter and the stored aggregate silently
+     * drifts. The check fires at registry build time, so a missing
+     * declaration surfaces on app boot rather than as runtime drift.
+     *
+     * For a genuinely column-free filter (e.g. `'1 = 1'`,
+     * `'NOW() > "2000-01-01"'`) set `filterRawNoColumnDependencies: true`.
+     * That signal must be explicit — silent empty-watch defaults are
+     * the footgun this guard removes.
+     *
      * @param  array<string,mixed>|null  $filter
      * @param  list<string>  $filterRawWatches
      */
@@ -53,6 +64,7 @@ final readonly class NestedSetAggregate
         public ?string $filterNotNull = null,
         public ?string $filterRaw = null,
         public array $filterRawWatches = [],
+        public bool $filterRawNoColumnDependencies = false,
     ) {}
 
     /**
@@ -170,6 +182,16 @@ final readonly class NestedSetAggregate
         }
 
         if ($this->filterRaw !== null) {
+            if ($this->filterRawWatches === [] && ! $this->filterRawNoColumnDependencies) {
+                throw new AggregateConfigurationException(sprintf(
+                    'NestedSetAggregate for column "%s": `filterRaw` is set but `filterRawWatches` is empty. '
+                    .'List every column the SQL references so delta maintenance triggers a recompute when one '
+                    .'changes; otherwise the aggregate will silently drift. For a genuinely column-free '
+                    .'predicate, set `filterRawNoColumnDependencies: true` to opt out explicitly.',
+                    $this->column,
+                ));
+            }
+
             return FilterPredicate::raw($this->filterRaw, $this->filterRawWatches);
         }
 

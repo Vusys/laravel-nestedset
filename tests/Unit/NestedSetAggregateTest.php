@@ -182,6 +182,32 @@ final class NestedSetAggregateTest extends TestCase
         ))->toDefinition();
     }
 
+    public function test_filter_raw_without_watches_throws(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('filterRawWatches');
+
+        (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            filterRaw: 'status = 1',
+        ))->toDefinition();
+    }
+
+    public function test_filter_raw_with_explicit_no_column_dependencies_flag_is_allowed_with_empty_watches(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'tickets_total',
+            sum: 'tickets',
+            filterRaw: '1 = 1',
+            filterRawNoColumnDependencies: true,
+        ))->toDefinition();
+
+        $this->assertNotNull($definition->filter);
+        $this->assertSame(FilterPredicateKind::Raw, $definition->filter->getKind());
+        $this->assertSame([], $definition->filter->watchColumns());
+    }
+
     public function test_definition_has_no_filter_when_none_declared(): void
     {
         $definition = (new NestedSetAggregate(
