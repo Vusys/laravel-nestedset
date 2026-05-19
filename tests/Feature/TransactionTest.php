@@ -18,21 +18,19 @@ use Vusys\NestedSet\Tests\TestCase;
  * (`config('nestedset.auto_transaction', true)`); set to `false` only
  * if the caller is managing transactions itself.
  *
- * Scope: the package's auto-transaction wraps `callPendingAction`'s
- * structural-SQL block — `makeGap` / `moveNode` plus the bracketing
- * aggregate hooks. Failures inside that window roll the gap back
- * (delegating to Laravel's `DB::transaction()` contract). The
- * subsequent Eloquent `INSERT` runs OUTSIDE that wrap — atomicity
- * between gap and row insert is the caller's responsibility, via an
- * outer `DB::transaction()`.
+ * Scope: the package's auto-transaction wraps the entire save() —
+ * the structural SQL block (makeGap / moveNode), the Eloquent
+ * INSERT/UPDATE, and the bracketing aggregate hooks all commit or
+ * roll back together. A throw anywhere in that window rolls the
+ * tree back to its pre-save state.
  *
  * Behaviours pinned by this file:
  *  - User-wrapped `DB::transaction()` rollback restores pre-mutation
  *    state.
- *  - auto_transaction = true opens a transaction inside
- *    `callPendingAction` (proven by the begin/commit event counter).
- *  - auto_transaction = false opens NO transaction inside
- *    `callPendingAction` (the caller has opted out).
+ *  - auto_transaction = true opens a transaction around save()
+ *    (proven by the begin/commit event counter).
+ *  - auto_transaction = false opens NO transaction (the caller has
+ *    opted out of the safety net).
  *  - Both config values produce identical results on the happy
  *    path.
  */
@@ -67,13 +65,11 @@ final class TransactionTest extends TestCase
 
     public function test_failure_after_save_under_outer_transaction_is_rolled_back(): void
     {
-        // Pins the recommended pattern for atomicity that spans the
-        // package's auto-tx AND the subsequent INSERT: wrap the save
-        // chain in your own DB::transaction(). The rollback proven
-        // here is the OUTER transaction's, not the package's — the
-        // package's auto-tx (which only wraps the makeGap/aggregate
-        // window inside callPendingAction) has already committed by
-        // the time this throw fires.
+        // Sanity: an outer DB::transaction() that throws after a save
+        // call still rolls back, even though the package's auto-tx
+        // already committed its own savepoint by then. The package's
+        // wrap commits a child savepoint; the outer transaction
+        // controls the actual commit/rollback.
         $this->assertTrue(Config::get('nestedset.auto_transaction'));
 
         $root = new Category(['name' => 'Root']);
@@ -94,6 +90,47 @@ final class TransactionTest extends TestCase
         $this->assertSame($rootBefore->lft, $rootAfter->lft);
         $this->assertSame($rootBefore->rgt, $rootAfter->rgt);
         $this->assertFalse(Category::isBroken());
+    }
+
+    public function test_failure_inside_created_listener_rolls_back_the_gap(): void
+    {
+        // The whole point of wrapping save() (not just the structural
+        // SQL): a listener throw AFTER the INSERT — created / saved
+        // hooks — must roll the gap back. Without the wrap, makeGap
+        // would commit, INSERT would commit, and the throw would
+        // leave the table consistent but the user's listener-driven
+        // side-effects half-done. With the wrap, the throw propagates
+        // and the entire save() rolls back.
+        $this->assertTrue(Config::get('nestedset.auto_transaction'));
+
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+        $rootBefore = $root->refresh();
+        $snapshot = DB::table('categories')->orderBy('id')->get()->toArray();
+
+        // Register a created listener that throws. The dispatcher
+        // keeps the closure on the model class, so we have to flush
+        // it on the way out — otherwise every later test that creates
+        // a Category will inherit the throw.
+        Category::created(static function (): never {
+            throw new RuntimeException('listener throw after insert');
+        });
+
+        try {
+            try {
+                $b = new Category(['name' => 'B']);
+                $b->appendToNode($rootBefore)->save();
+                $this->fail('expected created listener to throw');
+            } catch (RuntimeException $e) {
+                $this->assertSame('listener throw after insert', $e->getMessage());
+            }
+
+            $after = DB::table('categories')->orderBy('id')->get()->toArray();
+            $this->assertEquals($snapshot, $after, 'created-listener throw must roll back the entire save');
+            $this->assertFalse(Category::isBroken());
+        } finally {
+            Category::flushEventListeners();
+        }
     }
 
     public function test_auto_transaction_wraps_call_pending_action(): void

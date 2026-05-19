@@ -59,42 +59,41 @@ final class DeletionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_force_delete_interior_node_skips_compaction(): void
+    public function test_force_delete_interior_node_cascades_and_compacts(): void
     {
-        // Force-deleting a non-leaf without first reparenting leaves
-        // the children orphaned *inside the vanished range*. Closing
-        // the gap would push those orphans into invalid bounds, so the
-        // structural cleanup intentionally skips this case — fixTree
-        // can recover the orphans more reliably.
-        $this->allowBrokenTreeAtTearDown = true;
-
-        $a = Category::query()->findOrFail(2);
-        $aLft = (int) $a->lft;
-        $aRgt = (int) $a->rgt;
-        $a->forceDelete();
-
-        // Children's bounds are unchanged — still inside A's former range.
-        $aa = Category::withTrashed()->findOrFail(3);
-        $ab = Category::withTrashed()->findOrFail(4);
-        $this->assertGreaterThan($aLft, (int) $aa->lft);
-        $this->assertLessThan($aRgt, (int) $aa->rgt);
-        $this->assertGreaterThan($aLft, (int) $ab->lft);
-        $this->assertLessThan($aRgt, (int) $ab->rgt);
-    }
-
-    public function test_force_delete_removes_only_the_node(): void
-    {
-        // Force-deleting a non-leaf without first reparenting children
-        // leaves the tree corrupt — that's the documented behaviour
-        // (we don't cascade hard-deletes through the tree).
-        $this->allowBrokenTreeAtTearDown = true;
-
+        // Force-deleting an interior node hard-deletes every
+        // descendant in the same scope and closes the entire subtree
+        // gap so the bounds sequence stays a contiguous 1..2N
+        // permutation. Mirrors the soft-delete cascade — the tree
+        // stays intact and no orphans are left behind.
         $a = Category::query()->findOrFail(2);
         $a->forceDelete();
 
         $this->assertNull(Category::withTrashed()->find(2));
-        $this->assertNotNull(Category::withTrashed()->find(3));
-        $this->assertNotNull(Category::withTrashed()->find(4));
+        $this->assertNull(Category::withTrashed()->find(3), 'AA was cascade-removed');
+        $this->assertNull(Category::withTrashed()->find(4), 'AB was cascade-removed');
+
+        // Surviving rows: Root(1,4) > B(2,3). Contiguous 1..4.
+        $root = Category::query()->findOrFail(1);
+        $b = Category::query()->findOrFail(5);
+        $this->assertSame([1, 4], [$root->lft, $root->rgt]);
+        $this->assertSame([2, 3], [$b->lft, $b->rgt]);
+
+        $this->assertFalse(Category::isBroken());
+    }
+
+    public function test_force_delete_cascade_removes_descendants(): void
+    {
+        // Force-delete on an interior node clears the entire subtree.
+        // Sibling subtrees are untouched.
+        $a = Category::query()->findOrFail(2);
+        $a->forceDelete();
+
+        $this->assertNull(Category::withTrashed()->find(2));
+        $this->assertNull(Category::withTrashed()->find(3));
+        $this->assertNull(Category::withTrashed()->find(4));
+        $this->assertNotNull(Category::withTrashed()->find(1), 'Root survives');
+        $this->assertNotNull(Category::withTrashed()->find(5), 'B (sibling subtree) survives');
     }
 
     public function test_soft_delete_marks_descendants_deleted_at_same_timestamp(): void

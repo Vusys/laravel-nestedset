@@ -140,11 +140,12 @@ final class AggregateTest extends TestCase
 
     public function test_filter_raw_method_sets_raw_predicate(): void
     {
-        $aggregate = Aggregate::sum('tickets')->filterRaw('status = 1');
+        $aggregate = Aggregate::sum('tickets')->filterRaw('status = 1', ['status']);
 
         $this->assertNotNull($aggregate->filter);
         $this->assertSame(FilterPredicateKind::Raw, $aggregate->filter->getKind());
         $this->assertSame('status = 1', $aggregate->filter->getRawSql());
+        $this->assertSame(['status'], $aggregate->filter->watchColumns());
     }
 
     public function test_filter_raw_accepts_db_raw_expression(): void

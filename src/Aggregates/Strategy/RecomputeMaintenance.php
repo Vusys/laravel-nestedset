@@ -8,6 +8,7 @@ use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\FilterValueQuoter;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeBounds;
 
@@ -144,7 +145,7 @@ final class RecomputeMaintenance
             }
 
             $filterPredicate = $spec['filter'] ?? null;
-            $aggExpr = self::innerAggregateExpression($spec, $filterPredicate);
+            $aggExpr = self::innerAggregateExpression($connection, $spec, $filterPredicate);
 
             $selects[] = "(SELECT {$aggExpr} FROM {$table} AS inner_a "
                 ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}{$softInner}) AS {$alias}";
@@ -255,13 +256,13 @@ final class RecomputeMaintenance
      *
      * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}  $spec
      */
-    private static function innerAggregateExpression(array $spec, ?FilterPredicate $filter): string
+    private static function innerAggregateExpression(Connection $connection, array $spec, ?FilterPredicate $filter): string
     {
         $source = $spec['source'];
         $sourceRef = "inner_a.{$source}";
 
         if ($filter instanceof FilterPredicate) {
-            $pred = self::filterPredicateSql($filter, 'inner_a.');
+            $pred = self::filterPredicateSql($connection, $filter, 'inner_a.');
 
             return match ($spec['function']) {
                 AggregateFunction::Sum => sprintf(
@@ -308,16 +309,16 @@ final class RecomputeMaintenance
         };
     }
 
-    private static function filterPredicateSql(FilterPredicate $filter, string $qualifier): string
+    private static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string
     {
         return match ($filter->getKind()) {
             FilterPredicateKind::Equality => implode(' AND ', array_map(
-                static function (string $col, mixed $value) use ($qualifier): string {
+                static function (string $col, mixed $value) use ($connection, $qualifier): string {
                     if ($value === null) {
                         return "{$qualifier}{$col} IS NULL";
                     }
 
-                    return "{$qualifier}{$col} = ".self::quoteFilterValue($value);
+                    return "{$qualifier}{$col} = ".FilterValueQuoter::quote($connection, $value);
                 },
                 array_keys($filter->getConditions()),
                 array_values($filter->getConditions()),
@@ -331,33 +332,5 @@ final class RecomputeMaintenance
                 'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
             ),
         };
-    }
-
-    private static function quoteFilterValue(mixed $value): string
-    {
-        if ($value === null) {
-            return 'NULL';
-        }
-
-        if (is_bool($value)) {
-            return $value ? '1' : '0';
-        }
-
-        if (is_int($value)) {
-            return (string) $value;
-        }
-
-        if (is_float($value)) {
-            return (string) $value;
-        }
-
-        if (! is_string($value)) {
-            throw new AggregateConfigurationException(sprintf(
-                'FilterPredicate equality condition value must be scalar; got %s.',
-                get_debug_type($value),
-            ));
-        }
-
-        return "'".str_replace("'", "''", $value)."'";
     }
 }

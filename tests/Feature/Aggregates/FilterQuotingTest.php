@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
-use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
 use Vusys\NestedSet\Tests\TestCase;
@@ -52,20 +51,16 @@ final class FilterQuotingTest extends TestCase
 
     public function test_equality_filter_with_backslash_bearing_value_does_not_break_sql(): void
     {
-        // SQL standard escape: backslashes are NOT special in standard
-        // SQL — they pass through. MySQL with its default sql_mode
-        // does treat them as escape characters in single-quoted
-        // literals. Our quoteFilterValue() doesn't escape
-        // backslashes; this test verifies the package-built SQL
-        // still works for backslash-bearing string filter values.
+        // MySQL with its default sql_mode treats backslash as an
+        // escape character in single-quoted literals — a naive
+        // str_replace("'", "''") quote function would rewrite
+        // `'C:\\Users\\Test'` to `'C:UsersTest'`, silently matching
+        // the wrong rows. The package routes through PDO::quote which
+        // is driver-aware and escapes backslashes correctly for every
+        // supported backend.
         $root = new Branch(['name' => 'C:\\Users\\Test', 'tickets' => 7, 'active' => 1]);
         $root->saveAsRoot();
         $root = $root->refresh();
-
-        $driver = DB::connection()->getDriverName();
-        if ($driver === 'mysql') {
-            $this->markTestSkipped('MySQL default sql_mode treats backslash as an escape character; package-level fix would require backslash escaping which is out of scope here.');
-        }
 
         $fresh = $root->newQuery()
             ->where('id', $root->id)

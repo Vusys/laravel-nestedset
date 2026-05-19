@@ -203,6 +203,35 @@ final class CollectionTest extends TestCase
         $this->assertCount(0, $flat);
     }
 
+    public function test_to_flat_tree_with_root_outside_collection_returns_its_children_only(): void
+    {
+        // The root needn't be in the collection — only its descendants do.
+        $externalRoot = Category::query()->findOrFail(1);
+
+        $sub = Category::query()
+            ->whereDescendantOf($externalRoot->getBounds())
+            ->orderBy('lft')
+            ->get();
+
+        $flat = $sub->toFlatTree($externalRoot);
+
+        $this->assertSame(
+            ['Child A', 'AA', 'AB', 'Child B'],
+            $flat->pluck('name')->all(),
+        );
+    }
+
+    public function test_to_flat_tree_with_unknown_root_key_returns_empty(): void
+    {
+        // Unknown root key yields an empty result — no fallback to inference, no throw.
+        $orphan = new Category(['name' => 'orphan']);
+        $orphan->id = 999;
+
+        $flat = $this->all()->toFlatTree($orphan);
+
+        $this->assertCount(0, $flat);
+    }
+
     // ----------------------------------------------------------------
     // Query count — collection methods must not hit the database
     // ----------------------------------------------------------------

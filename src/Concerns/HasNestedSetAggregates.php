@@ -7,6 +7,8 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
@@ -144,19 +146,23 @@ trait HasNestedSetAggregates
      * For SQL-backed aggregates, runs a subquery against the source column.
      * For listener aggregates, evaluates the listener in PHP over the subtree.
      *
+     * Pass `withTrashed: true` to include soft-deleted descendants in
+     * the recompute — useful for matching the rowset of a
+     * `withTrashed()` outer query.
+     *
      * @throws AggregateConfigurationException when $column is not a
      *                                         declared aggregate on this model.
      */
-    public function freshAggregate(string $column): mixed
+    public function freshAggregate(string $column, bool $withTrashed = false): mixed
     {
         $definition = $this->resolveDefinitionByColumn($column);
 
         if ($definition instanceof AggregateDefinition) {
-            return TreeAggregateBuilder::scalar($this, $definition);
+            return TreeAggregateBuilder::scalar($this, $definition, $withTrashed);
         }
 
         if ($definition instanceof ListenerAggregateDefinition) {
-            return $this->freshListenerAggregate($definition);
+            return $this->freshListenerAggregate($definition, $withTrashed);
         }
 
         throw new AggregateConfigurationException(sprintf(
@@ -169,7 +175,7 @@ trait HasNestedSetAggregates
     /**
      * PHP-based fresh read for a single listener aggregate column on this node.
      */
-    private function freshListenerAggregate(ListenerAggregateDefinition $definition): int|float|null
+    private function freshListenerAggregate(ListenerAggregateDefinition $definition, bool $withTrashed = false): int|float|null
     {
         $bounds = $this->getBounds();
         $lftCol = $this->getLftName();
@@ -178,6 +184,9 @@ trait HasNestedSetAggregates
         $listener = $definition->makeListener();
 
         $query = static::query();
+        if ($withTrashed && in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
+            $query->withoutGlobalScope(SoftDeletingScope::class);
+        }
         foreach ($scope as $col => $value) {
             $query->where($col, $value);
         }
@@ -2376,7 +2385,7 @@ trait HasNestedSetAggregates
         $rootId = self::anchorRootId($anchor);
 
         if ($chunkSize <= 0) {
-            throw new \InvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
+            throw new InvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
         }
 
         $key = $instance->getKeyName();
@@ -2690,6 +2699,16 @@ trait HasNestedSetAggregates
                 '%s declares a scope (%s); pass an anchor node to scope this operation.',
                 static::class,
                 implode(', ', $scopeColumns),
+            ));
+        }
+
+        if ($anchor instanceof HasNestedSet && ! $anchor instanceof static) {
+            throw new InvalidArgumentException(sprintf(
+                '%s aggregate repair: $anchor must be an instance of %s, got %s. '
+                .'A cross-class anchor would silently target a different table (or no rows at all).',
+                static::class,
+                static::class,
+                $anchor::class,
             ));
         }
 

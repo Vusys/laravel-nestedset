@@ -172,6 +172,85 @@ final class DeferredAggregateMaintenanceTest extends TestCase
             'tree-b unchanged — anchor scoped the post-closure fixAggregates');
     }
 
+    public function test_rollback_of_outer_transaction_also_rolls_back_closing_fix(): void
+    {
+        // Both the per-row saves and the closing fixAggregates run
+        // inside the outer DB::transaction. A throw past the deferred
+        // closure unwinds the outer transaction, so the saves and
+        // the repair UPDATE both vanish — the table ends at its
+        // pre-transaction state, not a half-repaired one.
+        $root = new Area(['name' => 'r', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        $rootIdBefore = $root->id;
+        $totalBefore = (int) $root->tickets_total;
+
+        try {
+            DB::transaction(function () use ($root): never {
+                Area::withDeferredAggregateMaintenance(function () use ($root): void {
+                    foreach ([3, 5, 7] as $i => $tickets) {
+                        (new Area(['name' => "n{$i}", 'tickets' => $tickets]))
+                            ->appendToNode($root)
+                            ->save();
+                    }
+                });
+
+                throw new \RuntimeException('rollback');
+            });
+        } catch (\RuntimeException $caught) {
+            $this->assertSame('rollback', $caught->getMessage());
+        }
+
+        $root = $root->refresh();
+        $this->assertSame($rootIdBefore, (int) $root->id, 'precondition: root still exists');
+        $this->assertSame($totalBefore, (int) $root->tickets_total,
+            'outer rollback reverted both the saves and the closing fix — tree is back at pre-transaction state',
+        );
+        $this->assertSame(1, Area::query()->count(),
+            'all saves committed inside the rolled-back transaction were unwound',
+        );
+        $this->assertFalse(Area::aggregatesAreBroken(),
+            'pre-existing state was consistent and stays consistent post-rollback',
+        );
+    }
+
+    public function test_fix_aggregates_is_idempotent_after_partial_commit_then_rollback(): void
+    {
+        // Variant: the deferred closure commits some saves to the
+        // DB conceptually, but the outer rollback unwinds both the
+        // saves and the closing fix. Re-running fixAggregates after
+        // the rollback must leave the tree in a correct, non-drifted
+        // state regardless of how the writes were unwound — a sanity
+        // check that the package's repair is genuinely idempotent on
+        // arbitrary post-rollback states.
+        $root = new Area(['name' => 'r', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        (new Area(['name' => 'pre', 'tickets' => 4]))->appendToNode($root)->save();
+        $root = $root->refresh();
+        $totalAfterSeed = (int) $root->tickets_total;
+
+        try {
+            DB::transaction(function () use ($root): never {
+                Area::withDeferredAggregateMaintenance(function () use ($root): void {
+                    (new Area(['name' => 'in_tx', 'tickets' => 9]))->appendToNode($root)->save();
+                });
+                throw new \RuntimeException('rollback');
+            });
+        } catch (\RuntimeException) {
+            // swallow
+        }
+
+        Area::fixAggregates();
+
+        $this->assertSame($totalAfterSeed, (int) $root->refresh()->tickets_total,
+            'post-rollback fix is idempotent — total reflects the pre-transaction subtree',
+        );
+        $this->assertFalse(Area::aggregatesAreBroken());
+    }
+
     public function test_static_counter_is_not_leaked_after_closure(): void
     {
         // Run two unrelated closures in sequence; the second must see
