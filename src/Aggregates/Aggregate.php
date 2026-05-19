@@ -140,9 +140,14 @@ final readonly class Aggregate
      * for predicates the equality / not-null forms can't express
      * (e.g. `status IN ('open','triaged')`, `active = 1`).
      *
+     * `$watches` has no default — every column the SQL references must
+     * be listed, or delta maintenance won't notice a contributing row
+     * flipping in/out of the filter and the stored aggregate silently
+     * drifts. Pass `[]` only for genuinely column-free predicates.
+     *
      * @param  list<string>  $watches  columns whose changes should trigger re-aggregation.
      */
-    public function filterRaw(string|Expression $sql, array $watches = []): self
+    public function filterRaw(string|Expression $sql, array $watches): self
     {
         return new self(
             $this->function,
