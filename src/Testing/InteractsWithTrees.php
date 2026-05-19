@@ -51,8 +51,8 @@ trait InteractsWithTrees
         $this->assertNull(
             $node->getParentId(),
             $message !== '' ? $message : sprintf(
-                'Expected node to be a root (parent_id NULL); parent_id is %d.',
-                (int) $node->getParentId(),
+                'Expected node to be a root (parent_id NULL); parent_id is %s.',
+                (string) $node->getParentId(),
             ),
         );
     }
