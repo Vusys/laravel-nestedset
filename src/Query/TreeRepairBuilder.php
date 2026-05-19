@@ -104,8 +104,9 @@ final readonly class TreeRepairBuilder
             ->get()
             ->keyBy($this->idCol);
 
-        /** @var array<int|string, list<int>> $children */
+        /** @var array<int, list<int>> $children */
         $children = [];
+        /** @var list<int> $roots */
         $roots = [];
 
         foreach ($rows as $id => $row) {
@@ -116,26 +117,7 @@ final readonly class TreeRepairBuilder
             }
         }
 
-        $counter = 1;
-
-        /** @var array<int, array{lft: int, rgt: int, depth: int}> $positions */
-        $positions = [];
-
-        $walk = static function (int $nodeId, int $d) use (&$walk, &$counter, &$positions, $children): void {
-            $positions[$nodeId] = ['lft' => $counter, 'rgt' => 0, 'depth' => $d];
-            $counter++;
-
-            foreach ($children[$nodeId] ?? [] as $childId) {
-                $walk($childId, $d + 1);
-            }
-
-            $positions[$nodeId]['rgt'] = $counter;
-            $counter++;
-        };
-
-        foreach ($roots as $rootId) {
-            $walk($rootId, 0);
-        }
+        $positions = $this->walkAssignPositions($roots, $children, startLft: 1, startDepth: 0);
 
         $this->connection->transaction(function () use ($positions): void {
             $this->bulkWritePositions($positions);
@@ -153,11 +135,11 @@ final readonly class TreeRepairBuilder
             ->get()
             ->keyBy($this->idCol);
 
-        $inSubtree = [];
-        $this->collectSubtree($rootId, $all->all(), $inSubtree);
+        $inSubtree = $this->collectSubtree($rootId, $all->all());
 
-        /** @var array<int|string, list<int>> $children */
+        /** @var array<int, list<int>> $children */
         $children = [];
+        $inSubtreeSet = array_flip($inSubtree);
 
         foreach ($inSubtree as $id) {
             $row = $all[$id] ?? null;
@@ -168,7 +150,7 @@ final readonly class TreeRepairBuilder
 
             $pid = $row->{$this->parentId};
 
-            if ($pid !== null && in_array((int) $pid, $inSubtree, true)) {
+            if ($pid !== null && isset($inSubtreeSet[(int) $pid])) {
                 $children[(int) $pid][] = $id;
             }
         }
@@ -181,28 +163,62 @@ final readonly class TreeRepairBuilder
         $startLft = $rootRow !== null ? (int) $rootRow->{$this->lft} : 1;
         $startDepth = $rootRow !== null ? (int) $rootRow->{$this->depth} : 0;
 
-        $counter = $startLft;
-
-        /** @var array<int, array{lft: int, rgt: int, depth: int}> $positions */
-        $positions = [];
-
-        $walk = static function (int $nodeId, int $d) use (&$walk, &$counter, &$positions, $children): void {
-            $positions[$nodeId] = ['lft' => $counter, 'rgt' => 0, 'depth' => $d];
-            $counter++;
-
-            foreach ($children[$nodeId] ?? [] as $childId) {
-                $walk($childId, $d + 1);
-            }
-
-            $positions[$nodeId]['rgt'] = $counter;
-            $counter++;
-        };
-
-        $walk($rootId, $startDepth);
+        $positions = $this->walkAssignPositions([$rootId], $children, $startLft, $startDepth);
 
         $this->connection->transaction(function () use ($positions): void {
             $this->bulkWritePositions($positions);
         });
+    }
+
+    /**
+     * Iterative DFS that assigns sequential lft/rgt/depth coordinates
+     * to every node reachable from `$roots` via `$children`. The
+     * iterative-stack shape (mirrored from {@see HasBulkInsert::bulkInsertPlan})
+     * keeps fixTree on a deeply-chained corrupted tree from blowing
+     * PHP's call stack — recursion bottomed out around xdebug's 256
+     * default and PHP's ~10K frame ceiling, both reachable in real
+     * "tall and skinny" corruption shapes.
+     *
+     * @param  list<int>  $roots
+     * @param  array<int, list<int>>  $children
+     * @return array<int, array{lft: int, rgt: int, depth: int}>
+     */
+    private function walkAssignPositions(array $roots, array $children, int $startLft, int $startDepth): array
+    {
+        /** @var array<int, array{lft: int, rgt: int, depth: int}> $positions */
+        $positions = [];
+        $counter = $startLft;
+
+        /** @var list<array{type: 'enter', id: int, depth: int}|array{type: 'exit', id: int}> $tasks */
+        $tasks = [];
+        foreach (array_reverse($roots) as $rootId) {
+            $tasks[] = ['type' => 'enter', 'id' => $rootId, 'depth' => $startDepth];
+        }
+
+        while ($tasks !== []) {
+            $task = array_pop($tasks);
+
+            if ($task['type'] === 'exit') {
+                $entry = $positions[$task['id']];
+                $entry['rgt'] = $counter++;
+                $positions[$task['id']] = $entry;
+
+                continue;
+            }
+
+            $positions[$task['id']] = ['lft' => $counter++, 'rgt' => 0, 'depth' => $task['depth']];
+
+            // Queue exit before children so it pops after every descendant.
+            $tasks[] = ['type' => 'exit', 'id' => $task['id']];
+
+            // Push children reversed so the first child pops first — same
+            // visit order as the previous recursive implementation.
+            foreach (array_reverse($children[$task['id']] ?? []) as $childId) {
+                $tasks[] = ['type' => 'enter', 'id' => $childId, 'depth' => $task['depth'] + 1];
+            }
+        }
+
+        return $positions;
     }
 
     /**
@@ -350,17 +366,34 @@ final readonly class TreeRepairBuilder
     }
 
     /**
+     * Returns every id reachable from $rootId by walking parent_id pointers
+     * in $all. Iterative BFS so a deep chain of ids doesn't recurse.
+     *
      * @param  array<int|string, object>  $all
-     * @param  list<int>  $result
+     * @return list<int>
      */
-    private function collectSubtree(int $rootId, array $all, array &$result): void
+    private function collectSubtree(int $rootId, array $all): array
     {
-        $result[] = $rootId;
-
+        /** @var array<int, list<int>> $childrenByParent */
+        $childrenByParent = [];
         foreach ($all as $id => $row) {
-            if ((int) ($row->{$this->parentId} ?? -1) === $rootId) {
-                $this->collectSubtree((int) $id, $all, $result);
+            $pid = $row->{$this->parentId} ?? null;
+            if ($pid !== null) {
+                $childrenByParent[(int) $pid][] = (int) $id;
             }
         }
+
+        $result = [$rootId];
+        $queue = [$rootId];
+
+        while ($queue !== []) {
+            $id = array_pop($queue);
+            foreach ($childrenByParent[$id] ?? [] as $childId) {
+                $result[] = $childId;
+                $queue[] = $childId;
+            }
+        }
+
+        return $result;
     }
 }

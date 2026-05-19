@@ -333,4 +333,97 @@ final class CorruptionRecoveryTest extends TestCase
         $root = $root->refresh();
         $this->assertSame(12, (int) $root->tickets_total);
     }
+
+    /**
+     * Seeds a single corrupted `$depth`-level chain of Categories so the
+     * tree-repair walkers have a tall-and-skinny shape to traverse.
+     * Lft/rgt/depth are deliberately zero — fixTree must rebuild them
+     * by walking parent_id alone, exercising the iterative DFS.
+     */
+    private function seedDeepCorruptedChain(int $depth): void
+    {
+        $rows = [];
+        for ($i = 1; $i <= $depth; $i++) {
+            $rows[] = [
+                'id' => $i,
+                'name' => "n{$i}",
+                'lft' => 0,
+                'rgt' => 0,
+                'depth' => 0,
+                'parent_id' => $i === 1 ? null : $i - 1,
+            ];
+        }
+
+        // Chunked insert so SQLite doesn't trip its variable cap.
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('categories')->insert($chunk);
+        }
+        $this->syncSequence('categories');
+    }
+
+    public function test_fix_tree_full_table_handles_deeply_nested_chain_without_blowing_the_stack(): void
+    {
+        // Mirror of BulkInsertTest's deep-chain coverage: a 2,000-level
+        // parent_id chain. The previous recursive walker in
+        // TreeRepairBuilder::rebuildTree would exhaust PHP's
+        // xdebug.max_nesting_level (default 256) on this shape and
+        // risk an OS-level stack overflow well past ~10K levels in
+        // production PHP. The iterative walker uses a heap-allocated
+        // stack and is bounded only by available memory. This test
+        // asserts correctness on the deep input; an xdebug-configured
+        // CI cell would also surface the original failure.
+        //
+        // Drives the no-anchor entry — exercises `rebuildTree` +
+        // `walkAssignPositions`. The anchored variant below covers the
+        // sibling path through `rebuildSubtree` + `collectSubtree`.
+        $depth = 2_000;
+        $this->seedDeepCorruptedChain($depth);
+
+        $this->assertTrue(Category::isBroken());
+
+        Category::fixTree();
+
+        $this->assertFalse(Category::isBroken());
+        $root = Category::query()->findOrFail(1);
+        $leaf = Category::query()->findOrFail($depth);
+        $this->assertSame(1, $root->lft);
+        $this->assertSame($depth * 2, $root->rgt);
+        // Deepest leaf's depth covers the iterative walker's depth
+        // assignment — depth is the field the previous recursion
+        // tracked via the $d closure argument, so a per-level off-by-
+        // one in the conversion would surface here.
+        $this->assertSame($depth - 1, (int) $leaf->depth);
+    }
+
+    public function test_fix_tree_anchored_handles_deeply_nested_chain_without_blowing_the_stack(): void
+    {
+        // Same shape as the full-table case, but invoked with an
+        // explicit anchor so the repair routes through
+        // `rebuildSubtree` → `collectSubtree` instead of `rebuildTree`.
+        // Both previously recursed; both are now iterative.
+        //
+        // rebuildSubtree starts numbering from the anchor's existing
+        // `lft` (treating it as the subtree's offset within the
+        // surrounding forest), so the root needs a sane `lft = 1` for
+        // the chain to land at 1..2N. Descendants stay corrupted —
+        // that's the part the walker must traverse.
+        $depth = 2_000;
+        $this->seedDeepCorruptedChain($depth);
+        DB::table('categories')->where('id', 1)->update(['lft' => 1]);
+
+        $this->assertTrue(Category::isBroken());
+
+        $root = Category::query()->findOrFail(1);
+        Category::fixTree(anchor: $root);
+
+        $this->assertFalse(Category::isBroken());
+
+        $root = $root->refresh();
+        $leaf = Category::query()->findOrFail($depth);
+        $this->assertSame(1, $root->lft);
+        $this->assertSame($depth * 2, $root->rgt);
+        // Direct depth assertion on the deepest leaf — same rationale
+        // as the full-table case above.
+        $this->assertSame($depth - 1, (int) $leaf->depth);
+    }
 }
