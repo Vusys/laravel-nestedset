@@ -489,6 +489,13 @@ trait HasTreeMutation
 
     /**
      * Sibling immediately before this node (same parent, next-smaller rgt).
+     *
+     * For roots (`parent_id IS NULL`) the parent predicate is not
+     * scope-isolating on its own — every scope has its own NULL-parent
+     * roots and `makeRoot()` restarts lft/rgt at 1 per scope, so two
+     * scopes can independently produce roots whose bounds collide.
+     * The scope predicates added here keep the lookup inside this
+     * node's own partition.
      */
     public function prevSibling(): ?static
     {
@@ -498,6 +505,9 @@ trait HasTreeMutation
 
         if ($parentId === null) {
             $query->whereNull($this->getParentIdName());
+            foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+                $query->where($col, $value);
+            }
         } else {
             $query->where($this->getParentIdName(), $parentId);
         }
@@ -510,6 +520,9 @@ trait HasTreeMutation
 
     /**
      * Sibling immediately after this node (same parent, next-larger lft).
+     *
+     * See {@see prevSibling()} for the per-scope filter rationale on
+     * root siblings.
      */
     public function nextSibling(): ?static
     {
@@ -519,6 +532,9 @@ trait HasTreeMutation
 
         if ($parentId === null) {
             $query->whereNull($this->getParentIdName());
+            foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+                $query->where($col, $value);
+            }
         } else {
             $query->where($this->getParentIdName(), $parentId);
         }
