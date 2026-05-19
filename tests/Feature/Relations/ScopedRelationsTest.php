@@ -158,4 +158,32 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(2, (int) $oneC->ancestors_count);
         $this->assertSame(2, (int) $twoC->ancestors_count);
     }
+
+    public function test_depth_bounded_descendants_eager_load_respects_scope(): void
+    {
+        // Production use case from docs/querying/relations.md:
+        //
+        //   $root->load([
+        //       'descendants' => fn ($q) => $q->where('depth', '<=', $root->depth + 1),
+        //   ]);
+        //
+        // Pin that the depth predicate composes with the relation's
+        // own bounds + scope filter, instead of either:
+        //   (a) bleeding cross-scope rows whose depth happens to match, or
+        //   (b) bypassing the depth bound and returning everything.
+        //
+        // Each menu has 1A/2A at depth 0, 1B/2B at depth 1, 1C/2C at depth 2.
+        // Loading menu 1's root descendants with depth <= 1 should yield
+        // only 1B (depth=1), never 2B (cross-scope, depth=1).
+        $menu1Root = $this->find(11);
+
+        $menu1Root->load([
+            'descendants' => fn ($q) => $q->where('depth', '<=', $menu1Root->depth + 1),
+        ]);
+
+        $names = $menu1Root->descendants->sortBy('lft')->pluck('name')->all();
+        $this->assertSame(['1B'], array_values($names),
+            'depth <= 1 + scope: only 1B (menu 1, depth 1) — 1C dropped by depth, 2B dropped by scope',
+        );
+    }
 }
