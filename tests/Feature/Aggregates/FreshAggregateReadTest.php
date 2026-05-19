@@ -254,6 +254,37 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(4, $this->asInt($root->getAttribute('subtree_count')));
     }
 
+    public function test_ad_hoc_alias_is_in_memory_only_and_dropped_on_refresh(): void
+    {
+        // Aliases that don't match a declared aggregate column live
+        // only on the in-memory model — they are not persisted via
+        // save(), and refresh() drops them because there is no
+        // schema column to read back.
+        $root = Area::query()
+            ->withFreshAggregates([
+                'descendants_total' => Aggregate::sum('tickets')->exclusive(),
+            ])
+            ->where('id', 1)
+            ->firstOrFail();
+
+        $this->assertSame(125, $this->asInt($root->getAttribute('descendants_total')));
+
+        $root->save();
+
+        $reloaded = Area::query()->findOrFail(1);
+        $this->assertNull(
+            $reloaded->getAttribute('descendants_total'),
+            'ad-hoc alias must not be persisted to a non-existent column',
+        );
+
+        // Same model in memory after refresh: the alias is gone.
+        $root->refresh();
+        $this->assertNull(
+            $root->getAttribute('descendants_total'),
+            'refresh() drops in-memory-only aliases',
+        );
+    }
+
     public function test_with_fresh_aggregates_supports_mixed_declared_and_ad_hoc(): void
     {
         $root = Area::query()
