@@ -87,11 +87,16 @@ final class AggregateLockingConcurrencyTest extends TestCase
         $root = $root->refresh();
 
         // Post-update tickets across the subtree: {25 (root), 10, 20, 30, 40}.
-        // MIN = 10 (a leaf), MAX = 40 (a leaf). Both extrema move
-        // to leaves — a stale recompute that read any pre-update
-        // child would see tickets=100 and compute MAX=100, drift
-        // that this assertion catches. The MIN check is symmetric:
-        // a pre-update child reads as 100, post-update MIN=10.
+        // MIN = 10 (a leaf), MAX = 40 (a leaf). MAX is the
+        // load-bearing assertion: children going DOWN is the
+        // lost-holder direction for MAX (the delta path can't shrink
+        // an extremum, so the package issues a RecomputeMaintenance
+        // pass with the FOR UPDATE lock we're verifying). A stale
+        // concurrent recompute that read any pre-update child would
+        // see tickets=100 and compute MAX=100 — drift this assertion
+        // catches. MIN goes through the delta gained-holder path
+        // (atomic `CASE WHEN value < col THEN value ELSE col END`)
+        // and doesn't need the lock; included here as a sanity check.
         $this->assertSame(10, $root->tickets_min, 'root.tickets_min must equal the min over the post-update subtree');
         $this->assertSame(40, $root->tickets_max, 'root.tickets_max must equal the max over the post-update subtree');
 
@@ -153,6 +158,12 @@ final class AggregateLockingConcurrencyTest extends TestCase
 
         // Post-update tickets: {65 (root), 50, 60, 70, 80}.
         // MIN = 50 (leaf), MAX = 80 (leaf) — root is not an extremum.
+        // MIN is the load-bearing assertion here: children going UP
+        // is the lost-holder direction for MIN, which triggers
+        // RecomputeMaintenance under the FOR UPDATE lock. A stale
+        // recompute reading any pre-update child would see tickets=1
+        // and compute MIN=1 — drift this assertion catches. MAX
+        // goes through the delta gained-holder path here.
         $this->assertSame(50, $root->tickets_min);
         $this->assertSame(80, $root->tickets_max);
 

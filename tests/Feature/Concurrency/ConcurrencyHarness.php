@@ -135,9 +135,11 @@ trait ConcurrencyHarness
                 if ($attempt >= $maxAttempts || ! $this->isDeadlockOrLockTimeout($e)) {
                     throw $e;
                 }
-                // Exponential backoff with jitter so retrying workers
-                // don't land in the same instant.
-                Sleep::usleep(1_000 * (2 ** $attempt) + random_int(0, 5_000));
+                // Exponential backoff with jitter, capped at ~256 ms
+                // so deep retry tails don't push a test into multi-
+                // second sleeps. Uncapped, attempt=16 would sleep 65s.
+                $base = min(1_000 * (2 ** $attempt), 256_000);
+                Sleep::usleep($base + random_int(0, 5_000));
             }
         }
     }
