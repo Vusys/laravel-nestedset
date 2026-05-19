@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature;
 
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
+use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
@@ -216,6 +217,33 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertSame($bRoot->id, $clone->parent_id);
         $this->assertFalse(MenuItem::isBroken(new MenuItem(['menu_id' => $menuA->id])));
         $this->assertFalse(MenuItem::isBroken(new MenuItem(['menu_id' => $menuB->id])));
+    }
+
+    public function test_save_on_unplaced_clone_throws(): void
+    {
+        // Counterpart to test_replicate_clears_structural_columns: the
+        // clone is unplaced, so calling ->save() without first placing
+        // it must throw rather than persist a lft=rgt=0 row.
+        $root = new Area(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        $source = new Area(['name' => 's', 'tickets' => 5]);
+        $source->appendToNode($root)->save();
+        $source->refresh();
+
+        $clone = $source->replicate();
+
+        $this->expectException(UnplacedNodeException::class);
+
+        try {
+            $clone->save();
+        } finally {
+            $this->assertNull(
+                Area::query()->where('name', 's')->where('id', '!=', $source->id)->first(),
+                'rejected save must not persist the unplaced clone',
+            );
+        }
     }
 
     public function test_replicate_returns_an_unsaved_instance(): void
