@@ -18,6 +18,7 @@ use Vusys\NestedSet\Concerns\HasTreeRepair;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
@@ -68,6 +69,25 @@ trait NodeTrait
             }
             if (method_exists($node, 'callPendingAction')) {
                 $node->callPendingAction();
+            }
+            // New nodes must have been placed in the tree by this point —
+            // either by a pending operation that just ran (appendToNode,
+            // makeRoot, etc.) or by bulkInsertTree setting lft/rgt
+            // directly. Otherwise the INSERT would land with lft=rgt=0,
+            // producing an invalid_bounds corruption. Catches the common
+            // footguns: Model::create([...]) without placement, and
+            // ->save() on an unplaced replicate() clone.
+            if (! $node->exists
+                && method_exists($node, 'isPlacedInTree')
+                && ! $node->isPlacedInTree()
+            ) {
+                throw new UnplacedNodeException(sprintf(
+                    'Cannot save %s without placing it in the tree first. '
+                    .'Call appendToNode($parent), prependToNode($parent), '
+                    .'insertBeforeNode($sibling), insertAfterNode($sibling), '
+                    .'or makeRoot() before save().',
+                    $node::class,
+                ));
             }
             if (method_exists($node, 'captureAggregateDeltas')) {
                 self::runAggregateHook($node, 'capture', static fn () => $node->captureAggregateDeltas());
