@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Relations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * @template TRelatedModel of Model&HasNestedSet
@@ -22,11 +23,34 @@ final class AncestorsRelation extends BaseRelation
             return;
         }
 
-        $this->treeQuery()->whereAncestorOf($this->parent->getBounds());
+        $query = $this->treeQuery();
+        $query->whereAncestorOf($this->parent->getBounds());
+
+        // Each scope (per-tenant menu, per-post comment thread, …)
+        // restarts its lft sequence at 1, so two trees with
+        // overlapping bounds are the common case. Without these
+        // predicates the relation would return ancestors from any
+        // tree whose bounds happen to span the parent's lft/rgt.
+        foreach (NestedSetScopeResolver::valuesFor($this->parent) as $col => $value) {
+            $query->where($query->qualifyColumn($col), '=', $value);
+        }
     }
 
     protected function matches(HasNestedSet $model, HasNestedSet $related): bool
     {
+        // Cross-scope rows can't match — the eager-load query already
+        // filters them out, but `match()` runs against the returned
+        // collection without knowing about scope. Guard here too so
+        // that even hand-fed result sets don't attach to the wrong
+        // declaring model.
+        if ($model instanceof Model && $related instanceof Model) {
+            foreach (NestedSetScopeResolver::columns($model::class) as $col) {
+                if ($model->getAttribute($col) !== $related->getAttribute($col)) {
+                    return false;
+                }
+            }
+        }
+
         return $related->getBounds()->contains($model->getBounds());
     }
 
@@ -35,12 +59,17 @@ final class AncestorsRelation extends BaseRelation
         HasNestedSet $model,
         string $lftColumn,
         string $rgtColumn,
+        array $scope,
     ): void {
         $bounds = $model->getBounds();
 
-        $query->orWhere(static function (Builder $q) use ($lftColumn, $rgtColumn, $bounds): void {
+        $query->orWhere(static function (Builder $q) use ($lftColumn, $rgtColumn, $bounds, $scope): void {
             $q->where($lftColumn, '<', $bounds->lft)
                 ->where($rgtColumn, '>', $bounds->rgt);
+
+            foreach ($scope as $col => $value) {
+                $q->where($col, '=', $value);
+            }
         });
     }
 
