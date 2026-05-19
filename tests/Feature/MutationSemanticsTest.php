@@ -103,6 +103,43 @@ final class MutationSemanticsTest extends TestCase
     }
 
     // ================================================================
+    // Unsaved parent passed to single-node placement methods
+    // ================================================================
+
+    public function test_append_to_node_with_unsaved_parent_throws(): void
+    {
+        // Single-node `appendToNode->save()` against an unsaved parent
+        // can't proceed: there are no parent bounds to read. Pins that
+        // it throws rather than silently mis-placing the child.
+        $unsavedParent = new Category(['name' => 'Phantom']);
+        $child = new Category(['name' => 'Orphan']);
+
+        $this->expectException(LogicException::class);
+
+        $child->appendToNode($unsavedParent)->save();
+    }
+
+    public function test_prepend_to_node_with_unsaved_parent_throws(): void
+    {
+        $unsavedParent = new Category(['name' => 'Phantom']);
+        $child = new Category(['name' => 'Orphan']);
+
+        $this->expectException(LogicException::class);
+
+        $child->prependToNode($unsavedParent)->save();
+    }
+
+    public function test_insert_before_node_with_unsaved_sibling_throws(): void
+    {
+        $unsavedSibling = new Category(['name' => 'Phantom']);
+        $newNode = new Category(['name' => 'Newcomer']);
+
+        $this->expectException(LogicException::class);
+
+        $newNode->insertBeforeNode($unsavedSibling)->save();
+    }
+
+    // ================================================================
     // makeRoot on an already-root row
     // ================================================================
 
@@ -318,7 +355,7 @@ final class MutationSemanticsTest extends TestCase
     {
         // Anchor placement reads the parent's bounds from the DB by
         // primary key. An unsaved parent has getKey() === null, which
-        // bottoms out in HasTreeMutation::intKey rejecting the missing
+        // bottoms out in HasTreeMutation::keyOf rejecting the missing
         // primary key. The pending placement is queued without
         // failing — the error surfaces only at save() time.
         $child = new Category(['name' => 'child']);
@@ -327,7 +364,7 @@ final class MutationSemanticsTest extends TestCase
         $child->appendToNode($unsavedParent);
 
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('integer primary keys');
+        $this->expectExceptionMessage('NestedSet anchor has no primary key');
 
         $this->allowBrokenTreeAtTearDown = true;
         $child->save();
@@ -337,14 +374,14 @@ final class MutationSemanticsTest extends TestCase
     {
         // Same diagnosis as append: the sibling action reads the
         // target's bounds via getNodeData, which routes through
-        // intKey and rejects the unsaved target's null primary key.
+        // keyOf and rejects the unsaved target's null primary key.
         $child = new Category(['name' => 'child']);
         $unsavedSibling = new Category(['name' => 'unsaved']);
 
         $child->insertBeforeNode($unsavedSibling);
 
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('integer primary keys');
+        $this->expectExceptionMessage('NestedSet anchor has no primary key');
 
         $this->allowBrokenTreeAtTearDown = true;
         $child->save();

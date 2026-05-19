@@ -47,16 +47,16 @@ final class FixAggregatesJob implements ShouldQueue
      *                               null/0 disables chunking — the
      *                               whole repair runs in one job (the
      *                               original Phase N behaviour).
-     * @param  int|null  $cursorAfterId  Internal: process rows whose id
-     *                                   is strictly greater than this.
-     *                                   Set by the re-dispatch path; not
-     *                                   typically passed by callers.
+     * @param  int|string|null  $cursorAfterId  Internal: process rows whose id
+     *                                          is strictly greater than this.
+     *                                          Set by the re-dispatch path; not
+     *                                          typically passed by callers.
      */
     public function __construct(
         public readonly string $modelClass,
-        public readonly ?int $anchorId = null,
+        public readonly int|string|null $anchorId = null,
         public readonly ?int $chunkSize = null,
-        public readonly ?int $cursorAfterId = null,
+        public readonly int|string|null $cursorAfterId = null,
         /**
          * Index of this chunk within the chain, starting at 0 for the
          * first dispatch and incremented per self-redispatch. Carried
@@ -76,8 +76,8 @@ final class FixAggregatesJob implements ShouldQueue
             $instance = $modelClass::query()->find($this->anchorId);
             if (! $instance instanceof HasNestedSet) {
                 throw new \RuntimeException(sprintf(
-                    'FixAggregatesJob: anchor id %d not found on %s — the row was deleted between dispatch and execution.',
-                    $this->anchorId,
+                    'FixAggregatesJob: anchor id %s not found on %s — the row was deleted between dispatch and execution.',
+                    (string) $this->anchorId,
                     $modelClass,
                 ));
             }
@@ -131,7 +131,7 @@ final class FixAggregatesJob implements ShouldQueue
         }
 
         $startNs = hrtime(true);
-        /** @var array{result: AggregateFixResult, nextAfterId: int|null} $chunk */
+        /** @var array{result: AggregateFixResult, nextAfterId: int|string|null} $chunk */
         $chunk = $modelClass::fixAggregatesChunk($anchor, $this->cursorAfterId, $this->chunkSize ?? 0);
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 

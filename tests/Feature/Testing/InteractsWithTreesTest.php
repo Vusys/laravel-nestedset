@@ -398,15 +398,12 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('NestedSetAggregate', $error->getMessage());
     }
 
-    public function test_assert_is_child_of_rejects_non_integer_primary_key(): void
+    public function test_assert_is_child_of_accepts_string_primary_key(): void
     {
-        // The package documents integer primary keys as a hard
-        // requirement (depth deltas, aggregate UPDATE bindings,
-        // parent_id columns all assume int). Passing a parent with a
-        // non-numeric key into an assertion that compares parent_id
-        // surfaces with a clear LogicException — better than a
-        // silent (int) cast that returns 0 and produces a misleading
-        // assertion failure.
+        // String/UUID/ULID PKs are first-class — `assertIsChildOf`
+        // compares parent.getKey() against child.getParentId() with
+        // strict equality, so both sides need to preserve their
+        // string identity instead of being narrowed to int.
         $stringKeyParent = new class extends Model implements HasNestedSet
         {
             protected $primaryKey = 'id';
@@ -415,7 +412,7 @@ final class InteractsWithTreesTest extends TestCase
 
             protected $keyType = 'string';
 
-            protected $attributes = ['id' => 'not-a-number', 'lft' => 1, 'rgt' => 4, 'depth' => 0];
+            protected $attributes = ['id' => 'parent-uuid', 'lft' => 1, 'rgt' => 4, 'depth' => 0];
 
             public function getLft(): int
             {
@@ -432,7 +429,7 @@ final class InteractsWithTreesTest extends TestCase
                 return 0;
             }
 
-            public function getParentId(): ?int
+            public function getParentId(): ?string
             {
                 return null;
             }
@@ -480,9 +477,9 @@ final class InteractsWithTreesTest extends TestCase
                 return 1;
             }
 
-            public function getParentId(): int
+            public function getParentId(): string
             {
-                return 1;
+                return 'parent-uuid';
             }
 
             public function getBounds(): NodeBounds
@@ -510,9 +507,6 @@ final class InteractsWithTreesTest extends TestCase
                 return 'parent_id';
             }
         };
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('integer primary key');
 
         $this->assertIsChildOf($child, $stringKeyParent);
     }

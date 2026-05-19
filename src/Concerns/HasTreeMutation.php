@@ -191,7 +191,7 @@ trait HasTreeMutation
 
         EventDispatcher::dispatch(new NodeMoved(
             modelClass: static::class,
-            nodeId: $this->intKey($sibling),
+            nodeId: $this->keyOf($sibling),
             fromBounds: $siblingFrom,
             toBounds: $sibling->getBounds(),
             operation: 'sibling-displaced',
@@ -269,7 +269,7 @@ trait HasTreeMutation
         if ($wasExisting && $from !== null) {
             EventDispatcher::dispatch(new NodeMoved(
                 modelClass: static::class,
-                nodeId: $this->intKey($this),
+                nodeId: $this->keyOf($this),
                 fromBounds: $from,
                 toBounds: $this->getBounds(),
                 operation: $op->action,
@@ -326,7 +326,7 @@ trait HasTreeMutation
         $parentBounds = $this->freshBoundsOf($parent);
         $position = $parentBounds->rgt;
         $newDepth = $parentBounds->depth + 1;
-        $newParentId = $this->intKey($parent);
+        $newParentId = $this->keyOf($parent);
 
         $this->positionAt($position, $newDepth, $newParentId);
     }
@@ -336,7 +336,7 @@ trait HasTreeMutation
         $parentBounds = $this->freshBoundsOf($parent);
         $position = $parentBounds->lft + 1;
         $newDepth = $parentBounds->depth + 1;
-        $newParentId = $this->intKey($parent);
+        $newParentId = $this->keyOf($parent);
 
         $this->positionAt($position, $newDepth, $newParentId);
     }
@@ -481,7 +481,7 @@ trait HasTreeMutation
      * issues an atomic moveNode UPDATE, then re-reads the node's resulting
      * bounds so Eloquent's dirty tracking is accurate.
      */
-    private function positionAt(int $position, int $newDepth, ?int $newParentId): void
+    private function positionAt(int $position, int $newDepth, int|string|null $newParentId): void
     {
         $mutator = $this->newTreeMutator();
 
@@ -499,7 +499,7 @@ trait HasTreeMutation
         // Read $from from the DB rather than $this — the in-memory model may
         // be stale (e.g. saved before later sibling inserts shifted its rgt),
         // and feeding moveNode an out-of-date bound corrupts the tree.
-        $from = $mutator->getNodeData($this->intKey($this));
+        $from = $mutator->getNodeData($this->keyOf($this));
         $depthDelta = $newDepth - $from->depth;
 
         $mutator->moveNode($from, $position, $depthDelta);
@@ -507,7 +507,7 @@ trait HasTreeMutation
         // Re-read this node's new lft/rgt/depth — moveNode shifts many rows
         // at once via CASE WHEN, so we can't derive them locally without
         // duplicating the algorithm.
-        $newBounds = $mutator->getPlainNodeData($this->intKey($this));
+        $newBounds = $mutator->getPlainNodeData($this->keyOf($this));
 
         $this->setAttribute($this->getLftName(), $newBounds['lft']);
         $this->setAttribute($this->getRgtName(), $newBounds['rgt']);
@@ -530,22 +530,24 @@ trait HasTreeMutation
     {
         $mutator = $this->newTreeMutator();
 
-        return $mutator->getNodeData($this->intKey($other));
+        return $mutator->getNodeData($this->keyOf($other));
     }
 
     /**
-     * Narrows Model::getKey() (mixed) to int. Nested-set models always use
-     * integer primary keys — anything else would break the algorithm.
+     * Returns the model's primary key value typed as int or string —
+     * matches what Eloquent's `$keyType` declares. Throws if a model
+     * is unsaved (null PK), so callers don't accidentally feed null
+     * to a parent_id slot or builder lookup.
      */
-    private function intKey(Model $node): int
+    private function keyOf(Model $node): int|string
     {
         $key = $node->getKey();
 
-        if (is_int($key) || is_numeric($key)) {
-            return (int) $key;
+        if (is_int($key) || is_string($key)) {
+            return $key;
         }
 
-        throw new LogicException('NestedSet models require integer primary keys.');
+        throw new LogicException('NestedSet anchor has no primary key — was it saved?');
     }
 
     protected function newTreeMutator(): TreeMutationBuilder
