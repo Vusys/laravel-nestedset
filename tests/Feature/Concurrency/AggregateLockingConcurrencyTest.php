@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Concurrency;
 
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Sleep;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -157,51 +155,5 @@ final class AggregateLockingConcurrencyTest extends TestCase
         $this->assertAggregateMatchesFresh($root, 'tickets_min');
         $this->assertAggregateMatchesFresh($root, 'tickets_max');
         $this->assertAggregatesAreIntact(Area::class);
-    }
-
-    /**
-     * Wraps a closure with SQLSTATE 40001 (serialization failure /
-     * deadlock victim) retry. Real callers under contended writes
-     * need this; the test workers do too.
-     *
-     * @param  \Closure(): void  $fn
-     */
-    private function withDeadlockRetry(\Closure $fn, int $maxAttempts = 8): void
-    {
-        $attempt = 0;
-        while (true) {
-            try {
-                $fn();
-
-                return;
-            } catch (QueryException $e) {
-                $attempt++;
-                if ($attempt >= $maxAttempts || ! $this->isDeadlockOrLockTimeout($e)) {
-                    throw $e;
-                }
-                // Exponential backoff with jitter so the next attempt
-                // doesn't land in the exact same instant as another
-                // retrying worker.
-                Sleep::usleep(1_000 * (2 ** $attempt) + random_int(0, 5_000));
-            }
-        }
-    }
-
-    private function isDeadlockOrLockTimeout(QueryException $e): bool
-    {
-        // SQLSTATE classes: 40001 = serialization failure (deadlock
-        // victim) on every supported backend; 40P01 = PostgreSQL's
-        // deadlock-detected; HY000 with driver code 1205 = MySQL's
-        // lock-wait-timeout (not a true deadlock, but the recovery
-        // shape is identical).
-        $sqlState = (string) $e->getCode();
-        if ($sqlState === '40001' || $sqlState === '40P01') {
-            return true;
-        }
-
-        $message = strtolower($e->getMessage());
-
-        return str_contains($message, 'deadlock')
-            || str_contains($message, 'lock wait timeout');
     }
 }

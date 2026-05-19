@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Concurrency;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Sleep;
 
 /**
  * Helper trait for the fork-based concurrency tests in this directory.
@@ -68,10 +70,6 @@ trait ConcurrencyHarness
             }
 
             if ($pid === 0) {
-                // Child. Reseed RNG so workers don't all pick the same
-                // "random" values for retry-jitter or test data.
-                mt_srand((int) (microtime(true) * 1_000_000) ^ getmypid());
-
                 try {
                     DB::purge();
                     $work($i);
@@ -109,5 +107,55 @@ trait ConcurrencyHarness
         DB::purge();
 
         return $exits;
+    }
+
+    /**
+     * Wraps a closure with SQLSTATE 40001 / 40P01 (deadlock-victim /
+     * deadlock-detected) retry. Concurrent writers against the same
+     * ancestor chain hit row-lock cycles even when the package takes
+     * a FOR UPDATE lock on the entry point — the lock serialises the
+     * read but subsequent multi-row UPDATEs (gap shifts, aggregate
+     * propagation) can still deadlock under MVCC. MySQL InnoDB and
+     * PostgreSQL detect the cycle and abort one transaction; callers
+     * retry. These workers do too — without this, contended tests
+     * are flaky on every locking backend.
+     *
+     * @param  \Closure(): void  $fn
+     */
+    protected function withDeadlockRetry(\Closure $fn, int $maxAttempts = 8): void
+    {
+        $attempt = 0;
+        while (true) {
+            try {
+                $fn();
+
+                return;
+            } catch (QueryException $e) {
+                $attempt++;
+                if ($attempt >= $maxAttempts || ! $this->isDeadlockOrLockTimeout($e)) {
+                    throw $e;
+                }
+                // Exponential backoff with jitter so retrying workers
+                // don't land in the same instant.
+                Sleep::usleep(1_000 * (2 ** $attempt) + random_int(0, 5_000));
+            }
+        }
+    }
+
+    private function isDeadlockOrLockTimeout(QueryException $e): bool
+    {
+        // SQLSTATE classes: 40001 = serialization failure (deadlock
+        // victim) on MySQL/MariaDB/PG; 40P01 = PostgreSQL's
+        // deadlock-detected. Lock-wait-timeout shows up under HY000
+        // with driver code 1205 on MySQL — same recovery shape.
+        $sqlState = (string) $e->getCode();
+        if ($sqlState === '40001' || $sqlState === '40P01') {
+            return true;
+        }
+
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'deadlock')
+            || str_contains($message, 'lock wait timeout');
     }
 }

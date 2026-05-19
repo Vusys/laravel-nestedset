@@ -46,8 +46,16 @@ final class MakeRootConcurrencyTest extends TestCase
 
         $exits = $this->runConcurrentWorkers($workers, function (int $worker) use ($perWorker): void {
             for ($j = 0; $j < $perWorker; $j++) {
-                $node = new Category(['name' => sprintf('w%d-%d', $worker, $j)]);
-                $node->saveAsRoot();
+                // Even with the FOR-UPDATE lock on max-rgt, the
+                // subsequent `makeGap` UPDATE can produce row-lock
+                // cycles between workers on PostgreSQL / MySQL —
+                // both backends detect the deadlock and abort one
+                // transaction. Real callers handle 40001 / 40P01 by
+                // retrying; this worker does the same.
+                $this->withDeadlockRetry(function () use ($worker, $j): void {
+                    $node = new Category(['name' => sprintf('w%d-%d', $worker, $j)]);
+                    $node->saveAsRoot();
+                });
             }
         });
 
@@ -110,8 +118,10 @@ final class MakeRootConcurrencyTest extends TestCase
         $exits = $this->runConcurrentWorkers($workers, function (int $worker) use ($menuA, $menuB): void {
             // Even workers hit menu A; odd workers hit menu B.
             $menuId = $worker % 2 === 0 ? $menuA->id : $menuB->id;
-            $node = new MenuItem(['name' => sprintf('w%d', $worker), 'menu_id' => $menuId]);
-            $node->saveAsRoot();
+            $this->withDeadlockRetry(function () use ($worker, $menuId): void {
+                $node = new MenuItem(['name' => sprintf('w%d', $worker), 'menu_id' => $menuId]);
+                $node->saveAsRoot();
+            });
         });
 
         $this->assertSame(array_fill(0, $workers, 0), $exits);
