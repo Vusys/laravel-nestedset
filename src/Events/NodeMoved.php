@@ -26,7 +26,7 @@ final readonly class NodeMoved
 {
     public function __construct(
         public string $modelClass,
-        public int $nodeId,
+        public int|string $nodeId,
         public NodeBounds $fromBounds,
         public NodeBounds $toBounds,
         /** One of 'appendTo', 'prependTo', 'sibling', 'root' — matches PendingOperation::$action. */

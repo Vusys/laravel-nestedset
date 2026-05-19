@@ -25,7 +25,7 @@ final readonly class AggregateMaintenanceFailed
 {
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         /**
          * One of: 'capture', 'apply', 'recompute', 'on_create',
          * 'on_delete', 'on_restore'. Identifies which lifecycle hook

@@ -79,7 +79,7 @@ trait HasTreeRepair
         $rootId = null;
         if ($anchor instanceof Model) {
             $key = $anchor->getKey();
-            $rootId = is_numeric($key) ? (int) $key : null;
+            $rootId = is_int($key) || is_string($key) ? $key : null;
         }
 
         // Time the structural repair + the aggregate rebuild as one

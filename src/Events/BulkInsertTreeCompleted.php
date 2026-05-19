@@ -16,7 +16,7 @@ final readonly class BulkInsertTreeCompleted
 {
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         public int $rowsInserted,
         public float $durationMs,
     ) {}

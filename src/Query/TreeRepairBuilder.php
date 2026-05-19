@@ -104,16 +104,17 @@ final readonly class TreeRepairBuilder
             ->get()
             ->keyBy($this->idCol);
 
-        /** @var array<int, list<int>> $children */
+        /** @var array<int|string, list<int|string>> $children */
         $children = [];
-        /** @var list<int> $roots */
+        /** @var list<int|string> $roots */
         $roots = [];
 
         foreach ($rows as $id => $row) {
-            if ($row->{$this->parentId} === null) {
-                $roots[] = (int) $id;
+            $pid = $row->{$this->parentId};
+            if ($pid === null) {
+                $roots[] = $id;
             } else {
-                $children[(int) $row->{$this->parentId}][] = (int) $id;
+                $children[$pid][] = $id;
             }
         }
 
@@ -128,7 +129,7 @@ final readonly class TreeRepairBuilder
      * Rebuilds only the subtree rooted at $rootId, without touching
      * other trees in the table (safe for multi-tree / forest tables).
      */
-    public function rebuildSubtree(int $rootId): void
+    public function rebuildSubtree(int|string $rootId): void
     {
         $all = $this->scoped()
             ->select([$this->idCol, $this->parentId])
@@ -137,7 +138,7 @@ final readonly class TreeRepairBuilder
 
         $inSubtree = $this->collectSubtree($rootId, $all->all());
 
-        /** @var array<int, list<int>> $children */
+        /** @var array<int|string, list<int|string>> $children */
         $children = [];
         $inSubtreeSet = array_flip($inSubtree);
 
@@ -150,8 +151,8 @@ final readonly class TreeRepairBuilder
 
             $pid = $row->{$this->parentId};
 
-            if ($pid !== null && isset($inSubtreeSet[(int) $pid])) {
-                $children[(int) $pid][] = $id;
+            if ($pid !== null && isset($inSubtreeSet[$pid])) {
+                $children[$pid][] = $id;
             }
         }
 
@@ -179,17 +180,17 @@ final readonly class TreeRepairBuilder
      * default and PHP's ~10K frame ceiling, both reachable in real
      * "tall and skinny" corruption shapes.
      *
-     * @param  list<int>  $roots
-     * @param  array<int, list<int>>  $children
-     * @return array<int, array{lft: int, rgt: int, depth: int}>
+     * @param  list<int|string>  $roots
+     * @param  array<int|string, list<int|string>>  $children
+     * @return array<int|string, array{lft: int, rgt: int, depth: int}>
      */
     private function walkAssignPositions(array $roots, array $children, int $startLft, int $startDepth): array
     {
-        /** @var array<int, array{lft: int, rgt: int, depth: int}> $positions */
+        /** @var array<int|string, array{lft: int, rgt: int, depth: int}> $positions */
         $positions = [];
         $counter = $startLft;
 
-        /** @var list<array{type: 'enter', id: int, depth: int}|array{type: 'exit', id: int}> $tasks */
+        /** @var list<array{type: 'enter', id: int|string, depth: int}|array{type: 'exit', id: int|string}> $tasks */
         $tasks = [];
         foreach (array_reverse($roots) as $rootId) {
             $tasks[] = ['type' => 'enter', 'id' => $rootId, 'depth' => $startDepth];
@@ -233,7 +234,7 @@ final readonly class TreeRepairBuilder
      * Same pattern Phase Q applied to TreeAggregateBuilder; the only
      * difference is the columns being CASE-d.
      *
-     * @param  array<int, array{lft: int, rgt: int, depth: int}>  $positions
+     * @param  array<int|string, array{lft: int, rgt: int, depth: int}>  $positions
      * @param  int<1, max>  $chunkSize
      */
     private function bulkWritePositions(array $positions, int $chunkSize = 500): void
@@ -242,7 +243,7 @@ final readonly class TreeRepairBuilder
             return;
         }
 
-        /** @var list<int> $ids */
+        /** @var list<int|string> $ids */
         $ids = array_keys($positions);
 
         foreach (array_chunk($ids, $chunkSize) as $idChunk) {
@@ -304,7 +305,7 @@ final readonly class TreeRepairBuilder
      * Fixes the tree by rebuilding all lft/rgt/depth values and returns
      * a result describing what was corrected.
      */
-    public function fixTree(?int $rootId = null): TreeFixResult
+    public function fixTree(int|string|null $rootId = null): TreeFixResult
     {
         if ($rootId !== null) {
             $this->rebuildSubtree($rootId);
@@ -369,17 +370,22 @@ final readonly class TreeRepairBuilder
      * Returns every id reachable from $rootId by walking parent_id pointers
      * in $all. Iterative BFS so a deep chain of ids doesn't recurse.
      *
+     * PK values are passed through as-is — PHP's array-key coercion folds
+     * numeric strings to int automatically, so int-keyed models (whose
+     * driver may surface ids as strings) and string-keyed models (UUID/
+     * ULID) both index correctly in `$childrenByParent`.
+     *
      * @param  array<int|string, object>  $all
-     * @return list<int>
+     * @return list<int|string>
      */
-    private function collectSubtree(int $rootId, array $all): array
+    private function collectSubtree(int|string $rootId, array $all): array
     {
-        /** @var array<int, list<int>> $childrenByParent */
+        /** @var array<int|string, list<int|string>> $childrenByParent */
         $childrenByParent = [];
         foreach ($all as $id => $row) {
             $pid = $row->{$this->parentId} ?? null;
             if ($pid !== null) {
-                $childrenByParent[(int) $pid][] = (int) $id;
+                $childrenByParent[$pid][] = $id;
             }
         }
 

@@ -1779,12 +1779,12 @@ trait HasNestedSetAggregates
      *
      * @param  list<ListenerAggregateDefinition>  $definitions
      * @param  array<string, mixed>  $scope
-     * @param  list<int>|null  $outerIds  null = fix all
+     * @param  list<int|string>|null  $outerIds  null = fix all
      */
     private static function fixListenerAggregatesPhp(
         array $definitions,
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
         ?array $outerIds,
     ): AggregateFixResult {
         if ($definitions === []) {
@@ -1910,7 +1910,7 @@ trait HasNestedSetAggregates
      */
     private static function loadAllListenerNodes(
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
         string $lftCol,
         string $rgtCol,
     ): Collection {
@@ -1992,7 +1992,7 @@ trait HasNestedSetAggregates
     private static function aggregateErrorsForListeners(
         array $definitions,
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
     ): array {
         $errors = [];
         foreach ($definitions as $def) {
@@ -2220,7 +2220,7 @@ trait HasNestedSetAggregates
      * ```php
      * Area::fixAggregates(
      *     chunkSize: 1_000,
-     *     onChunk: function (AggregateFixResult $chunk, int $i, ?int $cursor) {
+     *     onChunk: function (AggregateFixResult $chunk, int $i, int|string|null $cursor) {
      *         echo "Chunk {$i}: {$chunk->totalRowsUpdated} rows updated (cursor={$cursor})\n";
      *     },
      * );
@@ -2372,13 +2372,22 @@ trait HasNestedSetAggregates
      * Used by {@see FixAggregatesJob} to break a long-running repair
      * into a series of short, self-re-dispatching jobs.
      *
-     * @return array{result: AggregateFixResult, nextAfterId: int|null}
+     * Pagination uses `WHERE id > X ORDER BY id LIMIT N`, which assumes
+     * the PK is **monotonically ordered** for the model's chosen
+     * scheme. Auto-increment bigint, UUIDv7, ULID, and any
+     * lexicographically-ascending string all qualify. UUIDv4, nanoid
+     * (default), or any other random key will lexicographically reorder
+     * rows the loop should have visited — silently skipping or
+     * duplicating them. For random PKs use the unchunked
+     * {@see self::fixAggregates()} path instead.
+     *
+     * @return array{result: AggregateFixResult, nextAfterId: int|string|null}
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */
     public static function fixAggregatesChunk(
         ?HasNestedSet $anchor,
-        ?int $afterId,
+        int|string|null $afterId,
         int $chunkSize,
     ): array {
         $instance = self::aggregateAnchorOrFail($anchor);
@@ -2420,8 +2429,17 @@ trait HasNestedSetAggregates
             }
         }
 
+        $isIntKey = $instance->getKeyType() === 'int';
         $ids = array_values(array_map(
-            static fn (\stdClass $row): int => (int) ($row->{$instance->getKeyName()} ?? 0),
+            static function (\stdClass $row) use ($instance, $isIntKey): int|string {
+                $value = $row->{$instance->getKeyName()} ?? null;
+
+                if ($isIntKey) {
+                    return (int) $value;
+                }
+
+                return (string) $value;
+            },
             $query->get()->all(),
         ));
 
@@ -2653,7 +2671,7 @@ trait HasNestedSetAggregates
      */
     private static function runFixAggregates(
         ?HasNestedSet $anchor,
-        ?int $rootId,
+        int|string|null $rootId,
     ): ?AggregateFixResult {
         $definitions = AggregateRegistry::for(static::class);
 
@@ -2739,7 +2757,7 @@ trait HasNestedSetAggregates
         return is_string($column) ? $column : null;
     }
 
-    private static function anchorRootId(?HasNestedSet $anchor): ?int
+    private static function anchorRootId(?HasNestedSet $anchor): int|string|null
     {
         if (! $anchor instanceof Model) {
             return null;
@@ -2747,6 +2765,6 @@ trait HasNestedSetAggregates
 
         $key = $anchor->getKey();
 
-        return is_numeric($key) ? (int) $key : null;
+        return is_int($key) || is_string($key) ? $key : null;
     }
 }

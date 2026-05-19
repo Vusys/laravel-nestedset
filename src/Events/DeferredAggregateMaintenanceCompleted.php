@@ -24,7 +24,7 @@ final readonly class DeferredAggregateMaintenanceCompleted
 {
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         public int $rowsFixed,
         /** Wall-clock spent inside the user's closure. */
         public float $closureDurationMs,
