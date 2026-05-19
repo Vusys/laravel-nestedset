@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature;
 
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -48,15 +48,15 @@ final class SoftDeleteSubSecondCascadeTest extends TestCase
 
         // Force two distinct microsecond values in the same second so
         // sub-second precision is what differentiates them.
-        Carbon::setTestNow(Carbon::parse($second.'.100000'));
+        Date::setTestNow(Date::parse($second.'.100000'));
         $a1 = Category::query()->findOrFail(2);
         $a1->delete();
 
-        Carbon::setTestNow(Carbon::parse($second.'.900000'));
+        Date::setTestNow(Date::parse($second.'.900000'));
         $a2 = Category::query()->findOrFail(5);
         $a2->delete();
 
-        Carbon::setTestNow();   // release the test clock
+        Date::setTestNow();   // release the test clock
 
         // Sanity-check: both subtrees are trashed, and both share the
         // second-truncated timestamp but differ in microseconds.
