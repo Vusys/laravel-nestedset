@@ -183,6 +183,27 @@ final class ScopingTest extends TestCase
         $this->assertSame(0, $menu2Errors['invalid_bounds']);
     }
 
+    public function test_orphan_detection_joins_parent_within_scope(): void
+    {
+        // Cross-scope parent pretender: menu_items id=2 is a child in
+        // menu 1 with parent_id=1, but suppose its parent_id were 4
+        // (menu 2's root). Without scope on the parent side of the
+        // orphan join, the LEFT JOIN would resolve to row 4 and the
+        // orphan would silently NOT be reported. With the scoped
+        // JOIN, the parent-side match is constrained to menu 1, so
+        // row 4 doesn't qualify and the orphan is flagged.
+        $this->allowBrokenTreeAtTearDown = true;
+        DB::table('menu_items')->where('id', 2)->update(['parent_id' => 4]);
+
+        $menu1Errors = $this->repair(['menu_id' => $this->menu1->id])->countErrors();
+
+        $this->assertSame(
+            1,
+            $menu1Errors['orphans'],
+            'menu_items id=2 points at row 4 in a different scope — must count as an orphan',
+        );
+    }
+
     // ----------------------------------------------------------------
     // Scoped repair API requires an anchor — calling isBroken /
     // countErrors / fixTree on a scoped model without one walks the

@@ -60,6 +60,7 @@ final class RecomputeMaintenance
         string $locking = 'auto',
         ?NodeBounds $excludeBounds = null,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): int {
         if ($columns === []) {
             return 0;
@@ -77,6 +78,7 @@ final class RecomputeMaintenance
             locking: $locking,
             excludeBounds: $excludeBounds,
             softDeletedColumn: $softDeletedColumn,
+            idCol: $idCol,
         );
 
         if ($candidates === []) {
@@ -88,6 +90,7 @@ final class RecomputeMaintenance
             table: $table,
             columns: $columns,
             candidates: $candidates,
+            idCol: $idCol,
         );
     }
 
@@ -110,8 +113,9 @@ final class RecomputeMaintenance
         string $locking,
         ?NodeBounds $excludeBounds = null,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): array {
-        $selects = ['outer_a.id'];
+        $selects = ["outer_a.{$idCol} AS id"];
 
         $exclusionClause = $excludeBounds instanceof NodeBounds
             ? " AND NOT (inner_a.{$lftCol} >= {$excludeBounds->lft} AND inner_a.{$rgtCol} <= {$excludeBounds->rgt})"
@@ -215,6 +219,7 @@ final class RecomputeMaintenance
         string $table,
         array $columns,
         array $candidates,
+        string $idCol = 'id',
     ): int {
         $touched = 0;
 
@@ -231,7 +236,7 @@ final class RecomputeMaintenance
             }
 
             $touched += $connection->table($table)
-                ->where('id', '=', $id)
+                ->where($idCol, '=', $id)
                 ->update($updates);
         }
 

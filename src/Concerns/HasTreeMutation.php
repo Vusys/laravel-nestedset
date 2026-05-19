@@ -483,6 +483,7 @@ trait HasTreeMutation
             parentId: $this->getParentIdName(),
             depth: $this->getDepthName(),
             scope: NestedSetScopeResolver::valuesFor($this),
+            idCol: $this->getKeyName(),
         );
     }
 

@@ -138,6 +138,7 @@ trait HasTreeRepair
             parentId: $instance->getParentIdName(),
             depth: $instance->getDepthName(),
             scope: $scope,
+            idCol: $instance->getKeyName(),
         );
     }
 }
