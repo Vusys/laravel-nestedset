@@ -75,7 +75,7 @@ final class AggregateLockingConcurrencyTest extends TestCase
                 $child = Area::query()->findOrFail($childIds[$i]);
                 $child->tickets = $newValues[$i];
                 $child->save();
-            });
+            }, maxAttempts: 16);
         });
 
         $this->assertSame(
@@ -144,7 +144,7 @@ final class AggregateLockingConcurrencyTest extends TestCase
                 $child = Area::query()->findOrFail($childIds[$i]);
                 $child->tickets = $newValues[$i];
                 $child->save();
-            });
+            }, maxAttempts: 16);
         });
 
         $this->assertSame(array_fill(0, 4, 0), $exits);

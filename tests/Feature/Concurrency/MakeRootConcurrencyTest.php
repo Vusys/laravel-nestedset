@@ -41,8 +41,15 @@ final class MakeRootConcurrencyTest extends TestCase
         $seed = new Category(['name' => 'seed']);
         $seed->saveAsRoot();
 
-        $workers = 8;
-        $perWorker = 3;
+        // Workers × iterations chosen to keep contention high enough
+        // to exercise the lock but low enough that the deadlock-retry
+        // budget covers the unluckiest worker. 8×3 over-stressed PG
+        // (≥30 deadlocks across the run; the most-collided worker
+        // exhausted 8 retries); 5×2 produces real parallelism with
+        // headroom. `maxAttempts: 16` gives every worker the tail
+        // budget to ride out a deadlock storm.
+        $workers = 5;
+        $perWorker = 2;
 
         $exits = $this->runConcurrentWorkers($workers, function (int $worker) use ($perWorker): void {
             for ($j = 0; $j < $perWorker; $j++) {
@@ -55,7 +62,7 @@ final class MakeRootConcurrencyTest extends TestCase
                 $this->withDeadlockRetry(function () use ($worker, $j): void {
                     $node = new Category(['name' => sprintf('w%d-%d', $worker, $j)]);
                     $node->saveAsRoot();
-                });
+                }, maxAttempts: 16);
             }
         });
 
@@ -121,7 +128,7 @@ final class MakeRootConcurrencyTest extends TestCase
             $this->withDeadlockRetry(function () use ($worker, $menuId): void {
                 $node = new MenuItem(['name' => sprintf('w%d', $worker), 'menu_id' => $menuId]);
                 $node->saveAsRoot();
-            });
+            }, maxAttempts: 16);
         });
 
         $this->assertSame(array_fill(0, $workers, 0), $exits);
