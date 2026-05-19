@@ -82,16 +82,57 @@ final class NestedSetScopeResolver
         $columns = self::columns($a::class);
 
         foreach ($columns as $column) {
-            if ($a->getAttribute($column) !== $b->getAttribute($column)) {
+            $aValue = $a->getAttribute($column);
+            $bValue = $b->getAttribute($column);
+
+            if (! self::scopeValuesEqual($aValue, $bValue)) {
                 throw new ScopeViolationException(sprintf(
                     'Cross-scope operation on %s: column %s differs (%s vs %s).',
                     $a::class,
                     $column,
-                    self::format($a->getAttribute($column)),
-                    self::format($b->getAttribute($column)),
+                    self::format($aValue),
+                    self::format($bValue),
                 ));
             }
         }
+    }
+
+    /**
+     * Compares two scope-column values for "same tree" membership.
+     *
+     * Permissive on type: a model with `int 5` and another with
+     * `string "5"` (e.g. raw `setRawAttributes` without a cast)
+     * should still count as the same scope. Numeric strings normalise
+     * to their numeric form; DateTime-like objects compare on their
+     * resolved timestamp. Anything else falls back to loose `==` so
+     * Carbon vs Carbon comparing the same instant returns true.
+     *
+     * The strict `!==` form (the previous behaviour) threw spuriously
+     * for these mismatched-type representations even when the
+     * underlying scope was identical.
+     */
+    private static function scopeValuesEqual(mixed $a, mixed $b): bool
+    {
+        if ($a === $b) {
+            return true;
+        }
+
+        if ($a === null || $b === null) {
+            return false;
+        }
+
+        if (is_numeric($a) && is_numeric($b)) {
+            return (float) $a === (float) $b;
+        }
+
+        if ($a instanceof \DateTimeInterface && $b instanceof \DateTimeInterface) {
+            return $a->getTimestamp() === $b->getTimestamp()
+                && (int) $a->format('u') === (int) $b->format('u');
+        }
+
+        // Fall back to loose equality. Catches Stringable vs string
+        // and the long tail of value-objects that implement __toString.
+        return $a == $b;
     }
 
     private static function format(mixed $v): string
