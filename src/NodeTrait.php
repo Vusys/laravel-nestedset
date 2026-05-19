@@ -21,6 +21,7 @@ use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
+use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * Adds the full nested-set API to an Eloquent model.
@@ -90,32 +91,37 @@ trait NodeTrait
             if (! $node instanceof HasNestedSet) {
                 return;
             }
-            // Re-read structural columns (lft/rgt/depth/parent_id) so
-            // the deleted hook below sees current values. The in-memory
-            // attributes may have gone stale since this model was
-            // loaded — e.g. an earlier closeGap from a sibling's hard
-            // delete shifted this row's bounds in the DB but not in
-            // memory. Aggregate maintenance and the closeGap step both
-            // rely on accurate bounds.
+            // Re-read structural columns (lft/rgt/depth/parent_id) and
+            // any declared scope columns so the deleted hook below sees
+            // current values. The in-memory attributes may have gone
+            // stale since this model was loaded — e.g. an earlier
+            // closeGap from a sibling's hard delete shifted this row's
+            // bounds, or the caller mutated a scope attribute without
+            // saving. Aggregate maintenance, the cascade query, and the
+            // closeGap step all rely on persisted values.
             $key = $node->getKey();
             if ($key === null) {
                 return;
             }
+            $structuralColumns = [
+                $node->getLftName(),
+                $node->getRgtName(),
+                $node->getDepthName(),
+                $node->getParentIdName(),
+            ];
+            $scopeColumns = NestedSetScopeResolver::columns($node::class);
+            $columnsToRead = array_unique(array_merge($structuralColumns, $scopeColumns));
             $row = $node->getConnection()
                 ->table($node->getTable())
                 ->where($node->getKeyName(), $key)
-                ->first([$node->getLftName(), $node->getRgtName(), $node->getDepthName(), $node->getParentIdName()]);
+                ->first($columnsToRead);
             if ($row === null) {
                 return;
             }
-            $node->setAttribute($node->getLftName(), $row->{$node->getLftName()});
-            $node->setAttribute($node->getRgtName(), $row->{$node->getRgtName()});
-            $node->setAttribute($node->getDepthName(), $row->{$node->getDepthName()});
-            $node->setAttribute($node->getParentIdName(), $row->{$node->getParentIdName()});
-            $node->syncOriginalAttribute($node->getLftName());
-            $node->syncOriginalAttribute($node->getRgtName());
-            $node->syncOriginalAttribute($node->getDepthName());
-            $node->syncOriginalAttribute($node->getParentIdName());
+            foreach ($columnsToRead as $column) {
+                $node->setAttribute($column, $row->{$column});
+                $node->syncOriginalAttribute($column);
+            }
         });
 
         static::deleted(static function (Model $node): void {

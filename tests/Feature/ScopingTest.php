@@ -299,6 +299,31 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
+    public function test_force_delete_cascade_uses_persisted_scope_not_dirty_in_memory_value(): void
+    {
+        // A user could mutate the scope attribute in memory without
+        // saving and then call forceDelete(). The cascade query must
+        // hit the *persisted* scope (the one the row actually lives
+        // in), not the in-memory dirty value — otherwise it would
+        // delete descendants from the wrong tree.
+        //
+        // Tree: menu1 has Root1 > A, B. menu2 has Root2 > X. We
+        // forceDelete Root1 after dirty-rewriting its in-memory
+        // menu_id to menu2's id; menu2's tree must stay intact and
+        // menu1's subtree must be the one that's cleared.
+        $root1 = MenuItem::query()->findOrFail(1);
+        $root1->menu_id = $this->menu2->id;
+
+        $root1->forceDelete();
+
+        $this->assertNull(MenuItem::query()->find(1));
+        $this->assertNull(MenuItem::query()->find(2), 'A (menu1) cascade-removed');
+        $this->assertNull(MenuItem::query()->find(3), 'B (menu1) cascade-removed');
+
+        $this->assertNotNull(MenuItem::query()->find(4), 'Root2 (menu2) survives');
+        $this->assertNotNull(MenuItem::query()->find(5), 'X (menu2) survives');
+    }
+
     // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
