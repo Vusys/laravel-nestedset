@@ -17,8 +17,6 @@ A modern Laravel implementation of the nested-set model for hierarchical
 data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations,
 multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit.
 
-Target: **PHP 8.3+** / **Laravel 11, 12, 13**.
-
 ```php
 $root = Category::create(['name' => 'Root']);
 $root->saveAsRoot();
