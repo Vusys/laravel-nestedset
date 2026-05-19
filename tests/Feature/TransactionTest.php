@@ -108,22 +108,29 @@ final class TransactionTest extends TestCase
         $rootBefore = $root->refresh();
         $snapshot = DB::table('categories')->orderBy('id')->get()->toArray();
 
-        // Register a created listener that throws.
+        // Register a created listener that throws. The dispatcher
+        // keeps the closure on the model class, so we have to flush
+        // it on the way out — otherwise every later test that creates
+        // a Category will inherit the throw.
         Category::created(static function (): never {
             throw new RuntimeException('listener throw after insert');
         });
 
         try {
-            $b = new Category(['name' => 'B']);
-            $b->appendToNode($rootBefore)->save();
-            $this->fail('expected created listener to throw');
-        } catch (RuntimeException $e) {
-            $this->assertSame('listener throw after insert', $e->getMessage());
-        }
+            try {
+                $b = new Category(['name' => 'B']);
+                $b->appendToNode($rootBefore)->save();
+                $this->fail('expected created listener to throw');
+            } catch (RuntimeException $e) {
+                $this->assertSame('listener throw after insert', $e->getMessage());
+            }
 
-        $after = DB::table('categories')->orderBy('id')->get()->toArray();
-        $this->assertEquals($snapshot, $after, 'created-listener throw must roll back the entire save');
-        $this->assertFalse(Category::isBroken());
+            $after = DB::table('categories')->orderBy('id')->get()->toArray();
+            $this->assertEquals($snapshot, $after, 'created-listener throw must roll back the entire save');
+            $this->assertFalse(Category::isBroken());
+        } finally {
+            Category::flushEventListeners();
+        }
     }
 
     public function test_auto_transaction_wraps_call_pending_action(): void
