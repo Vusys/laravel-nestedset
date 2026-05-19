@@ -27,14 +27,31 @@ final class FilterPredicateEvaluateTest extends TestCase
         $this->assertFalse($result);
     }
 
-    public function test_equality_uses_loose_comparison_for_type_coercion(): void
+    public function test_equality_uses_strict_comparison(): void
     {
+        // Strict comparison so the PHP-side evaluation agrees with the
+        // SQL side's `= NULL → unknown → false` semantic. Loose
+        // comparison would silently match "" == 0 and false == 0,
+        // producing captured-vs-fresh aggregate drift.
         $predicate = FilterPredicate::equality(['level' => 5]);
 
-        // String '5' should loosely equal int 5.
-        $result = $predicate->evaluateFor(['level' => '5']);
+        $this->assertFalse(
+            $predicate->evaluateFor(['level' => '5']),
+            'strict comparison: int 5 must not match string "5"',
+        );
+    }
 
-        $this->assertTrue($result);
+    public function test_equality_with_zero_value_does_not_match_null_attribute(): void
+    {
+        // The drift case the strict-comparison fix targets: a filter
+        // value of int 0 against a NULL attribute. PHP loose `0 == null`
+        // is true, but SQL `col = 0` doesn't match NULL — capture and
+        // recompute would disagree under loose comparison.
+        $predicate = FilterPredicate::equality(['status' => 0]);
+
+        $this->assertFalse($predicate->evaluateFor(['status' => null]));
+        $this->assertFalse($predicate->evaluateFor([]));
+        $this->assertTrue($predicate->evaluateFor(['status' => 0]));
     }
 
     public function test_not_null_returns_true_when_column_is_set(): void
