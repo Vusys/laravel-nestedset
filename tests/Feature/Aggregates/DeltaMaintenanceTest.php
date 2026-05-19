@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
+use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -103,7 +104,7 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $this->asInt($b->tickets_count_all));
     }
 
-    public function test_create_with_no_placement_does_not_touch_other_rows(): void
+    public function test_create_without_placement_throws_and_does_not_touch_other_rows(): void
     {
         // Build a tree first so we have rows that could be wrongly updated.
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
@@ -111,24 +112,22 @@ final class DeltaMaintenanceTest extends TestCase
 
         $rootBefore = $this->asInt($root->refresh()->tickets_total);
 
-        // Now create an unplaced node — bare Area::create() leaves lft/rgt
-        // at the migration default of 0 — and must not propagate to the
-        // tree we built above.
-        $unplaced = Area::query()->create(['name' => 'Drifter', 'tickets' => 999]);
-        $unplaced->refresh();
+        // Bare Area::create() without appendToNode/makeRoot would
+        // otherwise write an invalid_bounds row (lft=rgt=0). The
+        // saving guard rejects it.
+        $this->expectException(UnplacedNodeException::class);
 
-        $this->assertSame(0, $this->asInt($unplaced->lft));
-        $this->assertSame(0, $this->asInt($unplaced->rgt));
-
-        $this->assertSame(
-            $rootBefore,
-            $this->asInt($root->refresh()->tickets_total),
-            'unplaced creates must not modify other rows',
-        );
-
-        // Tidy: hard-delete the unplaced row so it doesn't leak into the
-        // tearDown integrity check or sibling tests.
-        $unplaced->forceDelete();
+        try {
+            Area::query()->create(['name' => 'Drifter', 'tickets' => 999]);
+        } finally {
+            // No drifter row landed, and ancestors stayed untouched.
+            $this->assertNull(Area::query()->where('name', 'Drifter')->first());
+            $this->assertSame(
+                $rootBefore,
+                $this->asInt($root->refresh()->tickets_total),
+                'rejected save must not modify other rows',
+            );
+        }
     }
 
     // ----------------------------------------------------------------
