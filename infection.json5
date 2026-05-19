@@ -17,6 +17,13 @@
         json: "build/infection/infection.json",
         summary: "build/infection/summary.log",
         github: true,
+        stryker: {
+            // Branch name pattern — Infection uploads to the Stryker
+            // dashboard only when running on a matching branch. Master
+            // is enough; PR diff runs would pollute the dashboard with
+            // partial measurements.
+            report: "master",
+        },
     },
     mutators: {
         "@default": true,
