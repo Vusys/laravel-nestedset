@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
+use Vusys\NestedSet\Tests\Fixtures\Models\StuckCursorUuidTag;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidMenu;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidMenuItem;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
@@ -282,5 +283,85 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertSame($menuB->id, $rootB->refresh()->menu_id);
         $this->assertFalse(UuidMenuItem::isBroken($rootA));
         $this->assertFalse(UuidMenuItem::isBroken($rootB));
+    }
+
+    // ----------------------------------------------------------------
+    // Listener aggregate path with UUID keys
+    // ----------------------------------------------------------------
+
+    public function test_chunked_listener_repair_walks_uuid_outer_ids(): void
+    {
+        // Pins the previous bug where `fixListenerAggregatesPhp` cast
+        // each outer node's key to int before its in_array membership
+        // check against the chunk's outer-ids list — every UUID key
+        // collapsed to 0 and listener rows were skipped.
+        $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
+        $root->saveAsRoot();
+
+        for ($i = 0; $i < 5; $i++) {
+            $child = new UuidTag(['name' => "Child{$i}", 'tickets' => $i]);
+            $child->appendToNode($root->refresh())->save();
+        }
+
+        // Force drift on the listener column so the chunked repair has
+        // real work to do. Listener aggregates aren't built from a
+        // simple SUM(source) so we drift them via raw UPDATE.
+        DB::table('uuid_tags')->where('name', 'like', 'Child%')->update(['name_length_total' => 0]);
+        DB::table('uuid_tags')->where('name', 'Root')->update(['name_length_total' => 0]);
+
+        $this->assertTrue(UuidTag::aggregatesAreBroken());
+
+        $result = UuidTag::fixAggregates(chunkSize: 2);
+        $this->assertGreaterThan(0, $result->totalRowsUpdated);
+        $this->assertFalse(UuidTag::aggregatesAreBroken());
+
+        // Root's name_length_total = sum of strlen($name) across the
+        // subtree = strlen('Root') + sum(strlen('ChildN')) = 4 + 5*6 = 34.
+        $root = $root->refresh();
+        $this->assertSame(34, $root->name_length_total);
+    }
+
+    // ----------------------------------------------------------------
+    // fixTree / fixAggregates reject unsaved anchors
+    // ----------------------------------------------------------------
+
+    public function test_fix_tree_rejects_unsaved_anchor(): void
+    {
+        $unsaved = new UuidTag(['name' => 'Unsaved', 'tickets' => 0]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('$anchor has no primary key');
+
+        UuidTag::fixTree($unsaved);
+    }
+
+    public function test_fix_aggregates_rejects_unsaved_anchor(): void
+    {
+        $unsaved = new UuidTag(['name' => 'Unsaved', 'tickets' => 0]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('$anchor has no primary key');
+
+        UuidTag::fixAggregates($unsaved);
+    }
+
+    // ----------------------------------------------------------------
+    // Stuck-cursor detection in the chunked repair loop
+    // ----------------------------------------------------------------
+
+    public function test_chunked_repair_aborts_when_cursor_does_not_advance(): void
+    {
+        // A buggy backend (or corrupted index) could return the same
+        // `nextAfterId` forever. The chunk loop now detects the
+        // non-progress and aborts; this test pins that behaviour by
+        // substituting a `fixAggregatesChunk` that always returns the
+        // same cursor.
+        $root = new StuckCursorUuidTag(['name' => 'Root', 'tickets' => 0]);
+        $root->saveAsRoot();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('cursor stuck');
+
+        StuckCursorUuidTag::fixAggregates(chunkSize: 1);
     }
 }

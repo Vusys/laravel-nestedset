@@ -6,9 +6,12 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\UuidNameLengthListener;
 
 /**
  * Custom-primary-key fixture with a string (UUID) PK. Every package
@@ -28,8 +31,10 @@ use Vusys\NestedSet\NodeTrait;
  * @property int $depth
  * @property string|null $parent_id
  * @property int $tickets_total
+ * @property int $name_length_total
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
+#[NestedSetAggregateListener(column: 'name_length_total', listener: UuidNameLengthListener::class, operation: AggregateFunction::Sum)]
 final class UuidTag extends Model implements HasNestedSet
 {
     use HasUuids;
@@ -47,5 +52,6 @@ final class UuidTag extends Model implements HasNestedSet
         'depth' => 'integer',
         'tickets' => 'integer',
         'tickets_total' => 'integer',
+        'name_length_total' => 'integer',
     ];
 }

@@ -11,6 +11,8 @@ use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\NestedSetServiceProvider;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
+use Vusys\NestedSet\Tests\Fixtures\Models\UuidMenuItem;
+use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
 
 abstract class TestCase extends OrchestraTestCase
 {
@@ -119,6 +121,8 @@ abstract class TestCase extends OrchestraTestCase
         if (! $this->allowBrokenTreeAtTearDown && ! $alreadyFailed) {
             $this->assertCategoriesTreeIntact();
             $this->assertMenuItemsTreesIntact();
+            $this->assertUuidTagsTreeIntact();
+            $this->assertUuidMenuItemsTreesIntact();
         }
 
         parent::tearDown();
@@ -163,6 +167,49 @@ abstract class TestCase extends OrchestraTestCase
 
             if ($total > 0) {
                 $this->fail("MenuItems tree for menu {$menuId} is broken at tearDown: ".json_encode($errors));
+            }
+        }
+    }
+
+    private function assertUuidTagsTreeIntact(): void
+    {
+        if (! DB::connection()->getSchemaBuilder()->hasTable('uuid_tags')) {
+            return;
+        }
+
+        $errors = UuidTag::countErrors();
+        $total = array_sum($errors);
+
+        if ($total > 0) {
+            $this->fail('UuidTag tree is broken at tearDown: '.json_encode($errors));
+        }
+    }
+
+    private function assertUuidMenuItemsTreesIntact(): void
+    {
+        if (! DB::connection()->getSchemaBuilder()->hasTable('uuid_menu_items')) {
+            return;
+        }
+
+        /** @var array<int, mixed> $menuIds */
+        $menuIds = DB::table('uuid_menu_items')->distinct()->pluck('menu_id')->all();
+
+        foreach ($menuIds as $menuId) {
+            if (! is_string($menuId)) {
+                continue;
+            }
+
+            $anchor = UuidMenuItem::query()->where('menu_id', $menuId)->first();
+
+            if ($anchor === null) {
+                continue;
+            }
+
+            $errors = UuidMenuItem::countErrors($anchor);
+            $total = array_sum($errors);
+
+            if ($total > 0) {
+                $this->fail("UuidMenuItem tree for menu {$menuId} is broken at tearDown: ".json_encode($errors));
             }
         }
     }

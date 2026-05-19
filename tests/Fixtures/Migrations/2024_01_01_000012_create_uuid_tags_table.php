@@ -20,6 +20,7 @@ return new class extends Migration
             $table->unsignedInteger('tickets')->default(0);
             $table->nestedSet(parentIdType: 'uuid');
             $table->nestedSetAggregate('tickets_total');
+            $table->nestedSetAggregate('name_length_total');
             $table->timestamps();
         });
     }
