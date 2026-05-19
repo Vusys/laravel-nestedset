@@ -28,7 +28,7 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class SoftBranchAggregateTest extends TestCase
 {
-    public function test_with_fresh_aggregates_includes_trashed_when_outer_query_does(): void
+    public function test_with_fresh_aggregates_includes_trashed_when_outer_uses_with_trashed(): void
     {
         // Default: fresh recompute filters trashed descendants — same
         // as the stored value tracks the live set.
