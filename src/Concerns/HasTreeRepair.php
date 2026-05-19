@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\FixTreeCompleted;
@@ -125,8 +126,18 @@ trait HasTreeRepair
             ));
         }
 
+        if ($anchor instanceof HasNestedSet && ! $anchor instanceof static) {
+            throw new InvalidArgumentException(sprintf(
+                '%s repair: $anchor must be an instance of %s, got %s. '
+                .'Cross-class anchors silently target the wrong table — pass an anchor of the same model.',
+                static::class,
+                static::class,
+                $anchor::class,
+            ));
+        }
+
         $instance = new static;
-        $scope = $anchor instanceof HasNestedSet && $anchor instanceof Model
+        $scope = $anchor !== null
             ? NestedSetScopeResolver::valuesFor($anchor)
             : [];
 

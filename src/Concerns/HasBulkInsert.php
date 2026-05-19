@@ -87,6 +87,15 @@ trait HasBulkInsert
             ));
         }
 
+        if ($appendTo instanceof HasNestedSet && ! $appendTo instanceof static) {
+            throw new InvalidArgumentException(sprintf(
+                'bulkInsertTree: $appendTo must be an instance of %s, got %s. '
+                .'A cross-class anchor would read bounds from the wrong table.',
+                static::class,
+                $appendTo::class,
+            ));
+        }
+
         if ($appendTo instanceof Model && ! $appendTo->exists) {
             throw new InvalidArgumentException(
                 'bulkInsertTree: $appendTo must be a persisted model — its id and bounds are read.',
