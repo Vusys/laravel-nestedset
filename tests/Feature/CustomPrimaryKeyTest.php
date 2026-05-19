@@ -105,7 +105,7 @@ final class CustomPrimaryKeyTest extends TestCase
             ['tag_id' => 2, 'name' => 'A',    'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1, 'tickets' => 5, 'tickets_total' => 5],
             ['tag_id' => 3, 'name' => 'B',    'lft' => 4, 'rgt' => 5, 'depth' => 1, 'parent_id' => 1, 'tickets' => 3, 'tickets_total' => 3],
         ]);
-        $this->syncSequence('tags');
+        $this->syncSequence('tags', 'tag_id');
 
         // Corrupt the bounds on A — swap lft/rgt.
         DB::table('tags')->where('tag_id', 2)->update(['lft' => 3, 'rgt' => 2]);
@@ -129,7 +129,7 @@ final class CustomPrimaryKeyTest extends TestCase
             ['tag_id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null, 'tickets' => 0, 'tickets_total' => 0],
             ['tag_id' => 2, 'name' => 'Orphan', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 999, 'tickets' => 0, 'tickets_total' => 0],
         ]);
-        $this->syncSequence('tags');
+        $this->syncSequence('tags', 'tag_id');
 
         $this->allowBrokenTreeAtTearDown = true;
 

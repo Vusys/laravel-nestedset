@@ -323,14 +323,25 @@ final readonly class TreeRepairBuilder
     private function orphanQuery(): Builder
     {
         $tableName = $this->table;
+        $scopeColumns = array_keys($this->scope);
+
+        // The JOIN itself must equate scope columns across child and
+        // parent — otherwise a child whose parent_id matches a row in
+        // a DIFFERENT scope would join successfully, mask the orphan,
+        // and let countErrors() under-report corruption.
         $query = $this->connection->table("{$tableName} as child")
-            ->leftJoin("{$tableName} as parent", "parent.{$this->idCol}", '=', "child.{$this->parentId}")
+            ->leftJoin("{$tableName} as parent", function ($join) use ($scopeColumns): void {
+                $join->on("parent.{$this->idCol}", '=', "child.{$this->parentId}");
+                foreach ($scopeColumns as $column) {
+                    $join->on("parent.{$column}", '=', "child.{$column}");
+                }
+            })
             ->whereNotNull("child.{$this->parentId}")
             ->whereNull("parent.{$this->idCol}");
 
-        // A parent in a different scope still counts as missing — orphan
-        // semantics require the parent to be in the same tree, not just
-        // anywhere in the table.
+        // Restrict the outer (child) side to this scope so the count
+        // only includes orphans in the same partition the caller asked
+        // to repair.
         foreach ($this->scope as $column => $value) {
             $query->where("child.{$column}", '=', $value);
         }
