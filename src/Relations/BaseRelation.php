@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Query\TreeExpression;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
+use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * @template TRelatedModel of Model&HasNestedSet
@@ -47,12 +48,17 @@ abstract class BaseRelation extends Relation
      * names come in via $lftColumn/$rgtColumn.
      *
      * @param  Builder<TRelatedModel>  $query
+     * @param  array<string, mixed>  $scope  scope column → value pairs for $model; the
+     *                                       subclass must add equality predicates so
+     *                                       cross-scope rows don't leak into the OR
+     *                                       block.
      */
     abstract protected function addEagerConstraint(
         Builder $query,
         HasNestedSet $model,
         string $lftColumn,
         string $rgtColumn,
+        array $scope,
     ): void;
 
     public function getResults(): EloquentCollection
@@ -85,7 +91,8 @@ abstract class BaseRelation extends Relation
 
         $tree->where(function (Builder $inner) use ($models, $lft, $rgt): void {
             foreach ($models as $model) {
-                $this->addEagerConstraint($inner, $model, $lft, $rgt);
+                $scope = NestedSetScopeResolver::valuesFor($model);
+                $this->addEagerConstraint($inner, $model, $lft, $rgt, $scope);
             }
         });
     }
@@ -162,6 +169,16 @@ abstract class BaseRelation extends Relation
             $grammar->wrap($sub->lftColumn()),
             $grammar->wrap($sub->rgtColumn()),
         );
+
+        // Scope columns must equality-join across the two aliases so a
+        // whereHas() on a multi-tree model doesn't surface "ancestors /
+        // descendants" rows from another tree whose lft/rgt bounds happen
+        // to overlap (each scope restarts its lft at 1, so overlaps are
+        // the common case).
+        foreach (NestedSetScopeResolver::columns($this->parent::class) as $scopeCol) {
+            $scopeWrapped = $grammar->wrap($scopeCol);
+            $condition .= " and {$grammar->wrapTable($hash)}.{$scopeWrapped} = {$grammar->wrapTable($relatedTable)}.{$scopeWrapped}";
+        }
 
         $sub->whereRaw(new TreeExpression($condition));
 
