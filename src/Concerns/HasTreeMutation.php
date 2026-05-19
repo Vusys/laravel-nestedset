@@ -106,6 +106,12 @@ trait HasTreeMutation
 
     /**
      * Move this node one position up among its siblings (toward smaller lft).
+     *
+     * Fires {@see NodeMoved} for **both** participants — the moved
+     * node (via the wrapped `insertBeforeNode->save`) and the
+     * displaced sibling (emitted explicitly here). A swap is two
+     * moves; consumers rebuilding a cache or index need to know about
+     * both endpoints.
      */
     public function up(): bool
     {
@@ -115,11 +121,14 @@ trait HasTreeMutation
             return false;
         }
 
-        return $this->insertBeforeNode($sibling)->save();
+        return $this->moveAndEmitSiblingSwap($sibling, fn (): bool => $this->insertBeforeNode($sibling)->save());
     }
 
     /**
      * Move this node one position down among its siblings (toward larger lft).
+     *
+     * Fires {@see NodeMoved} for both participants — see {@see up()}
+     * for the contract.
      */
     public function down(): bool
     {
@@ -129,7 +138,44 @@ trait HasTreeMutation
             return false;
         }
 
-        return $this->insertAfterNode($sibling)->save();
+        return $this->moveAndEmitSiblingSwap($sibling, fn (): bool => $this->insertAfterNode($sibling)->save());
+    }
+
+    /**
+     * Wraps an `insertBeforeNode` / `insertAfterNode` swap so a
+     * `NodeMoved` event also fires for the displaced sibling.
+     *
+     * The wrapped `->save()` already emits `NodeMoved` for `$this`.
+     * After it returns we re-read the sibling's post-swap bounds
+     * (its in-memory copy is stale because the SQL shifted it) and
+     * dispatch a second event so observers see both endpoints.
+     *
+     * @param  \Closure(): bool  $perform
+     */
+    private function moveAndEmitSiblingSwap(Model&HasNestedSet $sibling, \Closure $perform): bool
+    {
+        $siblingFrom = $sibling->getBounds();
+        $startNs = hrtime(true);
+
+        $result = $perform();
+
+        if (! $result) {
+            return $result;
+        }
+
+        $sibling->refresh();
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
+
+        EventDispatcher::dispatch(new NodeMoved(
+            modelClass: static::class,
+            nodeId: $this->intKey($sibling),
+            fromBounds: $siblingFrom,
+            toBounds: $sibling->getBounds(),
+            operation: 'sibling-displaced',
+            durationMs: $durationMs,
+        ));
+
+        return $result;
     }
 
     /**
