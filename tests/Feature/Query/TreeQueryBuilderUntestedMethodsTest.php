@@ -18,11 +18,11 @@ use Vusys\NestedSet\Tests\TestCase;
  *  - `freshAggregate('unknown_column')` error path
  *  - depth-bounded descendants composition (documented in
  *    docs/querying/relations.md, no test cited)
- *  - `Model::query()->withCount('descendants')` (documented, no
- *    test cited)
- *  - `Model::query()->withSum('descendants', 'col')` (Eloquent
- *    surface; verifies the existence-condition stays correct
- *    when composed with the aggregate variant)
+ *  - `Model::query()->withCount('descendants')` and
+ *    `withCount('ancestors')` (documented, no test cited)
+ *
+ * The `withSum` / `withMax` / `withMin` / `withAvg` variants over the
+ * same relations are covered in `RelationAggregateMethodsTest`.
  */
 final class TreeQueryBuilderUntestedMethodsTest extends TestCase
 {
