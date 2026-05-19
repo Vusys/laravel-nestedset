@@ -36,7 +36,11 @@ final class FilterValueQuoter
         }
 
         if (is_bool($value)) {
-            return $value ? '1' : '0';
+            // TRUE / FALSE work across PostgreSQL, MySQL/MariaDB,
+            // and SQLite — they're the only inline boolean literal
+            // syntax PostgreSQL accepts against a real BOOLEAN
+            // column. `1` / `0` fails there.
+            return $value ? 'TRUE' : 'FALSE';
         }
 
         if (is_int($value)) {
