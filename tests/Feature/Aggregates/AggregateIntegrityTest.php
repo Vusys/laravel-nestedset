@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -373,6 +374,32 @@ final class AggregateIntegrityTest extends TestCase
             $this->assertSame($values['min'], $this->asInt($row->tickets_min), "{$name} min");
             $this->assertSame($values['max'], $this->asInt($row->tickets_max), "{$name} max");
         }
+    }
+
+    public function test_fix_aggregates_rejects_cross_class_anchor(): void
+    {
+        // Persist a Category so it has a numeric id — the unguarded
+        // path would emit `WHERE id = <category-id>` against the
+        // `areas` table and either resolve to the wrong row or to no
+        // row at all, silently doing the wrong thing.
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::fixAggregates(anchor: $category);
+    }
+
+    public function test_aggregate_errors_rejects_cross_class_anchor(): void
+    {
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::aggregateErrors(anchor: $category);
     }
 
     public function test_chain_fast_path_bails_when_a_branch_point_appears(): void
