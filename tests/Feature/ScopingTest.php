@@ -300,6 +300,88 @@ final class ScopingTest extends TestCase
     }
 
     // ----------------------------------------------------------------
+    // prevSibling / nextSibling / up / down — root nodes are linked
+    // only by `parent_id IS NULL`, so the lookup must also be
+    // scope-filtered. Two scopes can independently produce roots whose
+    // lft/rgt values collide, and a cross-scope sibling would let
+    // up()/down() either throw a ScopeViolationException out of
+    // nowhere or (worse) read from the wrong partition.
+    // ----------------------------------------------------------------
+
+    public function test_prev_sibling_on_root_does_not_cross_scope(): void
+    {
+        $this->seedSiblingForestAcrossScopes();
+
+        // Menu 1's trailing root (id=4, lft=3 rgt=4). Looking for prev
+        // sibling: rgt = lft - 1 = 2. Menu 2 has a matching row (id=1,
+        // rgt=2) and a lower id, so an unscoped first() returns it on
+        // backends that fall back to physical order.
+        $menu1Trailing = MenuItem::query()->findOrFail(4);
+
+        $prev = $menu1Trailing->prevSibling();
+
+        $this->assertNotNull($prev);
+        $this->assertSame($this->menu1->id, $prev->menu_id);
+        $this->assertSame(3, $prev->id, 'prevSibling() must return menu 1 leading root, not menu 2');
+    }
+
+    public function test_next_sibling_on_root_does_not_cross_scope(): void
+    {
+        $this->seedSiblingForestAcrossScopes();
+
+        // Menu 1's leading root (id=3, lft=1 rgt=2). nextSibling looks
+        // for lft = rgt + 1 = 3. Menu 2 has a matching row (id=2, lft=3)
+        // with a lower id, so unscoped first() returns it on physical-
+        // order backends.
+        $menu1Leading = MenuItem::query()->findOrFail(3);
+
+        $next = $menu1Leading->nextSibling();
+
+        $this->assertNotNull($next);
+        $this->assertSame($this->menu1->id, $next->menu_id);
+        $this->assertSame(4, $next->id, 'nextSibling() must return menu 1 trailing root, not menu 2');
+    }
+
+    public function test_up_on_root_swaps_only_within_same_scope(): void
+    {
+        $this->seedSiblingForestAcrossScopes();
+
+        $menu1Trailing = MenuItem::query()->findOrFail(4);
+
+        $this->assertTrue($menu1Trailing->up());
+
+        $menu1Trailing = $menu1Trailing->refresh();
+        $menu1Leading = MenuItem::query()->findOrFail(3);
+        $menu2Leading = MenuItem::query()->findOrFail(1);
+        $menu2Trailing = MenuItem::query()->findOrFail(2);
+
+        $this->assertLessThan($menu1Leading->lft, $menu1Trailing->lft);
+
+        $this->assertSame(1, $menu2Leading->lft);
+        $this->assertSame(2, $menu2Leading->rgt);
+        $this->assertSame(3, $menu2Trailing->lft);
+        $this->assertSame(4, $menu2Trailing->rgt);
+    }
+
+    private function seedSiblingForestAcrossScopes(): void
+    {
+        // Replace setUp's seed: each menu gets two NULL-parent roots
+        // with matching lft/rgt ranges. Menu 2 takes the LOW ids so an
+        // unscoped lookup — which falls back to physical order on
+        // SQLite — returns the wrong-scope row when scope filtering is
+        // missing.
+        DB::table('menu_items')->delete();
+
+        DB::table('menu_items')->insert([
+            ['id' => 1, 'menu_id' => $this->menu2->id, 'name' => 'M2 Leading',  'lft' => 1, 'rgt' => 2, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'menu_id' => $this->menu2->id, 'name' => 'M2 Trailing', 'lft' => 3, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
+            ['id' => 3, 'menu_id' => $this->menu1->id, 'name' => 'M1 Leading',  'lft' => 1, 'rgt' => 2, 'depth' => 0, 'parent_id' => null],
+            ['id' => 4, 'menu_id' => $this->menu1->id, 'name' => 'M1 Trailing', 'lft' => 3, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
+        ]);
+        $this->syncSequence('menu_items');
+    }
+
+    // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
 
