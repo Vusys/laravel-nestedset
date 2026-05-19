@@ -11,6 +11,7 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\AggregateColumnGuardedArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AggregateInFillableArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AttributeOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgOnlyArea;
@@ -24,6 +25,8 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\FilteredAvgArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\HybridArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\MethodOnlyArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\NoAggregateArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\PartiallyGuardedArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\UnguardedArea;
 
 final class AggregateRegistryTest extends TestCase
 {
@@ -232,5 +235,48 @@ final class AggregateRegistryTest extends TestCase
         $this->expectExceptionMessage('aggregate column(s) [tickets_total] appear in $fillable');
 
         AggregateRegistry::for(AggregateInFillableArea::class);
+    }
+
+    public function test_unguarded_model_with_aggregate_column_throws(): void
+    {
+        // `protected $guarded = []` (modern Laravel idiom) makes every
+        // column mass-assignable. Combined with an aggregate
+        // declaration, that's a silent-clobber footgun — the registry
+        // must reject it at boot.
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('aggregate column(s) [tickets_total] are mass-assignable');
+
+        AggregateRegistry::for(UnguardedArea::class);
+    }
+
+    public function test_partially_guarded_model_omitting_aggregate_column_throws(): void
+    {
+        // `$guarded` is set but doesn't include the aggregate column.
+        // Same risk as the unguarded case.
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('aggregate column(s) [tickets_total] are mass-assignable');
+
+        AggregateRegistry::for(PartiallyGuardedArea::class);
+    }
+
+    public function test_aggregate_column_listed_in_guarded_is_accepted(): void
+    {
+        // Recommended escape hatch when a project generally avoids
+        // `$fillable`: list the aggregate columns in `$guarded`.
+        $defs = AggregateRegistry::for(AggregateColumnGuardedArea::class);
+
+        $this->assertNotSame([], $defs);
+    }
+
+    public function test_default_guard_star_is_accepted(): void
+    {
+        // Eloquent's out-of-the-box `protected $guarded = ['*']`
+        // guards everything — no aggregate column can be
+        // mass-assigned. AttributeOnlyArea uses the default config
+        // (no fillable, no overridden guarded) and must register
+        // cleanly.
+        $defs = AggregateRegistry::for(AttributeOnlyArea::class);
+
+        $this->assertNotSame([], $defs);
     }
 }

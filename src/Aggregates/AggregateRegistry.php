@@ -80,6 +80,7 @@ final class AggregateRegistry
 
         self::assertNoDuplicateColumns($definitions, $class);
         self::assertNoAggregateColumnsInFillable($definitions, $class);
+        self::assertAggregateColumnsAreMassAssignmentSafe($definitions, $class);
 
         return self::$cache[$class] = $definitions;
     }
@@ -616,7 +617,7 @@ final class AggregateRegistry
 
         $conflicts = [];
         foreach ($definitions as $definition) {
-            if ($definition instanceof AggregateDefinition && $definition->isInternal()) {
+            if ($definition->isInternal()) {
                 continue;
             }
             $column = $definition->getColumn();
@@ -635,6 +636,94 @@ final class AggregateRegistry
             .'Remove from $fillable; the column stays usable on the model (cast, hidden, etc. all still apply).',
             $class,
             implode(', ', $conflicts),
+        ));
+    }
+
+    /**
+     * Catches the modern Laravel idiom `protected $guarded = []` — which
+     * makes every column mass-assignable. Combined with aggregate
+     * columns, a request body containing those keys (e.g. a stale form
+     * submission) gets silently clobbered on the next mutation: the
+     * user's value persists for a tick, the maintenance hook overwrites
+     * it, and there's no audit trail.
+     *
+     * `$fillable` users already get caught by
+     * {@see self::assertNoAggregateColumnsInFillable()}. This check
+     * covers the opposite end of the configuration: an explicit empty
+     * `$guarded` (which Eloquent reads as "guard nothing"). The
+     * default Eloquent guard list is `['*']` — i.e. guard everything —
+     * which is safe and skipped.
+     *
+     * Resolution: list the aggregate columns in `$guarded`, or
+     * switch to `$fillable`. The error message points the user at
+     * both options.
+     *
+     * @param  list<AggregateDefinitionContract>  $definitions
+     * @param  class-string  $class
+     */
+    private static function assertAggregateColumnsAreMassAssignmentSafe(array $definitions, string $class): void
+    {
+        if ($definitions === []) {
+            return;
+        }
+
+        // `$fillable` and `$guarded` are inherited from Eloquent's
+        // Model on every contract-satisfying class, so reflection on
+        // them is straightforward. No defensive catches needed —
+        // anything that breaks here is a precondition violation, not
+        // a runtime variant.
+        $reflection = new ReflectionClass($class);
+        $instance = new $class;
+
+        // `$fillable` non-empty? The user has already opted into the
+        // allow-list model. The fillable check ahead of this method
+        // has already confirmed aggregates are absent from it.
+        $fillableValue = $reflection->getProperty('fillable')->getValue($instance);
+        if (is_array($fillableValue) && $fillableValue !== []) {
+            return;
+        }
+
+        $guardedValue = $reflection->getProperty('guarded')->getValue($instance);
+        // `(array)` cast tolerates the rare user misconfiguration of
+        // overriding $guarded with a non-array (Eloquent declares it
+        // untyped, so PHP allows it). The cast normalises and falls
+        // through to the same guard-membership check.
+        /** @var list<string> $guarded */
+        $guarded = array_values(array_filter((array) $guardedValue, is_string(...)));
+
+        // Eloquent default — guard everything. Safe.
+        if (in_array('*', $guarded, true)) {
+            return;
+        }
+
+        // The user has either an empty guard (`[]` → guard nothing)
+        // or a partial guard. For either to be safe with aggregates,
+        // every user-facing aggregate column must be listed in
+        // `$guarded`.
+        $unguarded = [];
+        foreach ($definitions as $definition) {
+            if ($definition->isInternal()) {
+                continue;
+            }
+            $column = $definition->getColumn();
+            if (! in_array($column, $guarded, true)) {
+                $unguarded[] = $column;
+            }
+        }
+
+        if ($unguarded === []) {
+            return;
+        }
+
+        throw new AggregateConfigurationException(sprintf(
+            '%s: aggregate column(s) [%s] are mass-assignable (no $fillable, $guarded does not cover them). '
+            .'Aggregate columns are derived state — the package overwrites them on every mutation, so '
+            .'mass-assigning a stale value would be silently clobbered. Fix by either: '
+            .'(1) adding them to $guarded, e.g. protected $guarded = [%s, ...]; or '
+            .'(2) switching to an allow-list via $fillable that excludes them.',
+            $class,
+            implode(', ', $unguarded),
+            implode(', ', array_map(static fn (string $c): string => "'{$c}'", $unguarded)),
         ));
     }
 }
