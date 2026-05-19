@@ -119,12 +119,8 @@ final class EventPayloadTest extends TestCase
         // B.up() should swap with A (its previous sibling).
         $b->up();
 
-        Event::assertDispatched(NodeMoved::class, function (NodeMoved $e) use ($bId): bool {
-            return $e->nodeId === $bId && $e->operation === 'sibling';
-        });
-        Event::assertDispatched(NodeMoved::class, function (NodeMoved $e) use ($aId): bool {
-            return $e->nodeId === $aId && $e->operation === 'sibling-displaced';
-        });
+        Event::assertDispatched(NodeMoved::class, fn(NodeMoved $e): bool => $e->nodeId === $bId && $e->operation === 'sibling');
+        Event::assertDispatched(NodeMoved::class, fn(NodeMoved $e): bool => $e->nodeId === $aId && $e->operation === 'sibling-displaced');
     }
 
     public function test_down_fires_node_moved_for_both_self_and_swapped_sibling(): void
@@ -139,12 +135,8 @@ final class EventPayloadTest extends TestCase
 
         $a->down();
 
-        Event::assertDispatched(NodeMoved::class, function (NodeMoved $e) use ($aId): bool {
-            return $e->nodeId === $aId && $e->operation === 'sibling';
-        });
-        Event::assertDispatched(NodeMoved::class, function (NodeMoved $e) use ($bId): bool {
-            return $e->nodeId === $bId && $e->operation === 'sibling-displaced';
-        });
+        Event::assertDispatched(NodeMoved::class, fn(NodeMoved $e): bool => $e->nodeId === $aId && $e->operation === 'sibling');
+        Event::assertDispatched(NodeMoved::class, fn(NodeMoved $e): bool => $e->nodeId === $bId && $e->operation === 'sibling-displaced');
     }
 
     public function test_node_moved_fires_for_make_root(): void
