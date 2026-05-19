@@ -37,7 +37,7 @@ data on columns the trait can't derive from your `protected $casts`.
 - Eloquent relations: `parent`, `children`, `ancestors`, `descendants`.
   See [Eloquent Relations](../querying/relations.html).
 - Inspection: `isRoot`, `isLeaf`, `isChild`, `isDescendantOf`,
-  `isAncestorOf`, `getNodeHeight`, `getDescendantCount`.
+  `isAncestorOf`, `getSubtreeSize`, `getDescendantCount`.
   See [Inspection](../querying/inspection.html).
 - Repair: `isBroken`, `countErrors`, `fixTree`. See
   [Tree Repair](../maintenance/fix-tree.html).

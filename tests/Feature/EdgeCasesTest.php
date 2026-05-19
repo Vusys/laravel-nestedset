@@ -124,11 +124,11 @@ final class EdgeCasesTest extends TestCase
         $a = Category::query()->findOrFail(2);
         $aa = Category::query()->findOrFail(3);
 
-        $this->assertSame(10, $root->getNodeHeight());   // rgt - lft + 1
+        $this->assertSame(10, $root->getSubtreeSize());   // rgt - lft + 1
         $this->assertSame(4, $root->getDescendantCount()); // A, AA, AB, B
-        $this->assertSame(6, $a->getNodeHeight());
+        $this->assertSame(6, $a->getSubtreeSize());
         $this->assertSame(2, $a->getDescendantCount());    // AA, AB
-        $this->assertSame(2, $aa->getNodeHeight());
+        $this->assertSame(2, $aa->getSubtreeSize());
         $this->assertSame(0, $aa->getDescendantCount());
     }
 
