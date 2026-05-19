@@ -201,16 +201,30 @@ class TreeQueryBuilder extends Builder
      * Passing `null` or omitting the argument selects every user-facing
      * declared aggregate on the model. Useful for drift detection:
      *
-     *     foreach (Area::query()->withFreshAggregates()->get() as $area) {
+     *     foreach (Area::query()->withFreshAggregates([
+     *         'tickets_total_fresh' => Aggregate::sum('tickets'),
+     *     ])->get() as $area) {
      *         if ($area->tickets_total !== $area->tickets_total_fresh) {
      *             // stored value disagrees with the source-of-truth
      *         }
      *     }
      *
-     * Implementation note: fresh selects alias to the same column name
-     * as the stored one, overlaying it in the returned model attributes.
-     * To preserve the stored value alongside the fresh one, pass an
-     * ad-hoc Aggregate keyed by a distinct alias.
+     * **Aliasing & save() — read-only contract.** When a fresh select
+     * reuses an existing column name (the default for the no-arg form
+     * and for string-keyed `['tickets_total']` requests), PDO collapses
+     * the duplicate output columns and only the fresh value reaches the
+     * model. The stored value in `$original` is replaced with the fresh
+     * value at hydration time, so subsequent `save()`s
+     * - do *not* write the fresh value back to the stored column (it
+     *   tracks as unchanged), and
+     * - feed the wrong "before" snapshot into aggregate-maintenance
+     *   delta computation if a downstream save dirties the source
+     *   column.
+     *
+     * Treat models returned by `withFreshAggregates()` as **read-only
+     * snapshots**. To preserve the stored value alongside the fresh
+     * value, pass an ad-hoc Aggregate keyed by a distinct alias (as in
+     * the example above).
      *
      * @param  array<int|string, string|Aggregate>|null  $columns
      */
