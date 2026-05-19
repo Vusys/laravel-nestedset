@@ -199,6 +199,43 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(225, $this->asInt($rootFresh->tickets_total), 'fresh overlays stored');
     }
 
+    public function test_save_after_with_fresh_aggregates_does_not_write_fresh_back_to_stored_column(): void
+    {
+        // Hand-corrupt the stored value: 999 is the drifted value the DB
+        // holds, 225 is the source-of-truth that withFreshAggregates
+        // recomputes. The overlay aliases fresh under the stored
+        // column name, so PDO collapses both into a single attribute
+        // holding the fresh value. The model's $original is set from
+        // the same hydration, so dirty tracking does not flag
+        // tickets_total. A subsequent save() emits no UPDATE for that
+        // column and the drift persists in the DB.
+        //
+        // This pins the documented "read-only snapshot" contract for
+        // withFreshAggregates() (see TreeQueryBuilder::withFreshAggregates
+        // docblock). A future PR may move fresh selects under a `_fresh`
+        // suffix by default; until then, this test guards the current
+        // behaviour so it does not change unintentionally.
+        DB::table('areas')->where('id', 1)->update(['tickets_total' => 999]);
+
+        $rootFresh = Area::query()
+            ->withFreshAggregates(['tickets_total'])
+            ->where('id', 1)
+            ->firstOrFail();
+
+        // In-memory view shows the fresh value, not the stored value.
+        $this->assertSame(225, $this->asInt($rootFresh->tickets_total));
+
+        // Mutate an unrelated column and save — emulates a user calling
+        // save() on a model that was loaded with fresh aggregates.
+        $rootFresh->name = 'Renamed';
+        $rootFresh->save();
+
+        // Stored value untouched: save() did not propagate the fresh
+        // overlay back. Repair still needs fixAggregates().
+        $rawStoredAfterSave = $this->asInt(DB::table('areas')->where('id', 1)->value('tickets_total'));
+        $this->assertSame(999, $rawStoredAfterSave, 'fresh value did not leak into the stored column');
+    }
+
     // ----------------------------------------------------------------
     // Ad-hoc aggregates (Aggregate value object as query argument)
     // ----------------------------------------------------------------
