@@ -151,6 +151,37 @@ final class MutationSemanticsTest extends TestCase
         $this->assertEquals($beforeB, $afterB, 'menu B not touched — the makeRoot stayed inside menu A');
     }
 
+    public function test_make_root_locks_max_rgt_read_against_concurrent_writers(): void
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $this->markTestSkipped('SQLite has no row-level locking; FOR UPDATE is a no-op there.');
+        }
+
+        // Concurrent makeRoot calls in the same scope must serialise
+        // on the max(rgt) read — otherwise two callers can both read
+        // the same max and insert at the same lft/rgt slot. The lock
+        // shows up as a FOR UPDATE clause on the max-rgt query.
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        try {
+            $r = new Category(['name' => 'r']);
+            $r->saveAsRoot();
+        } finally {
+            DB::disableQueryLog();
+        }
+
+        $forUpdateOnMax = 0;
+        foreach (DB::getQueryLog() as $entry) {
+            $sql = strtolower((string) $entry['query']);
+            if (str_contains($sql, 'max(') && str_contains($sql, 'for update')) {
+                $forUpdateOnMax++;
+            }
+        }
+
+        $this->assertGreaterThan(0, $forUpdateOnMax);
+    }
+
     // ================================================================
     // insertBeforeNode / insertAfterNode targeting a root
     // ================================================================

@@ -391,6 +391,18 @@ trait HasTreeMutation
         foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
             $query->where($col, $value);
         }
+
+        // FOR UPDATE serialises concurrent makeRoot calls in the same
+        // scope. Without it, two parallel requests could read the
+        // same max(rgt) and both insert at the same lft/rgt slot,
+        // producing a duplicate_lft/duplicate_rgt corruption.
+        // SQLite has no row-level locking — its single-writer model
+        // already serialises everything — so skip the clause there
+        // (it would also be a syntax error).
+        if ($this->getConnection()->getDriverName() !== 'sqlite') {
+            $query->lockForUpdate();
+        }
+
         $rawMax = $query->max($this->getRgtName());
         $maxRgt = is_numeric($rawMax) ? (int) $rawMax : 0;
 
