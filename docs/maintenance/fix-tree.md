@@ -47,3 +47,34 @@ corruption categories above are reachable only by bypassing that surface.
 See [Corruption Reference](corruption.html) for the full taxonomy with
 worked recovery recipes, diagnostic SQL for finding cycles, and
 `tests/Feature/Corruption/` for executable examples of every category.
+
+## Limitations
+
+### `fixAggregates()` assumes a structurally-sound tree
+
+The fresh-aggregate read path relies on the nested-set invariant
+(`i.lft >= o.lft AND i.lft <= o.rgt` is equivalent to "i is a
+descendant of o" only when every row's `rgt` is consistent with its
+`lft`). Running `fixAggregates()` on a tree with `invalid_bounds`
+or `duplicate_lft`/`duplicate_rgt` errors can produce stored
+aggregates that disagree with what a healthy tree would compute.
+
+The package's `fixTree()` runs `fixAggregates()` internally **after**
+structural repair, so the recommended recovery order is the one
+`fixTree()` enforces: structure first, aggregates second. Don't call
+`fixAggregates()` standalone on a tree you know is structurally
+broken.
+
+### `fixTree($anchor)` rebuilds only the anchor's subtree
+
+When you pass an anchor to `fixTree()`, the rebuild walks down from
+that anchor using `parent_id` and reassigns `lft`/`rgt`/`depth` for
+every reachable descendant. Rows **outside** the anchor's subtree
+are untouched.
+
+If the anchor's subtree was corrupted in a way that changed its
+total size (e.g. orphans were force-deleted leaving phantom gaps,
+or descendants were added without `rgt`-shifting the ancestors),
+the rebuilt subtree may overlap surrounding rows in the same scope.
+In that case, fall back to the unanchored `fixTree()` which
+rebuilds every row in scope from `parent_id`.
