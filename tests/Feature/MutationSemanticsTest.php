@@ -120,6 +120,37 @@ final class MutationSemanticsTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
+    public function test_make_root_on_already_root_is_a_noop_for_scoped_models(): void
+    {
+        // Scoped equivalent of the unscoped no-op above. The max-rgt
+        // lookup inside actMakeRoot is scope-filtered, so re-rooting
+        // an existing root in menu A must shift no rows in menu A
+        // and must not touch menu B's tree even though both trees
+        // share the same lft/rgt sequence in the table.
+        $menuA = Menu::create(['name' => 'Menu A']);
+        $menuB = Menu::create(['name' => 'Menu B']);
+
+        DB::table('menu_items')->insert([
+            ['id' => 1, 'menu_id' => $menuA->id, 'name' => 'A-root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'menu_id' => $menuA->id, 'name' => 'A-leaf', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'menu_id' => $menuB->id, 'name' => 'B-root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
+            ['id' => 4, 'menu_id' => $menuB->id, 'name' => 'B-leaf', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 3],
+        ]);
+        $this->syncSequence('menu_items');
+
+        $beforeA = DB::table('menu_items')->where('menu_id', $menuA->id)->orderBy('id')->get()->toArray();
+        $beforeB = DB::table('menu_items')->where('menu_id', $menuB->id)->orderBy('id')->get()->toArray();
+
+        $aRoot = MenuItem::query()->findOrFail(1);
+        $aRoot->makeRoot()->save();
+
+        $afterA = DB::table('menu_items')->where('menu_id', $menuA->id)->orderBy('id')->get()->toArray();
+        $afterB = DB::table('menu_items')->where('menu_id', $menuB->id)->orderBy('id')->get()->toArray();
+
+        $this->assertEquals($beforeA, $afterA, 'menu A unchanged — re-rooting its only root is a no-op');
+        $this->assertEquals($beforeB, $afterB, 'menu B not touched — the makeRoot stayed inside menu A');
+    }
+
     // ================================================================
     // insertBeforeNode / insertAfterNode targeting a root
     // ================================================================
