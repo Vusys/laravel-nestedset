@@ -158,9 +158,11 @@ final class MutationSemanticsTest extends TestCase
         }
 
         // Concurrent makeRoot calls in the same scope must serialise
-        // on the max(rgt) read — otherwise two callers can both read
-        // the same max and insert at the same lft/rgt slot. The lock
-        // shows up as a FOR UPDATE clause on the max-rgt query.
+        // on the rgt read — otherwise two callers can both read the
+        // same max and insert at the same lft/rgt slot. The lock
+        // shows up as a FOR UPDATE clause on an ORDER BY rgt … LIMIT 1
+        // select. PostgreSQL rejects FOR UPDATE on aggregates so the
+        // single-row select replaces the max() aggregate.
         DB::flushQueryLog();
         DB::enableQueryLog();
 
@@ -171,15 +173,19 @@ final class MutationSemanticsTest extends TestCase
             DB::disableQueryLog();
         }
 
-        $forUpdateOnMax = 0;
+        $forUpdateOnRgt = 0;
         foreach (DB::getQueryLog() as $entry) {
             $sql = strtolower((string) $entry['query']);
-            if (str_contains($sql, 'max(') && str_contains($sql, 'for update')) {
-                $forUpdateOnMax++;
+            // Match the column reference with either quoting style
+            // (backticks on MySQL/MariaDB, double quotes on Postgres).
+            if (preg_match('/order by [`"]rgt[`"]/', $sql) === 1
+                && str_contains($sql, 'for update')
+            ) {
+                $forUpdateOnRgt++;
             }
         }
 
-        $this->assertGreaterThan(0, $forUpdateOnMax);
+        $this->assertGreaterThan(0, $forUpdateOnRgt);
     }
 
     // ================================================================
