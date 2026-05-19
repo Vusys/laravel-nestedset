@@ -15,7 +15,8 @@
 
 A modern Laravel implementation of the nested-set model for hierarchical
 data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations,
-multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit.
+multi-tree scoping, soft-delete cascade, live aggregate roll-ups, and an
+opinionated repair toolkit.
 
 ```php
 $root = Category::create(['name' => 'Root']);
@@ -27,6 +28,18 @@ $child->appendToNode($root)->save();
 Category::query()->whereDescendantOf($root->getBounds())->get();
 $root->descendants()->orderBy('lft')->get();
 $root->refresh()->getSubtreeSize();  // rgt - lft + 1
+```
+
+Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX
+roll-ups are maintained automatically as the tree changes:
+
+```php
+#[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
+#[NestedSetAggregate(column: 'tickets_count', count: true)]
+class Area extends Model implements HasNestedSet { use NodeTrait; }
+
+$region->tickets_total;   // SUM of `tickets` across the subtree — maintained on save / move / delete
+Area::query()->withFreshAggregates()->get();   // correlated re-read for drift detection
 ```
 
 ## Why nested set?

@@ -36,6 +36,13 @@ $laptops->isSiblingOf($desktops);         // true   — same parent
 $laptops->isSiblingOf($android);          // false
 
 $node->hasMoved();              // true after a mutation this request
+
+$laptops->isPlacedInTree();     // true   — has been placed (lft / rgt > 0)
+$unplaced = new Category(['name' => 'Pending']);
+$unplaced->isPlacedInTree();    // false  — Category::create() without
+                                //          appendToNode/makeRoot leaves
+                                //          lft = rgt = 0; save() would throw
+                                //          UnplacedNodeException
 ```
 
 ## Subtree size

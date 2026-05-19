@@ -35,10 +35,14 @@ Category::aggregatesAreBroken();  // bool
 **Repair** either synchronously or asynchronously:
 
 ```php
-// Sync — runs in the current process, returns when done.
-Category::fixAggregates();
+// Sync — runs in the current process, returns AggregateFixResult.
+$result = Category::fixAggregates();
+$result->totalRowsUpdated;     // int — across every aggregate column
+$result->perColumn;            // array<string, int> — drift per column
+$result->hasDrift();           // bool — true if any row was updated
 
 // Sync + chunked + progress — for CLI commands on large tables.
+// $r is an AggregateFixResult for the chunk; $i is the 0-indexed chunk number.
 Category::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
     echo "Chunk {$i}: {$r->totalRowsUpdated} rows\n";
 });
@@ -46,6 +50,18 @@ Category::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
 // Async — hands the repair to a Laravel queue worker. Self-redispatches
 // per chunk; idempotent if run twice.
 Category::queueFixAggregates(chunkSize: 1_000);
+```
+
+**Scoped models require an anchor.** For multi-tree models declared
+with `#[NestedSetScope]`, every repair entry point
+(`aggregateErrors`, `aggregatesAreBroken`, `fixAggregates`,
+`queueFixAggregates`) takes an `?HasNestedSet $anchor` as its first
+argument and throws `ScopeViolationException` if you omit it — repair
+stays inside a single tree, never walks the whole partitioned table.
+
+```php
+MenuItem::fixAggregates($menuRoot);
+MenuItem::queueFixAggregates($menuRoot, chunkSize: 1_000);
 ```
 
 **Recommended mitigation pattern for workloads that mix Eloquent and
