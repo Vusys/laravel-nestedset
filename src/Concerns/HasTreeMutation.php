@@ -105,6 +105,29 @@ trait HasTreeMutation
     }
 
     /**
+     * Wraps Eloquent's save() in a transaction when
+     * `config('nestedset.auto_transaction')` is on, so the structural
+     * SQL (makeGap / moveNode), the Eloquent INSERT/UPDATE, and the
+     * aggregate hooks (`saved` / `created` listeners) all commit or
+     * roll back together. Without this wrap, a failed INSERT — unique
+     * constraint, throwing listener, etc. — would leave the gap
+     * committed and produce a permanent hole in the lft/rgt sequence.
+     *
+     * Laravel handles nested calls via savepoints, so wrapping inside
+     * an outer `DB::transaction()` is safe.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function save(array $options = []): bool
+    {
+        if (! config('nestedset.auto_transaction', true)) {
+            return parent::save($options);
+        }
+
+        return (bool) $this->getConnection()->transaction(fn (): bool => parent::save($options));
+    }
+
+    /**
      * Move this node one position up among its siblings (toward smaller lft).
      *
      * Fires {@see NodeMoved} for **both** participants — the moved
@@ -227,16 +250,12 @@ trait HasTreeMutation
 
         $startNs = hrtime(true);
 
-        if (config('nestedset.auto_transaction', true)) {
-            // Wrap makeGap-then-set-attrs (or moveNode-then-getPlainNodeData)
-            // so a thrown exception between the two halves rolls back the
-            // gap rather than leaving the tree corrupt. The aggregate
-            // maintenance hook is inside the transaction too so a failure
-            // there also rolls back the structural mutation.
-            $this->getConnection()->transaction($work);
-        } else {
-            $work();
-        }
+        // The outer transaction is opened by the trait's save() override
+        // when auto_transaction is on; the gap, the Eloquent
+        // INSERT/UPDATE that follows the saving listener, and the
+        // aggregate hooks all commit or roll back as one unit. Nothing
+        // extra to do here.
+        $work();
 
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
