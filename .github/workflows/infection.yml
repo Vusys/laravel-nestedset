@@ -21,7 +21,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   pr:
@@ -29,6 +28,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v6
@@ -91,6 +93,8 @@ jobs:
     # Full mutation run on src/ is genuinely slow — give it room.
     # If it consistently runs long we can switch to a sharded matrix.
     timeout-minutes: 120
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v6
