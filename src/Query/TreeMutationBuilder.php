@@ -82,9 +82,9 @@ final readonly class TreeMutationBuilder
      * Callers must call makeGap() first to create room, then set these
      * values on the new model before saving.
      *
-     * @return array{lft: int, rgt: int, depth: int, parent_id: int|null}
+     * @return array{lft: int, rgt: int, depth: int, parent_id: int|string|null}
      */
-    public function insertNode(int $insertAt, int $newDepth, ?int $newParentId): array
+    public function insertNode(int $insertAt, int $newDepth, int|string|null $newParentId): array
     {
         return [
             'lft' => $insertAt,
@@ -181,9 +181,9 @@ final readonly class TreeMutationBuilder
     // ----------------------------------------------------------------
 
     /**
-     * @return array{lft: int, rgt: int, depth: int, parent_id: int|null}
+     * @return array{lft: int, rgt: int, depth: int, parent_id: int|string|null}
      */
-    public function getPlainNodeData(int $id): array
+    public function getPlainNodeData(int|string $id): array
     {
         $row = $this->connection->table($this->table)
             ->select([$this->lft, $this->rgt, $this->parentId, $this->depth])
@@ -194,17 +194,20 @@ final readonly class TreeMutationBuilder
             throw new RuntimeException("Node {$id} not found.");
         }
 
+        $parentId = $row->{$this->parentId} ?? null;
+        if ($parentId !== null && ! is_int($parentId) && ! is_string($parentId)) {
+            $parentId = (string) $parentId;
+        }
+
         return [
             'lft' => (int) $row->{$this->lft},
             'rgt' => (int) $row->{$this->rgt},
             'depth' => (int) $row->{$this->depth},
-            'parent_id' => $row->{$this->parentId} !== null
-                ? (int) $row->{$this->parentId}
-                : null,
+            'parent_id' => $parentId,
         ];
     }
 
-    public function getNodeData(int $id): NodeBounds
+    public function getNodeData(int|string $id): NodeBounds
     {
         $data = $this->getPlainNodeData($id);
 

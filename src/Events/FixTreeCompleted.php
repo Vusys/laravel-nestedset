@@ -19,7 +19,7 @@ final readonly class FixTreeCompleted
 {
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         public int $nodesUpdated,
         public float $durationMs,
         /** Total rows whose aggregate columns were corrected as part of the same fixTree call; null when the model declares no aggregates. */
