@@ -77,8 +77,13 @@ final readonly class FilterPredicate
 
     /**
      * Filter rows by a raw SQL expression. Watch columns must be passed
-     * explicitly; an empty list is valid for expressions with no column
-     * dependencies.
+     * explicitly — the parameter has no default, so the caller is forced
+     * to decide. An empty list is valid for expressions with no column
+     * dependencies (e.g. `1 = 1`, `NOW() > '2000-01-01'`), but the
+     * common case is a predicate that touches one or more columns:
+     * those columns must appear in `$watches`, otherwise delta
+     * maintenance won't notice when a contributing row's filter
+     * membership flips and the stored aggregate silently drifts.
      *
      * Write the predicate using **bare column names** as if you were
      * inside a single-table query — `active = 1`, `status IN ('open','triaged')`,
@@ -88,9 +93,10 @@ final readonly class FilterPredicate
      * to the row being evaluated — regardless of whether the calling
      * context has additional outer aliases of the same table in scope.
      *
-     * @param  list<string>  $watches
+     * @param  list<string>  $watches  pass `[]` only when the SQL is
+     *                                 genuinely column-independent.
      */
-    public static function raw(string $sql, array $watches = []): self
+    public static function raw(string $sql, array $watches): self
     {
         return new self(
             kind: FilterPredicateKind::Raw,

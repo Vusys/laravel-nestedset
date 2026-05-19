@@ -46,9 +46,13 @@ final class FilterPredicateTest extends TestCase
         $this->assertSame(['status'], $predicate->watchColumns());
     }
 
-    public function test_raw_with_no_watches_has_empty_watch_columns(): void
+    public function test_raw_with_explicit_empty_watches_has_no_watch_columns(): void
     {
-        $predicate = FilterPredicate::raw('1 = 1');
+        // `[]` is valid for genuinely column-free predicates — the
+        // parameter is just required so callers can't silently omit
+        // it and assume the package will infer column dependencies
+        // from the SQL.
+        $predicate = FilterPredicate::raw('1 = 1', []);
 
         $this->assertSame([], $predicate->watchColumns());
     }
@@ -71,7 +75,7 @@ final class FilterPredicateTest extends TestCase
 
     public function test_raw_getters_return_empty_conditions_and_null_not_null_column(): void
     {
-        $predicate = FilterPredicate::raw('1 = 1');
+        $predicate = FilterPredicate::raw('1 = 1', []);
 
         $this->assertSame([], $predicate->getConditions());
         $this->assertNull($predicate->getNotNullColumn());
