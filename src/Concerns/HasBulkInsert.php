@@ -222,76 +222,92 @@ trait HasBulkInsert
         $plan = [];
         $nextBound = 1;
 
-        $walker = static function (
-            array $branches,
-            int $depth,
-            ?int $parentPlanIndex,
-        ) use (
-            &$walker,
-            &$plan,
-            &$nextBound,
-            $reservedCols,
-        ): void {
-            foreach ($branches as $branch) {
-                if (! is_array($branch)) {
+        // Iterative DFS using a task stack — keeps deep input trees
+        // (thousands of levels) from blowing PHP's call stack. The
+        // task types:
+        //   - 'enter': allocate lft for this branch, push children
+        //   - 'exit':  allocate rgt for an already-entered branch
+        //
+        // Tasks are LIFO so children of a node pop in order if pushed
+        // in reverse. Each `enter` queues its `exit` task BEFORE its
+        // children so that exit runs after every descendant.
+        /** @var list<array{type: 'enter', branch: mixed, depth: int, parentPlanIndex: int|null}|array{type: 'exit', planIndex: int}> $tasks */
+        $tasks = [];
+        foreach (array_reverse($tree) as $branch) {
+            $tasks[] = [
+                'type' => 'enter',
+                'branch' => $branch,
+                'depth' => 0,
+                'parentPlanIndex' => null,
+            ];
+        }
+
+        while ($tasks !== []) {
+            $task = array_pop($tasks);
+
+            if ($task['type'] === 'exit') {
+                $entry = $plan[$task['planIndex']];
+                $entry['rgt'] = $nextBound++;
+                $plan[$task['planIndex']] = $entry;
+
+                continue;
+            }
+
+            $branch = $task['branch'];
+            if (! is_array($branch)) {
+                throw new InvalidArgumentException(
+                    'bulkInsertTree: every node must be an associative array of attributes.',
+                );
+            }
+
+            /** @var array<string, mixed> $attrs */
+            $attrs = $branch;
+            $children = [];
+
+            if (array_key_exists('children', $attrs)) {
+                $rawChildren = $attrs['children'];
+                unset($attrs['children']);
+                if (! is_array($rawChildren)) {
                     throw new InvalidArgumentException(
-                        'bulkInsertTree: every node must be an associative array of attributes.',
+                        'bulkInsertTree: "children" must be an array of further nodes.',
                     );
                 }
+                /** @var list<array<string, mixed>> $children */
+                $children = array_values($rawChildren);
+            }
 
-                /** @var array<string, mixed> $attrs */
-                $attrs = $branch;
-                $children = [];
-
-                if (array_key_exists('children', $attrs)) {
-                    $rawChildren = $attrs['children'];
-                    unset($attrs['children']);
-                    if (! is_array($rawChildren)) {
-                        throw new InvalidArgumentException(
-                            'bulkInsertTree: "children" must be an array of further nodes.',
-                        );
-                    }
-                    /** @var list<array<string, mixed>> $children */
-                    $children = array_values($rawChildren);
+            foreach ($reservedCols as $reserved) {
+                if (array_key_exists($reserved, $attrs)) {
+                    throw new InvalidArgumentException(sprintf(
+                        'bulkInsertTree: row attribute "%s" is reserved — the package computes nested-set columns and primary keys.',
+                        $reserved,
+                    ));
                 }
+            }
 
-                foreach ($reservedCols as $reserved) {
-                    if (array_key_exists($reserved, $attrs)) {
-                        throw new InvalidArgumentException(sprintf(
-                            'bulkInsertTree: row attribute "%s" is reserved — the package computes nested-set columns and primary keys.',
-                            $reserved,
-                        ));
-                    }
-                }
+            $thisIndex = count($plan);
+            $plan[] = [
+                'attributes' => $attrs,
+                'lft' => $nextBound++,
+                'rgt' => 0,
+                'depth' => $task['depth'],
+                'parentPlanIndex' => $task['parentPlanIndex'],
+            ];
 
-                $thisIndex = count($plan);
-                $lft = $nextBound++;
-                // Reserve the slot up-front so any child entries get the
-                // right `parentPlanIndex`; rgt is unknown until the
-                // recursive call returns. We replace the whole entry
-                // afterwards instead of poking just `rgt` so the array
-                // shape stays trackable for static analysis.
-                $plan[] = [
-                    'attributes' => $attrs,
-                    'lft' => $lft,
-                    'rgt' => 0,
-                    'depth' => $depth,
-                    'parentPlanIndex' => $parentPlanIndex,
-                ];
+            // Queue the exit task BEFORE the children so it pops
+            // after every descendant has been processed.
+            $tasks[] = ['type' => 'exit', 'planIndex' => $thisIndex];
 
-                $walker($children, $depth + 1, $thisIndex);
-
-                $plan[$thisIndex] = [
-                    'attributes' => $attrs,
-                    'lft' => $lft,
-                    'rgt' => $nextBound++,
-                    'depth' => $depth,
-                    'parentPlanIndex' => $parentPlanIndex,
+            // Push children in reverse so the first child pops first.
+            foreach (array_reverse($children) as $child) {
+                $tasks[] = [
+                    'type' => 'enter',
+                    'branch' => $child,
+                    'depth' => $task['depth'] + 1,
+                    'parentPlanIndex' => $thisIndex,
                 ];
             }
-        };
-
-        $walker($tree, 0, null);
+        }
 
         return $plan;
     }
