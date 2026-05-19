@@ -2006,9 +2006,22 @@ final class TreeAggregateBuilder
 
     /**
      * Tolerant numeric equality. Both sides may arrive as int, float,
-     * decimal-string (PostgreSQL), or null. Sub-cent precision drift on
-     * AVG is considered equal so a recomputed 56.2500 doesn't disagree
-     * with a stored 56.25.
+     * decimal-string (PostgreSQL), or null. Two-tier comparison:
+     *
+     *  1. **Absolute floor** — `|a - b| < 1e-4`. Covers AVG values
+     *     stored as `DECIMAL(_, 4)` (or similar) compared against a
+     *     freshly-computed PHP float. A 4-decimal-place store can
+     *     differ from the unrounded float by up to 5e-5; the 1e-4
+     *     threshold absorbs that without flagging it as drift.
+     *
+     *  2. **Relative tolerance** — `|a - b| / max(|a|, |b|) < 1e-9`.
+     *     For large magnitudes (SUM in the millions or billions),
+     *     float arithmetic noise scales with the value. The relative
+     *     check tolerates that without loosening the absolute floor
+     *     for typical (small-scale) AVG cases.
+     *
+     * The two are OR'd: drift is detected only when BOTH the
+     * absolute floor and the relative tolerance reject the pair.
      */
     public static function aggregatesEqual(mixed $a, mixed $b): bool
     {
@@ -2022,7 +2035,20 @@ final class TreeAggregateBuilder
             return $a === $b;
         }
 
-        return abs((float) $a - (float) $b) < 0.0001;
+        $af = (float) $a;
+        $bf = (float) $b;
+        $diff = abs($af - $bf);
+
+        if ($diff < 1e-4) {
+            return true;
+        }
+
+        $scale = max(abs($af), abs($bf));
+        if ($scale === 0.0) {
+            return false;
+        }
+
+        return $diff / $scale < 1e-9;
     }
 
     private static function computedAlias(string $column): string
