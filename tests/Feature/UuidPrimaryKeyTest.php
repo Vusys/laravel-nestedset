@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
+use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\StuckCursorUuidTag;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidMenu;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidMenuItem;
@@ -26,6 +27,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class UuidPrimaryKeyTest extends TestCase
 {
+    use InteractsWithTrees;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -46,8 +49,9 @@ final class UuidPrimaryKeyTest extends TestCase
         $root = $root->refresh();
 
         $this->assertSame(36, strlen($root->id));
-        $this->assertSame(1, $root->lft);
-        $this->assertSame(2, $root->rgt);
+        $this->assertIsRoot($root);
+        $this->assertIsLeaf($root);
+        $this->assertTreeIsIntact(UuidTag::class);
     }
 
     public function test_append_to_node_resolves_via_uuid_pk(): void
@@ -61,12 +65,12 @@ final class UuidPrimaryKeyTest extends TestCase
         $child = $child->refresh();
         $root = $root->refresh();
 
-        $this->assertSame(1, $root->lft);
-        $this->assertSame(4, $root->rgt);
-        $this->assertSame(2, $child->lft);
-        $this->assertSame(3, $child->rgt);
+        $this->assertIsRoot($root);
+        $this->assertIsLeaf($child);
+        $this->assertIsChildOf($child, $root);
         $this->assertSame($root->id, $child->parent_id);
         $this->assertIsString($child->parent_id);
+        $this->assertTreeIsIntact(UuidTag::class);
     }
 
     public function test_move_existing_node_via_uuid_pk_keeps_tree_intact(): void
@@ -86,8 +90,9 @@ final class UuidPrimaryKeyTest extends TestCase
         $aa = $aa->refresh();
         $b = $b->refresh();
 
+        $this->assertIsChildOf($aa, $b);
         $this->assertSame($b->id, $aa->parent_id);
-        $this->assertFalse(UuidTag::isBroken());
+        $this->assertTreeIsIntact(UuidTag::class);
     }
 
     // ----------------------------------------------------------------
@@ -276,13 +281,14 @@ final class UuidPrimaryKeyTest extends TestCase
         $rootB = new UuidMenuItem(['name' => 'B-root', 'menu_id' => $menuB->id]);
         $rootB->saveAsRoot();
 
-        // Both roots have lft=1 in their own scope.
-        $this->assertSame(1, $rootA->refresh()->lft);
-        $this->assertSame(1, $rootB->refresh()->lft);
+        // Each scope starts its own coordinate space — both roots
+        // are roots in their respective menus.
+        $this->assertIsRoot($rootA->refresh());
+        $this->assertIsRoot($rootB->refresh());
         $this->assertSame($menuA->id, $rootA->refresh()->menu_id);
         $this->assertSame($menuB->id, $rootB->refresh()->menu_id);
-        $this->assertFalse(UuidMenuItem::isBroken($rootA));
-        $this->assertFalse(UuidMenuItem::isBroken($rootB));
+        $this->assertTreeIsIntact(UuidMenuItem::class, $rootA);
+        $this->assertTreeIsIntact(UuidMenuItem::class, $rootB);
     }
 
     // ----------------------------------------------------------------
