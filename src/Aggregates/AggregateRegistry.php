@@ -510,8 +510,35 @@ final class AggregateRegistry
         return match ($a->getKind()) {
             FilterPredicateKind::Equality => $a->getConditions() === $b->getConditions(),
             FilterPredicateKind::NotNull => $a->getNotNullColumn() === $b->getNotNullColumn(),
-            FilterPredicateKind::Raw => $a->getRawSql() === $b->getRawSql(),
+            FilterPredicateKind::Raw => self::normalizeRawSql($a->getRawSql())
+                === self::normalizeRawSql($b->getRawSql()),
         };
+    }
+
+    /**
+     * Normalises a raw SQL fragment for filter-equality comparison.
+     * Lower-cases, collapses runs of whitespace, and trims. Lets
+     * semantically-identical predicates with cosmetic differences
+     * (`active = 1` vs `active=1` vs `ACTIVE = 1`) be treated as the
+     * same filter — important because the registry uses
+     * filter-equality to decide whether a user-declared Sum/Count is
+     * a valid companion for an AVG. A mismatch silently routes AVG
+     * through auto-promoted internal companions instead.
+     *
+     * Doesn't parse the SQL — comma/AND reorderings are still
+     * considered different. The goal is to absorb whitespace/case
+     * drift, not to be a full SQL equivalence engine.
+     */
+    private static function normalizeRawSql(?string $sql): ?string
+    {
+        if ($sql === null) {
+            return null;
+        }
+
+        $trimmed = trim($sql);
+        $collapsed = preg_replace('/\s+/', ' ', $trimmed);
+
+        return strtolower($collapsed ?? $trimmed);
     }
 
     /**
