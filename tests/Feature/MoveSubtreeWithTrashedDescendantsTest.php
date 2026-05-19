@@ -100,9 +100,10 @@ final class MoveSubtreeWithTrashedDescendantsTest extends TestCase
 
     public function test_move_does_not_implicitly_restore_a_trashed_descendant(): void
     {
-        // Belt-and-braces: a move is structural, not lifecycle. The
-        // trashed status of any descendant must survive even when
-        // re-parented across the tree.
+        // A move is structural, not lifecycle. Moving a subtree that
+        // contains a soft-deleted descendant must not silently
+        // restore it. Build Root → A → A1 plus Root → B, soft-delete
+        // A1, move A under B, then verify A1's deleted_at survives.
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
         $root->refresh();
@@ -115,18 +116,27 @@ final class MoveSubtreeWithTrashedDescendantsTest extends TestCase
         $a1->appendToNode($a)->save();
         $a1->refresh();
 
-        // Soft-delete the whole A subtree.
-        $a->refresh()->delete();
+        $b = new Category(['name' => 'B']);
+        $b->appendToNode($root->refresh())->save();
+        $b->refresh();
 
+        // Soft-delete A1 only (not the whole A subtree).
+        $a1->delete();
         $a1Trashed = Category::withTrashed()->where('name', 'A1')->firstOrFail();
-        $this->assertNotNull($a1Trashed->deleted_at, 'precondition: cascade trashed A1');
+        $trashedAt = (string) $a1Trashed->deleted_at;
+        $this->assertNotEmpty($trashedAt);
 
-        // We don't usually move a trashed subtree, but a structural
-        // move on the trashed parent itself (without restoring first)
-        // would shift bounds — verify A1 stays trashed.
-        // For this happy-path test we leave A unrestored and just
-        // verify that no extraneous restore happened.
-        $a1AfterTime = Category::withTrashed()->where('name', 'A1')->firstOrFail();
-        $this->assertNotNull($a1AfterTime->deleted_at);
+        // Move A (with its trashed descendant A1) under B.
+        $a = Category::query()->where('name', 'A')->firstOrFail();
+        $a->appendToNode($b->refresh())->save();
+
+        // A1 must still be trashed with the same timestamp — the move
+        // shifted its bounds but left its lifecycle alone.
+        $a1After = Category::withTrashed()->where('name', 'A1')->firstOrFail();
+        $this->assertSame(
+            $trashedAt,
+            (string) $a1After->deleted_at,
+            'A1 must stay trashed with the same deleted_at after its parent moves',
+        );
     }
 }
