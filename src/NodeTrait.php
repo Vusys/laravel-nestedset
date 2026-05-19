@@ -22,6 +22,7 @@ use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
+use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * Adds the full nested-set API to an Eloquent model.
@@ -110,32 +111,37 @@ trait NodeTrait
             if (! $node instanceof HasNestedSet) {
                 return;
             }
-            // Re-read structural columns (lft/rgt/depth/parent_id) so
-            // the deleted hook below sees current values. The in-memory
-            // attributes may have gone stale since this model was
-            // loaded — e.g. an earlier closeGap from a sibling's hard
-            // delete shifted this row's bounds in the DB but not in
-            // memory. Aggregate maintenance and the closeGap step both
-            // rely on accurate bounds.
+            // Re-read structural columns (lft/rgt/depth/parent_id) and
+            // any declared scope columns so the deleted hook below sees
+            // current values. The in-memory attributes may have gone
+            // stale since this model was loaded — e.g. an earlier
+            // closeGap from a sibling's hard delete shifted this row's
+            // bounds, or the caller mutated a scope attribute without
+            // saving. Aggregate maintenance, the cascade query, and the
+            // closeGap step all rely on persisted values.
             $key = $node->getKey();
             if ($key === null) {
                 return;
             }
+            $structuralColumns = [
+                $node->getLftName(),
+                $node->getRgtName(),
+                $node->getDepthName(),
+                $node->getParentIdName(),
+            ];
+            $scopeColumns = NestedSetScopeResolver::columns($node::class);
+            $columnsToRead = array_unique(array_merge($structuralColumns, $scopeColumns));
             $row = $node->getConnection()
                 ->table($node->getTable())
                 ->where($node->getKeyName(), $key)
-                ->first([$node->getLftName(), $node->getRgtName(), $node->getDepthName(), $node->getParentIdName()]);
+                ->first($columnsToRead);
             if ($row === null) {
                 return;
             }
-            $node->setAttribute($node->getLftName(), $row->{$node->getLftName()});
-            $node->setAttribute($node->getRgtName(), $row->{$node->getRgtName()});
-            $node->setAttribute($node->getDepthName(), $row->{$node->getDepthName()});
-            $node->setAttribute($node->getParentIdName(), $row->{$node->getParentIdName()});
-            $node->syncOriginalAttribute($node->getLftName());
-            $node->syncOriginalAttribute($node->getRgtName());
-            $node->syncOriginalAttribute($node->getDepthName());
-            $node->syncOriginalAttribute($node->getParentIdName());
+            foreach ($columnsToRead as $column) {
+                $node->setAttribute($column, $row->{$column});
+                $node->syncOriginalAttribute($column);
+            }
         });
 
         static::deleted(static function (Model $node): void {
@@ -150,6 +156,17 @@ trait NodeTrait
             // produce values that don't match the post-cascade state.
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
                 HasSoftDeleteTree::applySoftDeleteCascade($node);
+            }
+
+            // Hard-delete cascade: clear every descendant from the
+            // table before the aggregate decrement runs. Mirrors the
+            // soft-delete cascade so chain recomputes (listener
+            // Min/Max, exclusive aggregates) see the post-cascade
+            // state, and so applyStructuralCleanupOnDelete can close
+            // the entire subtree gap rather than leaving orphans
+            // stranded in a vanished range.
+            if (! $node->exists && method_exists($node, 'applyForceDeleteCascade')) {
+                $node->applyForceDeleteCascade();
             }
 
             // forceDelete on a row that was already soft-deleted fires
@@ -170,10 +187,11 @@ trait NodeTrait
             if (! $alreadyTrashed && method_exists($node, 'applyAggregateOnDelete')) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
             }
-            // Compact lft/rgt for hard-delete-of-a-leaf so the bounds
-            // sequence stays a contiguous 1..2N permutation. No-ops for
-            // soft delete (row still exists) and interior force-delete
-            // (children would shift into invalid positions).
+            // Compact lft/rgt for any hard-delete so the bounds
+            // sequence stays a contiguous 1..2N permutation. No-op for
+            // soft delete (row still exists). The cascade above
+            // cleared every descendant first for interior nodes, so
+            // closing the entire subtree gap here is safe.
             if (method_exists($node, 'applyStructuralCleanupOnDelete')) {
                 $node->applyStructuralCleanupOnDelete();
             }
