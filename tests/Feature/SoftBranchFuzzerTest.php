@@ -81,32 +81,24 @@ final class SoftBranchFuzzerTest extends TestCase
 
     private function pickAction(int $roll): string
     {
-        if ($roll < 18) {
-            return 'append';
-        }
-        if ($roll < 30) {
-            return 'soft_delete';
-        }
-        if ($roll < 42) {
-            return 'restore';
-        }
-        if ($roll < 54) {
-            return 'mutate_source';
-        }
-        if ($roll < 66) {
-            return 'move';
-        }
-        if ($roll < 76) {
-            return 'force_delete_trashed';
-        }
-        if ($roll < 86) {
-            return 'force_delete_leaf';
-        }
-        if ($roll < 95) {
-            return 'cascade_delete_subtree';
-        }
-
-        return 'noop';
+        return match (true) {
+            $roll < 12 => 'append',
+            $roll < 18 => 'prepend',
+            $roll < 24 => 'insert_before',
+            $roll < 30 => 'insert_after',
+            $roll < 36 => 'make_root',
+            $roll < 41 => 'sibling_up',
+            $roll < 46 => 'sibling_down',
+            $roll < 51 => 'bulk_insert',
+            $roll < 60 => 'soft_delete',
+            $roll < 69 => 'restore',
+            $roll < 78 => 'mutate_source',
+            $roll < 85 => 'move',
+            $roll < 90 => 'force_delete_trashed',
+            $roll < 95 => 'force_delete_leaf',
+            $roll < 99 => 'cascade_delete_subtree',
+            default => 'noop',
+        };
     }
 
     private function doStep(string $action, int $step): void
@@ -123,6 +115,94 @@ final class SoftBranchFuzzerTest extends TestCase
                     'active' => mt_rand(0, 1),
                 ]);
                 $node->appendToNode($parent)->save();
+
+                return;
+
+            case 'prepend':
+                $parent = $this->randomLiveNode();
+                if (! $parent instanceof SoftBranch) {
+                    return;
+                }
+                $node = new SoftBranch([
+                    'name' => "s{$step}",
+                    'tickets' => mt_rand(0, 30),
+                    'active' => mt_rand(0, 1),
+                ]);
+                $node->prependToNode($parent)->save();
+
+                return;
+
+            case 'insert_before':
+                $sibling = $this->randomLiveNonRootNode();
+                if (! $sibling instanceof SoftBranch) {
+                    return;
+                }
+                $node = new SoftBranch([
+                    'name' => "s{$step}",
+                    'tickets' => mt_rand(0, 30),
+                    'active' => mt_rand(0, 1),
+                ]);
+                $node->insertBeforeNode($sibling)->save();
+
+                return;
+
+            case 'insert_after':
+                $sibling = $this->randomLiveNonRootNode();
+                if (! $sibling instanceof SoftBranch) {
+                    return;
+                }
+                $node = new SoftBranch([
+                    'name' => "s{$step}",
+                    'tickets' => mt_rand(0, 30),
+                    'active' => mt_rand(0, 1),
+                ]);
+                $node->insertAfterNode($sibling)->save();
+
+                return;
+
+            case 'make_root':
+                $target = $this->randomLiveNonRootNode();
+                if (! $target instanceof SoftBranch) {
+                    return;
+                }
+                $target->makeRoot()->save();
+
+                return;
+
+            case 'sibling_up':
+                $candidates = array_values(array_filter(
+                    $this->liveAll(),
+                    fn (SoftBranch $b): bool => $b->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->up();
+
+                return;
+
+            case 'sibling_down':
+                $candidates = array_values(array_filter(
+                    $this->liveAll(),
+                    fn (SoftBranch $b): bool => $b->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->down();
+
+                return;
+
+            case 'bulk_insert':
+                $anchor = $this->randomLiveNode();
+                if (! $anchor instanceof SoftBranch) {
+                    return;
+                }
+                $anchor->refresh();
+                SoftBranch::bulkInsertTree(
+                    $this->randomBulkInsertSpec($step, depth: mt_rand(1, 3), siblings: mt_rand(1, 3)),
+                    appendTo: $anchor,
+                );
 
                 return;
 
@@ -217,6 +297,34 @@ final class SoftBranchFuzzerTest extends TestCase
 
                 return;
         }
+    }
+
+    /**
+     * Builds a small random tree spec for bulkInsertTree. Caps the
+     * branching factor so a single bulk insert can't double the fuzz
+     * tree's size, but keeps enough shape variation to exercise the
+     * DFS plan + makeGap path against the rest of the random walk.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function randomBulkInsertSpec(int $step, int $depth, int $siblings): array
+    {
+        $out = [];
+        $tag = 0;
+        for ($i = 0; $i < $siblings; $i++) {
+            $tag++;
+            $node = [
+                'name' => "bk{$step}_{$tag}",
+                'tickets' => mt_rand(0, 30),
+                'active' => mt_rand(0, 1),
+            ];
+            if ($depth > 1 && mt_rand(0, 1) === 1) {
+                $node['children'] = $this->randomBulkInsertSpec($step, $depth - 1, mt_rand(1, 2));
+            }
+            $out[] = $node;
+        }
+
+        return $out;
     }
 
     /**
