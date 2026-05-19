@@ -47,15 +47,16 @@ final class AggregateLockingConcurrencyTest extends TestCase
 
         config(['nestedset.aggregate_locking' => 'auto']);
 
-        // Root + 4 children all at tickets=100. Each worker lowers
-        // its child's tickets to a unique value below 100, which is
-        // the "lost-holder" direction for MAX — the child was a
-        // max-holder, and after the update the stored MAX on the
-        // root is potentially stale. The package responds by issuing
-        // a RecomputeMaintenance pass against ancestors, taking the
-        // FOR UPDATE lock that this test is verifying actually
-        // serialises concurrent writers.
-        $root = new Area(['name' => 'root', 'tickets' => 100]);
+        // Root at tickets=25, children all at tickets=100. Each
+        // worker lowers its child to a unique value in {10..40} —
+        // the "lost-holder" direction for MAX, since every child
+        // was a max-holder and after the update no child is. The
+        // post-update MAX (40) lives on a *leaf*, not the root, so
+        // a stale recompute that misses any in-flight child would
+        // compute MAX=100 (from a not-yet-updated child) and fail
+        // the assertion. Same shape for MIN: a stale read of a
+        // pre-update child sees 100, post-update MIN = 10 (a leaf).
+        $root = new Area(['name' => 'root', 'tickets' => 25]);
         $root->saveAsRoot();
 
         $childIds = [];
@@ -85,15 +86,14 @@ final class AggregateLockingConcurrencyTest extends TestCase
 
         $root = $root->refresh();
 
-        // Post-update tickets across the subtree: {100 (root), 10, 20, 30, 40}.
-        // MIN = 10 (a leaf), MAX = 100 (the root itself). If the lock
-        // were missing, two concurrent recomputes could each compute
-        // MAX from a partial view of the post-update children and
-        // write a stale value (e.g. one worker sees 100 as max
-        // because only its own child has been written, ignoring the
-        // other worker's still-pending lower value).
+        // Post-update tickets across the subtree: {25 (root), 10, 20, 30, 40}.
+        // MIN = 10 (a leaf), MAX = 40 (a leaf). Both extrema move
+        // to leaves — a stale recompute that read any pre-update
+        // child would see tickets=100 and compute MAX=100, drift
+        // that this assertion catches. The MIN check is symmetric:
+        // a pre-update child reads as 100, post-update MIN=10.
         $this->assertSame(10, $root->tickets_min, 'root.tickets_min must equal the min over the post-update subtree');
-        $this->assertSame(100, $root->tickets_max, 'root.tickets_max must equal the max over the post-update subtree');
+        $this->assertSame(40, $root->tickets_max, 'root.tickets_max must equal the max over the post-update subtree');
 
         // Cross-check against freshly-computed values — anchors the
         // assertion against drift between stored and computed if the
@@ -103,8 +103,8 @@ final class AggregateLockingConcurrencyTest extends TestCase
 
         // SUM uses the delta path so it's lock-independent. Worth
         // pinning that it matches the freshly summed value after
-        // concurrent writes too: 100 + 10 + 20 + 30 + 40 = 200.
-        $this->assertSame(200, $root->tickets_total);
+        // concurrent writes too: 25 + 10 + 20 + 30 + 40 = 125.
+        $this->assertSame(125, $root->tickets_total);
         $this->assertAggregateMatchesFresh($root, 'tickets_total');
 
         $this->assertAggregatesAreIntact(Area::class);
@@ -119,13 +119,17 @@ final class AggregateLockingConcurrencyTest extends TestCase
 
         config(['nestedset.aggregate_locking' => 'always']);
 
-        $root = new Area(['name' => 'root', 'tickets' => 1]);
+        // Root at tickets=65, children all at tickets=1. Workers raise
+        // children to {50..80} — the "lost-holder" direction for MIN.
+        // The root's 65 lands neither at MIN nor MAX of the post-update
+        // set, so both extrema move to leaves: MIN=50, MAX=80. A stale
+        // recompute that sees any pre-update child (tickets=1) would
+        // compute MIN=1, drift that this assertion catches.
+        $root = new Area(['name' => 'root', 'tickets' => 65]);
         $root->saveAsRoot();
 
         $childIds = [];
         for ($i = 0; $i < 4; $i++) {
-            // Children start at low values so workers can raise them,
-            // driving recompute in the MIN-lost-holder direction.
             $child = new Area(['name' => "c{$i}", 'tickets' => 1]);
             $child->appendToNode($root->refresh())->save();
             $childIds[] = (int) $child->refresh()->id;
@@ -147,9 +151,9 @@ final class AggregateLockingConcurrencyTest extends TestCase
 
         $root = $root->refresh();
 
-        // Post-update tickets: {1 (root), 50, 60, 70, 80}.
-        // MIN = 1 (root); MAX = 80 (a leaf).
-        $this->assertSame(1, $root->tickets_min);
+        // Post-update tickets: {65 (root), 50, 60, 70, 80}.
+        // MIN = 50 (leaf), MAX = 80 (leaf) — root is not an extremum.
+        $this->assertSame(50, $root->tickets_min);
         $this->assertSame(80, $root->tickets_max);
 
         $this->assertAggregateMatchesFresh($root, 'tickets_min');
