@@ -46,6 +46,27 @@ Filtered columns use the same `$table->nestedSetAggregate(...)`
 migration macro as unfiltered ones — the migration doesn't know about
 filter logic.
 
+> ## ⚠️ Security note: filter values are inlined into SQL
+>
+> The package inlines filter values directly into generated SQL —
+> equality values are single-quote-escaped (SQL standard); raw SQL
+> fragments are concatenated verbatim with no escaping or parameter
+> binding. This is fine for **trusted, code-level constants** (class
+> attribute values, config files you control, hard-coded fragments
+> in your own code).
+>
+> **Never pass user-supplied input** to any filter form. A
+> `filterRaw('user_field = '.$request->input('foo'))` would render
+> the input as a SQL fragment; a `filter(['col' => $request->...])`
+> equality value escapes single quotes but does not protect against
+> backslash interpretation on MySQL's default `sql_mode`.
+>
+> In the attribute form `#[NestedSetAggregate(..., filter: [...])]`,
+> PHP requires attribute values to be compile-time constants — so
+> the concern only applies to the fluent builder
+> (`Aggregate::sum(...)->filter(...)`) and method-override
+> (`nestedSetAggregates()`) forms.
+
 ## Maintenance cost
 
 All three filter forms are kept in sync incrementally — no scheduled
