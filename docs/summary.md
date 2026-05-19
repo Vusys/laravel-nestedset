@@ -15,7 +15,6 @@ Format:
 - [Introduction](index.md)
 - [Installation](getting-started/installation.md)
 - [Migration](getting-started/migration.md)
-- [Primary Keys](getting-started/primary-keys.md)
 - [Model Setup](getting-started/model-setup.md)
 
 # Tree Operations
