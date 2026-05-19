@@ -41,4 +41,11 @@ if ($result === []) {
     exit(1);
 }
 
-echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+$json = json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+if ($json === false) {
+    fwrite(STDERR, 'perf-to-bmf: JSON encoding failed: '.json_last_error_msg()."\n");
+    exit(1);
+}
+
+echo $json."\n";
