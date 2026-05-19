@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Concerns;
 
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -19,6 +18,7 @@ use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
+use Vusys\NestedSet\Aggregates\TreeAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\DeferredAggregateMaintenanceCompleted;
 use Vusys\NestedSet\Events\EventDispatcher;
@@ -199,12 +199,18 @@ trait HasNestedSetAggregates
                 ->where($rgtCol, '<', $bounds->rgt);
         }
 
+        // Stream via cursor — peak memory is one hydrated Model regardless
+        // of subtree size. The pre-cursor implementation called ->get()
+        // which loaded the entire subtree into a Collection of Eloquent
+        // models, ~2-4KB each → 30MB at 10K rows, hundreds of MB at 100K.
         /** @var list<int|float> $contributions */
-        $contributions = $query->get()
-            ->map(static fn (self $node): int|float|null => $listener->contribution($node))
-            ->filter(static fn (mixed $c): bool => $c !== null)
-            ->values()
-            ->all();
+        $contributions = [];
+        foreach ($query->cursor() as $node) {
+            $c = $listener->contribution($node);
+            if ($c !== null) {
+                $contributions[] = $c;
+            }
+        }
 
         return self::applyListenerOperation($definition, $contributions);
     }
@@ -1669,30 +1675,26 @@ trait HasNestedSetAggregates
         foreach ($scope as $col => $value) {
             $nodesQuery->where($col, $value);
         }
-        $allNodes = $nodesQuery->get();
 
-        // Cache contributions per (definition column × node id) so each
-        // listener->contribution() call runs exactly once per node, no
-        // matter how many ancestors include it.
+        // Stream the bounding-box subtree via cursor: build the
+        // contribution cache and bounds list in one pass, releasing
+        // each hydrated Model immediately. Pre-stream, the full
+        // collection lived in memory for the entire ancestor-walk
+        // loop — ~3KB per Eloquent model × subtree size. After
+        // streaming, only the scalar cache and bounds list survive
+        // (~50-100 bytes per node).
+        /** @var array<string, TreeAggregateListener> $listeners */
+        $listeners = [];
         /** @var array<string, array<int|string, int|float|null>> $contribCache */
         $contribCache = [];
         foreach ($definitions as $column => $definition) {
-            $listener = $definition->makeListener();
+            $listeners[$column] = $definition->makeListener();
             $contribCache[$column] = [];
-            foreach ($allNodes as $node) {
-                $key = $node->getKey();
-                if (! is_int($key) && ! is_string($key)) {
-                    continue;
-                }
-                $contribCache[$column][$key] = $listener->contribution($node);
-            }
         }
 
-        // Precompute each node's bounds once — repeated getAttribute()
-        // calls inside the ancestor × definition loop add up.
         /** @var list<array{key: int|string, lft: int, rgt: int}> $nodeBounds */
         $nodeBounds = [];
-        foreach ($allNodes as $node) {
+        foreach ($nodesQuery->cursor() as $node) {
             $key = $node->getKey();
             if (! is_int($key) && ! is_string($key)) {
                 continue;
@@ -1702,6 +1704,9 @@ trait HasNestedSetAggregates
                 'lft' => self::numeric($node->getAttribute($lftCol)),
                 'rgt' => self::numeric($node->getAttribute($rgtCol)),
             ];
+            foreach ($listeners as $column => $listener) {
+                $contribCache[$column][$key] = $listener->contribution($node);
+            }
         }
 
         $eLft = $excludeBounds instanceof NodeBounds ? $excludeBounds->lft : null;
@@ -1795,10 +1800,6 @@ trait HasNestedSetAggregates
         $lftCol = $instance->getLftName();
         $rgtCol = $instance->getRgtName();
 
-        // Load ALL nodes (need every node for contribution-computation, even
-        // when outerIds restricts which rows we ultimately write back).
-        $allNodes = self::loadAllListenerNodes($scope, $rootId, $lftCol, $rgtCol);
-
         $perColumn = [];
         foreach ($definitions as $def) {
             if (! $def->isInternal()) {
@@ -1806,7 +1807,20 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($allNodes->isEmpty()) {
+        // Stream once and project each model into a scalar meta entry
+        // (bounds + per-definition contribution + per-definition stored
+        // value). Peak hydrated memory is O(1); the meta list is ~150
+        // bytes per node vs ~3KB for the full Eloquent model.
+        $nodeMeta = self::buildListenerNodeMeta(
+            $definitions,
+            $scope,
+            $rootId,
+            $lftCol,
+            $rgtCol,
+            includeStored: true,
+        );
+
+        if ($nodeMeta === []) {
             return new AggregateFixResult(totalRowsUpdated: 0, perColumn: $perColumn);
         }
 
@@ -1814,46 +1828,22 @@ trait HasNestedSetAggregates
         $toUpdate = [];
 
         foreach ($definitions as $def) {
-            $listener = $def->makeListener();
-
-            // Cache contributions: node-id => int|float|null
-            /** @var array<int|string, int|float|null> $contributions */
-            $contributions = [];
-            foreach ($allNodes as $node) {
-                $key = $node->getKey();
-                if (! is_int($key) && ! is_string($key)) {
-                    continue;
-                }
-                $contributions[$key] = $listener->contribution($node);
-            }
-
-            foreach ($allNodes as $outer) {
-                $outerKey = $outer->getKey();
-                if (! is_int($outerKey) && ! is_string($outerKey)) {
-                    continue;
-                }
+            foreach ($nodeMeta as $outer) {
+                $outerKey = $outer['key'];
 
                 // Chunked mode: skip outer nodes outside this chunk.
                 if ($outerIds !== null && ! in_array($outerKey, $outerIds, true)) {
                     continue;
                 }
 
-                $outerLftRaw = $outer->getAttribute($lftCol);
-                $outerRgtRaw = $outer->getAttribute($rgtCol);
-                $outerLft = is_numeric($outerLftRaw) ? (int) $outerLftRaw : 0;
-                $outerRgt = is_numeric($outerRgtRaw) ? (int) $outerRgtRaw : 0;
+                $outerLft = $outer['lft'];
+                $outerRgt = $outer['rgt'];
                 /** @var list<int|float> $innerContribs */
                 $innerContribs = [];
 
-                foreach ($allNodes as $inner) {
-                    $innerKey = $inner->getKey();
-                    if (! is_int($innerKey) && ! is_string($innerKey)) {
-                        continue;
-                    }
-                    $innerLftRaw = $inner->getAttribute($lftCol);
-                    $innerRgtRaw = $inner->getAttribute($rgtCol);
-                    $innerLft = is_numeric($innerLftRaw) ? (int) $innerLftRaw : 0;
-                    $innerRgt = is_numeric($innerRgtRaw) ? (int) $innerRgtRaw : 0;
+                foreach ($nodeMeta as $inner) {
+                    $innerLft = $inner['lft'];
+                    $innerRgt = $inner['rgt'];
 
                     $inBounds = $def->isInclusive()
                         ? ($innerLft >= $outerLft && $innerRgt <= $outerRgt)
@@ -1863,23 +1853,20 @@ trait HasNestedSetAggregates
                         continue;
                     }
 
-                    $contrib = $contributions[$innerKey] ?? null;
+                    $contrib = $inner['contribs'][$def->column] ?? null;
                     if ($contrib !== null) {
                         $innerContribs[] = $contrib;
                     }
                 }
 
                 $computed = self::applyListenerOperation($def, $innerContribs);
-                $stored = $outer->getAttribute($def->column);
+                $stored = $outer['stored'][$def->column] ?? null;
 
                 if (! TreeAggregateBuilder::aggregatesEqual($stored, $computed)) {
-                    $id = $outer->getKey();
-                    if (is_int($id) || is_string($id)) {
-                        $toUpdate[$id] ??= ['id' => $id, 'updates' => []];
-                        $toUpdate[$id]['updates'][$def->column] = $computed;
-                        if (! $def->isInternal()) {
-                            $perColumn[$def->column] = ($perColumn[$def->column] ?? 0) + 1;
-                        }
+                    $toUpdate[$outerKey] ??= ['id' => $outerKey, 'updates' => []];
+                    $toUpdate[$outerKey]['updates'][$def->column] = $computed;
+                    if (! $def->isInternal()) {
+                        $perColumn[$def->column] = ($perColumn[$def->column] ?? 0) + 1;
                     }
                 }
             }
@@ -1903,17 +1890,28 @@ trait HasNestedSetAggregates
     }
 
     /**
-     * Loads all in-scope Eloquent models for the listener fix/error pass.
+     * Streams in-scope listener nodes via cursor() and projects each
+     * model into a scalar metadata entry — bounds, per-definition
+     * contribution value, and (optionally) stored aggregate value.
      *
+     * Replaces the previous `loadAllListenerNodes()` collection-based
+     * read: peak hydrated-model memory drops from O(N) to O(1) at the
+     * cost of O(N) scalar meta entries. For typical Eloquent models
+     * (~3KB) and 1-3 listener definitions, this is a ~15-20x memory
+     * reduction during PHP-side listener repair / error scans.
+     *
+     * @param  list<ListenerAggregateDefinition>  $definitions
      * @param  array<string, mixed>  $scope
-     * @return Collection<int, static>
+     * @return list<array{key: int|string, lft: int, rgt: int, contribs: array<string, int|float|null>, stored: array<string, mixed>}>
      */
-    private static function loadAllListenerNodes(
+    private static function buildListenerNodeMeta(
+        array $definitions,
         array $scope,
         int|string|null $rootId,
         string $lftCol,
         string $rgtCol,
-    ): Collection {
+        bool $includeStored,
+    ): array {
         $query = static::query();
 
         foreach ($scope as $col => $value) {
@@ -1927,13 +1925,45 @@ trait HasNestedSetAggregates
                 ->where($instance->getKeyName(), $rootId)
                 ->first([$lftCol, $rgtCol]);
 
-            if ($rootRow !== null) {
-                $query->where($lftCol, '>=', (int) $rootRow->{$lftCol})
-                    ->where($rgtCol, '<=', (int) $rootRow->{$rgtCol});
+            if ($rootRow === null) {
+                return [];
             }
+
+            $query->where($lftCol, '>=', (int) $rootRow->{$lftCol})
+                ->where($rgtCol, '<=', (int) $rootRow->{$rgtCol});
         }
 
-        return $query->get();
+        $listeners = [];
+        foreach ($definitions as $def) {
+            $listeners[$def->column] = $def->makeListener();
+        }
+
+        $meta = [];
+        foreach ($query->cursor() as $node) {
+            $key = $node->getKey();
+            if (! is_int($key) && ! is_string($key)) {
+                continue;
+            }
+
+            $contribs = [];
+            $stored = [];
+            foreach ($definitions as $def) {
+                $contribs[$def->column] = $listeners[$def->column]->contribution($node);
+                if ($includeStored) {
+                    $stored[$def->column] = $node->getAttribute($def->column);
+                }
+            }
+
+            $meta[] = [
+                'key' => $key,
+                'lft' => self::numeric($node->getAttribute($lftCol)),
+                'rgt' => self::numeric($node->getAttribute($rgtCol)),
+                'contribs' => $contribs,
+                'stored' => $stored,
+            ];
+        }
+
+        return $meta;
     }
 
     /**
@@ -2008,50 +2038,41 @@ trait HasNestedSetAggregates
         $instance = new static;
         $lftCol = $instance->getLftName();
         $rgtCol = $instance->getRgtName();
-        $allNodes = self::loadAllListenerNodes($scope, $rootId, $lftCol, $rgtCol);
 
-        if ($allNodes->isEmpty()) {
+        // Skip internal definitions when building the meta — they don't
+        // contribute to the user-visible error count and would just waste
+        // contribution() calls per node.
+        $userDefs = array_values(array_filter(
+            $definitions,
+            static fn (ListenerAggregateDefinition $d): bool => ! $d->isInternal(),
+        ));
+        if ($userDefs === []) {
             return $errors;
         }
 
-        foreach ($definitions as $def) {
-            if ($def->isInternal()) {
-                continue;
-            }
+        $nodeMeta = self::buildListenerNodeMeta(
+            $userDefs,
+            $scope,
+            $rootId,
+            $lftCol,
+            $rgtCol,
+            includeStored: true,
+        );
 
-            $listener = $def->makeListener();
-            /** @var array<int|string, int|float|null> $contributions */
-            $contributions = [];
-            foreach ($allNodes as $node) {
-                $key = $node->getKey();
-                if (! is_int($key) && ! is_string($key)) {
-                    continue;
-                }
-                $contributions[$key] = $listener->contribution($node);
-            }
+        if ($nodeMeta === []) {
+            return $errors;
+        }
 
-            foreach ($allNodes as $outer) {
-                $outerKey = $outer->getKey();
-                if (! is_int($outerKey) && ! is_string($outerKey)) {
-                    continue;
-                }
-
-                $outerLftRaw = $outer->getAttribute($lftCol);
-                $outerRgtRaw = $outer->getAttribute($rgtCol);
-                $outerLft = is_numeric($outerLftRaw) ? (int) $outerLftRaw : 0;
-                $outerRgt = is_numeric($outerRgtRaw) ? (int) $outerRgtRaw : 0;
+        foreach ($userDefs as $def) {
+            foreach ($nodeMeta as $outer) {
+                $outerLft = $outer['lft'];
+                $outerRgt = $outer['rgt'];
                 /** @var list<int|float> $innerContribs */
                 $innerContribs = [];
 
-                foreach ($allNodes as $inner) {
-                    $innerKey = $inner->getKey();
-                    if (! is_int($innerKey) && ! is_string($innerKey)) {
-                        continue;
-                    }
-                    $innerLftRaw = $inner->getAttribute($lftCol);
-                    $innerRgtRaw = $inner->getAttribute($rgtCol);
-                    $innerLft = is_numeric($innerLftRaw) ? (int) $innerLftRaw : 0;
-                    $innerRgt = is_numeric($innerRgtRaw) ? (int) $innerRgtRaw : 0;
+                foreach ($nodeMeta as $inner) {
+                    $innerLft = $inner['lft'];
+                    $innerRgt = $inner['rgt'];
 
                     $inBounds = $def->isInclusive()
                         ? ($innerLft >= $outerLft && $innerRgt <= $outerRgt)
@@ -2061,14 +2082,14 @@ trait HasNestedSetAggregates
                         continue;
                     }
 
-                    $contrib = $contributions[$innerKey] ?? null;
+                    $contrib = $inner['contribs'][$def->column] ?? null;
                     if ($contrib !== null) {
                         $innerContribs[] = $contrib;
                     }
                 }
 
                 $computed = self::applyListenerOperation($def, $innerContribs);
-                $stored = $outer->getAttribute($def->column);
+                $stored = $outer['stored'][$def->column] ?? null;
 
                 if (! TreeAggregateBuilder::aggregatesEqual($stored, $computed)) {
                     $errors[$def->column] = ($errors[$def->column] ?? 0) + 1;
