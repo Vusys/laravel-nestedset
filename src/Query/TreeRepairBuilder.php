@@ -128,6 +128,13 @@ final readonly class TreeRepairBuilder
     /**
      * Rebuilds only the subtree rooted at $rootId, without touching
      * other trees in the table (safe for multi-tree / forest tables).
+     *
+     * If the subtree's row count (from parent_id) no longer matches the
+     * band already reserved between the root's lft and rgt — e.g. because
+     * descendants were added or removed via parent_id without the matching
+     * makeGap/closeGap — surrounding rows are shifted by the size delta
+     * before the new positions are written. Without the shift the rebuilt
+     * subtree's tail would overlap whichever sibling sits at rgt + 1.
      */
     public function rebuildSubtree(int|string $rootId): void
     {
@@ -157,16 +164,44 @@ final readonly class TreeRepairBuilder
         }
 
         $rootRow = $this->scoped()
-            ->select([$this->lft, $this->depth])
+            ->select([$this->lft, $this->rgt, $this->depth])
             ->where($this->idCol, $rootId)
             ->first();
 
         $startLft = $rootRow !== null ? (int) $rootRow->{$this->lft} : 1;
         $startDepth = $rootRow !== null ? (int) $rootRow->{$this->depth} : 0;
+        $reservedRgt = $rootRow !== null ? (int) $rootRow->{$this->rgt} : 0;
+
+        $newSize = count($inSubtree) * 2;
+        $reservedSize = $reservedRgt - $startLft + 1;
+        // Only shift surroundings when the root has a real position
+        // (band >= 2). An unplaced root (lft=0,rgt=0) falls through to
+        // walkAssignPositions's startLft=1 default, where there's no
+        // meaningful "rest of the table" boundary to shift around.
+        $delta = ($rootRow !== null && $reservedSize >= 2) ? $newSize - $reservedSize : 0;
 
         $positions = $this->walkAssignPositions([$rootId], $children, $startLft, $startDepth);
 
-        $this->connection->transaction(function () use ($positions): void {
+        $this->connection->transaction(function () use ($positions, $delta, $reservedRgt): void {
+            if ($delta !== 0) {
+                $mutator = new TreeMutationBuilder(
+                    connection: $this->connection,
+                    table: $this->table,
+                    lft: $this->lft,
+                    rgt: $this->rgt,
+                    parentId: $this->parentId,
+                    depth: $this->depth,
+                    scope: $this->scope,
+                    idCol: $this->idCol,
+                );
+
+                if ($delta > 0) {
+                    $mutator->makeGap($reservedRgt + 1, $delta);
+                } else {
+                    $mutator->closeGap($reservedRgt, -$delta);
+                }
+            }
+
             $this->bulkWritePositions($positions);
         });
     }

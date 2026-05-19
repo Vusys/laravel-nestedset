@@ -77,32 +77,20 @@ final class TreeStructureFuzzerTest extends TestCase
     private function pickAction(int $roll): string
     {
         // Bias toward growth so the tree gets substantial.
-        if ($roll < 18) {
-            return 'appendToNode';
-        }
-        if ($roll < 30) {
-            return 'prependToNode';
-        }
-        if ($roll < 42) {
-            return 'insertBeforeNode';
-        }
-        if ($roll < 54) {
-            return 'insertAfterNode';
-        }
-        if ($roll < 60) {
-            return 'makeRoot';
-        }
-        if ($roll < 72) {
-            return 'moveTo';
-        }
-        if ($roll < 82) {
-            return 'update';
-        }
-        if ($roll < 95) {
-            return 'delete';
-        }
-
-        return 'noop';
+        return match (true) {
+            $roll < 16 => 'appendToNode',
+            $roll < 28 => 'prependToNode',
+            $roll < 40 => 'insertBeforeNode',
+            $roll < 52 => 'insertAfterNode',
+            $roll < 58 => 'makeRoot',
+            $roll < 70 => 'moveTo',
+            $roll < 76 => 'siblingUp',
+            $roll < 82 => 'siblingDown',
+            $roll < 88 => 'bulkInsert',
+            $roll < 92 => 'update',
+            $roll < 99 => 'delete',
+            default => 'noop',
+        };
     }
 
     private function doStep(string $action, int $step): void
@@ -194,6 +182,37 @@ final class TreeStructureFuzzerTest extends TestCase
 
                 return;
 
+            case 'siblingUp':
+                $candidates = array_values(array_filter(
+                    $all,
+                    fn (Category $n): bool => $n->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->up();
+
+                return;
+
+            case 'siblingDown':
+                $candidates = array_values(array_filter(
+                    $all,
+                    fn (Category $n): bool => $n->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->down();
+
+                return;
+
+            case 'bulkInsert':
+                $anchor = $all[mt_rand(0, count($all) - 1)]->refresh();
+                $spec = $this->randomBulkInsertSpec($step, depth: mt_rand(1, 3), siblings: mt_rand(1, 3));
+                Category::bulkInsertTree($spec, appendTo: $anchor);
+
+                return;
+
             case 'update':
                 $target = $all[mt_rand(0, count($all) - 1)];
                 $target->name = "u{$step}";
@@ -217,6 +236,25 @@ final class TreeStructureFuzzerTest extends TestCase
 
                 return;
         }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function randomBulkInsertSpec(int $step, int $depth, int $siblings): array
+    {
+        static $tag = 0;
+        $out = [];
+        for ($i = 0; $i < $siblings; $i++) {
+            $tag++;
+            $node = ['name' => "bk{$step}_{$tag}"];
+            if ($depth > 1 && mt_rand(0, 1) === 1) {
+                $node['children'] = $this->randomBulkInsertSpec($step, $depth - 1, mt_rand(1, 2));
+            }
+            $out[] = $node;
+        }
+
+        return $out;
     }
 
     // ================================================================

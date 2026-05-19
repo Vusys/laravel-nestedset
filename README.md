@@ -2,6 +2,10 @@
 
 [![Tests](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/Vusys/laravel-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-nestedset)
+[![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/tests.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
+[![assertions](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/assertions.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
+[![test LOC](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/test-ratio.json)](tests/)
+[![CI matrix](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/matrix.json)](.github/workflows/tests.yml)
 [![PHP](https://img.shields.io/badge/php-%5E8.3-777BB4?logo=php&logoColor=white)](composer.json)
 [![Laravel](https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel)](composer.json)
 [![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](phpstan.neon)
@@ -12,8 +16,6 @@
 A modern Laravel implementation of the nested-set model for hierarchical
 data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations,
 multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit.
-
-Target: **PHP 8.3+** / **Laravel 11, 12, 13**.
 
 ```php
 $root = Category::create(['name' => 'Root']);
@@ -57,44 +59,11 @@ php artisan vendor:publish \
 See the [Installation guide](https://vusys.github.io/laravel-nestedset/getting-started/installation.html)
 for the rest of the setup (migration macros, model trait, scoped trees).
 
-## Primary keys
-
-`int` and `string` primary keys are both supported. Auto-incrementing
-bigint (the Laravel default), UUIDv7 / ULID / time-ordered string keys,
-and any other monotonically-ordered identifier work end to end. The
-package's tree mutation, repair, aggregate maintenance, and queued
-fix-aggregates job all flow the model's PK type through without
-narrowing to int.
-
-Choose the `parent_id` column type at migration time via the
-`parentIdType` argument:
-
-```php
-Schema::create('categories', function (Blueprint $table): void {
-    $table->uuid('id')->primary();
-    $table->string('name');
-    $table->nestedSet(parentIdType: 'uuid');     // matches the PK type
-});
-```
-
-Accepted values: `'bigint'` (default), `'uuid'`, `'ulid'`, `'string'`,
-or a closure for custom shapes (nanoid, fixed-width char, FK
-constraints, etc.). Composite primary keys are not supported.
-
-**Chunked aggregate repair** (`fixAggregates(chunkSize: …)` and the
-queued `FixAggregatesJob`) walks rows with
-`WHERE id > ? ORDER BY id LIMIT N`, so it relies on the PK being
-**lexicographically monotonic**. UUIDv7, ULID, bigint auto-increment,
-and ascending strings all qualify. UUIDv4, nanoid (random by default),
-or clock-rollback UUIDv1 will silently skip rows under the chunked
-path — use the unchunked `fixAggregates($anchor)` call on those models
-instead.
-
 ## Documentation
 
 Full documentation lives at **<https://vusys.github.io/laravel-nestedset/>**.
 
-- **Getting Started** — [Introduction](https://vusys.github.io/laravel-nestedset/) · [Installation](https://vusys.github.io/laravel-nestedset/getting-started/installation.html) · [Migration](https://vusys.github.io/laravel-nestedset/getting-started/migration.html) · [Model Setup](https://vusys.github.io/laravel-nestedset/getting-started/model-setup.html)
+- **Getting Started** — [Introduction](https://vusys.github.io/laravel-nestedset/) · [Installation](https://vusys.github.io/laravel-nestedset/getting-started/installation.html) · [Migration](https://vusys.github.io/laravel-nestedset/getting-started/migration.html) · [Primary Keys](https://vusys.github.io/laravel-nestedset/getting-started/primary-keys.html) · [Model Setup](https://vusys.github.io/laravel-nestedset/getting-started/model-setup.html)
 - **Tree Operations** — [Inserting & Moving](https://vusys.github.io/laravel-nestedset/tree-operations/inserting.html) · [Soft Deletes](https://vusys.github.io/laravel-nestedset/tree-operations/soft-deletes.html) · [Bulk Insertion](https://vusys.github.io/laravel-nestedset/tree-operations/bulk-insertion.html)
 - **Querying** — [Tree Queries](https://vusys.github.io/laravel-nestedset/querying/queries.html) · [Eloquent Relations](https://vusys.github.io/laravel-nestedset/querying/relations.html) · [In-memory Tree Shaping](https://vusys.github.io/laravel-nestedset/querying/tree-shaping.html) · [Inspection](https://vusys.github.io/laravel-nestedset/querying/inspection.html) · [Scoped Trees](https://vusys.github.io/laravel-nestedset/querying/scoped-trees.html)
 - **Aggregates** — [Overview](https://vusys.github.io/laravel-nestedset/aggregates/overview.html) · [Setup](https://vusys.github.io/laravel-nestedset/aggregates/setup.html) · [Reading](https://vusys.github.io/laravel-nestedset/aggregates/reading.html) · [Declaring](https://vusys.github.io/laravel-nestedset/aggregates/declaring.html) · [Filtered](https://vusys.github.io/laravel-nestedset/aggregates/filtered.html) · [Listeners](https://vusys.github.io/laravel-nestedset/aggregates/listeners.html) · [Recipes](https://vusys.github.io/laravel-nestedset/aggregates/recipes.html) · [Maintenance](https://vusys.github.io/laravel-nestedset/aggregates/maintenance.html) · [Drift & Limitations](https://vusys.github.io/laravel-nestedset/aggregates/drift.html)
