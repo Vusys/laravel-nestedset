@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Corruption;
 
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -262,6 +263,46 @@ final class CorruptionRecoveryTest extends TestCase
 
         $this->assertFalse(Area::aggregatesAreBroken());
         $this->assertSame(42, (int) $root->refresh()->tickets_total);
+    }
+
+    // ----------------------------------------------------------------
+    // Anchor class validation — passing an anchor of the wrong model
+    // class would have the structural repair walk a different table
+    // (or no rows), silently producing the wrong result. The guard
+    // rejects the call up front.
+    // ----------------------------------------------------------------
+
+    public function test_fix_tree_rejects_cross_class_anchor(): void
+    {
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::fixTree(anchor: $category);
+    }
+
+    public function test_count_errors_rejects_cross_class_anchor(): void
+    {
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::countErrors(anchor: $category);
+    }
+
+    public function test_is_broken_rejects_cross_class_anchor(): void
+    {
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::isBroken(anchor: $category);
     }
 
     public function test_structural_repair_then_aggregate_repair_handles_combined_drift(): void

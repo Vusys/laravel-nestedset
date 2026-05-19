@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
+use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -340,6 +341,24 @@ final class BulkInsertTest extends TestCase
         Area::bulkInsertTree(
             [['name' => 'x', 'tickets' => 0]],
             appendTo: new Area(['name' => 'unsaved', 'tickets' => 0]),
+        );
+    }
+
+    public function test_cross_class_anchor_rejected(): void
+    {
+        // Persist a non-Area anchor so it passes the `exists` gate.
+        // Without the class guard, bulkInsertTree would read this Category's
+        // bounds and copy them onto rows in the `areas` table — silently
+        // anchoring inserts against the wrong table.
+        $category = new Category(['name' => 'root']);
+        $category->saveAsRoot();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be an instance of');
+
+        Area::bulkInsertTree(
+            [['name' => 'x', 'tickets' => 0]],
+            appendTo: $category,
         );
     }
 
