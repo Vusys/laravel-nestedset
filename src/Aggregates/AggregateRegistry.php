@@ -590,7 +590,7 @@ final class AggregateRegistry
 
         $conflicts = [];
         foreach ($definitions as $definition) {
-            if ($definition instanceof AggregateDefinition && $definition->isInternal()) {
+            if ($definition->isInternal()) {
                 continue;
             }
             $column = $definition->getColumn();
@@ -680,7 +680,7 @@ final class AggregateRegistry
         // `$guarded`.
         $unguarded = [];
         foreach ($definitions as $definition) {
-            if ($definition instanceof AggregateDefinition && $definition->isInternal()) {
+            if ($definition->isInternal()) {
                 continue;
             }
             $column = $definition->getColumn();
