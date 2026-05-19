@@ -272,4 +272,44 @@ final class MutationSemanticsTest extends TestCase
 
         $child->insertBeforeNode($m2Child)->save();
     }
+
+    // ================================================================
+    // appendToNode / prependToNode / sibling — unsaved target
+    // ================================================================
+
+    public function test_append_to_unsaved_parent_throws_at_save(): void
+    {
+        // Anchor placement reads the parent's bounds from the DB by
+        // primary key. An unsaved parent has getKey() === null, which
+        // bottoms out in HasTreeMutation::intKey rejecting the missing
+        // primary key. The pending placement is queued without
+        // failing — the error surfaces only at save() time.
+        $child = new Category(['name' => 'child']);
+        $unsavedParent = new Category(['name' => 'unsaved']);
+
+        $child->appendToNode($unsavedParent);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('integer primary keys');
+
+        $this->allowBrokenTreeAtTearDown = true;
+        $child->save();
+    }
+
+    public function test_insert_before_unsaved_sibling_throws_at_save(): void
+    {
+        // Same diagnosis as append: the sibling action reads the
+        // target's bounds via getNodeData, which routes through
+        // intKey and rejects the unsaved target's null primary key.
+        $child = new Category(['name' => 'child']);
+        $unsavedSibling = new Category(['name' => 'unsaved']);
+
+        $child->insertBeforeNode($unsavedSibling);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('integer primary keys');
+
+        $this->allowBrokenTreeAtTearDown = true;
+        $child->save();
+    }
 }
