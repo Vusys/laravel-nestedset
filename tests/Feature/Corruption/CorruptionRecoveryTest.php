@@ -292,4 +292,47 @@ final class CorruptionRecoveryTest extends TestCase
         $root = $root->refresh();
         $this->assertSame(12, (int) $root->tickets_total);
     }
+
+    public function test_fix_tree_handles_deeply_nested_chain_without_blowing_the_stack(): void
+    {
+        // Mirror of BulkInsertTest's deep-chain coverage: a 2,000-level
+        // parent_id chain. The previous recursive walker in
+        // TreeRepairBuilder::rebuildTree / rebuildSubtree / collectSubtree
+        // would exhaust PHP's xdebug.max_nesting_level (default 256) on
+        // this shape and risk an OS-level stack overflow well past
+        // ~10K levels in production PHP. The iterative walker uses a
+        // heap-allocated stack and is bounded only by available memory.
+        // This test asserts correctness on the deep input; an xdebug-
+        // configured CI cell would also surface the original failure.
+        $depth = 2_000;
+
+        $rows = [];
+        for ($i = 1; $i <= $depth; $i++) {
+            $rows[] = [
+                'id' => $i,
+                'name' => "n{$i}",
+                // Deliberately broken bounds — fixTree must rebuild them
+                // by walking parent_id alone.
+                'lft' => 0,
+                'rgt' => 0,
+                'depth' => 0,
+                'parent_id' => $i === 1 ? null : $i - 1,
+            ];
+        }
+
+        // Chunked insert so SQLite doesn't trip its variable cap.
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('categories')->insert($chunk);
+        }
+        $this->syncSequence('categories');
+
+        $this->assertTrue(Category::isBroken());
+
+        Category::fixTree();
+
+        $this->assertFalse(Category::isBroken());
+        $root = Category::query()->findOrFail(1);
+        $this->assertSame(1, $root->lft);
+        $this->assertSame($depth * 2, $root->rgt);
+    }
 }
