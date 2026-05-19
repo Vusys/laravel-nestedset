@@ -106,6 +106,39 @@ final class EventPayloadTest extends TestCase
         });
     }
 
+    public function test_up_fires_node_moved_for_both_self_and_swapped_sibling(): void
+    {
+        $this->seedTree();
+        $b = Area::query()->where('name', 'B')->firstOrFail();
+        $a = Area::query()->where('name', 'A')->firstOrFail();
+        $bId = $this->rootIdOf($b);
+        $aId = $this->rootIdOf($a);
+
+        Event::fake([NodeMoved::class]);
+
+        // B.up() should swap with A (its previous sibling).
+        $b->up();
+
+        Event::assertDispatched(NodeMoved::class, fn (NodeMoved $e): bool => $e->nodeId === $bId && $e->operation === 'sibling');
+        Event::assertDispatched(NodeMoved::class, fn (NodeMoved $e): bool => $e->nodeId === $aId && $e->operation === 'sibling-displaced');
+    }
+
+    public function test_down_fires_node_moved_for_both_self_and_swapped_sibling(): void
+    {
+        $this->seedTree();
+        $a = Area::query()->where('name', 'A')->firstOrFail();
+        $b = Area::query()->where('name', 'B')->firstOrFail();
+        $aId = $this->rootIdOf($a);
+        $bId = $this->rootIdOf($b);
+
+        Event::fake([NodeMoved::class]);
+
+        $a->down();
+
+        Event::assertDispatched(NodeMoved::class, fn (NodeMoved $e): bool => $e->nodeId === $aId && $e->operation === 'sibling');
+        Event::assertDispatched(NodeMoved::class, fn (NodeMoved $e): bool => $e->nodeId === $bId && $e->operation === 'sibling-displaced');
+    }
+
     public function test_node_moved_fires_for_make_root(): void
     {
         $this->seedTree();
