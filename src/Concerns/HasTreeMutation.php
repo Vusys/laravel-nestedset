@@ -383,6 +383,8 @@ trait HasTreeMutation
 
     private function actMakeRoot(): void
     {
+        $driver = $this->getConnection()->getDriverName();
+
         // Scope the max-rgt lookup to this node's scope. Without the
         // scope filter, the second scope's first root would land past
         // the first scope's rgt and silently break per-scope lft/rgt
@@ -391,7 +393,29 @@ trait HasTreeMutation
         foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
             $query->where($col, $value);
         }
-        $rawMax = $query->max($this->getRgtName());
+
+        // Serialise concurrent makeRoot calls in the same scope by
+        // locking the row that currently owns the max rgt. Without
+        // the lock, two parallel callers could read the same max and
+        // both insert at the same lft/rgt slot — a duplicate_lft /
+        // duplicate_rgt corruption.
+        //
+        // PostgreSQL rejects FOR UPDATE on aggregate queries
+        // (SQLSTATE 0A000), so we can't `lockForUpdate()->max()`
+        // directly. Locking the single row with the highest rgt via
+        // ORDER BY ... LIMIT 1 FOR UPDATE returns the same value and
+        // works on every backend that supports row locking.
+        // SQLite is single-writer; skip the lock there.
+        if ($driver === 'sqlite') {
+            $rawMax = $query->max($this->getRgtName());
+        } else {
+            $rawMax = $query
+                ->orderBy($this->getRgtName(), 'desc')
+                ->limit(1)
+                ->lockForUpdate()
+                ->value($this->getRgtName());
+        }
+
         $maxRgt = is_numeric($rawMax) ? (int) $rawMax : 0;
 
         // Position at maxRgt + 1 places this node at the end of the table;

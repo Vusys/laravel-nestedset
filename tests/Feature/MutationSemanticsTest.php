@@ -151,6 +151,43 @@ final class MutationSemanticsTest extends TestCase
         $this->assertEquals($beforeB, $afterB, 'menu B not touched — the makeRoot stayed inside menu A');
     }
 
+    public function test_make_root_locks_max_rgt_read_against_concurrent_writers(): void
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $this->markTestSkipped('SQLite has no row-level locking; FOR UPDATE is a no-op there.');
+        }
+
+        // Concurrent makeRoot calls in the same scope must serialise
+        // on the rgt read — otherwise two callers can both read the
+        // same max and insert at the same lft/rgt slot. The lock
+        // shows up as a FOR UPDATE clause on an ORDER BY rgt … LIMIT 1
+        // select. PostgreSQL rejects FOR UPDATE on aggregates so the
+        // single-row select replaces the max() aggregate.
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        try {
+            $r = new Category(['name' => 'r']);
+            $r->saveAsRoot();
+        } finally {
+            DB::disableQueryLog();
+        }
+
+        $forUpdateOnRgt = 0;
+        foreach (DB::getQueryLog() as $entry) {
+            $sql = strtolower((string) $entry['query']);
+            // Match the column reference with either quoting style
+            // (backticks on MySQL/MariaDB, double quotes on Postgres).
+            if (preg_match('/order by [`"]rgt[`"]/', $sql) === 1
+                && str_contains($sql, 'for update')
+            ) {
+                $forUpdateOnRgt++;
+            }
+        }
+
+        $this->assertGreaterThan(0, $forUpdateOnRgt);
+    }
+
     // ================================================================
     // insertBeforeNode / insertAfterNode targeting a root
     // ================================================================
