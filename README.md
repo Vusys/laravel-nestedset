@@ -24,7 +24,7 @@ $child->appendToNode($root)->save();
 
 Category::query()->whereDescendantOf($root->getBounds())->get();
 $root->descendants()->orderBy('lft')->get();
-$root->refresh()->getNodeHeight();   // rgt - lft + 1
+$root->refresh()->getSubtreeSize();  // rgt - lft + 1
 ```
 
 ## Why nested set?
