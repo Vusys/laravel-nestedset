@@ -640,34 +640,29 @@ final class AggregateRegistry
             return;
         }
 
-        try {
-            $reflection = new ReflectionClass($class);
-            $instance = new $class;
+        // `$fillable` and `$guarded` are inherited from Eloquent's
+        // Model on every contract-satisfying class, so reflection on
+        // them is straightforward. No defensive catches needed —
+        // anything that breaks here is a precondition violation, not
+        // a runtime variant.
+        $reflection = new ReflectionClass($class);
+        $instance = new $class;
 
-            // `$fillable` non-empty? The user has already opted into
-            // the allow-list model. The fillable check ahead of this
-            // method has already confirmed aggregates are absent.
-            if ($reflection->hasProperty('fillable')) {
-                $fillableProp = $reflection->getProperty('fillable');
-                $fillableValue = $fillableProp->getValue($instance);
-                if (is_array($fillableValue) && $fillableValue !== []) {
-                    return;
-                }
-            }
-
-            if (! $reflection->hasProperty('guarded')) {
-                return;
-            }
-            $guardedProp = $reflection->getProperty('guarded');
-            $guardedValue = $guardedProp->getValue($instance);
-            if (! is_array($guardedValue)) {
-                return;
-            }
-            /** @var list<string> $guarded */
-            $guarded = array_values(array_filter($guardedValue, is_string(...)));
-        } catch (\ReflectionException) {
+        // `$fillable` non-empty? The user has already opted into the
+        // allow-list model. The fillable check ahead of this method
+        // has already confirmed aggregates are absent from it.
+        $fillableValue = $reflection->getProperty('fillable')->getValue($instance);
+        if (is_array($fillableValue) && $fillableValue !== []) {
             return;
         }
+
+        $guardedValue = $reflection->getProperty('guarded')->getValue($instance);
+        // `(array)` cast tolerates the rare user misconfiguration of
+        // overriding $guarded with a non-array (Eloquent declares it
+        // untyped, so PHP allows it). The cast normalises and falls
+        // through to the same guard-membership check.
+        /** @var list<string> $guarded */
+        $guarded = array_values(array_filter((array) $guardedValue, is_string(...)));
 
         // Eloquent default — guard everything. Safe.
         if (in_array('*', $guarded, true)) {
