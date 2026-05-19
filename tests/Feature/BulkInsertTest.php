@@ -348,6 +348,25 @@ final class BulkInsertTest extends TestCase
     // for users who want events off.
     // ----------------------------------------------------------------
 
+    public function test_handles_deeply_nested_input_without_blowing_the_stack(): void
+    {
+        // Build a 2,000-level chain in the input array. The
+        // previously-recursive plan walker would exhaust PHP's
+        // default xdebug.max_nesting_level (256) on this shape. The
+        // iterative walker uses a heap-allocated stack and is bounded
+        // only by available memory.
+        $depth = 2_000;
+        $tree = ['name' => "n{$depth}", 'tickets' => 1];
+        for ($i = $depth - 1; $i >= 0; $i--) {
+            $tree = ['name' => "n{$i}", 'tickets' => 1, 'children' => [$tree]];
+        }
+
+        $saved = Area::bulkInsertTree([$tree]);
+
+        $this->assertCount($depth + 1, $saved);
+        $this->assertFalse(Area::isBroken());
+    }
+
     public function test_without_events_wrapper_suppresses_events_but_still_inserts(): void
     {
         Event::fake();
