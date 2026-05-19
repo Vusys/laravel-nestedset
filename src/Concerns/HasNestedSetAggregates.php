@@ -199,20 +199,35 @@ trait HasNestedSetAggregates
                 ->where($rgtCol, '<', $bounds->rgt);
         }
 
-        // Stream via cursor — peak memory is one hydrated Model regardless
-        // of subtree size. The pre-cursor implementation called ->get()
-        // which loaded the entire subtree into a Collection of Eloquent
-        // models, ~2-4KB each → 30MB at 10K rows, hundreds of MB at 100K.
-        /** @var list<int|float> $contributions */
-        $contributions = [];
+        // Stream via cursor and fold into running accumulators — peak
+        // memory is O(1) regardless of subtree size (the pre-cursor
+        // implementation hydrated the full Collection ~3KB/node, the
+        // intermediate cursor-with-list pass still held one int/float
+        // per contributing node). Holds sum/count/min/max for the
+        // currently-streamed values; the final match picks the right
+        // one for the listener's declared operation.
+        $sum = 0;
+        $count = 0;
+        $min = null;
+        $max = null;
         foreach ($query->cursor() as $node) {
             $c = $listener->contribution($node);
-            if ($c !== null) {
-                $contributions[] = $c;
+            if ($c === null) {
+                continue;
             }
+            $sum += $c;
+            $count++;
+            $min = $min === null ? $c : min($min, $c);
+            $max = $max === null ? $c : max($max, $c);
         }
 
-        return self::applyListenerOperation($definition, $contributions);
+        return match ($definition->operation) {
+            AggregateFunction::Sum => $sum,
+            AggregateFunction::Count => $count,
+            AggregateFunction::Min => $min,
+            AggregateFunction::Max => $max,
+            AggregateFunction::Avg => $count === 0 ? null : $sum / $count,
+        };
     }
 
     /**
@@ -1805,6 +1820,13 @@ trait HasNestedSetAggregates
             if (! $def->isInternal()) {
                 $perColumn[$def->column] = 0;
             }
+        }
+
+        // Empty-chunk short-circuit: chunked callers pass $outerIds = []
+        // to mean "no outer rows in this chunk". Skipping buildListenerNodeMeta
+        // avoids streaming the entire in-scope subtree just to write zero rows.
+        if ($outerIds !== null && $outerIds === []) {
+            return new AggregateFixResult(totalRowsUpdated: 0, perColumn: $perColumn);
         }
 
         // Stream once and project each model into a scalar meta entry
