@@ -34,6 +34,7 @@ final readonly class TreeMutationBuilder
         private string $parentId,
         private string $depth,
         private array $scope = [],
+        private string $idCol = 'id',
     ) {}
 
     // ----------------------------------------------------------------
@@ -186,7 +187,7 @@ final readonly class TreeMutationBuilder
     {
         $row = $this->connection->table($this->table)
             ->select([$this->lft, $this->rgt, $this->parentId, $this->depth])
-            ->where('id', $id)
+            ->where($this->idCol, $id)
             ->first();
 
         if ($row === null) {
