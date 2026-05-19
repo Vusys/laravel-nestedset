@@ -140,13 +140,12 @@ this** — see §5.
 
 **Typical causes.**
 
-- A parent row was `forceDelete()`-ed without cascading to children
-  (the package's soft-delete tree handles cascading correctly, but
-  hard-deleting bypasses it).
+- Direct `DELETE` statements that bypass Eloquent and the trait
+  (the package's `delete()` and `forceDelete()` paths both cascade
+  to descendants — raw SQL does not).
 - A scoped move that didn't update the child's scope column — the
   child still references a parent id that exists, but in a different
   scope, which the orphan query rightly counts as missing.
-- Direct `DELETE` statements that bypass Eloquent and the trait.
 
 **Repair.** Partial. `fixTree()` ignores orphans during the walk, so
 their `lft`/`rgt`/`depth` remain whatever they were before. To

@@ -361,13 +361,11 @@ trait HasTreeMutation
      * permutation per root.
      *
      * Only fires when the row was actually removed from the DB
-     * (hard delete — `$this->exists === false`) and the deleted
-     * node was a leaf. Soft-deleted rows still occupy their slots,
-     * so closing the gap would invalidate their bounds. Interior
-     * hard-deletes leave their children orphaned and inside the
-     * vanished range — shifting the surrounding rows would move
-     * those orphans into impossible positions, making the eventual
-     * fixTree call's job harder rather than easier.
+     * (hard delete — `$this->exists === false`). Soft-deleted rows
+     * still occupy their slots, so closing the gap would invalidate
+     * their bounds. For interior hard-deletes the cascade
+     * ({@see applyForceDeleteCascade}) clears every descendant
+     * first, so the entire subtree's width is what we close.
      *
      * Wired into NodeTrait's `deleted` event after the aggregate
      * decrement runs (the aggregate hook reads the deleted node's
@@ -389,15 +387,49 @@ trait HasTreeMutation
         $lft = (int) $rawLft;
         $rgt = (int) $rawRgt;
 
-        // Interior hard-delete: skip. Children are orphaned but their
-        // bounds at least stay inside their (now-vanished) parent's
-        // former range — fixTree can recover from that. Closing the
-        // gap would shift the orphans into invalid positions.
-        if ($rgt - $lft !== 1) {
+        $this->newTreeMutator()->closeGap($lft, $rgt - $lft + 1);
+    }
+
+    /**
+     * `deleted` lifecycle hook: hard-delete every descendant of this
+     * node in the same scope so a `forceDelete()` on an interior
+     * node behaves like the soft-delete cascade — no orphans, no
+     * holes in the lft/rgt sequence after
+     * {@see applyStructuralCleanupOnDelete} runs.
+     *
+     * Issues a raw query-builder DELETE (no Eloquent events for the
+     * descendants), mirroring {@see HasSoftDeleteTree::applySoftDeleteCascade}.
+     * The root row has already been deleted by the time this runs,
+     * so we use its in-memory bounds to scope the query.
+     */
+    public function applyForceDeleteCascade(): void
+    {
+        if ($this->exists) {
             return;
         }
 
-        $this->newTreeMutator()->closeGap($lft, 2);
+        $rawLft = $this->getAttribute($this->getLftName());
+        $rawRgt = $this->getAttribute($this->getRgtName());
+        if (! is_numeric($rawLft) || ! is_numeric($rawRgt)) {
+            return;
+        }
+        $lft = (int) $rawLft;
+        $rgt = (int) $rawRgt;
+
+        if ($rgt - $lft === 1) {
+            return;
+        }
+
+        $query = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getLftName(), '>', $lft)
+            ->where($this->getRgtName(), '<', $rgt);
+
+        foreach (NestedSetScopeResolver::valuesFor($this) as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        $query->delete();
     }
 
     private function actMakeRoot(): void
