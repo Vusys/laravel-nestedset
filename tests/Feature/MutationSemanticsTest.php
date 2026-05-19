@@ -103,6 +103,43 @@ final class MutationSemanticsTest extends TestCase
     }
 
     // ================================================================
+    // Unsaved parent passed to single-node placement methods
+    // ================================================================
+
+    public function test_append_to_node_with_unsaved_parent_throws(): void
+    {
+        // Single-node `appendToNode->save()` against an unsaved parent
+        // can't proceed: there are no parent bounds to read. Pins that
+        // it throws rather than silently mis-placing the child.
+        $unsavedParent = new Category(['name' => 'Phantom']);
+        $child = new Category(['name' => 'Orphan']);
+
+        $this->expectException(LogicException::class);
+
+        $child->appendToNode($unsavedParent)->save();
+    }
+
+    public function test_prepend_to_node_with_unsaved_parent_throws(): void
+    {
+        $unsavedParent = new Category(['name' => 'Phantom']);
+        $child = new Category(['name' => 'Orphan']);
+
+        $this->expectException(LogicException::class);
+
+        $child->prependToNode($unsavedParent)->save();
+    }
+
+    public function test_insert_before_node_with_unsaved_sibling_throws(): void
+    {
+        $unsavedSibling = new Category(['name' => 'Phantom']);
+        $newNode = new Category(['name' => 'Newcomer']);
+
+        $this->expectException(LogicException::class);
+
+        $newNode->insertBeforeNode($unsavedSibling)->save();
+    }
+
+    // ================================================================
     // makeRoot on an already-root row
     // ================================================================
 

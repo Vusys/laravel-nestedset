@@ -177,4 +177,38 @@ final class AggregatesEqualTest extends TestCase
             0.001, 1.0, false, 'no relative-tolerance reprieve at this scale',
         ];
     }
+
+    // ----------------------------------------------------------------
+    // NaN / Infinity — impossible via package writes, but possible via
+    // raw DB UPDATE. Pin that the comparator never silently swallows
+    // a stored NaN/Inf as matching the fresh value. aggregateErrors()
+    // should always flag these as drift so a follow-up fixAggregates
+    // overwrites the corrupted column.
+    // ----------------------------------------------------------------
+
+    public function test_nan_stored_value_never_compares_equal_even_to_itself(): void
+    {
+        // PHP's IEEE-754 NaN is not equal to itself; the comparator
+        // must propagate that — never silently match a corrupted NaN
+        // against a fresh recompute.
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(NAN, NAN));
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(NAN, 0));
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(NAN, 1e9));
+    }
+
+    public function test_infinity_stored_value_is_flagged_as_drift_against_finite_recompute(): void
+    {
+        // A row hand-corrupted to +Inf must register as drift against
+        // any finite fresh value, so aggregateErrors surfaces the
+        // damage and fixAggregates overwrites it.
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(INF, 1e9));
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(-INF, 1e9));
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(INF, -INF));
+
+        // Inf vs Inf: subtraction is NaN, which never falls inside either
+        // tolerance branch — also reports drift. Same for -Inf vs -Inf,
+        // so the contract holds symmetrically across signs.
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(INF, INF));
+        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(-INF, -INF));
+    }
 }

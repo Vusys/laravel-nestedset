@@ -344,6 +344,89 @@ final class BulkInsertTest extends TestCase
         );
     }
 
+    public function test_bulk_insert_with_stale_anchor_uses_in_memory_bounds(): void
+    {
+        // Footgun: bulkInsertTree reads $appendTo->getRgt() from the
+        // in-memory model and trusts it. When the caller's reference
+        // to the anchor predates a separate save() that shifted the
+        // anchor's bounds, the bulk insert anchors at the stale slot.
+        // Tree integrity is preserved by makeGap + relative bounds
+        // arithmetic, but new children land in pre-existing-children
+        // sibling order rather than after them.
+        //
+        // Pins the current behaviour so the contract change (always
+        // refresh before bulkInsertTree, or have the package do it
+        // internally) is made deliberately.
+        $root = new Area(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        // Append a sibling — root's DB rgt shifts to 4, but the
+        // caller's $root in-memory still holds rgt=2.
+        (new Area(['name' => 'existing', 'tickets' => 1]))
+            ->appendToNode($root)
+            ->save();
+
+        $this->assertSame(2, $root->rgt, 'sanity: in-memory anchor is stale');
+
+        Area::bulkInsertTree(
+            [
+                ['name' => 'bulk1', 'tickets' => 10],
+                ['name' => 'bulk2', 'tickets' => 20],
+            ],
+            appendTo: $root,
+        );
+
+        $children = Area::query()
+            ->where('parent_id', $root->id)
+            ->orderBy('lft')
+            ->pluck('name')
+            ->all();
+
+        // Current behaviour: bulk children land BEFORE 'existing' in
+        // lft order because the stale rgt was used as the gap position.
+        $this->assertSame(['bulk1', 'bulk2', 'existing'], $children,
+            'stale anchor places bulk inserts at the stashed lft/rgt slot — workaround is $root->refresh() before bulkInsertTree',
+        );
+
+        $this->assertFalse(Area::isBroken(), 'tree remains integral despite the stale anchor');
+    }
+
+    public function test_bulk_insert_with_refreshed_anchor_appends_after_existing_children(): void
+    {
+        // Mirror image of the stale-anchor test: when the caller
+        // refreshes the anchor, bulkInsertTree picks up the live rgt
+        // and bulk children land after any earlier siblings.
+        $root = new Area(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        (new Area(['name' => 'existing', 'tickets' => 1]))
+            ->appendToNode($root)
+            ->save();
+
+        $root->refresh(); // the documented workaround
+
+        Area::bulkInsertTree(
+            [
+                ['name' => 'bulk1', 'tickets' => 10],
+                ['name' => 'bulk2', 'tickets' => 20],
+            ],
+            appendTo: $root,
+        );
+
+        $children = Area::query()
+            ->where('parent_id', $root->id)
+            ->orderBy('lft')
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['existing', 'bulk1', 'bulk2'], $children,
+            'refreshed anchor appends bulk children after pre-existing siblings',
+        );
+        $this->assertFalse(Area::isBroken());
+    }
+
     public function test_cross_class_anchor_rejected(): void
     {
         // Persist a non-Area anchor so it passes the `exists` gate.
