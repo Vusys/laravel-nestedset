@@ -1,0 +1,99 @@
+name: Badges
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Needs write access to push the computed JSON files to the orphan
+# `badges` branch. Other jobs in this repo keep `contents: read` because
+# they don't mutate the repo; this one explicitly opts in.
+permissions:
+  contents: write
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      # See tests.yml for the rationale on overwriting auth.json directly.
+      - name: Configure Composer authentication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache/files
+          key: composer-badges-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-badges-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Run tests with JUnit log
+        env:
+          DB_CONNECTION: sqlite
+        run: vendor/bin/phpunit --log-junit junit.xml
+
+      - name: Compute matrix size from tests.yml
+        id: matrix
+        run: |
+          PHP_COUNT=$(yq '.jobs.test.strategy.matrix.php | length' .github/workflows/tests.yml)
+          LARAVEL_COUNT=$(yq '.jobs.test.strategy.matrix.laravel | length' .github/workflows/tests.yml)
+          DB_COUNT=$(yq '.jobs.test.strategy.matrix.db | length' .github/workflows/tests.yml)
+          CELLS=$((PHP_COUNT * LARAVEL_COUNT * DB_COUNT))
+          echo "cells=$CELLS" >> "$GITHUB_OUTPUT"
+          echo "Matrix size: $PHP_COUNT × $LARAVEL_COUNT × $DB_COUNT = $CELLS"
+
+      - name: Compute badge JSON
+        run: php .github/scripts/compute-badge-metrics.php junit.xml badges-out "${{ steps.matrix.outputs.cells }}"
+
+      - name: Publish to badges branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Stash the freshly generated JSONs out of the worktree so the
+          # branch switch below cannot disturb them.
+          mkdir -p /tmp/badge-staging
+          cp badges-out/*.json /tmp/badge-staging/
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin badges >/dev/null 2>&1; then
+            git fetch origin badges --depth=1
+            git checkout badges
+            rm -f ./*.json
+          else
+            # First run: create an orphan branch with no history. `git rm
+            # -rf .` clears the index/worktree of every file inherited from
+            # the source branch, leaving only the untracked staging in /tmp.
+            git checkout --orphan badges
+            git rm -rf . >/dev/null
+          fi
+
+          cp /tmp/badge-staging/*.json .
+          git add ./*.json
+
+          if git diff --cached --quiet; then
+            echo "Badges unchanged; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "chore(badges): refresh metrics from ${GITHUB_SHA::7}"
+          git push -u origin badges
