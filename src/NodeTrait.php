@@ -230,7 +230,7 @@ trait NodeTrait
             $nodeKey = $node->getKey();
             EventDispatcher::dispatch(new AggregateMaintenanceFailed(
                 modelClass: $node::class,
-                anchorId: is_numeric($nodeKey) ? (int) $nodeKey : null,
+                anchorId: is_int($nodeKey) || is_string($nodeKey) ? $nodeKey : null,
                 stage: $stage,
                 exception: $e,
             ));
@@ -258,7 +258,7 @@ trait NodeTrait
         return $this->intAttr($this->getDepthName());
     }
 
-    public function getParentId(): ?int
+    public function getParentId(): int|string|null
     {
         $v = $this->getAttribute($this->getParentIdName());
 
@@ -266,7 +266,23 @@ trait NodeTrait
             return null;
         }
 
-        return $this->intAttr($this->getParentIdName());
+        if ($this->getKeyType() === 'int') {
+            return $this->intAttr($this->getParentIdName());
+        }
+
+        if (is_string($v)) {
+            return $v;
+        }
+
+        if (is_int($v) || is_float($v) || (is_object($v) && method_exists($v, '__toString'))) {
+            return (string) $v;
+        }
+
+        throw new \LogicException(sprintf(
+            'parent_id attribute on %s is not int/string/stringable; got %s.',
+            static::class,
+            get_debug_type($v),
+        ));
     }
 
     /**

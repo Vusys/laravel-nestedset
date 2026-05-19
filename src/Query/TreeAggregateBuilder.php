@@ -1216,7 +1216,7 @@ final class TreeAggregateBuilder
         string $rgtCol,
         array $scope,
         array $definitions,
-        ?int $rootId = null,
+        int|string|null $rootId = null,
         ?string $parentIdCol = null,
         ?string $depthCol = null,
         ?string $softDeletedColumn = null,
@@ -1276,10 +1276,10 @@ final class TreeAggregateBuilder
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinitionContract>  $definitions
-     * @param  list<int>|null  $outerIds  When non-null, restricts the
-     *                                    repair to this subset of outer
-     *                                    rows. Used by the chunked /
-     *                                    self-redispatching queue job.
+     * @param  list<int|string>|null  $outerIds  When non-null, restricts the
+     *                                           repair to this subset of outer
+     *                                           rows. Used by the chunked /
+     *                                           self-redispatching queue job.
      */
     public static function fixAggregates(
         Connection $connection,
@@ -1288,7 +1288,7 @@ final class TreeAggregateBuilder
         string $rgtCol,
         array $scope,
         array $definitions,
-        ?int $rootId = null,
+        int|string|null $rootId = null,
         ?array $outerIds = null,
         ?string $parentIdCol = null,
         ?string $depthCol = null,
@@ -1474,7 +1474,7 @@ final class TreeAggregateBuilder
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
-     * @param  list<int>|null  $outerIds
+     * @param  list<int|string>|null  $outerIds
      * @return list<array<string, mixed>>
      */
     private static function selectStoredAndComputed(
@@ -1484,7 +1484,7 @@ final class TreeAggregateBuilder
         string $rgtCol,
         array $scope,
         array $definitions,
-        ?int $rootId,
+        int|string|null $rootId,
         ?array $outerIds = null,
         ?string $parentIdCol = null,
         ?string $depthCol = null,
@@ -1595,7 +1595,7 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
         ?string $softDeletedColumn = null,
         string $idCol = 'id',
     ): bool {
@@ -1646,7 +1646,7 @@ final class TreeAggregateBuilder
         string $depthCol,
         array $scope,
         array $definitions,
-        ?int $rootId,
+        int|string|null $rootId,
         ?string $softDeletedColumn = null,
         string $idCol = 'id',
     ): array {
@@ -1871,7 +1871,7 @@ final class TreeAggregateBuilder
      *
      * @param  array<string, mixed>  $scope
      * @param  list<AggregateDefinition>  $definitions
-     * @param  list<int>|null  $outerIds
+     * @param  list<int|string>|null  $outerIds
      * @return list<array<string, mixed>>
      */
     private static function groupedAggregateQuery(
@@ -1882,7 +1882,7 @@ final class TreeAggregateBuilder
         array $scope,
         array $definitions,
         bool $inclusive,
-        ?int $rootId,
+        int|string|null $rootId,
         ?array $outerIds = null,
         ?string $softDeletedColumn = null,
         string $idCol = 'id',

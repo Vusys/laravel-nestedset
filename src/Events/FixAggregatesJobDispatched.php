@@ -19,7 +19,7 @@ final readonly class FixAggregatesJobDispatched
 {
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         public ?int $chunkSize,
         public ?string $onConnection,
         public ?string $onQueue,

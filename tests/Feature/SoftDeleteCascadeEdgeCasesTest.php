@@ -262,6 +262,55 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
         );
     }
 
+    public function test_soft_then_force_delete_inside_same_deferred_window_does_not_double_decrement(): void
+    {
+        // Root > A > B. Inside one deferral, soft-delete B then load it
+        // via withTrashed and forceDelete it. The $alreadyTrashed guard
+        // in NodeTrait::bootNodeTrait must still fire — and the
+        // post-deferral fixAggregates must reflect a single removal of
+        // B's contribution, not double-decrement.
+        $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 10, 'level' => 2]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        $a = new Monster(['name' => 'A', 'type' => 'fire', 'base_power' => 5, 'level' => 3]);
+        $a->appendToNode($root)->save();
+        $a->refresh();
+
+        $b = new Monster(['name' => 'B', 'type' => 'water', 'base_power' => 4, 'level' => 4]);
+        $b->appendToNode($a)->save();
+        $b->refresh();
+
+        // Baseline: Root inclusive = 10*2 + 5*3 + 4*4 = 20 + 15 + 16 = 51.
+        $this->assertSame(51, (int) $root->refresh()->weighted_power);
+
+        Monster::withDeferredAggregateMaintenance(static function () use ($b): void {
+            $b->delete();
+
+            $trashed = Monster::withTrashed()->where('id', $b->getKey())->firstOrFail();
+            $trashed->forceDelete();
+        }, anchor: $root);
+
+        // Single net removal of B (-16): 51 - 16 = 35 on Root, 15 on A.
+        $this->assertSame(35, (int) $root->refresh()->weighted_power, 'Root reflects single removal of B (no double-decrement)');
+        $this->assertSame(15, (int) $a->refresh()->weighted_power, 'A reflects single removal of B');
+
+        // B must be gone from the table entirely (force deleted, not just trashed).
+        $this->assertSame(0, Monster::withTrashed()->where('id', $b->getKey())->count(),
+            'forceDelete inside the deferral persisted',
+        );
+
+        // Stored == fresh after the wrapper exits.
+        $this->assertSame(
+            $this->asInt($root->freshAggregate('weighted_power')),
+            (int) $root->weighted_power,
+        );
+        $this->assertSame(
+            $this->asInt($a->freshAggregate('weighted_power')),
+            (int) $a->weighted_power,
+        );
+    }
+
     // ================================================================
     // Restore of soft-deleted subtree puts contribution back
     // ================================================================

@@ -272,6 +272,54 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         );
     }
 
+    public function test_deferred_block_inside_db_transaction_recovers_after_outer_rollback(): void
+    {
+        // The wrapping fixAggregates fires at the end of the deferred
+        // closure but is *still inside* the surrounding DB::transaction.
+        // If the outer transaction rolls back, both the per-row saves
+        // and the post-closure repair are reverted together. A fresh
+        // fixAggregates call afterwards must be a clean no-op (the
+        // stored aggregates are unchanged), and the static depth
+        // counter must have reset across the rollback so subsequent
+        // saves take the per-row path.
+        $root = new Area(['name' => 'r', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        $storedBefore = (int) $root->tickets_total;
+
+        try {
+            DB::transaction(static function () use ($root): never {
+                Area::withDeferredAggregateMaintenance(function () use ($root): void {
+                    foreach ([10, 20, 30] as $tickets) {
+                        (new Area(['name' => "x{$tickets}", 'tickets' => $tickets]))
+                            ->appendToNode($root)->save();
+                    }
+                }, $root);
+
+                throw new \RuntimeException('rollback');
+            });
+        } catch (\RuntimeException) {
+            // expected
+        }
+
+        // Rolled back — no rows added, no aggregate write committed.
+        $this->assertSame(1, Area::query()->count(), 'outer rollback dropped the deferred-block inserts');
+        $this->assertSame($storedBefore, (int) $root->refresh()->tickets_total,
+            'root aggregate restored by the rollback',
+        );
+
+        // Idempotency: running fixAggregates now must be a clean repair
+        // that converges immediately (nothing to fix).
+        $this->assertFalse(Area::aggregatesAreBroken());
+
+        // Counter reset: subsequent save uses the per-row path.
+        (new Area(['name' => 'after', 'tickets' => 7]))->appendToNode($root->refresh())->save();
+        $this->assertSame(7, (int) $root->refresh()->tickets_total,
+            'post-rollback save uses per-row delta path — deferred-depth counter reset',
+        );
+    }
+
     /**
      * Factory for a closure that throws RuntimeException after a side
      * effect. Returning the closure from a method declared

@@ -1779,12 +1779,12 @@ trait HasNestedSetAggregates
      *
      * @param  list<ListenerAggregateDefinition>  $definitions
      * @param  array<string, mixed>  $scope
-     * @param  list<int>|null  $outerIds  null = fix all
+     * @param  list<int|string>|null  $outerIds  null = fix all
      */
     private static function fixListenerAggregatesPhp(
         array $definitions,
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
         ?array $outerIds,
     ): AggregateFixResult {
         if ($definitions === []) {
@@ -1834,7 +1834,7 @@ trait HasNestedSetAggregates
                 }
 
                 // Chunked mode: skip outer nodes outside this chunk.
-                if ($outerIds !== null && ! in_array((int) $outerKey, $outerIds, true)) {
+                if ($outerIds !== null && ! in_array($outerKey, $outerIds, true)) {
                     continue;
                 }
 
@@ -1910,7 +1910,7 @@ trait HasNestedSetAggregates
      */
     private static function loadAllListenerNodes(
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
         string $lftCol,
         string $rgtCol,
     ): Collection {
@@ -1992,7 +1992,7 @@ trait HasNestedSetAggregates
     private static function aggregateErrorsForListeners(
         array $definitions,
         array $scope,
-        ?int $rootId,
+        int|string|null $rootId,
     ): array {
         $errors = [];
         foreach ($definitions as $def) {
@@ -2220,7 +2220,7 @@ trait HasNestedSetAggregates
      * ```php
      * Area::fixAggregates(
      *     chunkSize: 1_000,
-     *     onChunk: function (AggregateFixResult $chunk, int $i, ?int $cursor) {
+     *     onChunk: function (AggregateFixResult $chunk, int $i, int|string|null $cursor) {
      *         echo "Chunk {$i}: {$chunk->totalRowsUpdated} rows updated (cursor={$cursor})\n";
      *     },
      * );
@@ -2241,7 +2241,7 @@ trait HasNestedSetAggregates
             return self::fixAggregatesChunked($anchor, $chunkSize, $onChunk);
         }
 
-        $instance = self::aggregateAnchorOrFail($anchor);
+        $instance = self::aggregateWriteAnchorOrFail($anchor);
         $rootId = self::anchorRootId($anchor);
         $scope = $anchor instanceof Model
             ? NestedSetScopeResolver::valuesFor($anchor)
@@ -2302,13 +2302,22 @@ trait HasNestedSetAggregates
 
         $cursor = null;
         $chunkIndex = 0;
-        $safety = 0;
         $anchorRootId = self::anchorRootId($anchor);
         $loopStartNs = hrtime(true);
 
+        // Non-progress detector: the loop trusts `nextAfterId` to
+        // eventually return null. A buggy backend or corrupted index
+        // could return the same cursor forever; we abort if the
+        // cursor fails to advance across consecutive iterations
+        // rather than capping total iterations (which would falsely
+        // trip on legitimate small-chunkSize runs over large tables).
+        $prevCursor = null;
+        $cursorRepeats = 0;
+
         do {
             $chunkStartNs = hrtime(true);
-            $chunk = self::fixAggregatesChunk($anchor, $cursor, $chunkSize);
+            /** @var array{result: AggregateFixResult, nextAfterId: int|string|null} $chunk */
+            $chunk = static::fixAggregatesChunk($anchor, $cursor, $chunkSize);
             $chunkMs = (hrtime(true) - $chunkStartNs) / 1_000_000;
             $result = $chunk['result'];
 
@@ -2317,6 +2326,7 @@ trait HasNestedSetAggregates
                 $perColumn[$column] = ($perColumn[$column] ?? 0) + $count;
             }
 
+            $prevCursor = $cursor;
             $cursor = $chunk['nextAfterId'];
 
             EventDispatcher::dispatch(new FixAggregatesChunkCompleted(
@@ -2335,11 +2345,15 @@ trait HasNestedSetAggregates
 
             $chunkIndex++;
 
-            // Defensive bound — a non-progressing cursor in a buggy
-            // backend would otherwise spin forever. Capped at one
-            // million chunks (way above realistic table sizes).
-            if (++$safety > 1_000_000) {
-                throw new \RuntimeException('fixAggregates(chunkSize: …): chunk loop exceeded 1,000,000 iterations.');
+            if ($cursor !== null && $cursor === $prevCursor) {
+                if (++$cursorRepeats > 2) {
+                    throw new \RuntimeException(sprintf(
+                        'fixAggregates(chunkSize: …): cursor stuck at %s — chunk loop is not advancing.',
+                        (string) $cursor,
+                    ));
+                }
+            } else {
+                $cursorRepeats = 0;
             }
         } while ($cursor !== null);
 
@@ -2372,16 +2386,25 @@ trait HasNestedSetAggregates
      * Used by {@see FixAggregatesJob} to break a long-running repair
      * into a series of short, self-re-dispatching jobs.
      *
-     * @return array{result: AggregateFixResult, nextAfterId: int|null}
+     * Pagination uses `WHERE id > X ORDER BY id LIMIT N`, which assumes
+     * the PK is **monotonically ordered** for the model's chosen
+     * scheme. Auto-increment bigint, UUIDv7, ULID, and any
+     * lexicographically-ascending string all qualify. UUIDv4, nanoid
+     * (default), or any other random key will lexicographically reorder
+     * rows the loop should have visited — silently skipping or
+     * duplicating them. For random PKs use the unchunked
+     * {@see self::fixAggregates()} path instead.
+     *
+     * @return array{result: AggregateFixResult, nextAfterId: int|string|null}
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */
     public static function fixAggregatesChunk(
         ?HasNestedSet $anchor,
-        ?int $afterId,
+        int|string|null $afterId,
         int $chunkSize,
     ): array {
-        $instance = self::aggregateAnchorOrFail($anchor);
+        $instance = self::aggregateWriteAnchorOrFail($anchor);
         $rootId = self::anchorRootId($anchor);
 
         if ($chunkSize <= 0) {
@@ -2420,8 +2443,17 @@ trait HasNestedSetAggregates
             }
         }
 
+        $isIntKey = $instance->getKeyType() === 'int';
         $ids = array_values(array_map(
-            static fn (\stdClass $row): int => (int) ($row->{$instance->getKeyName()} ?? 0),
+            static function (\stdClass $row) use ($instance, $isIntKey): int|string {
+                $value = $row->{$instance->getKeyName()} ?? null;
+
+                if ($isIntKey) {
+                    return (int) $value;
+                }
+
+                return (string) $value;
+            },
             $query->get()->all(),
         ));
 
@@ -2505,7 +2537,7 @@ trait HasNestedSetAggregates
         // final fixAggregates call, and a synchronous failure here is
         // friendlier than running the entire closure and only failing
         // at the repair pass.
-        self::aggregateAnchorOrFail($anchor);
+        self::aggregateWriteAnchorOrFail($anchor);
 
         self::$deferredDepth++;
         $isOutermost = self::$deferredDepth === 1;
@@ -2653,7 +2685,7 @@ trait HasNestedSetAggregates
      */
     private static function runFixAggregates(
         ?HasNestedSet $anchor,
-        ?int $rootId,
+        int|string|null $rootId,
     ): ?AggregateFixResult {
         $definitions = AggregateRegistry::for(static::class);
 
@@ -2716,6 +2748,31 @@ trait HasNestedSetAggregates
     }
 
     /**
+     * Variant of {@see aggregateAnchorOrFail()} for mutating-repair
+     * entry points (fixAggregates, fixAggregatesChunk). Adds an
+     * unsaved-anchor rejection: a null PK silently widens the
+     * operation to whole-table/whole-scope, which is almost never
+     * what `fixAggregates($anchor)` callers intend. Read paths
+     * (aggregateErrors) stay permissive — stub anchors are a
+     * legitimate scope-carrier pattern there.
+     */
+    private static function aggregateWriteAnchorOrFail(?HasNestedSet $anchor): self
+    {
+        $instance = self::aggregateAnchorOrFail($anchor);
+
+        if ($anchor instanceof Model && $anchor->getKey() === null) {
+            throw new InvalidArgumentException(sprintf(
+                '%s::fixAggregates: $anchor has no primary key — was it saved? '
+                .'Pass a persisted anchor to scope the repair to its subtree, '
+                .'or omit the anchor to repair the whole table.',
+                static::class,
+            ));
+        }
+
+        return $instance;
+    }
+
+    /**
      * Returns the soft-delete column name for models that use Eloquent's
      * SoftDeletes trait, or null otherwise. The aggregate-maintenance
      * delta path passes this to {@see DeltaMaintenance} so per-mutation
@@ -2739,7 +2796,7 @@ trait HasNestedSetAggregates
         return is_string($column) ? $column : null;
     }
 
-    private static function anchorRootId(?HasNestedSet $anchor): ?int
+    private static function anchorRootId(?HasNestedSet $anchor): int|string|null
     {
         if (! $anchor instanceof Model) {
             return null;
@@ -2747,6 +2804,6 @@ trait HasNestedSetAggregates
 
         $key = $anchor->getKey();
 
-        return is_numeric($key) ? (int) $key : null;
+        return is_int($key) || is_string($key) ? $key : null;
     }
 }

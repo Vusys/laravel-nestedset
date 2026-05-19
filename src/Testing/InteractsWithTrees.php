@@ -51,8 +51,8 @@ trait InteractsWithTrees
         $this->assertNull(
             $node->getParentId(),
             $message !== '' ? $message : sprintf(
-                'Expected node to be a root (parent_id NULL); parent_id is %d.',
-                (int) $node->getParentId(),
+                'Expected node to be a root (parent_id NULL); parent_id is %s.',
+                (string) $node->getParentId(),
             ),
         );
     }
@@ -95,13 +95,13 @@ trait InteractsWithTrees
      */
     public function assertIsChildOf(HasNestedSet $node, HasNestedSet&Model $parent, string $message = ''): void
     {
-        $expectedParentId = self::keyAsInt($parent);
+        $expectedParentId = self::keyOf($parent);
         $this->assertSame(
             $expectedParentId,
             $node->getParentId(),
             $message !== '' ? $message : sprintf(
-                'Expected node parent_id to be %d; got %s.',
-                $expectedParentId,
+                'Expected node parent_id to be %s; got %s.',
+                (string) $expectedParentId,
                 $node->getParentId() === null ? 'NULL' : (string) $node->getParentId(),
             ),
         );
@@ -179,7 +179,7 @@ trait InteractsWithTrees
     {
         $modelClass = $node::class;
         $actual = $modelClass::query()
-            ->where($node->getParentIdName(), self::keyAsInt($node))
+            ->where($node->getParentIdName(), self::keyOf($node))
             ->count();
 
         $this->assertSame(
@@ -315,20 +315,23 @@ trait InteractsWithTrees
     // ----------------------------------------------------------------
 
     /**
-     * Narrows the mixed return of Eloquent's `getKey()` to int.
-     * The package requires integer primary keys on nested-set models.
+     * Narrows the mixed return of Eloquent's `getKey()` to int|string
+     * — the two concrete shapes Eloquent supports. Throws if the
+     * model is unsaved (null key), since that means the test is
+     * comparing against a key that does not exist yet.
      */
-    private static function keyAsInt(Model $node): int
+    private static function keyOf(Model $node): int|string
     {
         $key = $node->getKey();
-        if (! is_numeric($key)) {
-            throw new \LogicException(sprintf(
-                'NestedSet testing: expected integer primary key, got %s.',
-                get_debug_type($key),
-            ));
+
+        if (is_int($key) || is_string($key)) {
+            return $key;
         }
 
-        return (int) $key;
+        throw new \LogicException(sprintf(
+            'NestedSet testing: model has no primary key (got %s) — was it saved?',
+            get_debug_type($key),
+        ));
     }
 
     /**
