@@ -132,6 +132,17 @@ trait NodeTrait
                 HasSoftDeleteTree::applySoftDeleteCascade($node);
             }
 
+            // Hard-delete cascade: clear every descendant from the
+            // table before the aggregate decrement runs. Mirrors the
+            // soft-delete cascade so chain recomputes (listener
+            // Min/Max, exclusive aggregates) see the post-cascade
+            // state, and so applyStructuralCleanupOnDelete can close
+            // the entire subtree gap rather than leaving orphans
+            // stranded in a vanished range.
+            if (! $node->exists && method_exists($node, 'applyForceDeleteCascade')) {
+                $node->applyForceDeleteCascade();
+            }
+
             // forceDelete on a row that was already soft-deleted fires
             // this hook a second time. Its aggregate contribution was
             // removed at the original soft-delete; running the hook
@@ -150,10 +161,11 @@ trait NodeTrait
             if (! $alreadyTrashed && method_exists($node, 'applyAggregateOnDelete')) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
             }
-            // Compact lft/rgt for hard-delete-of-a-leaf so the bounds
-            // sequence stays a contiguous 1..2N permutation. No-ops for
-            // soft delete (row still exists) and interior force-delete
-            // (children would shift into invalid positions).
+            // Compact lft/rgt for any hard-delete so the bounds
+            // sequence stays a contiguous 1..2N permutation. No-op for
+            // soft delete (row still exists). The cascade above
+            // cleared every descendant first for interior nodes, so
+            // closing the entire subtree gap here is safe.
             if (method_exists($node, 'applyStructuralCleanupOnDelete')) {
                 $node->applyStructuralCleanupOnDelete();
             }
