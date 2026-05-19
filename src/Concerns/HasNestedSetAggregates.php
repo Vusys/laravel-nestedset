@@ -596,6 +596,7 @@ trait HasNestedSetAggregates
             filterEquals: $filterEquals,
             locking: self::aggregateLockingMode(),
             softDeletedColumn: $this->softDeleteColumn(),
+            idCol: $this->getKeyName(),
         );
     }
 
@@ -648,6 +649,7 @@ trait HasNestedSetAggregates
             locking: self::aggregateLockingMode(),
             excludeBounds: $excludeBounds,
             softDeletedColumn: $this->softDeleteColumn(),
+            idCol: $this->getKeyName(),
         );
     }
 
@@ -1332,6 +1334,7 @@ trait HasNestedSetAggregates
             locking: self::aggregateLockingMode(),
             excludeBounds: $excludeBounds,
             softDeletedColumn: $this->softDeleteColumn(),
+            idCol: $this->getKeyName(),
         );
     }
 
@@ -1733,7 +1736,7 @@ trait HasNestedSetAggregates
             }
 
             $this->getConnection()->table($this->getTable())
-                ->where('id', $ancestor->getKey())
+                ->where($this->getKeyName(), $ancestor->getKey())
                 ->update($updates);
         }
     }
@@ -1875,10 +1878,11 @@ trait HasNestedSetAggregates
 
         // Write back drifted rows (per-row UPDATE; listener fix is infrequent).
         $totalRowsUpdated = 0;
+        $keyName = $instance->getKeyName();
         foreach ($toUpdate as $row) {
             $updated = $instance->getConnection()
                 ->table($instance->getTable())
-                ->where('id', $row['id'])
+                ->where($keyName, $row['id'])
                 ->update($row['updates']);
             $totalRowsUpdated += $updated;
         }
@@ -1911,7 +1915,7 @@ trait HasNestedSetAggregates
             $instance = new static;
             $rootRow = $instance->getConnection()
                 ->table($instance->getTable())
-                ->where('id', $rootId)
+                ->where($instance->getKeyName(), $rootId)
                 ->first([$lftCol, $rgtCol]);
 
             if ($rootRow !== null) {
@@ -2168,6 +2172,7 @@ trait HasNestedSetAggregates
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
             softDeletedColumn: $instance->softDeleteColumn(),
+            idCol: $instance->getKeyName(),
         );
 
         $listenerErrors = self::aggregateErrorsForListeners(
@@ -2245,6 +2250,7 @@ trait HasNestedSetAggregates
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
             softDeletedColumn: $instance->softDeleteColumn(),
+            idCol: $instance->getKeyName(),
         );
 
         $listenerResult = self::fixListenerAggregatesPhp(
@@ -2397,7 +2403,7 @@ trait HasNestedSetAggregates
         if ($rootId !== null) {
             $rootRow = $instance->getConnection()
                 ->table($instance->getTable())
-                ->where('id', $rootId)
+                ->where($instance->getKeyName(), $rootId)
                 ->first([$instance->getLftName(), $instance->getRgtName()]);
             if ($rootRow !== null) {
                 $query->where($instance->getLftName(), '>=', $rootRow->{$instance->getLftName()})
@@ -2420,6 +2426,7 @@ trait HasNestedSetAggregates
             rootId: $rootId,
             outerIds: $ids,
             softDeletedColumn: $instance->softDeleteColumn(),
+            idCol: $instance->getKeyName(),
         );
 
         $listenerChunkResult = self::fixListenerAggregatesPhp(
@@ -2661,6 +2668,7 @@ trait HasNestedSetAggregates
             parentIdCol: $instance->getParentIdName(),
             depthCol: $instance->getDepthName(),
             softDeletedColumn: $instance->softDeleteColumn(),
+            idCol: $instance->getKeyName(),
         );
 
         $listenerResult = self::fixListenerAggregatesPhp(

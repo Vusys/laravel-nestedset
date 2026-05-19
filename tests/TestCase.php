@@ -59,7 +59,7 @@ abstract class TestCase extends OrchestraTestCase
         // first `for()` call — negligible alongside test setUp.
         AggregateRegistry::flush();
 
-        $tables = ['areas', 'archived_branches', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches'];
+        $tables = ['areas', 'archived_branches', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags'];
 
         foreach ($tables as $table) {
             if (DB::connection()->getSchemaBuilder()->hasTable($table)) {
@@ -69,16 +69,21 @@ abstract class TestCase extends OrchestraTestCase
     }
 
     /**
-     * Raw bulk inserts with explicit `id` values leave PostgreSQL's
-     * SEQUENCE untouched — subsequent Eloquent INSERTs pull id=1 and
-     * collide with the seeded rows. MySQL/MariaDB auto-increment
-     * silently advances past explicit ids, and SQLite uses ROWID so
-     * the issue doesn't arise. PG needs an explicit `setval`.
+     * Raw bulk inserts with explicit primary-key values leave
+     * PostgreSQL's SEQUENCE untouched — subsequent Eloquent INSERTs
+     * pull the lowest unused id and collide with the seeded rows.
+     * MySQL/MariaDB auto-increment silently advances past explicit
+     * values, and SQLite uses ROWID so the issue doesn't arise. PG
+     * needs an explicit `setval`.
      *
-     * Call this after a setUp that seeds rows with explicit ids and
-     * before any test code that creates rows through Eloquent.
+     * Call this after a setUp that seeds rows with explicit pk
+     * values and before any test code that creates rows through
+     * Eloquent.
+     *
+     * `$keyColumn` defaults to `'id'`; pass the model's actual PK
+     * column for fixtures with custom primary keys (e.g. `'tag_id'`).
      */
-    protected function syncSequence(string $table): void
+    protected function syncSequence(string $table, string $keyColumn = 'id'): void
     {
         $connection = DB::connection();
 
@@ -86,7 +91,7 @@ abstract class TestCase extends OrchestraTestCase
             return;
         }
 
-        $rawMax = DB::table($table)->max('id');
+        $rawMax = DB::table($table)->max($keyColumn);
         $maxId = is_numeric($rawMax) ? (int) $rawMax : 0;
 
         if ($maxId === 0) {
@@ -94,8 +99,8 @@ abstract class TestCase extends OrchestraTestCase
         }
 
         $connection->statement(
-            "SELECT setval(pg_get_serial_sequence(?, 'id'), ?)",
-            [$table, $maxId],
+            'SELECT setval(pg_get_serial_sequence(?, ?), ?)',
+            [$table, $keyColumn, $maxId],
         );
     }
 

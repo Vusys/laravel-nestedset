@@ -251,6 +251,11 @@ final class EagerLoadingTest extends TestCase
         // multi-tree tables don't return rows from another tree that
         // happen to share a parent_id value. Two menus with their own
         // root + a child each:
+        // The rogue row below deliberately points its parent_id at a
+        // row in another menu — that's structural corruption (from
+        // menu 2's perspective the rogue is now an orphan), so opt
+        // out of the integrity check.
+        $this->allowBrokenTreeAtTearDown = true;
         DB::table('menus')->insert([
             ['id' => 100, 'name' => 'Menu A'],
             ['id' => 200, 'name' => 'Menu B'],

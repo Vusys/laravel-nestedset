@@ -1197,6 +1197,7 @@ final class TreeAggregateBuilder
         ?string $parentIdCol = null,
         ?string $depthCol = null,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): array {
         $userFacing = [];
         foreach ($definitions as $def) {
@@ -1220,6 +1221,7 @@ final class TreeAggregateBuilder
             parentIdCol: $parentIdCol,
             depthCol: $depthCol,
             softDeletedColumn: $softDeletedColumn,
+            idCol: $idCol,
         );
 
         $errors = [];
@@ -1268,6 +1270,7 @@ final class TreeAggregateBuilder
         ?string $parentIdCol = null,
         ?string $depthCol = null,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): AggregateFixResult {
         $sqlDefinitions = [];
         foreach ($definitions as $def) {
@@ -1306,6 +1309,7 @@ final class TreeAggregateBuilder
             parentIdCol: $parentIdCol,
             depthCol: $depthCol,
             softDeletedColumn: $softDeletedColumn,
+            idCol: $idCol,
         );
 
         $perColumn = [];
@@ -1346,6 +1350,7 @@ final class TreeAggregateBuilder
             connection: $connection,
             table: $table,
             toUpdate: $toUpdate,
+            idCol: $idCol,
         );
 
         return new AggregateFixResult(
@@ -1374,6 +1379,7 @@ final class TreeAggregateBuilder
         string $table,
         array $toUpdate,
         int $chunkSize = 500,
+        string $idCol = 'id',
     ): int {
         if ($toUpdate === []) {
             return 0;
@@ -1401,7 +1407,7 @@ final class TreeAggregateBuilder
             $bindings = [];
 
             foreach ($columnsInChunk as $col) {
-                $caseSql = 'CASE id';
+                $caseSql = "CASE {$idCol}";
                 foreach ($chunk as $row) {
                     if (! array_key_exists($col, $row['updates'])) {
                         continue;
@@ -1422,7 +1428,7 @@ final class TreeAggregateBuilder
             }
 
             $sql = "UPDATE {$table} SET ".implode(', ', $sets)
-                ." WHERE id IN ({$idPlaceholders})";
+                ." WHERE {$idCol} IN ({$idPlaceholders})";
 
             $touched += $connection->update($sql, $bindings);
         }
@@ -1460,6 +1466,7 @@ final class TreeAggregateBuilder
         ?string $parentIdCol = null,
         ?string $depthCol = null,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): array {
         if ($definitions === []) {
             return [];
@@ -1490,7 +1497,7 @@ final class TreeAggregateBuilder
             && $outerIds === null
             && $parentIdCol !== null
             && $depthCol !== null
-            && self::isChainShape($connection, $table, $parentIdCol, $lftCol, $rgtCol, $scope, $rootId, $softDeletedColumn)
+            && self::isChainShape($connection, $table, $parentIdCol, $lftCol, $rgtCol, $scope, $rootId, $softDeletedColumn, $idCol)
         ) {
             return self::selectStoredAndComputedViaChainFold(
                 connection: $connection,
@@ -1503,6 +1510,7 @@ final class TreeAggregateBuilder
                 definitions: $definitions,
                 rootId: $rootId,
                 softDeletedColumn: $softDeletedColumn,
+                idCol: $idCol,
             );
         }
 
@@ -1529,6 +1537,7 @@ final class TreeAggregateBuilder
                 rootId: $rootId,
                 outerIds: $outerIds,
                 softDeletedColumn: $softDeletedColumn,
+                idCol: $idCol,
             );
 
             foreach ($rows as $row) {
@@ -1565,6 +1574,7 @@ final class TreeAggregateBuilder
         array $scope,
         ?int $rootId,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): bool {
         $sql = "SELECT 1 FROM {$table} WHERE 1 = 1";
         $bindings = [];
@@ -1579,8 +1589,8 @@ final class TreeAggregateBuilder
         }
 
         if ($rootId !== null) {
-            $sql .= " AND {$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
-            $sql .= " AND {$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $sql .= " AND {$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE {$idCol} = ?)";
+            $sql .= " AND {$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE {$idCol} = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
         }
@@ -1615,11 +1625,12 @@ final class TreeAggregateBuilder
         array $definitions,
         ?int $rootId,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): array {
         // Collect every column we need to fetch: source columns (for
         // the fold input), stored aggregate columns (for the diff
         // output), and the structural columns to walk the chain.
-        $needed = ['id', $parentIdCol, $lftCol, $rgtCol, $depthCol];
+        $needed = [$idCol, $parentIdCol, $lftCol, $rgtCol, $depthCol];
         foreach ($definitions as $definition) {
             if ($definition->source !== null) {
                 $needed[] = $definition->source;
@@ -1641,8 +1652,8 @@ final class TreeAggregateBuilder
         }
 
         if ($rootId !== null) {
-            $sql .= " AND {$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
-            $sql .= " AND {$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $sql .= " AND {$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE {$idCol} = ?)";
+            $sql .= " AND {$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE {$idCol} = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
         }
@@ -1675,7 +1686,7 @@ final class TreeAggregateBuilder
             $prevCountAvg = 0;
 
             foreach ($rows as $row) {
-                $id = $row['id'];
+                $id = $row[$idCol] ?? null;
                 if (! is_int($id) && ! is_string($id)) {
                     continue;
                 }
@@ -1851,6 +1862,7 @@ final class TreeAggregateBuilder
         ?int $rootId,
         ?array $outerIds = null,
         ?string $softDeletedColumn = null,
+        string $idCol = 'id',
     ): array {
         $rawFilterContext = self::hasRawFilter($definitions);
         $outer = self::outerFromFragment(
@@ -1860,10 +1872,11 @@ final class TreeAggregateBuilder
             scopeCols: array_keys($scope),
             rawFilterPresent: $rawFilterContext,
             outerAlias: 'o',
+            idCol: $idCol,
             softDeletedColumn: $softDeletedColumn,
         );
 
-        $outerSelects = ['outer_a.id AS id'];
+        $outerSelects = ["outer_a.{$idCol} AS id"];
         $aggSelects = ["{$outer['outerId']} AS outer_id"];
 
         foreach ($definitions as $definition) {
@@ -1915,8 +1928,8 @@ final class TreeAggregateBuilder
             $innerWhere .= " AND {$outer['outerSoftDeleted']} IS NULL";
         }
         if ($rootId !== null) {
-            $innerWhere .= " AND {$outer['outerLft']} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
-            $innerWhere .= " AND {$outer['outerRgt']} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $innerWhere .= " AND {$outer['outerLft']} >= (SELECT {$lftCol} FROM {$table} WHERE {$idCol} = ?)";
+            $innerWhere .= " AND {$outer['outerRgt']} <= (SELECT {$rgtCol} FROM {$table} WHERE {$idCol} = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
         }
@@ -1944,14 +1957,14 @@ final class TreeAggregateBuilder
             $outerWhere .= " AND outer_a.{$softDeletedColumn} IS NULL";
         }
         if ($rootId !== null) {
-            $outerWhere .= " AND outer_a.{$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE id = ?)";
-            $outerWhere .= " AND outer_a.{$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE id = ?)";
+            $outerWhere .= " AND outer_a.{$lftCol} >= (SELECT {$lftCol} FROM {$table} WHERE {$idCol} = ?)";
+            $outerWhere .= " AND outer_a.{$rgtCol} <= (SELECT {$rgtCol} FROM {$table} WHERE {$idCol} = ?)";
             $bindings[] = $rootId;
             $bindings[] = $rootId;
         }
         if ($outerIds !== null) {
             $placeholders = implode(', ', array_fill(0, count($outerIds), '?'));
-            $outerWhere .= " AND outer_a.id IN ({$placeholders})";
+            $outerWhere .= " AND outer_a.{$idCol} IN ({$placeholders})";
             foreach ($outerIds as $id) {
                 $bindings[] = $id;
             }
@@ -1979,7 +1992,7 @@ final class TreeAggregateBuilder
             ." {$innerJoinKeyword} {$table} AS i ON {$joinClause}{$scopeJoinExtra}"
             ." WHERE {$innerWhere}"
             ." GROUP BY {$outer['outerId']}"
-            .') AS agg ON agg.outer_id = outer_a.id'
+            .") AS agg ON agg.outer_id = outer_a.{$idCol}"
             ." WHERE {$outerWhere}";
 
         // MariaDB's planner converts our derived table into a LATERAL

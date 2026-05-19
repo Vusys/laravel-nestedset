@@ -33,6 +33,7 @@ final readonly class TreeRepairBuilder
         private string $parentId,
         private string $depth,
         private array $scope = [],
+        private string $idCol = 'id',
     ) {}
 
     // ----------------------------------------------------------------
@@ -99,9 +100,9 @@ final readonly class TreeRepairBuilder
     public function rebuildTree(): void
     {
         $rows = $this->scoped()
-            ->select(['id', $this->parentId])
+            ->select([$this->idCol, $this->parentId])
             ->get()
-            ->keyBy('id');
+            ->keyBy($this->idCol);
 
         /** @var array<int|string, list<int>> $children */
         $children = [];
@@ -148,9 +149,9 @@ final readonly class TreeRepairBuilder
     public function rebuildSubtree(int $rootId): void
     {
         $all = $this->scoped()
-            ->select(['id', $this->parentId])
+            ->select([$this->idCol, $this->parentId])
             ->get()
-            ->keyBy('id');
+            ->keyBy($this->idCol);
 
         $inSubtree = [];
         $this->collectSubtree($rootId, $all->all(), $inSubtree);
@@ -174,7 +175,7 @@ final readonly class TreeRepairBuilder
 
         $rootRow = $this->scoped()
             ->select([$this->lft, $this->depth])
-            ->where('id', $rootId)
+            ->where($this->idCol, $rootId)
             ->first();
 
         $startLft = $rootRow !== null ? (int) $rootRow->{$this->lft} : 1;
@@ -229,9 +230,9 @@ final readonly class TreeRepairBuilder
         $ids = array_keys($positions);
 
         foreach (array_chunk($ids, $chunkSize) as $idChunk) {
-            $lftCase = 'CASE id';
-            $rgtCase = 'CASE id';
-            $depthCase = 'CASE id';
+            $lftCase = "CASE {$this->idCol}";
+            $rgtCase = "CASE {$this->idCol}";
+            $depthCase = "CASE {$this->idCol}";
             $lftBindings = [];
             $rgtBindings = [];
             $depthBindings = [];
@@ -269,7 +270,7 @@ final readonly class TreeRepairBuilder
                 ."SET {$this->lft} = ({$lftCase}), "
                 ."{$this->rgt} = ({$rgtCase}), "
                 ."{$this->depth} = ({$depthCase}) "
-                ."WHERE id IN ({$idPlaceholders}){$scopeClause}";
+                ."WHERE {$this->idCol} IN ({$idPlaceholders}){$scopeClause}";
 
             $bindings = [
                 ...$lftBindings,
@@ -322,14 +323,25 @@ final readonly class TreeRepairBuilder
     private function orphanQuery(): Builder
     {
         $tableName = $this->table;
-        $query = $this->connection->table("{$tableName} as child")
-            ->leftJoin("{$tableName} as parent", 'parent.id', '=', "child.{$this->parentId}")
-            ->whereNotNull("child.{$this->parentId}")
-            ->whereNull('parent.id');
+        $scopeColumns = array_keys($this->scope);
 
-        // A parent in a different scope still counts as missing — orphan
-        // semantics require the parent to be in the same tree, not just
-        // anywhere in the table.
+        // The JOIN itself must equate scope columns across child and
+        // parent — otherwise a child whose parent_id matches a row in
+        // a DIFFERENT scope would join successfully, mask the orphan,
+        // and let countErrors() under-report corruption.
+        $query = $this->connection->table("{$tableName} as child")
+            ->leftJoin("{$tableName} as parent", function ($join) use ($scopeColumns): void {
+                $join->on("parent.{$this->idCol}", '=', "child.{$this->parentId}");
+                foreach ($scopeColumns as $column) {
+                    $join->on("parent.{$column}", '=', "child.{$column}");
+                }
+            })
+            ->whereNotNull("child.{$this->parentId}")
+            ->whereNull("parent.{$this->idCol}");
+
+        // Restrict the outer (child) side to this scope so the count
+        // only includes orphans in the same partition the caller asked
+        // to repair.
         foreach ($this->scope as $column => $value) {
             $query->where("child.{$column}", '=', $value);
         }

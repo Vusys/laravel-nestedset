@@ -330,6 +330,7 @@ trait HasBulkInsert
             parentId: $instance->getParentIdName(),
             depth: $instance->getDepthName(),
             scope: $scopeValues,
+            idCol: $instance->getKeyName(),
         );
     }
 
