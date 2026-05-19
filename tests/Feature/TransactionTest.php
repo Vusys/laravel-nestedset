@@ -18,13 +18,23 @@ use Vusys\NestedSet\Tests\TestCase;
  * (`config('nestedset.auto_transaction', true)`); set to `false` only
  * if the caller is managing transactions itself.
  *
- * These tests pin three orthogonal behaviours:
+ * Scope: the package's auto-transaction wraps `callPendingAction`'s
+ * structural-SQL block — `makeGap` / `moveNode` plus the bracketing
+ * aggregate hooks. Failures inside that window roll the gap back
+ * (delegating to Laravel's `DB::transaction()` contract). The
+ * subsequent Eloquent `INSERT` runs OUTSIDE that wrap — atomicity
+ * between gap and row insert is the caller's responsibility, via an
+ * outer `DB::transaction()`.
+ *
+ * Behaviours pinned by this file:
  *  - User-wrapped `DB::transaction()` rollback restores pre-mutation
  *    state.
- *  - With auto_transaction = true (the default), a failure between
- *    `makeGap` and the row save rolls the gap back automatically.
- *  - With auto_transaction = false, the same failure leaves the gap
- *    in the tree — the caller has opted out of the safety net.
+ *  - auto_transaction = true opens a transaction inside
+ *    `callPendingAction` (proven by the begin/commit event counter).
+ *  - auto_transaction = false opens NO transaction inside
+ *    `callPendingAction` (the caller has opted out).
+ *  - Both config values produce identical results on the happy
+ *    path.
  */
 final class TransactionTest extends TestCase
 {
@@ -55,31 +65,31 @@ final class TransactionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_auto_transaction_rolls_back_on_insert_failure(): void
+    public function test_failure_after_save_under_outer_transaction_is_rolled_back(): void
     {
-        // Sanity-check the default: a failure after `makeGap` (i.e.
-        // inside the saving lifecycle, where callPendingAction has
-        // already shifted bounds) is rolled back by the auto-wrapping
-        // DB::transaction inside callPendingAction.
+        // Pins the recommended pattern for atomicity that spans the
+        // package's auto-tx AND the subsequent INSERT: wrap the save
+        // chain in your own DB::transaction(). The rollback proven
+        // here is the OUTER transaction's, not the package's — the
+        // package's auto-tx (which only wraps the makeGap/aggregate
+        // window inside callPendingAction) has already committed by
+        // the time this throw fires.
         $this->assertTrue(Config::get('nestedset.auto_transaction'));
 
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
         $rootBefore = $root->refresh();
 
-        // Cause the INSERT to fail by violating a NOT NULL on `name` via raw.
         try {
             DB::transaction(function () use ($rootBefore): never {
-                // Simulate a downstream failure after the gap is opened.
                 $b = new Category(['name' => 'B']);
                 $b->appendToNode($rootBefore)->save();
-                throw new RuntimeException('failure after gap');
+                throw new RuntimeException('failure after save() — outer tx rolls back');
             });
         } catch (RuntimeException) {
             // expected
         }
 
-        // The gap should NOT remain — outer transaction rolled it back.
         $rootAfter = Category::query()->findOrFail(1);
         $this->assertSame($rootBefore->lft, $rootAfter->lft);
         $this->assertSame($rootBefore->rgt, $rootAfter->rgt);
