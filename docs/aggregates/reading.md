@@ -54,12 +54,12 @@ would require declaring the column and the aggregate on the model.
 
 When the alias **does** match a declared aggregate column,
 `withFreshAggregates()` overlays the freshly-computed value on top
-of the stored attribute under the same name. Beware: calling
-`save()` on the overlaid model has the model's own dirty tracking
-treat the fresh value as the new stored value. If a brief drift
-window produced a different fresh result than the stored value,
-that drift gets persisted. The safe pattern is to use a separate
-alias when you need both the stored and fresh side-by-side:
+of the stored attribute under the same name. Beware: on a
+subsequent `save()`, the model's own dirty tracking treats the
+fresh value as the new stored value. If a brief drift window
+produced a different fresh result than the stored value, that
+drift gets persisted. The safe pattern is to use a separate alias
+when you need both the stored and fresh side-by-side:
 
 ```php
 $node = Category::query()
