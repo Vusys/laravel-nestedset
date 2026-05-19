@@ -2,6 +2,10 @@
 
 [![Tests](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/Vusys/laravel-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-nestedset)
+[![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/tests.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
+[![assertions](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/assertions.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
+[![test LOC](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/test-ratio.json)](tests/)
+[![CI matrix](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/matrix.json)](.github/workflows/tests.yml)
 [![PHP](https://img.shields.io/badge/php-%5E8.3-777BB4?logo=php&logoColor=white)](composer.json)
 [![Laravel](https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel)](composer.json)
 [![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](phpstan.neon)
@@ -12,8 +16,6 @@
 A modern Laravel implementation of the nested-set model for hierarchical
 data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations,
 multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit.
-
-Target: **PHP 8.3+** / **Laravel 11, 12, 13**.
 
 ```php
 $root = Category::create(['name' => 'Root']);
