@@ -90,15 +90,38 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertSame(42, $clone->tickets);
     }
 
-    public function test_replicate_copies_structural_columns_but_placement_overrides(): void
+    public function test_replicate_clears_structural_columns(): void
     {
-        // Source replicate() does NOT reset lft/rgt/depth/parent_id —
-        // those remain on the clone in memory. The clone must be
-        // placed via appendToNode/etc before save, otherwise the
-        // pending-action path takes over and overrides. This test
-        // pins the behaviour: if you DO call a placement method, the
-        // clone lands at the new spot regardless of the inherited
-        // structural attributes.
+        // Without resetting lft/rgt/depth/parent_id on the clone, an
+        // accidental ->save() (no appendToNode/makeRoot) would write a
+        // duplicate at the source's bounds — the lft/rgt invariant
+        // breaks. Reset them so isPlacedInTree() returns false and a
+        // bare save is harmless (or surfaces the missing placement).
+        $root = new Area(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        $left = new Area(['name' => 'left', 'tickets' => 1]);
+        $left->appendToNode($root)->save();
+        $left = $left->refresh();
+
+        $clone = $left->replicate();
+
+        $this->assertSame(0, (int) $clone->lft);
+        $this->assertSame(0, (int) $clone->rgt);
+        $this->assertSame(0, (int) $clone->depth);
+        $this->assertNull($clone->parent_id);
+        $this->assertFalse(
+            $clone->isPlacedInTree(),
+            'replicated clone must report unplaced until appendToNode/makeRoot runs',
+        );
+    }
+
+    public function test_replicate_can_be_placed_via_append_to_node_after_clone(): void
+    {
+        // Counterpart to the above: once the clone IS placed via the
+        // public API, the clone lands at the new spot and the tree
+        // stays intact.
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
         $root->refresh();
@@ -111,8 +134,6 @@ final class ReplicateInteractionTest extends TestCase
         $right->appendToNode($root->refresh())->save();
         $right->refresh();
 
-        // Clone $left then place it under $right — the inherited
-        // parent_id (root) must be replaced by $right's id.
         $clone = $left->replicate();
         $clone->appendToNode($right)->save();
         $clone->refresh();
