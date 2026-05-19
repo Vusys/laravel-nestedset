@@ -48,23 +48,7 @@ To remove the columns later: `$table->dropNestedSet()` (pass the same
 ## Non-integer primary keys
 
 `parent_id` defaults to `unsignedBigInteger` to match Laravel's
-auto-incrementing `id()` column. Pass `parentIdType:` to match a UUID,
-ULID, or string PK:
-
-```php
-Schema::create('categories', function (Blueprint $table): void {
-    $table->uuid('id')->primary();
-    $table->string('name');
-    $table->nestedSet(parentIdType: 'uuid');
-});
-```
-
-Accepted values: `'bigint'` (default), `'uuid'`, `'ulid'`, `'string'`,
-or a closure `function (Blueprint $table, string $column): void { … }`
-for custom shapes (nanoid, fixed-width char, FK constraints, etc.).
-
-The package supports any **monotonic** key — bigint auto-increment,
-UUIDv7, ULID, or any lexicographically-ascending string. Random keys
-(UUIDv4, default nanoid) work for every code path except the
-chunked aggregate-repair cursor (`fixAggregates(chunkSize: …)`); on
-random keys, use the unchunked `fixAggregates($anchor)` instead.
+auto-incrementing `id()` column. UUID, ULID, and string PKs are
+supported — pass `parentIdType:` to match. See [Primary Keys](primary-keys.html)
+for accepted values and the monotonicity rule that governs chunked
+aggregate repair.
