@@ -1,0 +1,123 @@
+name: Bencher
+
+# Continuous performance tracking via bencher.dev.
+#
+# On push to master: runs the Performance suite (sqlite) and records
+# the result as the new baseline for the master branch.
+#
+# On PR: runs the same benchmarks, compares against the master
+# baseline, and posts a PR comment with the diff. The branch is
+# auto-created in Bencher on first run and inherits master's
+# thresholds.
+#
+# Sqlite-only by design — Bencher needs a stable testbed for
+# baseline comparison. The existing Performance workflow continues
+# to cover MySQL / MariaDB / PostgreSQL on `run-perf` label.
+#
+# Auth: requires BENCHER_API_KEY repo secret (set during signup at
+# https://bencher.dev). Project slug is `vusys-laravel-nestedset`.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  benchmark:
+    name: Bencher
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Configure Composer authentication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache/files
+          key: composer-bencher-${{ hashFiles('composer.json') }}
+          restore-keys: composer-bencher-
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Setup Bencher CLI
+        uses: bencherdev/bencher@main
+
+      - name: Run Performance suite
+        env:
+          DB_CONNECTION: sqlite
+        run: |
+          # Performance suite writes per-bench heartbeats to stderr;
+          # split streams so the converter only sees those lines.
+          # pipefail propagates phpunit's exit code through the redirect.
+          set -o pipefail
+          stdbuf -oL -eL vendor/bin/phpunit --testsuite Performance --testdox > perf.out 2> perf.err
+          php .github/scripts/perf-to-bmf.php < perf.err > results.bmf.json
+          echo "::group::BMF results"
+          cat results.bmf.json
+          echo "::endgroup::"
+
+      - name: Upload baseline (master)
+        if: github.event_name == 'push'
+        env:
+          BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+        run: |
+          bencher run \
+            --project vusys-laravel-nestedset \
+            --branch master \
+            --testbed ubuntu-latest \
+            --adapter json \
+            --file results.bmf.json
+
+      - name: Compare against baseline (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # --start-point + clone-thresholds creates the PR branch in
+          # Bencher (if missing) seeded from master, and --reset wipes
+          # any prior commits on a re-run so the comparison is
+          # always head-vs-master rather than head-vs-previous-PR-push.
+          bencher run \
+            --project vusys-laravel-nestedset \
+            --branch "$GITHUB_HEAD_REF" \
+            --start-point "$GITHUB_BASE_REF" \
+            --start-point-hash '${{ github.event.pull_request.base.sha }}' \
+            --start-point-clone-thresholds \
+            --start-point-reset \
+            --testbed ubuntu-latest \
+            --adapter json \
+            --github-actions "$GITHUB_TOKEN" \
+            --file results.bmf.json
+
+      - name: Upload raw perf output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-output-${{ github.run_id }}
+          path: |
+            perf.out
+            perf.err
+            results.bmf.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,35 @@
+{
+    // Mutation testing config for Infection.
+    //
+    // Thresholds are deliberately 0 on first commit — the workflow
+    // reports the baseline MSI/Covered-MSI in the PR comment. Once we
+    // have a measured number, ratchet `minMsi` / `minCoveredMsi` up
+    // to one or two points below it so regressions fail CI but
+    // genuine new mutators don't.
+    $schema: "vendor/infection/infection/resources/schema.json",
+    source: {
+        directories: ["src"],
+    },
+    timeout: 30,
+    logs: {
+        text: "build/infection/infection.log",
+        html: "build/infection/infection.html",
+        json: "build/infection/infection.json",
+        summary: "build/infection/summary.log",
+        github: true,
+        stryker: {
+            // Branch name pattern — Infection uploads to the Stryker
+            // dashboard only when running on a matching branch. Master
+            // is enough; PR diff runs would pollute the dashboard with
+            // partial measurements.
+            report: "master",
+        },
+    },
+    mutators: {
+        "@default": true,
+    },
+    minMsi: 0,
+    minCoveredMsi: 0,
+    testFramework: "phpunit",
+    tmpDir: "build/infection",
+}

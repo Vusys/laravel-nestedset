@@ -1,0 +1,155 @@
+name: Infection
+
+# Mutation testing — two modes:
+#
+# `pr` (PRs): runs in --git-diff-lines so only mutations in changed
+# code are evaluated. Fast enough to gate PRs; doesn't produce a
+# project-wide MSI, so doesn't publish to the Stryker dashboard.
+#
+# `full` (master push + weekly + manual): runs the full mutation
+# suite and uploads results to the Stryker dashboard. This is the
+# slow run that feeds the README badge.
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pr:
+    name: Mutation testing (PR diff)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Infection's --git-diff-base needs the base branch fetched.
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite
+          # pcov is dramatically faster than xdebug for coverage and
+          # Infection only needs line coverage, not full debug info.
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Configure Composer authentication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache/files
+          key: composer-infection-${{ hashFiles('composer.json') }}
+          restore-keys: composer-infection-
+
+      # Infection 0.29.x maxes out at symfony/console ^7, but Laravel 13
+      # pulls symfony/console ^8. Pin the mutation-testing job to
+      # Laravel 12 so Infection resolves — `src/` is identical across
+      # Laravel versions, so this doesn't change what is mutated.
+      - name: Pin Laravel 12 for Infection compat
+        run: |
+          composer require --dev --no-update \
+            "laravel/framework:^12.0" \
+            "orchestra/testbench:^10.0"
+
+      - name: Install dependencies (with Infection)
+        run: |
+          composer require --dev --no-update "infection/infection:^0.29"
+          composer config --no-plugins allow-plugins.infection/extension-installer true
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run Infection (diff mode)
+        run: |
+          vendor/bin/infection \
+            --git-diff-lines \
+            --git-diff-base="origin/${{ github.base_ref }}" \
+            --logger-github \
+            --no-progress \
+            --no-interaction \
+            --threads=$(nproc)
+
+  full:
+    name: Mutation testing (full suite)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Full mutation run on src/ is genuinely slow — give it room.
+    # If it consistently runs long we can switch to a sharded matrix.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Configure Composer authentication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache/files
+          key: composer-infection-${{ hashFiles('composer.json') }}
+          restore-keys: composer-infection-
+
+      - name: Pin Laravel 12 for Infection compat
+        run: |
+          composer require --dev --no-update \
+            "laravel/framework:^12.0" \
+            "orchestra/testbench:^10.0"
+
+      - name: Install dependencies (with Infection)
+        run: |
+          composer require --dev --no-update "infection/infection:^0.29"
+          composer config --no-plugins allow-plugins.infection/extension-installer true
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run Infection (full suite)
+        env:
+          # Picked up by Infection's Stryker logger and used to upload
+          # the run to https://dashboard.stryker-mutator.io. Only writes
+          # when running on a branch that matches `logs.stryker.report`
+          # in infection.json5 (currently "master").
+          STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+        run: |
+          vendor/bin/infection \
+            --logger-github \
+            --no-progress \
+            --no-interaction \
+            --threads=$(nproc)
+
+      - name: Upload Infection report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: infection-report-${{ github.run_id }}
+          path: build/infection/
+          if-no-files-found: warn
+          retention-days: 14
