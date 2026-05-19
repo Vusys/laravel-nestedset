@@ -14,12 +14,12 @@ final readonly class FixAggregatesChunkCompleted
 {
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         public int $chunkIndex,
         public int $chunkSize,
         public int $rowsUpdated,
         /** Last id processed in this chunk; null on the chunk that finishes the loop. */
-        public ?int $cursorAfter,
+        public int|string|null $cursorAfter,
         public float $durationMs,
     ) {}
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet;
 
+use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
@@ -43,6 +44,7 @@ final class NestedSetServiceProvider extends ServiceProvider
         Blueprint::macro('nestedSet', function (
             string|array $scope = [],
             string|array $cover = [],
+            string|Closure $parentIdType = 'bigint',
         ) use ($col): void {
             /** @var Blueprint $this */
             $lft = $col('lft', Columns::LFT);
@@ -52,7 +54,7 @@ final class NestedSetServiceProvider extends ServiceProvider
 
             $this->unsignedBigInteger($lft)->default(0);
             $this->unsignedBigInteger($rgt)->default(0);
-            $this->unsignedBigInteger($parentId)->nullable();
+            NestedSetServiceProvider::addParentIdColumn($this, $parentId, $parentIdType);
             $this->unsignedInteger($depth)->default(0);
 
             $this->index(NestedSetServiceProvider::nestedSetIndexColumns(
@@ -164,6 +166,34 @@ final class NestedSetServiceProvider extends ServiceProvider
             $parentId,
             ...self::toColumnList($cover),
         ];
+    }
+
+    /**
+     * Emits the `parent_id` column for the `nestedSet()` macro. Routed
+     * through this helper rather than declared inline so callers can
+     * pass `'uuid'`, `'ulid'`, `'string'`, or a closure for nanoid /
+     * custom column shapes — match the model's `$keyType` so the FK
+     * relationship between rows stays type-consistent.
+     */
+    public static function addParentIdColumn(Blueprint $table, string $column, string|Closure $type): void
+    {
+        if ($type instanceof Closure) {
+            $type($table, $column);
+
+            return;
+        }
+
+        match ($type) {
+            'bigint', 'bigInteger', 'unsignedBigInteger' => $table->unsignedBigInteger($column)->nullable(),
+            'integer', 'unsignedInteger' => $table->unsignedInteger($column)->nullable(),
+            'uuid' => $table->uuid($column)->nullable(),
+            'ulid' => $table->ulid($column)->nullable(),
+            'string' => $table->string($column)->nullable(),
+            default => throw new InvalidArgumentException(sprintf(
+                'nestedSet: unsupported parentIdType "%s". Use "bigint", "uuid", "ulid", "string", or a Closure.',
+                $type,
+            )),
+        };
     }
 
     /**

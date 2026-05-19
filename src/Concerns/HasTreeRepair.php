@@ -74,12 +74,27 @@ trait HasTreeRepair
      */
     public static function fixTree(?HasNestedSet $anchor = null): TreeFixResult
     {
+        // Reject unsaved anchors at the mutating-repair entry point: a
+        // null PK collapses to "no rootId" downstream, silently widening
+        // the rebuild to the whole table (or whole scope), which is
+        // almost never what the caller meant by passing an anchor. Read
+        // paths (isBroken/countErrors) stay permissive — they're used
+        // with stub anchors as a scope carrier, and the fallback is safe.
+        if ($anchor instanceof Model && $anchor->getKey() === null) {
+            throw new InvalidArgumentException(sprintf(
+                '%s::fixTree: $anchor has no primary key — was it saved? '
+                .'Pass a persisted anchor to scope the rebuild to its subtree, '
+                .'or omit the anchor to rebuild the whole table.',
+                static::class,
+            ));
+        }
+
         $builder = self::repairBuilder($anchor);
 
         $rootId = null;
         if ($anchor instanceof Model) {
             $key = $anchor->getKey();
-            $rootId = is_numeric($key) ? (int) $key : null;
+            $rootId = is_int($key) || is_string($key) ? $key : null;
         }
 
         // Time the structural repair + the aggregate rebuild as one

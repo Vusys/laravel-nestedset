@@ -23,7 +23,7 @@ interface HasNestedSet
 
     public function getDepth(): int;
 
-    public function getParentId(): ?int;
+    public function getParentId(): int|string|null;
 
     public function getBounds(): NodeBounds;
 

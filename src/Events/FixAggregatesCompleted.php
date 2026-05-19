@@ -20,7 +20,7 @@ final readonly class FixAggregatesCompleted
      */
     public function __construct(
         public string $modelClass,
-        public ?int $anchorId,
+        public int|string|null $anchorId,
         public int $totalRowsUpdated,
         public array $perColumn,
         public float $durationMs,

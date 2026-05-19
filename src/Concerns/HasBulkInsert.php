@@ -126,7 +126,7 @@ trait HasBulkInsert
         $anchorParentId = null;
         if ($appendTo instanceof Model) {
             $anchorKey = $appendTo->getKey();
-            $anchorParentId = is_numeric($anchorKey) ? (int) $anchorKey : null;
+            $anchorParentId = is_int($anchorKey) || is_string($anchorKey) ? $anchorKey : null;
         }
 
         $connection = $instance->getConnection();
@@ -180,7 +180,7 @@ trait HasBulkInsert
                         $parentId = $anchorParentId;
                     } else {
                         $parentKey = $saved[$node['parentPlanIndex']]->getKey();
-                        $parentId = is_numeric($parentKey) ? (int) $parentKey : null;
+                        $parentId = is_int($parentKey) || is_string($parentKey) ? $parentKey : null;
                     }
 
                     $model->setAttribute($lftCol, $node['lft'] + $boundsOffset);
