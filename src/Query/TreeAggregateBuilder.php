@@ -16,6 +16,7 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\FilterValueQuoter;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -71,16 +72,16 @@ final class TreeAggregateBuilder
         $scopeCols = NestedSetScopeResolver::columns($model::class);
         $softDeletedColumn = self::softDeletedColumnFor($model);
 
-        $connection = $builder->getQuery()->getConnection();
+        $connection = $model->getConnection();
 
         if (self::supportsLateral($connection)) {
-            self::applyLateralFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
+            self::applyLateralFreshSelects($connection, $builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
 
             return;
         }
 
         if (self::isMariaDb($connection)) {
-            self::applyMariaDbDerivedFreshSelects($builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
+            self::applyMariaDbDerivedFreshSelects($connection, $builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
 
             return;
         }
@@ -96,7 +97,7 @@ final class TreeAggregateBuilder
         // leaf rows; SQLite (and the others) skip dead branches in CASE,
         // so on a wideShallow shape only the root pays the subquery cost.
         foreach ($resolved as $alias => $definition) {
-            $sql = self::buildCorrelatedSubquery($table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+            $sql = self::buildCorrelatedSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
             $cased = self::wrapLeafFastPath(
                 $definition,
                 "{$table}.",
@@ -104,6 +105,7 @@ final class TreeAggregateBuilder
                 $rgtCol,
                 "({$sql})",
                 $softDeletedColumn,
+                $connection,
             );
 
             $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
@@ -144,6 +146,7 @@ final class TreeAggregateBuilder
      * @param  list<string>  $scopeCols
      */
     private static function applyMariaDbDerivedFreshSelects(
+        Connection $connection,
         TreeQueryBuilder $builder,
         array $resolved,
         string $table,
@@ -207,6 +210,7 @@ final class TreeAggregateBuilder
                     rgtCol: $rgtCol,
                     scopeCols: $scopeCols,
                     rawFilterContext: $rawFilterContext,
+                    connection: $connection,
                 );
                 $aggSelects[] = "{$expr} AS {$colAlias}";
             }
@@ -266,7 +270,7 @@ final class TreeAggregateBuilder
                     AggregateFunction::Count => "COALESCE({$derivedAlias}.{$colAlias}, 0)",
                     default => "{$derivedAlias}.{$colAlias}",
                 };
-                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn);
+                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn, $connection);
                 $columns[] = new TreeExpression("{$cased} as {$colAlias}");
             }
             $builder->addSelect($columns);
@@ -288,6 +292,7 @@ final class TreeAggregateBuilder
      * @param  list<string>  $scopeCols
      */
     private static function applyLateralFreshSelects(
+        Connection $connection,
         TreeQueryBuilder $builder,
         array $resolved,
         string $table,
@@ -314,7 +319,7 @@ final class TreeAggregateBuilder
 
             $aggSelects = [];
             foreach ($group as $colAlias => $definition) {
-                $expr = self::aggregateExpression($definition, qualifier: 'd.');
+                $expr = self::aggregateExpression($definition, qualifier: 'd.', connection: $connection);
                 $aggSelects[] = "{$expr} AS {$colAlias}";
             }
 
@@ -355,7 +360,7 @@ final class TreeAggregateBuilder
             $columns = ['*'];
             foreach ($group as $colAlias => $definition) {
                 $joinExpr = "{$lateralAlias}.{$colAlias}";
-                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn);
+                $cased = self::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn, $connection);
                 $columns[] = new TreeExpression("{$cased} as {$colAlias}");
             }
             $builder->addSelect($columns);
@@ -432,7 +437,7 @@ final class TreeAggregateBuilder
         $table = $node->getTable();
         $lftCol = $node->getLftName();
         $rgtCol = $node->getRgtName();
-        $aggregateExpr = self::aggregateExpression($definition, qualifier: '');
+        $aggregateExpr = self::aggregateExpression($definition, qualifier: '', connection: $node->getConnection());
         $boundsClause = $definition->inclusive
             ? "{$lftCol} >= ? AND {$rgtCol} <= ?"
             : "{$lftCol} > ? AND {$rgtCol} < ?";
@@ -552,6 +557,7 @@ final class TreeAggregateBuilder
      * @param  list<string>  $scopeCols
      */
     private static function buildCorrelatedSubquery(
+        Connection $connection,
         string $table,
         string $lftCol,
         string $rgtCol,
@@ -559,7 +565,7 @@ final class TreeAggregateBuilder
         AggregateDefinition $definition,
         ?string $softDeletedColumn,
     ): string {
-        $aggregateExpr = self::aggregateExpression($definition, qualifier: 'd.');
+        $aggregateExpr = self::aggregateExpression($definition, qualifier: 'd.', connection: $connection);
 
         $boundsClause = $definition->inclusive
             ? "d.{$lftCol} >= {$table}.{$lftCol} AND d.{$rgtCol} <= {$table}.{$rgtCol}"
@@ -591,10 +597,16 @@ final class TreeAggregateBuilder
      * filters get rewritten as a correlated subquery and resolve their
      * bare column references unambiguously.
      */
-    private static function aggregateExpression(AggregateDefinition $definition, string $qualifier): string
+    private static function aggregateExpression(AggregateDefinition $definition, string $qualifier, ?Connection $connection = null): string
     {
         if ($definition->filter instanceof FilterPredicate) {
-            return self::filteredAggregateExpression($definition, $qualifier, $definition->filter);
+            if (! $connection instanceof Connection) {
+                throw new AggregateConfigurationException(
+                    'Filtered aggregate expressions require a connection for safe value quoting.',
+                );
+            }
+
+            return self::filteredAggregateExpression($connection, $definition, $qualifier, $definition->filter);
         }
 
         return match ($definition->function) {
@@ -625,11 +637,12 @@ final class TreeAggregateBuilder
     }
 
     private static function filteredAggregateExpression(
+        Connection $connection,
         AggregateDefinition $definition,
         string $qualifier,
         FilterPredicate $filter,
     ): string {
-        $pred = self::filterPredicateSql($filter, $qualifier);
+        $pred = self::filterPredicateSql($connection, $filter, $qualifier);
 
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
@@ -667,16 +680,16 @@ final class TreeAggregateBuilder
         };
     }
 
-    private static function filterPredicateSql(FilterPredicate $filter, string $qualifier): string
+    private static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string
     {
         return match ($filter->getKind()) {
             FilterPredicateKind::Equality => implode(' AND ', array_map(
-                static function (string $col, mixed $value) use ($qualifier): string {
+                static function (string $col, mixed $value) use ($connection, $qualifier): string {
                     if ($value === null) {
                         return "{$qualifier}{$col} IS NULL";
                     }
 
-                    return "{$qualifier}{$col} = ".self::quoteFilterValue($value);
+                    return "{$qualifier}{$col} = ".FilterValueQuoter::quote($connection, $value);
                 },
                 array_keys($filter->getConditions()),
                 array_values($filter->getConditions()),
@@ -968,6 +981,7 @@ final class TreeAggregateBuilder
         string $rgtCol,
         array $scopeCols,
         bool $rawFilterContext = false,
+        ?Connection $connection = null,
     ): string {
         if ($definition->filter instanceof FilterPredicate
             && $definition->filter->getKind() === FilterPredicateKind::Raw) {
@@ -991,35 +1005,7 @@ final class TreeAggregateBuilder
             );
         }
 
-        return self::aggregateExpression($definition, $innerQualifier);
-    }
-
-    private static function quoteFilterValue(mixed $value): string
-    {
-        if ($value === null) {
-            return 'NULL';
-        }
-
-        if (is_bool($value)) {
-            return $value ? '1' : '0';
-        }
-
-        if (is_int($value)) {
-            return (string) $value;
-        }
-
-        if (is_float($value)) {
-            return (string) $value;
-        }
-
-        if (! is_string($value)) {
-            throw new AggregateConfigurationException(sprintf(
-                'FilterPredicate equality condition value must be scalar; got %s.',
-                get_debug_type($value),
-            ));
-        }
-
-        return "'".str_replace("'", "''", $value)."'";
+        return self::aggregateExpression($definition, $innerQualifier, $connection);
     }
 
     private static function requireSource(AggregateDefinition $definition): string
@@ -1051,6 +1037,7 @@ final class TreeAggregateBuilder
         AggregateDefinition $definition,
         string $tableQualifier,
         ?string $softDeletedColumn = null,
+        ?Connection $connection = null,
     ): string {
         if (! $definition->inclusive) {
             return match ($definition->function) {
@@ -1059,9 +1046,15 @@ final class TreeAggregateBuilder
             };
         }
 
-        $inline = $definition->filter instanceof FilterPredicate
-            ? self::filteredLeafInlineExpression($definition, $tableQualifier, $definition->filter)
-            : match ($definition->function) {
+        if ($definition->filter instanceof FilterPredicate) {
+            if (! $connection instanceof Connection) {
+                throw new AggregateConfigurationException(
+                    'Filtered aggregate expressions require a connection for safe value quoting.',
+                );
+            }
+            $inline = self::filteredLeafInlineExpression($connection, $definition, $tableQualifier, $definition->filter);
+        } else {
+            $inline = match ($definition->function) {
                 AggregateFunction::Sum => sprintf(
                     'COALESCE(%s%s, 0)',
                     $tableQualifier,
@@ -1082,6 +1075,7 @@ final class TreeAggregateBuilder
                     self::requireSource($definition),
                 ),
             };
+        }
 
         if ($softDeletedColumn === null) {
             return $inline;
@@ -1107,11 +1101,12 @@ final class TreeAggregateBuilder
     }
 
     private static function filteredLeafInlineExpression(
+        Connection $connection,
         AggregateDefinition $definition,
         string $tableQualifier,
         FilterPredicate $filter,
     ): string {
-        $pred = self::filterPredicateSql($filter, $tableQualifier);
+        $pred = self::filterPredicateSql($connection, $filter, $tableQualifier);
 
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
@@ -1157,8 +1152,9 @@ final class TreeAggregateBuilder
         string $rgtCol,
         string $joinExpr,
         ?string $softDeletedColumn = null,
+        ?Connection $connection = null,
     ): string {
-        $inline = self::leafInlineExpression($definition, $tableQualifier, $softDeletedColumn);
+        $inline = self::leafInlineExpression($definition, $tableQualifier, $softDeletedColumn, $connection);
 
         return sprintf(
             'CASE WHEN %s%s = %s%s + 1 THEN %s ELSE %s END',
@@ -1889,6 +1885,7 @@ final class TreeAggregateBuilder
                 rgtCol: $rgtCol,
                 scopeCols: array_keys($scope),
                 rawFilterContext: $rawFilterContext,
+                connection: $connection,
             );
             $computedAlias = self::computedAlias($definition->column);
             $aggSelects[] = "{$innerExpr} AS {$computedAlias}";
