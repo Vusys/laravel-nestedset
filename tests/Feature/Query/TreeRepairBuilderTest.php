@@ -223,4 +223,91 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertSame(6, (int) $ab->rgt);
         $this->assertSame(2, (int) $ab->depth);
     }
+
+    public function test_rebuild_subtree_shifts_surroundings_when_subtree_grows(): void
+    {
+        // Child A's reserved band (lft=2,rgt=3) is sized for zero descendants,
+        // but parent_id says it has two — so the rebuilt subtree needs four
+        // extra positions. Child B sits immediately after at lft=4. Without
+        // a gap shift, the rebuilt descendants would collide with Child B.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root',    'lft' => 1, 'rgt' => 8, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'Child A', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'AA',      'lft' => 0, 'rgt' => 0, 'depth' => 0, 'parent_id' => 2],
+            ['id' => 4, 'name' => 'AB',      'lft' => 0, 'rgt' => 0, 'depth' => 0, 'parent_id' => 2],
+            ['id' => 5, 'name' => 'Child B', 'lft' => 4, 'rgt' => 5, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 6, 'name' => 'Child C', 'lft' => 6, 'rgt' => 7, 'depth' => 1, 'parent_id' => 1],
+        ]);
+
+        $this->repair->rebuildSubtree(rootId: 2);
+
+        $this->assertBounds([
+            1 => [1, 12],
+            2 => [2, 7],
+            3 => [3, 4],
+            4 => [5, 6],
+            5 => [8, 9],
+            6 => [10, 11],
+        ]);
+        $this->assertFalse($this->repair->isBroken());
+    }
+
+    public function test_rebuild_subtree_shifts_surroundings_when_subtree_shrinks(): void
+    {
+        // Child A's reserved band (lft=2,rgt=9) is sized for three descendants,
+        // but parent_id says it only has one — so four positions need to
+        // close. Without the shrink shift, Child B's lft=10 would leave a
+        // dead gap between Child A's new rgt=5 and Child B's position.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root',    'lft' => 1, 'rgt' => 12, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'Child A', 'lft' => 2, 'rgt' => 9,  'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'AA',      'lft' => 3, 'rgt' => 4,  'depth' => 2, 'parent_id' => 2],
+            ['id' => 5, 'name' => 'Child B', 'lft' => 10, 'rgt' => 11, 'depth' => 1, 'parent_id' => 1],
+        ]);
+
+        $this->repair->rebuildSubtree(rootId: 2);
+
+        $this->assertBounds([
+            1 => [1, 8],
+            2 => [2, 5],
+            3 => [3, 4],
+            5 => [6, 7],
+        ]);
+        $this->assertFalse($this->repair->isBroken());
+    }
+
+    public function test_rebuild_subtree_is_noop_for_already_correctly_sized_band(): void
+    {
+        // Reserved band matches the subtree size exactly — delta is zero
+        // and no surrounding rows should move.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root',    'lft' => 1, 'rgt' => 8, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'Child A', 'lft' => 2, 'rgt' => 5, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'AA',      'lft' => 3, 'rgt' => 4, 'depth' => 2, 'parent_id' => 2],
+            ['id' => 5, 'name' => 'Child B', 'lft' => 6, 'rgt' => 7, 'depth' => 1, 'parent_id' => 1],
+        ]);
+
+        $this->repair->rebuildSubtree(rootId: 2);
+
+        $this->assertBounds([
+            1 => [1, 8],
+            2 => [2, 5],
+            3 => [3, 4],
+            5 => [6, 7],
+        ]);
+    }
+
+    /**
+     * @param  array<int, array{0: int, 1: int}>  $expected
+     */
+    private function assertBounds(array $expected): void
+    {
+        /** @var array<int, array{0: int, 1: int}> $actual */
+        $actual = [];
+        foreach (DB::table('categories')->orderBy('id')->get() as $row) {
+            /** @var \stdClass $row */
+            $actual[(int) $row->id] = [(int) $row->lft, (int) $row->rgt];
+        }
+        $this->assertSame($expected, $actual);
+    }
 }
