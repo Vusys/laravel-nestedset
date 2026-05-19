@@ -68,7 +68,7 @@ It does **not** intercept dynamic bypasses applied at runtime:
   `unguard()` can write directly to aggregate columns regardless of
   what the build-time check saw.
 
-In both cases the next mutation through the package overwrites the
+In both cases, the next mutation through the package overwrites the
 clobbered value with the correctly recomputed aggregate, so the only
 observable effect is that the value you mass-assigned is
 silently lost. If you rely on `Model::unguard()` in test code,
