@@ -120,26 +120,20 @@ final class ScopeIsolationFuzzerTest extends TestCase
 
     private function pickAction(int $roll): string
     {
-        if ($roll < 25) {
-            return 'append';
-        }
-        if ($roll < 40) {
-            return 'prepend';
-        }
-        if ($roll < 55) {
-            return 'insertAfter';
-        }
-        if ($roll < 70) {
-            return 'move';
-        }
-        if ($roll < 85) {
-            return 'delete';
-        }
-        if ($roll < 95) {
-            return 'update';
-        }
-
-        return 'noop';
+        return match (true) {
+            $roll < 15 => 'append',
+            $roll < 25 => 'prepend',
+            $roll < 35 => 'insertBefore',
+            $roll < 45 => 'insertAfter',
+            $roll < 55 => 'move',
+            $roll < 62 => 'makeRoot',
+            $roll < 69 => 'siblingUp',
+            $roll < 76 => 'siblingDown',
+            $roll < 82 => 'bulkInsert',
+            $roll < 92 => 'delete',
+            $roll < 98 => 'update',
+            default => 'noop',
+        };
     }
 
     private function doStep(int $menuId, string $action, int $step): void
@@ -183,6 +177,67 @@ final class ScopeIsolationFuzzerTest extends TestCase
                 $sibling = $candidates[mt_rand(0, count($candidates) - 1)];
                 $node = new MenuItem(['name' => "s{$step}", 'menu_id' => $menuId]);
                 $node->insertAfterNode($sibling->refresh())->save();
+
+                return;
+
+            case 'insertBefore':
+                $candidates = array_values(array_filter(
+                    $all,
+                    fn (MenuItem $n): bool => $n->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    $parent = $all[mt_rand(0, count($all) - 1)];
+                    $node = new MenuItem(['name' => "s{$step}", 'menu_id' => $menuId]);
+                    $node->appendToNode($parent->refresh())->save();
+
+                    return;
+                }
+                $sibling = $candidates[mt_rand(0, count($candidates) - 1)];
+                $node = new MenuItem(['name' => "s{$step}", 'menu_id' => $menuId]);
+                $node->insertBeforeNode($sibling->refresh())->save();
+
+                return;
+
+            case 'makeRoot':
+                $candidates = array_values(array_filter(
+                    $all,
+                    fn (MenuItem $n): bool => $n->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->makeRoot()->save();
+
+                return;
+
+            case 'siblingUp':
+                $candidates = array_values(array_filter(
+                    $all,
+                    fn (MenuItem $n): bool => $n->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->up();
+
+                return;
+
+            case 'siblingDown':
+                $candidates = array_values(array_filter(
+                    $all,
+                    fn (MenuItem $n): bool => $n->parent_id !== null,
+                ));
+                if ($candidates === []) {
+                    return;
+                }
+                $candidates[mt_rand(0, count($candidates) - 1)]->down();
+
+                return;
+
+            case 'bulkInsert':
+                $anchor = $all[mt_rand(0, count($all) - 1)]->refresh();
+                $spec = $this->randomBulkInsertSpec($menuId, $step, depth: mt_rand(1, 2), siblings: mt_rand(1, 3));
+                MenuItem::bulkInsertTree($spec, appendTo: $anchor);
 
                 return;
 
@@ -233,6 +288,29 @@ final class ScopeIsolationFuzzerTest extends TestCase
     // ================================================================
     // Helpers
     // ================================================================
+
+    /**
+     * Small random tree spec for bulkInsertTree. The anchor's
+     * scope-column values are copied onto every inserted row by
+     * bulkInsertTree, so the spec only carries display attributes.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function randomBulkInsertSpec(int $menuId, int $step, int $depth, int $siblings): array
+    {
+        static $tag = 0;
+        $out = [];
+        for ($i = 0; $i < $siblings; $i++) {
+            $tag++;
+            $node = ['name' => "m{$menuId}_bk{$step}_{$tag}"];
+            if ($depth > 1 && mt_rand(0, 1) === 1) {
+                $node['children'] = $this->randomBulkInsertSpec($menuId, $step, $depth - 1, mt_rand(1, 2));
+            }
+            $out[] = $node;
+        }
+
+        return $out;
+    }
 
     /**
      * Returns a sorted-by-id snapshot of every row in the scope.
