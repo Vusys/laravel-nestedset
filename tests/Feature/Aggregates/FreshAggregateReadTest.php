@@ -136,6 +136,43 @@ final class FreshAggregateReadTest extends TestCase
         $root->freshAggregate('nonexistent');
     }
 
+    public function test_fresh_aggregate_resolves_internal_avg_companion_columns(): void
+    {
+        // Area declares `tickets_avg` (AVG over tickets) alongside an
+        // explicit `tickets_total` SUM over the same source — so the
+        // registry reuses the SUM and only auto-promotes the COUNT
+        // companion (`tickets_avg__count`). No matching user-declared
+        // COUNT over `tickets` exists.
+        //
+        // Documents the current "leaky" surface: getAggregateDefinitions
+        // hides these columns from the public list (they're an
+        // implementation detail), but freshAggregate() reads them
+        // because resolveDefinitionByColumn iterates the full registry.
+        // Callers who reach for these names get a working value rather
+        // than an exception. Pin that contract until F9's redesign
+        // either formalises or hides it.
+        $root = Area::query()->where('id', 1)->firstOrFail();
+
+        // COUNT(*) over the inclusive subtree = 4.
+        $this->assertSame(4, $this->asInt($root->freshAggregate('tickets_avg__count')));
+
+        // ...and yet getAggregateDefinitions() does NOT list it.
+        $publicColumns = array_map(
+            static fn (AggregateDefinitionContract $d): string => $d->getColumn(),
+            $root->getAggregateDefinitions(),
+        );
+        $this->assertNotContains('tickets_avg__count', $publicColumns,
+            'internal companion stays out of the public definition list',
+        );
+
+        // The matching SUM was reused from `tickets_total`, so no
+        // `tickets_avg__sum` companion was registered. freshAggregate()
+        // for that name throws — proving the leak only exposes columns
+        // the registry actually created.
+        $this->expectException(AggregateConfigurationException::class);
+        $root->freshAggregate('tickets_avg__sum');
+    }
+
     // ----------------------------------------------------------------
     // withFreshAggregates() — query-level
     // ----------------------------------------------------------------
