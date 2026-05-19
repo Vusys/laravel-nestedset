@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests;
 use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use stdClass;
+use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\NestedSetServiceProvider;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -49,6 +50,14 @@ abstract class TestCase extends OrchestraTestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // AggregateRegistry caches resolved definitions in a static
+        // map keyed by class. Tests that declare anonymous fixture
+        // aggregates (or that change a fixture's attributes between
+        // runs) need a clean cache or they leak state across tests.
+        // Cost: one reflection pass per fixture, paid lazily on
+        // first `for()` call — negligible alongside test setUp.
+        AggregateRegistry::flush();
 
         $tables = ['areas', 'archived_branches', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches'];
 
