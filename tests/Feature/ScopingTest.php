@@ -251,6 +251,33 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
+    public function test_assert_same_scope_treats_numeric_string_and_int_as_equal(): void
+    {
+        // Eloquent casts usually normalise menu_id to int, but a model
+        // hydrated via setRawAttributes without casts (or a raw DB
+        // result) can carry the value as a numeric string. The
+        // comparator must not throw for `int 5` vs `'5'` — they're
+        // the same scope.
+        $a = MenuItem::query()->findOrFail(2);
+        $b = MenuItem::query()->findOrFail(3);
+        $b->setRawAttributes(array_merge($b->getAttributes(), ['menu_id' => (string) $this->menu1->id]));
+
+        NestedSetScopeResolver::assertSameScope($a, $b);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_assert_same_scope_treats_distinct_numeric_values_as_different(): void
+    {
+        $a = MenuItem::query()->findOrFail(2);
+        $b = MenuItem::query()->findOrFail(2);
+        $b->setRawAttributes(array_merge($b->getAttributes(), ['menu_id' => '999']));
+
+        $this->expectException(ScopeViolationException::class);
+
+        NestedSetScopeResolver::assertSameScope($a, $b);
+    }
+
     // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
