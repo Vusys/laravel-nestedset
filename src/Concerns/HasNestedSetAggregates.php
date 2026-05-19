@@ -1526,10 +1526,17 @@ trait HasNestedSetAggregates
 
     /**
      * Overrides {@see Model::replicate()} so cloned models never
-     * inherit the source's stored aggregate values. Aggregate columns
-     * on the clone reset to the function's "empty" element (0 for
-     * SUM / COUNT, NULL for AVG / MIN / MAX); on subsequent placement
-     * the regular maintenance path computes correct values.
+     * inherit the source's stored aggregate values OR its tree
+     * position. Aggregate columns on the clone reset to the
+     * function's "empty" element (0 for SUM / COUNT, NULL for AVG /
+     * MIN / MAX); structural columns (`lft` / `rgt` / `depth` /
+     * `parent_id`) reset to the migration default so the clone
+     * presents as "unplaced" until the caller explicitly places it
+     * via `appendToNode(...)->save()` or `makeRoot()->save()`.
+     *
+     * Without the structural reset, an accidental `->save()` on the
+     * clone would write a duplicate at the source's bounds, breaking
+     * the lft/rgt invariant.
      *
      * Also clears `deleted_at` so a clone of a trashed row starts
      * un-trashed — the clone is a template for a new placement, not
@@ -1541,6 +1548,16 @@ trait HasNestedSetAggregates
     {
         /** @var static $clone */
         $clone = parent::replicate($except);
+
+        // Structural columns: leave the clone unplaced so a downstream
+        // `->save()` without a placement call fails the
+        // `isPlacedInTree()` check rather than corrupting the tree.
+        // The user must call `appendToNode(...)`/`makeRoot()` to put
+        // the clone somewhere.
+        $clone->setAttribute($this->getLftName(), 0);
+        $clone->setAttribute($this->getRgtName(), 0);
+        $clone->setAttribute($this->getDepthName(), 0);
+        $clone->setAttribute($this->getParentIdName(), null);
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
