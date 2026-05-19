@@ -28,6 +28,70 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class SoftBranchAggregateTest extends TestCase
 {
+    public function test_with_fresh_aggregates_includes_trashed_when_outer_query_does(): void
+    {
+        // Default: fresh recompute filters trashed descendants — same
+        // as the stored value tracks the live set.
+        // withTrashed() on the outer query: the fresh recompute must
+        // match, otherwise it disagrees with the rowset the outer
+        // query is returning.
+        $root = new SoftBranch(['name' => 'root', 'tickets' => 0, 'active' => 1]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        $a = new SoftBranch(['name' => 'A', 'tickets' => 10, 'active' => 1]);
+        $a->appendToNode($root)->save();
+
+        $b = new SoftBranch(['name' => 'B', 'tickets' => 20, 'active' => 1]);
+        $b->appendToNode($root->refresh())->save();
+
+        $c = new SoftBranch(['name' => 'C', 'tickets' => 30, 'active' => 1]);
+        $c->appendToNode($root->refresh())->save();
+
+        SoftBranch::query()->where('name', 'C')->firstOrFail()->delete();
+
+        $liveRoot = SoftBranch::query()
+            ->withFreshAggregates(['tickets_total'])
+            ->where('id', $root->id)
+            ->firstOrFail();
+        $this->assertSame(30, (int) $liveRoot->tickets_total, 'default: live only (A + B)');
+
+        $trashedRoot = SoftBranch::withTrashed()
+            ->withFreshAggregates(['tickets_total'])
+            ->where('id', $root->id)
+            ->firstOrFail();
+        $this->assertSame(60, (int) $trashedRoot->tickets_total, 'withTrashed: includes C (A + B + C)');
+    }
+
+    public function test_fresh_aggregate_scalar_honours_with_trashed_flag(): void
+    {
+        // Single-node freshAggregate('col') defaults to live-only.
+        // freshAggregate('col', withTrashed: true) includes trashed
+        // descendants — matches the rowset of a withTrashed() outer
+        // query.
+        $root = new SoftBranch(['name' => 'root', 'tickets' => 0, 'active' => 1]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        $a = new SoftBranch(['name' => 'A', 'tickets' => 10, 'active' => 1]);
+        $a->appendToNode($root)->save();
+
+        $c = new SoftBranch(['name' => 'C', 'tickets' => 30, 'active' => 1]);
+        $c->appendToNode($root->refresh())->save();
+
+        SoftBranch::query()->where('name', 'C')->firstOrFail()->delete();
+
+        $root->refresh();
+
+        $live = $root->freshAggregate('tickets_total');
+        $this->assertTrue(is_numeric($live));
+        $this->assertSame(10, (int) $live);
+
+        $withTrashed = $root->freshAggregate('tickets_total', withTrashed: true);
+        $this->assertTrue(is_numeric($withTrashed));
+        $this->assertSame(40, (int) $withTrashed);
+    }
+
     public function test_exclusive_aggregates_ignore_trashed_descendants(): void
     {
         // Root > [A(10, active), B(20, active), C(30, inactive)]
