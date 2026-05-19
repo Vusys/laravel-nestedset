@@ -187,13 +187,15 @@ final class CustomDeletedAtColumnTest extends TestCase
         );
     }
 
-    public function test_with_fresh_aggregates_returns_zero_for_trashed_leaf_in_with_trashed_query(): void
+    public function test_with_fresh_aggregates_includes_trashed_leaf_under_with_trashed_query(): void
     {
-        // The leaf fast-path inlines the outer row's own source value
-        // instead of running the subquery. On a trashed leaf surfaced
-        // via withTrashed(), the inline must collapse to 0 (the empty-
-        // set semantics of the soft-delete-filtered subquery) rather
-        // than leaking the leaf's own ticket count.
+        // When the outer query has SoftDeletingScope removed
+        // (withTrashed / onlyTrashed), the fresh recompute matches —
+        // it includes the trashed leaf's own contribution so the
+        // value agrees with the rowset the outer query is returning.
+        // Without the SoftDeletingScope removed (default), the
+        // subquery filters trashed rows out and a trashed leaf would
+        // collapse to 0.
         [, $left] = $this->seedThreeNodeTree();
         $leftTickets = (int) $left->tickets;
         $this->assertGreaterThan(0, $leftTickets, 'precondition: left must have a non-zero ticket count');
@@ -207,9 +209,9 @@ final class CustomDeletedAtColumnTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(
-            0,
+            $leftTickets,
             (int) $leafFresh->tickets_total,
-            'trashed leaf must report zero — inline fast-path must honour soft-delete filtering',
+            'withTrashed: fresh recompute includes the trashed leaf',
         );
     }
 

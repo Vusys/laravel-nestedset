@@ -8,6 +8,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
@@ -71,6 +72,15 @@ final class TreeAggregateBuilder
         $rgtCol = $builder->rgtColumn();
         $scopeCols = NestedSetScopeResolver::columns($model::class);
         $softDeletedColumn = self::softDeletedColumnFor($model);
+
+        // Honour the outer builder's soft-delete intent. If the caller
+        // pulled the SoftDeletingScope (withTrashed / onlyTrashed), the
+        // descendant subquery includes trashed rows too — otherwise the
+        // fresh recompute would silently disagree with the rowset the
+        // outer query is actually returning.
+        if ($softDeletedColumn !== null && self::outerIncludesTrashed($builder)) {
+            $softDeletedColumn = null;
+        }
 
         $connection = $model->getConnection();
 
@@ -431,7 +441,7 @@ final class TreeAggregateBuilder
      * node, by running a non-correlated subquery scoped to the node's
      * bounds.
      */
-    public static function scalar(Model&HasNestedSet $node, AggregateDefinition $definition): mixed
+    public static function scalar(Model&HasNestedSet $node, AggregateDefinition $definition, bool $withTrashed = false): mixed
     {
         $bounds = $node->getBounds();
         $table = $node->getTable();
@@ -452,7 +462,7 @@ final class TreeAggregateBuilder
         }
 
         $softClause = '';
-        $softDeletedColumn = self::softDeletedColumnFor($node);
+        $softDeletedColumn = $withTrashed ? null : self::softDeletedColumnFor($node);
         if ($softDeletedColumn !== null) {
             $softClause = " AND {$softDeletedColumn} IS NULL";
         }
@@ -460,6 +470,23 @@ final class TreeAggregateBuilder
         $sql = "SELECT {$aggregateExpr} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
         return $node->getConnection()->scalar($sql, $bindings);
+    }
+
+    /**
+     * True when the outer builder has had the SoftDeletingScope removed
+     * (via `withTrashed()` or `onlyTrashed()`). In that case the fresh
+     * recompute should include trashed descendants so the result
+     * matches the rowset the outer query yields.
+     *
+     * @param  TreeQueryBuilder<Model>  $builder
+     */
+    private static function outerIncludesTrashed(TreeQueryBuilder $builder): bool
+    {
+        return in_array(
+            SoftDeletingScope::class,
+            $builder->removedScopes(),
+            true,
+        );
     }
 
     /**
