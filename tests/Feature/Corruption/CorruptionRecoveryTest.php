@@ -344,8 +344,14 @@ final class CorruptionRecoveryTest extends TestCase
 
         $this->assertFalse(Category::isBroken());
         $root = Category::query()->findOrFail(1);
+        $leaf = Category::query()->findOrFail($depth);
         $this->assertSame(1, $root->lft);
         $this->assertSame($depth * 2, $root->rgt);
+        // Deepest leaf's depth covers the iterative walker's depth
+        // assignment — depth is the field the previous recursion
+        // tracked via the $d closure argument, so a per-level off-by-
+        // one in the conversion would surface here.
+        $this->assertSame($depth - 1, (int) $leaf->depth);
     }
 
     public function test_fix_tree_anchored_handles_deeply_nested_chain_without_blowing_the_stack(): void
@@ -372,7 +378,11 @@ final class CorruptionRecoveryTest extends TestCase
         $this->assertFalse(Category::isBroken());
 
         $root = $root->refresh();
+        $leaf = Category::query()->findOrFail($depth);
         $this->assertSame(1, $root->lft);
         $this->assertSame($depth * 2, $root->rgt);
+        // Direct depth assertion on the deepest leaf — same rationale
+        // as the full-table case above.
+        $this->assertSame($depth - 1, (int) $leaf->depth);
     }
 }
