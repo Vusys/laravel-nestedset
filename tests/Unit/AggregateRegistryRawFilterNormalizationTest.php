@@ -79,7 +79,7 @@ final class AggregateRegistryRawFilterNormalizationTest extends TestCase
         );
     }
 
-    public function test_clauses_in_different_order_are_no_t_considered_equal(): void
+    public function test_clauses_in_different_order_are_not_considered_equal(): void
     {
         // Out of scope: the normaliser absorbs cosmetic drift but
         // doesn't parse SQL. Reordered AND clauses stay distinct —
