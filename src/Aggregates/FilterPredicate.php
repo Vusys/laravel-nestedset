@@ -132,6 +132,11 @@ final readonly class FilterPredicate
      * Evaluates the predicate against a set of model attributes.
      * Returns null for Raw predicates (cannot be evaluated in PHP).
      *
+     * Equality uses strict comparison (`!==`) — same shape as SQL's
+     * "= NULL → unknown → false" semantic. A loose comparison would
+     * collapse `null == 0`, `"" == 0`, `false == 0` to true and
+     * disagree with the SQL side, producing captured-vs-fresh drift.
+     *
      * @param  array<string, mixed>  $attributes
      */
     public function evaluateFor(array $attributes): ?bool
@@ -139,7 +144,7 @@ final readonly class FilterPredicate
         return match ($this->kind) {
             FilterPredicateKind::Equality => (function () use ($attributes): bool {
                 foreach ($this->conditions as $col => $value) {
-                    if (($attributes[$col] ?? null) != $value) {
+                    if (($attributes[$col] ?? null) !== $value) {
                         return false;
                     }
                 }
