@@ -180,6 +180,27 @@ final class EventsTest extends TestCase
         });
     }
 
+    public function test_queue_fix_aggregates_with_anchor_event_carries_anchor_id(): void
+    {
+        // `queueFixAggregates($anchor)` fires FixAggregatesJobDispatched
+        // with the anchor's key narrowed through `anchorRootId()`. The
+        // existing dispatch-event test uses no anchor (anchorId would be
+        // null) and `QueueFixAggregatesTest` pins the *job's* anchorId
+        // but not the *event's* — so the event-side narrowing call site
+        // had no observable test.
+        $root = $this->seedMotivatingTree();
+
+        Event::fake([FixAggregatesJobDispatched::class]);
+
+        Area::queueFixAggregates($root);
+
+        Event::assertDispatched(FixAggregatesJobDispatched::class, function (FixAggregatesJobDispatched $e) use ($root): bool {
+            $this->assertSame($this->rootIdOf($root), $e->anchorId);
+
+            return true;
+        });
+    }
+
     // ----------------------------------------------------------------
     // BulkInsertTreeCompleted
     // ----------------------------------------------------------------
