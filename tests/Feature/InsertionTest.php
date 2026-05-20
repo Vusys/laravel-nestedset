@@ -56,6 +56,11 @@ final class InsertionTest extends TestCase
 
     public function test_prepend_to_node_inserts_before_existing_children(): void
     {
+        // Pre: Root(1,2). After appending A: Root(1,4), A(2,3).
+        // Prepending First under Root must place First at lft=2, rgt=3
+        // and shift A right by 2 to lft=4, rgt=5. Asserts on absolute
+        // bounds so an off-by-one in actPrependTo (e.g. inserting at
+        // parent.lft instead of parent.lft + 1) is caught.
         $a = new Category(['name' => 'A']);
         $a->appendToNode($this->root)->save();
 
@@ -64,15 +69,27 @@ final class InsertionTest extends TestCase
 
         $first = $first->refresh();
         $a = $a->refresh();
+        $root = $this->root->refresh();
 
-        // First should be before A.
-        $this->assertLessThan($a->lft, $first->lft);
+        $this->assertSame(1, $root->lft);
+        $this->assertSame(6, $root->rgt);
+
+        $this->assertSame(2, $first->lft, 'First lands at parent.lft + 1');
+        $this->assertSame(3, $first->rgt);
         $this->assertSame(1, $first->depth);
+        $this->assertSame($root->id, $first->parent_id);
+
+        $this->assertSame(4, $a->lft, 'A shifts right by the gap width (2)');
+        $this->assertSame(5, $a->rgt);
         $this->assertSame(1, $a->depth);
     }
 
     public function test_insert_before_node_places_new_sibling_to_the_left(): void
     {
+        // Pre: Root(1,4) > A(2,3). Inserting Before to A's left should
+        // produce Root(1,6) > Before(2,3) + A(4,5). Asserts the exact
+        // shift so an off-by-one in actSibling — e.g. inserting at
+        // sibling.rgt instead of sibling.lft — fails.
         $a = new Category(['name' => 'A']);
         $a->appendToNode($this->root)->save();
         $a = $a->refresh();
@@ -82,13 +99,26 @@ final class InsertionTest extends TestCase
 
         $before = $before->refresh();
         $a = $a->refresh();
+        $root = $this->root->refresh();
 
-        $this->assertLessThan($a->lft, $before->lft);
+        $this->assertSame(2, $before->lft, 'Before lands at sibling.lft (the pre-insert value)');
+        $this->assertSame(3, $before->rgt);
         $this->assertSame($a->parent_id, $before->parent_id);
+
+        $this->assertSame(4, $a->lft, 'A shifts right by 2');
+        $this->assertSame(5, $a->rgt);
+
+        $this->assertSame(1, $root->lft);
+        $this->assertSame(6, $root->rgt);
     }
 
     public function test_insert_after_node_places_new_sibling_to_the_right(): void
     {
+        // Pre: Root(1,4) > A(2,3). Inserting After to A's right should
+        // produce Root(1,6) > A(2,3) + After(4,5). Pinning A's bounds
+        // (no shift) catches a regression that inserts at the wrong
+        // side; pinning After's bounds catches an off-by-one in the
+        // insertion position.
         $a = new Category(['name' => 'A']);
         $a->appendToNode($this->root)->save();
         $a = $a->refresh();
@@ -98,9 +128,17 @@ final class InsertionTest extends TestCase
 
         $after = $after->refresh();
         $a = $a->refresh();
+        $root = $this->root->refresh();
 
-        $this->assertGreaterThan($a->rgt, $after->lft);
+        $this->assertSame(2, $a->lft, 'A bounds do not shift — the gap opens to its right');
+        $this->assertSame(3, $a->rgt);
+
+        $this->assertSame(4, $after->lft, 'After lands at sibling.rgt + 1');
+        $this->assertSame(5, $after->rgt);
         $this->assertSame($a->parent_id, $after->parent_id);
+
+        $this->assertSame(1, $root->lft);
+        $this->assertSame(6, $root->rgt);
     }
 
     public function test_deep_nesting_maintains_correct_bounds(): void

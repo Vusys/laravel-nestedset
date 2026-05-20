@@ -98,6 +98,28 @@ final class NestedSetScopeResolver
     }
 
     /**
+     * Non-throwing predicate variant of {@see self::assertSameScope()}.
+     * Returns false if the two nodes are different classes or if any
+     * declared scope column differs. Use this in read-only predicates
+     * (e.g. `isSiblingOf`) where a class/scope mismatch must answer
+     * "not the same partition" rather than abort.
+     */
+    public static function sameScope(Model&HasNestedSet $a, Model&HasNestedSet $b): bool
+    {
+        if ($a::class !== $b::class) {
+            return false;
+        }
+
+        foreach (self::columns($a::class) as $column) {
+            if (! self::scopeValuesEqual($a->getAttribute($column), $b->getAttribute($column))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Compares two scope-column values for "same tree" membership.
      *
      * Permissive on type: a model with `int 5` and another with
