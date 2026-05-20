@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 final readonly class MermaidOptions
 {
-    private const VALID_DIRECTIONS = ['TD', 'LR', 'BT', 'RL'];
+    private const array VALID_DIRECTIONS = ['TD', 'LR', 'BT', 'RL'];
 
     /**
      * @param  'TD'|'LR'|'BT'|'RL'  $direction

@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 final readonly class DotOptions
 {
-    private const VALID_DIRECTIONS = ['TB', 'LR', 'BT', 'RL'];
+    private const array VALID_DIRECTIONS = ['TB', 'LR', 'BT', 'RL'];
 
     /**
      * @param  'TB'|'LR'|'BT'|'RL'  $direction
