@@ -32,6 +32,9 @@ use Vusys\NestedSet\NodeTrait;
  * @property int $descendants_count
  * @property int|null $descendants_max
  * @property int $active_tickets_total
+ * @property int $active_count
+ * @property int|null $active_min_tickets
+ * @property int|null $active_max_tickets
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
 #[NestedSetAggregate(column: 'descendants_total', sum: 'tickets', exclusive: true)]
@@ -40,6 +43,24 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(
     column: 'active_tickets_total',
     sum: 'tickets',
+    filterRaw: 'active = 1',
+    filterRawWatches: ['active'],
+)]
+#[NestedSetAggregate(
+    column: 'active_count',
+    count: true,
+    filterRaw: 'active = 1',
+    filterRawWatches: ['active'],
+)]
+#[NestedSetAggregate(
+    column: 'active_min_tickets',
+    min: 'tickets',
+    filterRaw: 'active = 1',
+    filterRawWatches: ['active'],
+)]
+#[NestedSetAggregate(
+    column: 'active_max_tickets',
+    max: 'tickets',
     filterRaw: 'active = 1',
     filterRawWatches: ['active'],
 )]
@@ -63,5 +84,8 @@ final class Branch extends Model implements HasNestedSet
         'descendants_count' => 'integer',
         'descendants_max' => 'integer',
         'active_tickets_total' => 'integer',
+        'active_count' => 'integer',
+        'active_min_tickets' => 'integer',
+        'active_max_tickets' => 'integer',
     ];
 }

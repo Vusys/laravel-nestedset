@@ -38,8 +38,14 @@ return new class extends Migration
 
             // Filtered with a raw SQL predicate — incremental maintenance
             // skips this column (no PHP evaluation possible). Recovered
-            // via fixAggregates().
+            // via fixAggregates(). One column per SQL aggregate function
+            // so the inline raw-filter SQL emitter is exercised on each
+            // arm (Sum / Count / Min / Max — Avg auto-promotes to a
+            // Sum + Count pair which is covered transitively).
             $table->nestedSetAggregate('active_tickets_total');
+            $table->nestedSetAggregate('active_count');
+            $table->nestedSetAggregate('active_min_tickets', type: 'min_max');
+            $table->nestedSetAggregate('active_max_tickets', type: 'min_max');
 
             $table->timestamps();
         });
