@@ -57,6 +57,8 @@ final class MoveToTest extends TestCase
             ['id' => 6, 'name' => 'Spare', 'lft' => 11, 'rgt' => 12, 'depth' => 0, 'parent_id' => null],
         ]);
 
+        $this->syncSequence('categories');
+
         $this->root = Category::query()->findOrFail(1);
         $this->a = Category::query()->findOrFail(2);
         $this->b = Category::query()->findOrFail(3);
