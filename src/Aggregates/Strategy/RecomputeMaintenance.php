@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
+use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
@@ -32,7 +34,7 @@ use Vusys\NestedSet\NodeBounds;
 final class RecomputeMaintenance
 {
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      *                                                         column => previous_value pairs ORed into the WHERE.
@@ -96,7 +98,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      * @param  'always'|'auto'|'never'  $locking
@@ -212,7 +214,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}>  $columns
      * @param  list<array<string, mixed>>  $candidates
      */
     private static function writeRecomputedValues(
@@ -254,7 +256,7 @@ final class RecomputeMaintenance
      * recompute subquery — wrapping the source column reference in a
      * `CASE WHEN <filter> THEN … ELSE …` when a filter is present.
      *
-     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null}  $spec
+     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}  $spec
      */
     private static function innerAggregateExpression(Connection $connection, array $spec, ?FilterPredicate $filter): string
     {
@@ -298,10 +300,12 @@ final class RecomputeMaintenance
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
-                AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
-                    'SQL emission for %s is not implemented yet (RecomputeMaintenance filtered branch).',
-                    $spec['function']->value,
-                )),
+                AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                    $connection,
+                    self::requireDefinitionFromSpec($spec),
+                    'inner_a.',
+                    $pred,
+                ),
             };
         }
 
@@ -316,11 +320,30 @@ final class RecomputeMaintenance
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
-                'SQL emission for %s is not implemented yet (RecomputeMaintenance).',
-                $spec['function']->value,
-            )),
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                $connection,
+                self::requireDefinitionFromSpec($spec),
+                'inner_a.',
+            ),
         };
+    }
+
+    /**
+     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}  $spec
+     */
+    private static function requireDefinitionFromSpec(array $spec): AggregateDefinition
+    {
+        $definition = $spec['definition'] ?? null;
+        if ($definition === null) {
+            throw new AggregateConfigurationException(sprintf(
+                'RecomputeMaintenance: spec for %s aggregate "%s" is missing the AggregateDefinition reference '
+                .'required for backend-specific SQL emission.',
+                $spec['function']->value,
+                $spec['column'],
+            ));
+        }
+
+        return $definition;
     }
 
     private static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string

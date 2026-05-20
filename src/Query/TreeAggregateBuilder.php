@@ -15,6 +15,7 @@ use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
@@ -663,8 +664,25 @@ final class TreeAggregateBuilder
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'aggregateExpression'),
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                self::requireConnection($connection, $definition),
+                $definition,
+                $qualifier,
+            ),
         };
+    }
+
+    private static function requireConnection(?Connection $connection, AggregateDefinition $definition): Connection
+    {
+        if (! $connection instanceof Connection) {
+            throw new AggregateConfigurationException(sprintf(
+                'Aggregate "%s" (%s) requires a connection — its SQL is backend-specific.',
+                $definition->column,
+                $definition->function->value,
+            ));
+        }
+
+        return $connection;
     }
 
     private static function filteredAggregateExpression(
@@ -711,7 +729,12 @@ final class TreeAggregateBuilder
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'filteredAggregateExpression'),
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                $connection,
+                $definition,
+                $qualifier,
+                $pred,
+            ),
         };
     }
 
@@ -756,6 +779,7 @@ final class TreeAggregateBuilder
         AggregateDefinition $definition,
         string $rawFilter,
         string $innerQualifier,
+        ?Connection $connection = null,
     ): string {
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
@@ -793,7 +817,12 @@ final class TreeAggregateBuilder
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'inlineRawFilterExpression'),
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                self::requireConnection($connection, $definition),
+                $definition,
+                $innerQualifier,
+                $rawFilter,
+            ),
         };
     }
 
@@ -921,6 +950,7 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         array $scopeCols,
+        ?Connection $connection = null,
     ): string {
         $filter = $definition->filter;
         if (! $filter instanceof FilterPredicate || $filter->getKind() !== FilterPredicateKind::Raw) {
@@ -971,7 +1001,12 @@ final class TreeAggregateBuilder
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'correlatedRawFilterExpression'),
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                self::requireConnection($connection, $definition),
+                $definition,
+                $innerAlias.'.',
+                $rawSql,
+            ),
         };
 
         // Single-column predicate on lft so MySQL's planner can use a
@@ -993,9 +1028,9 @@ final class TreeAggregateBuilder
 
         $expr = "(SELECT {$aggInner} FROM {$table} AS {$innerAlias} WHERE {$bounds}{$scopeClause})";
 
-        // SUM and COUNT must produce 0 for an empty subtree (NOT NULL
-        // storage convention); MIN/MAX/AVG can stay NULL.
-        if ($definition->function === AggregateFunction::Sum || $definition->function === AggregateFunction::Count) {
+        // SUM / COUNT / DistinctCount must produce 0 for an empty subtree
+        // (NOT NULL storage convention); the remaining kinds stay NULL.
+        if (! $definition->function->nullableOnEmpty()) {
             return "COALESCE({$expr}, 0)";
         }
 
@@ -1035,6 +1070,7 @@ final class TreeAggregateBuilder
                         'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
                     ),
                     $innerQualifier,
+                    $connection,
                 );
             }
 
@@ -1045,6 +1081,7 @@ final class TreeAggregateBuilder
                 $lftCol,
                 $rgtCol,
                 $scopeCols,
+                $connection,
             );
         }
 
@@ -1062,18 +1099,6 @@ final class TreeAggregateBuilder
         }
 
         return $definition->source;
-    }
-
-    /**
-     * @return never
-     */
-    private static function unsupportedFunction(AggregateFunction $function, string $site): string
-    {
-        throw new AggregateConfigurationException(sprintf(
-            'SQL emission for %s is not implemented in %s yet — extend per-backend coverage to enable it.',
-            $function->value,
-            $site,
-        ));
     }
 
     /**
@@ -1139,7 +1164,11 @@ final class TreeAggregateBuilder
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
-                AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'leafInlineExpression'),
+                AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
+                    self::requireConnection($connection, $definition),
+                    $definition,
+                    $tableQualifier,
+                ),
             };
         }
 
@@ -1207,7 +1236,12 @@ final class TreeAggregateBuilder
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'filteredLeafInlineExpression'),
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
+                $connection,
+                $definition,
+                $tableQualifier,
+                $pred,
+            ),
         };
     }
 
