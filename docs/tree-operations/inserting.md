@@ -1,10 +1,6 @@
 # Inserting & Moving Nodes
 
-Every mutation is a method on the model that queues a pending
-operation; the actual work happens on the next `save()`, wrapped in a
-transaction (configurable, on by default). This page walks through
-each positional method using a single example tree, and shows what the
-tree looks like after each operation.
+Every mutation is a method on the model that queues a pending operation; the actual work happens on the next `save()`, wrapped in a transaction (configurable, on by default). This page walks through each positional method using a single example tree, and shows what the tree looks like after each operation.
 
 ## Building the example tree
 
@@ -65,18 +61,9 @@ Electronics
 
 ## up / down — reorder among siblings
 
-`up()` swaps with the previous sibling; `down()` swaps with the next.
-Both return `true` if a swap happened, `false` if there was no
-neighbour to swap with.
+`up()` swaps with the previous sibling; `down()` swaps with the next. Both return `true` if a swap happened, `false` if there was no neighbour to swap with.
 
-> **Tree corruption can mask "no neighbour" as a false return.** Both
-> methods look up the sibling via `lft / rgt`, so on a tree with gap
-> corruption (e.g. a leaf hard-delete that mis-shifted bounds) the
-> sibling query may return `null` even though a logical sibling
-> exists. The methods can't distinguish "genuinely no neighbour"
-> from "tree is broken". Pair persistent unexpected `false` returns
-> with `isBroken()` / `countErrors()` to rule out structural
-> corruption before assuming the row really is at an edge.
+> **Tree corruption can mask "no neighbour" as a false return.** Both methods look up the sibling via `lft / rgt`, so on a tree with gap corruption (e.g. a leaf hard-delete that mis-shifted bounds) the sibling query may return `null` even though a logical sibling exists. The methods can't distinguish "genuinely no neighbour" from "tree is broken". Pair persistent unexpected `false` returns with `isBroken()` / `countErrors()` to rule out structural corruption before assuming the row really is at an edge.
 
 ```php
 $audio->refresh()->down();    // Audio swaps places with Computers
@@ -93,9 +80,7 @@ Electronics
 
 ## makeRoot — detach into a new tree
 
-`makeRoot()` lifts a node (and its subtree) out of its current parent
-and reroots it as a standalone tree. `saveAsRoot()` is the same thing
-in one call.
+`makeRoot()` lifts a node (and its subtree) out of its current parent and reroots it as a standalone tree. `saveAsRoot()` is the same thing in one call.
 
 ```php
 $phones->refresh()->makeRoot()->save();
@@ -120,27 +105,12 @@ $computers->nextSibling()->name;        // 'Audio'
 
 ## The refresh footgun
 
-> Pass a fresh copy of the parent / sibling (`->refresh()`) when
-> you've inserted other rows since loading it.
+> Pass a fresh copy of the parent / sibling (`->refresh()`) when you've inserted other rows since loading it.
 
-The trait re-reads the target's bounds from the database before
-mutating, so the tree stays safe against stale `parent_id`s — but it
-can't refresh nodes you handed it. After any mutation, the in-memory
-copy you used as a target has stale `lft` / `rgt` values; the next
-mutation against that same instance must `->refresh()` first or risk
-inserting at the wrong slot.
+The trait re-reads the target's bounds from the database before mutating, so the tree stays safe against stale `parent_id`s — but it can't refresh nodes you handed it. After any mutation, the in-memory copy you used as a target has stale `lft` / `rgt` values; the next mutation against that same instance must `->refresh()` first or risk inserting at the wrong slot.
 
-The asymmetry is deliberate: the **target** node is read fresh from
-the DB inside every mutation (the package owns that read), so a stale
-target instance can't cause wrong-slot inserts — but the **moving**
-node is the user's object and the package can't safely refresh it
-without clobbering pending in-memory changes you may want persisted.
-If you've held a reference to a parent / sibling across multiple
-mutations, refresh that reference; if you've only handed it to one
-`appendToNode(...)->save()`, you don't need to.
+The asymmetry is deliberate: the **target** node is read fresh from the DB inside every mutation (the package owns that read), so a stale target instance can't cause wrong-slot inserts — but the **moving** node is the user's object and the package can't safely refresh it without clobbering pending in-memory changes you may want persisted. If you've held a reference to a parent / sibling across multiple mutations, refresh that reference; if you've only handed it to one `appendToNode(...)->save()`, you don't need to.
 
 ## Cross-tree moves
 
-`appendToNode` and friends accept any `HasNestedSet` of the same model
-class. Moving between scopes is rejected with
-`ScopeViolationException` — see [Scoped Trees](../querying/scoped-trees.html).
+`appendToNode` and friends accept any `HasNestedSet` of the same model class. Moving between scopes is rejected with `ScopeViolationException` — see [Scoped Trees](../querying/scoped-trees.html).

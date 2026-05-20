@@ -22,8 +22,7 @@ $electronics->descendants->pluck('name');
 
 ## Eager loading
 
-The custom relations work with `with(...)` and load in two queries
-total — no N+1, regardless of how many rows you select:
+The custom relations work with `with(...)` and load in two queries total — no N+1, regardless of how many rows you select:
 
 ```php
 Category::with('ancestors')->get();      // breadcrumbs for every row, 2 queries
@@ -39,11 +38,7 @@ Category::withCount('descendants')->get();   // each row gets descendants_count
 
 ## Bounding the descendants relation
 
-The descendants relation is **unbounded by default** — it pulls every
-descendant of every selected row. For trees with deep, wide subtrees
-this can be a lot more data than the UI needs. Bound the load to the
-first N levels by composing a `where` on the relation's `depth` column
-(which the trait already maintains):
+The descendants relation is **unbounded by default** — it pulls every descendant of every selected row. For trees with deep, wide subtrees this can be a lot more data than the UI needs. Bound the load to the first N levels by composing a `where` on the relation's `depth` column (which the trait already maintains):
 
 ```php
 // Just children + grandchildren of $root (depth 1 + 2 relative to root)
@@ -57,14 +52,11 @@ Category::with([
 ])->whereIsRoot()->get();
 ```
 
-The composite index already covers `depth`, so the bounded `WHERE`
-costs no more than the unbounded eager load on the same rows.
+The composite index already covers `depth`, so the bounded `WHERE` costs no more than the unbounded eager load on the same rows.
 
 ## Combining with tree query scopes
 
-Relations stack with the [tree-query scopes](queries.html) freely.
-This pattern is common for category-tree pages: load every root with
-its first two levels, ordered for display:
+Relations stack with the [tree-query scopes](queries.html) freely. This pattern is common for category-tree pages: load every root with its first two levels, ordered for display:
 
 ```php
 $tree = Category::query()

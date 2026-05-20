@@ -1,14 +1,10 @@
 # Tree Queries
 
-The model query builder (`TreeQueryBuilder`) adds tree-aware scopes
-that compose with regular Eloquent constraints. Every scope takes a
-`NodeBounds` value (returned by `$node->getBounds()`) so you can query
-by structure even when you don't have a hydrated model handy.
+The model query builder (`TreeQueryBuilder`) adds tree-aware scopes that compose with regular Eloquent constraints. Every scope takes a `NodeBounds` value (returned by `$node->getBounds()`) so you can query by structure even when you don't have a hydrated model handy.
 
 ## Example tree
 
-The examples below assume this `Category` tree, where each row is
-labelled with its `(lft, rgt)` interval:
+The examples below assume this `Category` tree, where each row is labelled with its `(lft, rgt)` interval:
 
 ```text
 Electronics      (1, 12)
@@ -25,8 +21,7 @@ Books            (13, 18)
 
 ## Descendant / ancestor scopes
 
-`whereDescendantOf` returns every node strictly *below* the given
-bounds; the `*OrSelf` variant includes the bounds row itself.
+`whereDescendantOf` returns every node strictly *below* the given bounds; the `*OrSelf` variant includes the bounds row itself.
 
 ```php
 $electronics = Category::firstWhere('name', 'Electronics');
@@ -42,8 +37,7 @@ Category::query()
 // → ['Electronics', 'Computers', 'Laptops', 'Desktops', 'Phones', 'Android']
 ```
 
-`whereAncestorOf` walks upward — every node strictly *above* the
-bounds. Useful for breadcrumbs.
+`whereAncestorOf` walks upward — every node strictly *above* the bounds. Useful for breadcrumbs.
 
 ```php
 $laptops = Category::firstWhere('name', 'Laptops');
@@ -61,10 +55,7 @@ Category::query()
 // → ['Electronics', 'Computers', 'Laptops']
 ```
 
-`ancestorsOf($bounds)` and `descendantsOf($bounds)` are one-word aliases
-for `whereAncestorOf` / `whereDescendantOf` — exposed so call sites that
-read as English (`Category::query()->ancestorsOf(...)`) can avoid the
-`where*` prefix. Same behaviour, same arguments.
+`ancestorsOf($bounds)` and `descendantsOf($bounds)` are one-word aliases for `whereAncestorOf` / `whereDescendantOf` — exposed so call sites that read as English (`Category::query()->ancestorsOf(...)`) can avoid the `where*` prefix. Same behaviour, same arguments.
 
 ## Roots, leaves, ordering
 
@@ -99,9 +90,7 @@ Category::query()->withDepth()->get();
 
 ## Positional scopes
 
-`whereIsBefore` / `whereIsAfter` slice the tree at a node's bounds.
-Useful when you need "all rows preceding this one in depth-first
-order" — e.g. for next-prev navigation in a sequenced tree.
+`whereIsBefore` / `whereIsAfter` slice the tree at a node's bounds. Useful when you need "all rows preceding this one in depth-first order" — e.g. for next-prev navigation in a sequenced tree.
 
 ```php
 $phones = Category::firstWhere('name', 'Phones');
@@ -121,9 +110,7 @@ Category::query()
 
 ## Composing with Eloquent
 
-These scopes are regular query-builder constraints — combine them with
-`where`, `whereBelongsTo`, `with(...)`, eager-load constraints, joins,
-ordering, anything Eloquent supports:
+These scopes are regular query-builder constraints — combine them with `where`, `whereBelongsTo`, `with(...)`, eager-load constraints, joins, ordering, anything Eloquent supports:
 
 ```php
 // "Active descendants of Electronics, eager-load children, paginate"
@@ -137,11 +124,7 @@ Category::query()
 
 ## Fresh aggregate reads
 
-When a model declares aggregate columns (see
-[Aggregates](../aggregates/overview.html)), the builder exposes
-`withFreshAggregates()` to re-compute them per outer row via a
-correlated subquery — useful for drift detection and as the
-authoritative read on hot paths where you don't trust stored values.
+When a model declares aggregate columns (see [Aggregates](../aggregates/overview.html)), the builder exposes `withFreshAggregates()` to re-compute them per outer row via a correlated subquery — useful for drift detection and as the authoritative read on hot paths where you don't trust stored values.
 
 ```php
 Category::query()
@@ -153,6 +136,4 @@ Category::query()
     ->get();
 ```
 
-See [Reading Aggregates](../aggregates/reading.html) for the
-full contract and [Production Notes](../reference/production.html#routing-fresh-aggregate-reads-to-a-read-replica)
-for routing these reads to a read replica.
+See [Reading Aggregates](../aggregates/reading.html) for the full contract and [Production Notes](../reference/production.html#routing-fresh-aggregate-reads-to-a-read-replica) for routing these reads to a read replica.

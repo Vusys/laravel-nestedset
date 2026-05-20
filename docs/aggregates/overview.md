@@ -1,14 +1,8 @@
 # Precalculated Aggregate Columns
 
-Sometimes you want a node to carry rolled-up data about its subtree — a
-total, a count, an average, a min/max — without re-running an aggregate
-query every time the tree is rendered. Declare the columns and the
-package keeps them in sync as the tree mutates.
+Sometimes you want a node to carry rolled-up data about its subtree — a total, a count, an average, a min/max — without re-running an aggregate query every time the tree is rendered. Declare the columns and the package keeps them in sync as the tree mutates.
 
-For the examples in this section, imagine a `Category` model from a blog
-or shop. Each category has an `articles` integer for the number of
-articles directly tagged with it; the aggregates roll those counts up
-the tree.
+For the examples in this section, imagine a `Category` model from a blog or shop. Each category has an `articles` integer for the number of articles directly tagged with it; the aggregates roll those counts up the tree.
 
 ```php
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
@@ -44,22 +38,15 @@ $electronics->articles_min;                  // 2
 $electronics->articles_max;                  // 12
 ```
 
-Every node carries its own subtree's rollup — `Computers` independently
-reports `articles_total = 13` and `articles_count_all = 3`. Inserts,
-source-column updates, deletes, moves and soft-delete restores all keep
-the stored values current.
+Every node carries its own subtree's rollup — `Computers` independently reports `articles_total = 13` and `articles_count_all = 3`. Inserts, source-column updates, deletes, moves and soft-delete restores all keep the stored values current.
 
 ## In this section
 
-- [Migration & Setup](setup.html) — adding aggregate columns and the
-  model conventions that keep them honest
+- [Migration & Setup](setup.html) — adding aggregate columns and the model conventions that keep them honest
 - [Reading Values](reading.html) — stored vs fresh recomputation
-- [Declaring Aggregates](declaring.html) — attribute and method-override
-  forms
-- [Filtered Aggregates](filtered.html) — equality, not-null, and raw
-  SQL filters
+- [Declaring Aggregates](declaring.html) — attribute and method-override forms
+- [Filtered Aggregates](filtered.html) — equality, not-null, and raw SQL filters
 - [Listener Aggregates](listeners.html) — PHP-computed contributions
 - [Recipes](recipes.html) — common shapes
 - [Maintenance](maintenance.html) — what runs when, plus integrity tooling
-- [Drift & Limitations](drift.html) — when stored values can lag and
-  how to mitigate
+- [Drift & Limitations](drift.html) — when stored values can lag and how to mitigate

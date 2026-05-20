@@ -54,23 +54,11 @@ class Category extends Model implements HasNestedSet
 
 ### Scope of the mass-assignment guard
 
-The check fires once at registry build (when the model's aggregate
-definitions are first resolved) via reflection on the `$fillable` /
-`$guarded` properties. That covers the common configurations.
+The check fires once at registry build (when the model's aggregate definitions are first resolved) via reflection on the `$fillable` / `$guarded` properties. That covers the common configurations.
 
 It does **not** intercept dynamic bypasses applied at runtime:
 
-- Overriding `isFillable()` or `isGuarded()` on the model to return
-  values not derivable from the properties.
-- Calling `Model::unguard()` (e.g. in a service provider, seeder, or
-  test setup) — this is a global Eloquent toggle that disables
-  guarding for every model, so an `Article::create([...])` after
-  `unguard()` can write directly to aggregate columns regardless of
-  what the build-time check saw.
+- Overriding `isFillable()` or `isGuarded()` on the model to return values not derivable from the properties.
+- Calling `Model::unguard()` (e.g. in a service provider, seeder, or test setup) — this is a global Eloquent toggle that disables guarding for every model, so an `Article::create([...])` after `unguard()` can write directly to aggregate columns regardless of what the build-time check saw.
 
-In both cases, the next mutation through the package overwrites the
-clobbered value with the correctly recomputed aggregate, so the only
-observable effect is that the value you mass-assigned is
-silently lost. If you rely on `Model::unguard()` in test code,
-prefer scoping it with `Model::unguarded(fn () => ...)` and avoid
-writing to aggregate columns inside the closure.
+In both cases, the next mutation through the package overwrites the clobbered value with the correctly recomputed aggregate, so the only observable effect is that the value you mass-assigned is silently lost. If you rely on `Model::unguard()` in test code, prefer scoping it with `Model::unguarded(fn () => ...)` and avoid writing to aggregate columns inside the closure.

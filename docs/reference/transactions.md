@@ -1,8 +1,6 @@
 # Transactions
 
-Mutations are wrapped in a database transaction by default — if the
-`makeGap` succeeds but the row write fails (or vice versa), the gap is
-rolled back instead of being left in the tree:
+Mutations are wrapped in a database transaction by default — if the `makeGap` succeeds but the row write fails (or vice versa), the gap is rolled back instead of being left in the tree:
 
 ```php
 // config/nestedset.php
@@ -11,8 +9,7 @@ return [
 ];
 ```
 
-Opt out only if you're already inside an outer transaction and want
-exact control over its boundary:
+Opt out only if you're already inside an outer transaction and want exact control over its boundary:
 
 ```php
 DB::transaction(function () use ($parent): void {
@@ -22,5 +19,4 @@ DB::transaction(function () use ($parent): void {
 });
 ```
 
-Auto-wrapping is safe to combine with outer transactions — Laravel
-handles nested transactions via savepoints.
+Auto-wrapping is safe to combine with outer transactions — Laravel handles nested transactions via savepoints.

@@ -10,13 +10,7 @@ Aggregates ride the package's existing lifecycle events:
 | Move (`appendToNode` etc.)| delta on old chain + delta on new chain   | 2            |
 | Soft-delete restore       | delta re-add to current chain             | 1            |
 
-MIN/MAX use a SELECT-then-UPDATE recompute path when the change may
-have invalidated the stored extremum — the same path applies to
-raw-filter columns whose `filterRawWatches` columns dirty on save.
-Concurrency between the SELECT and UPDATE is governed by the
-`nestedset.aggregate_locking` config flag (`'auto'` /
-`'always'` / `'never'`; see
-[Configuration → aggregate_locking](../reference/config.html#aggregate_locking)).
+MIN/MAX use a SELECT-then-UPDATE recompute path when the change may have invalidated the stored extremum — the same path applies to raw-filter columns whose `filterRawWatches` columns dirty on save. Concurrency between the SELECT and UPDATE is governed by the `nestedset.aggregate_locking` config flag (`'auto'` / `'always'` / `'never'`; see [Configuration → aggregate_locking](../reference/config.html#aggregate_locking)).
 
 ## Integrity tooling
 
@@ -32,9 +26,7 @@ Category::fixAggregates();
 // → AggregateFixResult { totalRowsUpdated: 0, perColumn: [...] }
 ```
 
-`fixTree()` runs `fixAggregates()` as a final step — corrupted lft/rgt
-plus drifted aggregates are repairable in one call. The result carries
-the aggregate stats alongside the tree stats:
+`fixTree()` runs `fixAggregates()` as a final step — corrupted lft/rgt plus drifted aggregates are repairable in one call. The result carries the aggregate stats alongside the tree stats:
 
 ```php
 $result = Category::fixTree();
@@ -43,13 +35,11 @@ $result->errors;             // post-repair tree errors
 $result->aggregatesFixed;    // AggregateFixResult — null on no-aggregate models
 ```
 
-Scoped models require an anchor on `aggregateErrors`,
-`aggregatesAreBroken`, and `fixAggregates` (same as `fixTree`).
+Scoped models require an anchor on `aggregateErrors`, `aggregatesAreBroken`, and `fixAggregates` (same as `fixTree`).
 
 ## Observability
 
-Aggregate maintenance fires typed events on Laravel's event bus around
-its meaningful operations. Wire them to your metrics / errors backend:
+Aggregate maintenance fires typed events on Laravel's event bus around its meaningful operations. Wire them to your metrics / errors backend:
 
 | Event | Fires when |
 |---|---|
@@ -59,22 +49,14 @@ its meaningful operations. Wire them to your metrics / errors backend:
 | `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair |
 | `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks — original is rethrown, but observers see the failure |
 
-All event classes live under `Vusys\NestedSet\Events\` and are readonly
-value objects. See
-[Production Notes → Telemetry](../reference/production.html#telemetry)
-for example wirings and a note about `AggregateMaintenanceFailed`'s
-`$exception` field not serialising cleanly across queue drivers. Set
-`nestedset.events_enabled => false` to silence every firing site.
+All event classes live under `Vusys\NestedSet\Events\` and are readonly value objects. See [Production Notes → Telemetry](../reference/production.html#telemetry) for example wirings and a note about `AggregateMaintenanceFailed`'s `$exception` field not serialising cleanly across queue drivers. Set `nestedset.events_enabled => false` to silence every firing site.
 
 ## Adding aggregates to an existing model
 
 1. Add `#[NestedSetAggregate(...)]` declarations to the model class.
-2. Add `$table->nestedSetAggregate('col_name', type: ...)` to a new
-   migration; run it.
+2. Add `$table->nestedSetAggregate('col_name', type: ...)` to a new migration; run it.
 3. Add the matching cast to `$casts`.
-4. Run `YourModel::fixAggregates()` once to backfill stored values from
-   the source data. On scoped models, run per anchor.
+4. Run `YourModel::fixAggregates()` once to backfill stored values from the source data. On scoped models, run per anchor.
 5. Deploy.
 
-After the backfill, every subsequent mutation through Eloquent keeps
-the stored values current.
+After the backfill, every subsequent mutation through Eloquent keeps the stored values current.

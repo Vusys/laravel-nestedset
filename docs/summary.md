@@ -1,14 +1,12 @@
 # Summary
 
-This file is the source of truth for the docs site navigation. The
-build script reads it to build the sidebar and prev/next links.
+This file is the source of truth for the docs site navigation. The build script reads it to build the sidebar and prev/next links.
 
 Format:
 - A top-level `#` is a section title.
 - A list item is a page: `- [Title](path/to/file.md)`.
 - The first page in the first section is the home page (`index.html`).
-- Files that don't yet exist render as placeholders so the structure
-  can be sketched up-front and filled in incrementally.
+- Files that don't yet exist render as placeholders so the structure can be sketched up-front and filled in incrementally.
 
 # Getting Started
 
