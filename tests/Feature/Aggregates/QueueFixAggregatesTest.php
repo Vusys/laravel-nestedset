@@ -239,7 +239,6 @@ final class QueueFixAggregatesTest extends TestCase
         $job = new FixAggregatesJob(
             modelClass: Area::class,
             anchorId: 42,
-            chunkSize: null,
         );
 
         $this->assertSame('fixAggregates('.Area::class.'#42)', $job->displayName());
@@ -249,8 +248,6 @@ final class QueueFixAggregatesTest extends TestCase
     {
         $job = new FixAggregatesJob(
             modelClass: Area::class,
-            anchorId: null,
-            chunkSize: null,
         );
 
         $this->assertSame('fixAggregates('.Area::class.')', $job->displayName());
