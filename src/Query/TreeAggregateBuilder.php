@@ -660,6 +660,10 @@ final class TreeAggregateBuilder
                 $qualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'aggregateExpression'),
         };
     }
 
@@ -704,6 +708,10 @@ final class TreeAggregateBuilder
                 $qualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'filteredAggregateExpression'),
         };
     }
 
@@ -782,6 +790,10 @@ final class TreeAggregateBuilder
                 $innerQualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'inlineRawFilterExpression'),
         };
     }
 
@@ -956,6 +968,10 @@ final class TreeAggregateBuilder
                 $innerAlias,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'correlatedRawFilterExpression'),
         };
 
         // Single-column predicate on lft so MySQL's planner can use a
@@ -1049,6 +1065,18 @@ final class TreeAggregateBuilder
     }
 
     /**
+     * @return never
+     */
+    private static function unsupportedFunction(AggregateFunction $function, string $site): string
+    {
+        throw new AggregateConfigurationException(sprintf(
+            'SQL emission for %s is not implemented in %s yet — extend per-backend coverage to enable it.',
+            $function->value,
+            $site,
+        ));
+    }
+
+    /**
      * Inline expression that produces the aggregate value for a leaf
      * row (`rgt = lft + 1`) without going through the LATERAL / derived
      * join. For inclusive aggregates the subtree is exactly the leaf
@@ -1068,8 +1096,15 @@ final class TreeAggregateBuilder
     ): string {
         if (! $definition->inclusive) {
             return match ($definition->function) {
-                AggregateFunction::Sum, AggregateFunction::Count => '0',
-                AggregateFunction::Avg, AggregateFunction::Min, AggregateFunction::Max => 'NULL',
+                AggregateFunction::Sum,
+                AggregateFunction::Count,
+                AggregateFunction::DistinctCount => '0',
+                AggregateFunction::Avg,
+                AggregateFunction::Min,
+                AggregateFunction::Max,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => 'NULL',
             };
         }
 
@@ -1101,6 +1136,10 @@ final class TreeAggregateBuilder
                     $tableQualifier,
                     self::requireSource($definition),
                 ),
+                AggregateFunction::DistinctCount,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'leafInlineExpression'),
             };
         }
 
@@ -1114,8 +1153,15 @@ final class TreeAggregateBuilder
         // fast-path stays consistent with the join path on `withTrashed()`
         // queries.
         $emptyResult = match ($definition->function) {
-            AggregateFunction::Sum, AggregateFunction::Count => '0',
-            AggregateFunction::Avg, AggregateFunction::Min, AggregateFunction::Max => 'NULL',
+            AggregateFunction::Sum,
+            AggregateFunction::Count,
+            AggregateFunction::DistinctCount => '0',
+            AggregateFunction::Avg,
+            AggregateFunction::Min,
+            AggregateFunction::Max,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => 'NULL',
         };
 
         return sprintf(
@@ -1158,6 +1204,10 @@ final class TreeAggregateBuilder
                 $tableQualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::unsupportedFunction($definition->function, 'filteredLeafInlineExpression'),
         };
     }
 
@@ -1761,10 +1811,14 @@ final class TreeAggregateBuilder
     {
         return match ($definition->function) {
             AggregateFunction::Sum,
-            AggregateFunction::Count => 0,
+            AggregateFunction::Count,
+            AggregateFunction::DistinctCount => 0,
             AggregateFunction::Avg,
             AggregateFunction::Min,
-            AggregateFunction::Max => null,
+            AggregateFunction::Max,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => null,
         };
     }
 
@@ -1823,6 +1877,14 @@ final class TreeAggregateBuilder
                 // AVG is handled inline by the caller because it needs
                 // two parallel accumulators (SUM and COUNT-of-non-null).
                 throw new \LogicException('AVG must be handled inline in the chain fold.');
+            case AggregateFunction::DistinctCount:
+            case AggregateFunction::StringAgg:
+            case AggregateFunction::JsonAgg:
+            case AggregateFunction::JsonObjectAgg:
+                throw new \LogicException(sprintf(
+                    'chainFoldStep() does not handle %s — these kinds are recompute-only and skip the chain fold.',
+                    $definition->function->value,
+                ));
         }
     }
 
@@ -1919,7 +1981,8 @@ final class TreeAggregateBuilder
 
             $outerComputed = match ($definition->function) {
                 AggregateFunction::Sum,
-                AggregateFunction::Count => "COALESCE(agg.{$computedAlias}, 0)",
+                AggregateFunction::Count,
+                AggregateFunction::DistinctCount => "COALESCE(agg.{$computedAlias}, 0)",
                 default => "agg.{$computedAlias}",
             };
             $outerSelects[] = "{$outerComputed} AS {$computedAlias}";

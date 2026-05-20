@@ -295,6 +295,13 @@ final class RecomputeMaintenance
                     $pred,
                     $sourceRef,
                 ),
+                AggregateFunction::DistinctCount,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
+                    'SQL emission for %s is not implemented yet (RecomputeMaintenance filtered branch).',
+                    $spec['function']->value,
+                )),
             };
         }
 
@@ -306,6 +313,13 @@ final class RecomputeMaintenance
             AggregateFunction::Avg => "AVG({$sourceRef})",
             AggregateFunction::Min => "MIN({$sourceRef})",
             AggregateFunction::Max => "MAX({$sourceRef})",
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
+                'SQL emission for %s is not implemented yet (RecomputeMaintenance).',
+                $spec['function']->value,
+            )),
         };
     }
 

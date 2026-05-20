@@ -32,11 +32,23 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  */
 final readonly class Aggregate
 {
+    /**
+     * @param  array<string,string>  $sources  multi-column source map for JsonAgg
+     *                                         (JSON key => source column).
+     */
     private function __construct(
         public AggregateFunction $function,
         public ?string $source,
         public bool $inclusive,
         public ?FilterPredicate $filter = null,
+        public string $separator = ', ',
+        public ?int $limit = null,
+        public ?string $orderBy = null,
+        public bool $distinct = false,
+        public bool $allowNullKeys = false,
+        public ?string $keyColumn = null,
+        public ?string $valueColumn = null,
+        public array $sources = [],
     ) {}
 
     /**
@@ -78,13 +90,212 @@ final readonly class Aggregate
     }
 
     /**
+     * COUNT(DISTINCT source) over the subtree — cardinality of values
+     * in the named column across descendants (and self when inclusive).
+     * Always recompute-only: a removed value might or might not still
+     * appear elsewhere in the subtree, so no signed delta exists.
+     */
+    public static function distinctCount(string $source): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::distinctCount(): source column must not be empty.',
+            );
+        }
+
+        return new self(AggregateFunction::DistinctCount, $source, true);
+    }
+
+    /**
+     * Concatenated text aggregate. Renders as STRING_AGG / GROUP_CONCAT
+     * per backend. `$orderBy` defaults to the source column for stable
+     * output bytes; pass `null` to opt out (output order becomes
+     * backend-defined).
+     */
+    public static function stringAgg(
+        string $source,
+        string $separator = ', ',
+        ?int $limit = null,
+        ?string $orderBy = null,
+    ): self {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::stringAgg(): source column must not be empty.',
+            );
+        }
+
+        if ($limit !== null && $limit < 0) {
+            throw new AggregateConfigurationException(
+                'Aggregate::stringAgg(): limit must be >= 0 when set.',
+            );
+        }
+
+        return new self(
+            AggregateFunction::StringAgg,
+            $source,
+            true,
+            null,
+            $separator,
+            $limit,
+            $orderBy ?? $source,
+        );
+    }
+
+    /**
+     * JSON array of values from the subtree. Accepts three input shapes:
+     *
+     *   'id'                          → scalar array: [1, 2, 3]
+     *   ['id', 'name']                → array of objects keyed by column
+     *                                   name: [{"id":1,"name":…}, …]
+     *   ['key' => 'id', 'label' => …] → array of objects keyed by the
+     *                                   array's keys: [{"key":1,"label":…}]
+     *
+     * The assoc form is the escape hatch for renaming columns into the
+     * JSON output (snake_case → camelCase, frontend contract, …).
+     *
+     * @param  string|list<string>|array<string,string>  $source
+     */
+    public static function jsonAgg(
+        string|array $source,
+        ?int $limit = null,
+        ?string $orderBy = null,
+    ): self {
+        if ($limit !== null && $limit < 0) {
+            throw new AggregateConfigurationException(
+                'Aggregate::jsonAgg(): limit must be >= 0 when set.',
+            );
+        }
+
+        if (is_string($source)) {
+            if ($source === '') {
+                throw new AggregateConfigurationException(
+                    'Aggregate::jsonAgg(): source column must not be empty.',
+                );
+            }
+
+            return new self(
+                AggregateFunction::JsonAgg,
+                $source,
+                true,
+                null,
+                ', ',
+                $limit,
+                $orderBy ?? $source,
+            );
+        }
+
+        $sources = self::normaliseJsonAggSource($source);
+
+        return new self(
+            AggregateFunction::JsonAgg,
+            null,
+            true,
+            null,
+            ', ',
+            $limit,
+            $orderBy,
+            sources: $sources,
+        );
+    }
+
+    /**
+     * JSON object built from one key column and one value column —
+     * `{<key>: <value>, …}` across the subtree. PG's strict-typed
+     * `JSON_OBJECT_AGG` key is bridged by an unconditional `::text` cast
+     * so integer / UUID / date keys behave identically to the other
+     * backends (which implicit-cast). NULL keys are filtered out by
+     * default; pass `allowNullKeys: true` to keep the backend-native
+     * behaviour.
+     */
+    public static function jsonObjectAgg(
+        string $key,
+        string $value,
+        ?int $limit = null,
+        ?string $orderBy = null,
+        bool $allowNullKeys = false,
+    ): self {
+        if ($key === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::jsonObjectAgg(): key column must not be empty.',
+            );
+        }
+
+        if ($value === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::jsonObjectAgg(): value column must not be empty.',
+            );
+        }
+
+        if ($limit !== null && $limit < 0) {
+            throw new AggregateConfigurationException(
+                'Aggregate::jsonObjectAgg(): limit must be >= 0 when set.',
+            );
+        }
+
+        return new self(
+            AggregateFunction::JsonObjectAgg,
+            null,
+            true,
+            null,
+            ', ',
+            $limit,
+            $orderBy ?? $key,
+            false,
+            $allowNullKeys,
+            $key,
+            $value,
+        );
+    }
+
+    /**
+     * Distinct modifier for `stringAgg`. SQL emission switches to
+     * `STRING_AGG(DISTINCT …)` / `GROUP_CONCAT(DISTINCT …)`. The
+     * `orderBy` is forced back to the source column on `distinct: true`
+     * (PG only accepts ORDER BY columns that appear in the DISTINCT
+     * set) — passing a different `orderBy` with `distinct()` is
+     * rejected at attribute-construction time. Here, calling
+     * `distinct()` after a custom `orderBy` raises immediately.
+     */
+    public function distinct(): self
+    {
+        if ($this->function !== AggregateFunction::StringAgg) {
+            throw new AggregateConfigurationException(
+                'Aggregate::distinct(): only stringAgg supports the distinct modifier.',
+            );
+        }
+
+        if ($this->orderBy !== null && $this->orderBy !== $this->source) {
+            throw new AggregateConfigurationException(
+                'Aggregate::stringAgg(...)->distinct(): custom orderBy is incompatible with distinct. '
+                .'PG requires ORDER BY columns to appear in the DISTINCT set; for cross-backend portability '
+                .'the package emits ORDER BY only when it matches the source column.',
+            );
+        }
+
+        return new self(
+            $this->function,
+            $this->source,
+            $this->inclusive,
+            $this->filter,
+            $this->separator,
+            $this->limit,
+            $this->orderBy,
+            true,
+            $this->allowNullKeys,
+            $this->keyColumn,
+            $this->valueColumn,
+            $this->sources,
+        );
+    }
+
+    /**
      * Self-inclusive aggregation — the node's own source value
      * participates in its stored aggregate. This is the default and the
      * mental model for "give me the rollup for this subtree".
      */
     public function inclusive(): self
     {
-        return new self($this->function, $this->source, true, $this->filter);
+        return $this->withInclusive(true);
     }
 
     /**
@@ -94,7 +305,25 @@ final readonly class Aggregate
      */
     public function exclusive(): self
     {
-        return new self($this->function, $this->source, false, $this->filter);
+        return $this->withInclusive(false);
+    }
+
+    private function withInclusive(bool $inclusive): self
+    {
+        return new self(
+            $this->function,
+            $this->source,
+            $inclusive,
+            $this->filter,
+            $this->separator,
+            $this->limit,
+            $this->orderBy,
+            $this->distinct,
+            $this->allowNullKeys,
+            $this->keyColumn,
+            $this->valueColumn,
+            $this->sources,
+        );
     }
 
     /**
@@ -114,7 +343,7 @@ final readonly class Aggregate
      */
     public function filter(array $conditions): self
     {
-        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::equality($conditions));
+        return $this->withFilter(FilterPredicate::equality($conditions));
     }
 
     /**
@@ -122,7 +351,7 @@ final readonly class Aggregate
      */
     public function filterNotNull(string $column): self
     {
-        return new self($this->function, $this->source, $this->inclusive, FilterPredicate::notNull($column));
+        return $this->withFilter(FilterPredicate::notNull($column));
     }
 
     /**
@@ -149,11 +378,26 @@ final readonly class Aggregate
      */
     public function filterRaw(string|Expression $sql, array $watches): self
     {
+        return $this->withFilter(
+            FilterPredicate::raw($this->expressionToString($sql), $watches),
+        );
+    }
+
+    private function withFilter(FilterPredicate $filter): self
+    {
         return new self(
             $this->function,
             $this->source,
             $this->inclusive,
-            FilterPredicate::raw($this->expressionToString($sql), $watches),
+            $filter,
+            $this->separator,
+            $this->limit,
+            $this->orderBy,
+            $this->distinct,
+            $this->allowNullKeys,
+            $this->keyColumn,
+            $this->valueColumn,
+            $this->sources,
         );
     }
 
@@ -210,6 +454,60 @@ final readonly class Aggregate
             source: $this->source,
             inclusive: $this->inclusive,
             filter: $this->filter,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: $this->distinct,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
         );
+    }
+
+    /**
+     * @param  list<string>|array<string,string>  $source
+     * @return array<string,string>
+     */
+    private static function normaliseJsonAggSource(array $source): array
+    {
+        if ($source === []) {
+            throw new AggregateConfigurationException(
+                'Aggregate::jsonAgg(): source array must not be empty.',
+            );
+        }
+
+        $isList = array_is_list($source);
+        $result = [];
+
+        foreach ($source as $jsonKey => $column) {
+            if ($column === '') {
+                throw new AggregateConfigurationException(
+                    'Aggregate::jsonAgg(): every source column must be a non-empty string.',
+                );
+            }
+
+            $key = $isList ? $column : (string) $jsonKey;
+
+            if ($key === '') {
+                throw new AggregateConfigurationException(
+                    'Aggregate::jsonAgg(): JSON keys must not be empty strings.',
+                );
+            }
+
+            if (array_key_exists($key, $result)) {
+                throw new AggregateConfigurationException(sprintf(
+                    'Aggregate::jsonAgg(): duplicate JSON key "%s" in source array. '
+                    .'Use the assoc form `[\'a\' => \'%s\', \'b\' => \'%s\']` to disambiguate.',
+                    $key,
+                    $column,
+                    $column,
+                ));
+            }
+
+            $result[$key] = $column;
+        }
+
+        return $result;
     }
 }

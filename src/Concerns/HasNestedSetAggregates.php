@@ -227,6 +227,13 @@ trait HasNestedSetAggregates
             AggregateFunction::Min => $min,
             AggregateFunction::Max => $max,
             AggregateFunction::Avg => $count === 0 ? null : $sum / $count,
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
+                'Listener aggregates do not support %s; declare it via #[NestedSetAggregate] (column-based) instead.',
+                $definition->operation->value,
+            )),
         };
     }
 
@@ -2005,6 +2012,13 @@ trait HasNestedSetAggregates
             AggregateFunction::Avg => $contributions === []
                 ? null
                 : array_sum($contributions) / count($contributions),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
+                'Listener aggregates do not support %s; declare it via #[NestedSetAggregate] (column-based) instead.',
+                $def->operation->value,
+            )),
         };
     }
 

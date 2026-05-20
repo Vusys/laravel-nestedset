@@ -23,8 +23,9 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *     #[NestedSetAggregate(column: 'tickets_max',   max: 'tickets')]
  *     class Area extends Model implements HasNestedSet { use NodeTrait; }
  *
- * Exactly one of `sum | count | avg | min | max` must be provided per
- * attribute instance; passing zero or more than one throws
+ * Exactly one of `sum | count | avg | min | max | distinctCount |
+ * stringAgg | jsonAgg | jsonObjectAgg` must be provided per attribute
+ * instance; passing zero or more than one throws
  * {@see AggregateConfigurationException} when the registry resolves
  * declarations. `count: true` declares COUNT(*); for the
  * non-null-skipping COUNT(column) variant use the method-override form
@@ -49,8 +50,19 @@ final readonly class NestedSetAggregate
      * That signal must be explicit — silent empty-watch defaults are
      * the footgun this guard removes.
      *
+     * `jsonAgg` accepts a `string` (scalar form), a list of column
+     * names (object form keyed by column name), or an assoc array
+     * (object form keyed by the array's keys). `jsonObjectAgg` takes
+     * a `key` and `value` column name. `distinct: true` switches
+     * `stringAgg` to its DISTINCT variant. `limit`, `orderBy`,
+     * `separator`, `allowNullKeys` map onto the corresponding
+     * {@see Aggregate} factory args.
+     *
      * @param  array<string,mixed>|null  $filter
      * @param  list<string>  $filterRawWatches
+     * @param  string|list<string>|array<string,string>|null  $jsonAgg
+     * @param  array<string,string>|null  $jsonObjectAgg  expected shape: `['key' => ..., 'value' => ...]` —
+     *                                                    validated at definition-build time.
      */
     public function __construct(
         public string $column,
@@ -59,12 +71,21 @@ final readonly class NestedSetAggregate
         public ?string $avg = null,
         public ?string $min = null,
         public ?string $max = null,
+        public ?string $distinctCount = null,
+        public ?string $stringAgg = null,
+        public string|array|null $jsonAgg = null,
+        public ?array $jsonObjectAgg = null,
         public bool $exclusive = false,
         public ?array $filter = null,
         public ?string $filterNotNull = null,
         public ?string $filterRaw = null,
         public array $filterRawWatches = [],
         public bool $filterRawNoColumnDependencies = false,
+        public string $separator = ', ',
+        public ?int $limit = null,
+        public ?string $orderBy = null,
+        public bool $distinct = false,
+        public bool $allowNullKeys = false,
     ) {}
 
     /**
@@ -86,7 +107,7 @@ final readonly class NestedSetAggregate
         if ($declared === []) {
             throw new AggregateConfigurationException(sprintf(
                 'NestedSetAggregate for column "%s": no aggregate function declared. '
-                .'Provide exactly one of sum, count, avg, min, max.',
+                .'Provide exactly one of sum, count, avg, min, max, distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
                 $this->column,
             ));
         }
@@ -94,28 +115,18 @@ final readonly class NestedSetAggregate
         if (count($declared) > 1) {
             throw new AggregateConfigurationException(sprintf(
                 'NestedSetAggregate for column "%s": multiple aggregate functions declared (%s). '
-                .'Each declaration must use exactly one of sum, count, avg, min, max.',
+                .'Each declaration must use exactly one function.',
                 $this->column,
                 implode(', ', array_keys($declared)),
             ));
         }
 
-        [$function, $source] = $this->resolveFunction($declared);
+        $function = array_key_first($declared);
 
-        return new AggregateDefinition(
-            column: $this->column,
-            function: $function,
-            source: $source,
-            inclusive: ! $this->exclusive,
-            filter: $this->resolveFilter(),
-        );
+        return $this->buildDefinition($function);
     }
 
     /**
-     * Returns the subset of {sum,count,avg,min,max} args that were
-     * actually provided. Used both for validation and to drive the
-     * function/source resolution below.
-     *
      * @return array<string, mixed>
      */
     private function declaredFunctions(): array
@@ -137,26 +148,248 @@ final readonly class NestedSetAggregate
         if ($this->max !== null) {
             $declared['max'] = $this->max;
         }
+        if ($this->distinctCount !== null) {
+            $declared['distinctCount'] = $this->distinctCount;
+        }
+        if ($this->stringAgg !== null) {
+            $declared['stringAgg'] = $this->stringAgg;
+        }
+        if ($this->jsonAgg !== null) {
+            $declared['jsonAgg'] = $this->jsonAgg;
+        }
+        if ($this->jsonObjectAgg !== null) {
+            $declared['jsonObjectAgg'] = $this->jsonObjectAgg;
+        }
 
         return $declared;
     }
 
-    /**
-     * @param  array<string, mixed>  $declared  exactly one entry.
-     * @return array{0: AggregateFunction, 1: ?string}
-     */
-    private function resolveFunction(array $declared): array
+    private function buildDefinition(string $functionKey): AggregateDefinition
     {
-        return match (array_key_first($declared)) {
-            'sum' => [AggregateFunction::Sum, $this->sum],
-            'count' => [AggregateFunction::Count, null],
-            'avg' => [AggregateFunction::Avg, $this->avg],
-            'min' => [AggregateFunction::Min, $this->min],
-            'max' => [AggregateFunction::Max, $this->max],
+        return match ($functionKey) {
+            'sum' => $this->simpleDefinition(AggregateFunction::Sum, $this->sum),
+            'count' => $this->simpleDefinition(AggregateFunction::Count, null),
+            'avg' => $this->simpleDefinition(AggregateFunction::Avg, $this->avg),
+            'min' => $this->simpleDefinition(AggregateFunction::Min, $this->min),
+            'max' => $this->simpleDefinition(AggregateFunction::Max, $this->max),
+            'distinctCount' => $this->distinctCountDefinition(),
+            'stringAgg' => $this->stringAggDefinition(),
+            'jsonAgg' => $this->jsonAggDefinition(),
+            'jsonObjectAgg' => $this->jsonObjectAggDefinition(),
             default => throw new AggregateConfigurationException(
                 'Unreachable: declaredFunctions() returned an unknown key.',
             ),
         };
+    }
+
+    private function simpleDefinition(AggregateFunction $function, ?string $source): AggregateDefinition
+    {
+        return new AggregateDefinition(
+            column: $this->column,
+            function: $function,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+        );
+    }
+
+    private function distinctCountDefinition(): AggregateDefinition
+    {
+        $source = $this->distinctCount;
+        if ($source === null || $source === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": distinctCount requires a non-empty column name.',
+                $this->column,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: AggregateFunction::DistinctCount,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+        );
+    }
+
+    private function stringAggDefinition(): AggregateDefinition
+    {
+        $source = $this->stringAgg;
+        if ($source === null || $source === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": stringAgg requires a non-empty column name.',
+                $this->column,
+            ));
+        }
+
+        if ($this->limit !== null && $this->limit < 0) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": limit must be >= 0.',
+                $this->column,
+            ));
+        }
+
+        $orderBy = $this->orderBy ?? $source;
+
+        if ($this->distinct && $orderBy !== $source) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": stringAgg with distinct: true requires '
+                .'orderBy to match the source column (PG only accepts ORDER BY columns that '
+                .'appear in the DISTINCT set; the package enforces this across backends).',
+                $this->column,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: AggregateFunction::StringAgg,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $orderBy,
+            distinct: $this->distinct,
+        );
+    }
+
+    private function jsonAggDefinition(): AggregateDefinition
+    {
+        if ($this->limit !== null && $this->limit < 0) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": limit must be >= 0.',
+                $this->column,
+            ));
+        }
+
+        $source = $this->jsonAgg;
+
+        if (is_string($source)) {
+            if ($source === '') {
+                throw new AggregateConfigurationException(sprintf(
+                    'NestedSetAggregate for column "%s": jsonAgg source column must not be empty.',
+                    $this->column,
+                ));
+            }
+
+            return new AggregateDefinition(
+                column: $this->column,
+                function: AggregateFunction::JsonAgg,
+                source: $source,
+                inclusive: ! $this->exclusive,
+                filter: $this->resolveFilter(),
+                limit: $this->limit,
+                orderBy: $this->orderBy ?? $source,
+            );
+        }
+
+        if (! is_array($source)) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": jsonAgg must be a string, list of columns, or assoc array.',
+                $this->column,
+            ));
+        }
+
+        $sources = $this->normaliseJsonAggSource($source);
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: AggregateFunction::JsonAgg,
+            source: null,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            sources: $sources,
+        );
+    }
+
+    private function jsonObjectAggDefinition(): AggregateDefinition
+    {
+        $spec = $this->jsonObjectAgg;
+        if ($spec === null || ! isset($spec['key'], $spec['value'])) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": jsonObjectAgg requires `[\'key\' => …, \'value\' => …]`.',
+                $this->column,
+            ));
+        }
+
+        $key = $spec['key'];
+        $value = $spec['value'];
+
+        if ($key === '' || $value === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": jsonObjectAgg key and value must be non-empty strings.',
+                $this->column,
+            ));
+        }
+
+        if ($this->limit !== null && $this->limit < 0) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": limit must be >= 0.',
+                $this->column,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: AggregateFunction::JsonObjectAgg,
+            source: null,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            limit: $this->limit,
+            orderBy: $this->orderBy ?? $key,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $key,
+            valueColumn: $value,
+        );
+    }
+
+    /**
+     * @param  list<string>|array<string,string>  $source
+     * @return array<string,string>
+     */
+    private function normaliseJsonAggSource(array $source): array
+    {
+        if ($source === []) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": jsonAgg source array must not be empty.',
+                $this->column,
+            ));
+        }
+
+        $isList = array_is_list($source);
+        $result = [];
+
+        foreach ($source as $jsonKey => $column) {
+            if ($column === '') {
+                throw new AggregateConfigurationException(sprintf(
+                    'NestedSetAggregate for column "%s": jsonAgg source columns must be non-empty strings.',
+                    $this->column,
+                ));
+            }
+
+            $key = $isList ? $column : (string) $jsonKey;
+
+            if ($key === '') {
+                throw new AggregateConfigurationException(sprintf(
+                    'NestedSetAggregate for column "%s": jsonAgg JSON keys must not be empty strings.',
+                    $this->column,
+                ));
+            }
+
+            if (array_key_exists($key, $result)) {
+                throw new AggregateConfigurationException(sprintf(
+                    'NestedSetAggregate for column "%s": duplicate jsonAgg JSON key "%s".',
+                    $this->column,
+                    $key,
+                ));
+            }
+
+            $result[$key] = $column;
+        }
+
+        return $result;
     }
 
     private function resolveFilter(): ?FilterPredicate
