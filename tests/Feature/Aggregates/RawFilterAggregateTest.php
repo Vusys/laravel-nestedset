@@ -160,4 +160,66 @@ final class RawFilterAggregateTest extends TestCase
         // Unchanged from pre-edit value.
         $this->assertSame(50, (int) $root->active_tickets_total);
     }
+
+    // ----------------------------------------------------------------
+    // Per-function raw-filter coverage
+    //
+    // `TreeAggregateBuilder::inlineRawFilterExpression()` is a match
+    // expression with one arm per SQL aggregate function (Sum / Count
+    // / Avg / Min / Max). The Sum arm is exercised by the tests above;
+    // these three tests pin the Count / Min / Max arms by reading
+    // freshly-computed aggregate values against the same tree.
+    //
+    // Each `withFreshAggregates([...])` call drives the SQL emitter
+    // through the corresponding match arm — a MatchArmRemoval mutant
+    // that drops the arm produces an unhandled-enum-case fatal which
+    // surfaces as a failed assertion here.
+    //
+    // Avg is intentionally omitted: AVG with a raw filter auto-promotes
+    // to Sum + Count companions, which are already covered by the Sum
+    // tests above and the Count test below.
+    //
+    // Tree (see buildTree() above): Root(10, active=1) with two
+    // direct children — A(20, active=0) and B(40, active=1).
+    // Active tickets in the subtree = {10, 40} (Root + B).
+    // ----------------------------------------------------------------
+
+    public function test_raw_filter_count_aggregate_counts_only_matching_rows(): void
+    {
+        $this->buildTree();
+
+        $root = Branch::query()
+            ->withFreshAggregates(['active_count'])
+            ->where('id', $this->ids['Root'])
+            ->firstOrFail();
+
+        // Root itself (active) + B (active). A is filtered out.
+        $this->assertSame(2, (int) $root->active_count);
+    }
+
+    public function test_raw_filter_min_aggregate_picks_smallest_matching_value(): void
+    {
+        $this->buildTree();
+
+        $root = Branch::query()
+            ->withFreshAggregates(['active_min_tickets'])
+            ->where('id', $this->ids['Root'])
+            ->firstOrFail();
+
+        // Min of {10 (Root), 40 (B)} = 10. A's 20 is filtered out.
+        $this->assertSame(10, (int) $root->active_min_tickets);
+    }
+
+    public function test_raw_filter_max_aggregate_picks_largest_matching_value(): void
+    {
+        $this->buildTree();
+
+        $root = Branch::query()
+            ->withFreshAggregates(['active_max_tickets'])
+            ->where('id', $this->ids['Root'])
+            ->firstOrFail();
+
+        // Max of {10 (Root), 40 (B)} = 40.
+        $this->assertSame(40, (int) $root->active_max_tickets);
+    }
 }
