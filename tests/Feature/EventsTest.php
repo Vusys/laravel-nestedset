@@ -18,6 +18,7 @@ use Vusys\NestedSet\Events\FixTreeCompleted;
 use Vusys\NestedSet\Events\NodeMoved;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -457,12 +458,16 @@ final class EventsTest extends TestCase
         DB::statement('CREATE TABLE areas_backup AS SELECT * FROM areas');
 
         try {
-            DB::statement('ALTER TABLE areas DROP COLUMN tickets_total');
-        } catch (\Throwable) {
-            $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
-        }
+            try {
+                DB::statement('ALTER TABLE areas DROP COLUMN tickets_total');
+            } catch (\Throwable) {
+                // Backup must be cleaned up even on the skip path — otherwise
+                // it lingers and breaks the next test's TRUNCATE on persistent
+                // backends.
+                DB::statement('DROP TABLE areas_backup');
+                $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
+            }
 
-        try {
             $node = new Area(['name' => 'fail', 'tickets' => 1]);
             try {
                 $node->appendToNode($root)->save();
@@ -489,6 +494,51 @@ final class EventsTest extends TestCase
             // Restore schema so tearDown doesn't blow up
             DB::statement('DROP TABLE areas');
             DB::statement('ALTER TABLE areas_backup RENAME TO areas');
+        }
+    }
+
+    public function test_aggregate_maintenance_failed_anchor_id_is_string_for_uuid_keyed_model(): void
+    {
+        // Companion to the int-keyed test above. UuidTag uses HasUuids,
+        // so `getKey()` returns a string. The anchorId narrowing
+        //   is_int($k) || is_string($k) ? $k : null
+        // has one mutant variant (LogicalOrSingleSubExprNegation) that
+        // can only be killed when the key is a string — for an int key
+        // both sides of the OR misbehave the same way. Mirrors the
+        // DROP-COLUMN scaffold above to force a maintenance failure.
+        $root = new UuidTag(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        Event::fake([AggregateMaintenanceFailed::class]);
+
+        DB::statement('CREATE TABLE uuid_tags_backup AS SELECT * FROM uuid_tags');
+
+        try {
+            try {
+                DB::statement('ALTER TABLE uuid_tags DROP COLUMN tickets_total');
+            } catch (\Throwable) {
+                DB::statement('DROP TABLE uuid_tags_backup');
+                $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
+            }
+
+            $node = new UuidTag(['name' => 'fail', 'tickets' => 1]);
+            try {
+                $node->appendToNode($root)->save();
+            } catch (\Throwable) {
+                // The trait propagates the failure; the event should still have fired.
+            }
+
+            Event::assertDispatched(AggregateMaintenanceFailed::class, function (AggregateMaintenanceFailed $e) use ($node): bool {
+                $this->assertSame(UuidTag::class, $e->modelClass);
+                $this->assertIsString($e->anchorId);
+                $this->assertSame($node->getKey(), $e->anchorId);
+
+                return true;
+            });
+        } finally {
+            DB::statement('DROP TABLE uuid_tags');
+            DB::statement('ALTER TABLE uuid_tags_backup RENAME TO uuid_tags');
         }
     }
 
