@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -251,5 +253,41 @@ final class QueueFixAggregatesTest extends TestCase
         );
 
         $this->assertSame('fixAggregates('.Area::class.')', $job->displayName());
+    }
+
+    // ----------------------------------------------------------------
+    // Chunk-size = 0 boundary
+    //
+    // `FixAggregatesJob::handle()` decides whether to take the chunked
+    // path with `if ($this->chunkSize !== null && $this->chunkSize > 0)`.
+    // The "0 means no chunking" contract is tested elsewhere for the
+    // trait's `Area::fixAggregates(chunkSize: 0)` entry, but the JOB's
+    // own boundary check wasn't pinned — leaving the `&&` LogicalAnd
+    // and `> 0` GreaterThan mutants escaped (a flipped `||` or `>=`
+    // would route `chunkSize=0` through handleChunked, which fires
+    // FixAggregatesChunkCompleted; the non-chunked path doesn't).
+    // ----------------------------------------------------------------
+
+    public function test_handle_with_chunk_size_zero_takes_non_chunked_path(): void
+    {
+        $root = new Area(['name' => 'r', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $child = new Area(['name' => 'c', 'tickets' => 5]);
+        $child->appendToNode($root)->save();
+
+        // Drift one aggregate so the repair path does observable work.
+        DB::table('areas')->where('id', $root->id)->update(['tickets_total' => 0]);
+
+        Event::fake([FixAggregatesChunkCompleted::class]);
+
+        $job = new FixAggregatesJob(modelClass: Area::class, chunkSize: 0);
+        $result = $job->handle();
+
+        // Non-chunked path repairs in one shot — no chunk events emitted.
+        Event::assertNotDispatched(FixAggregatesChunkCompleted::class);
+
+        // And the repair still happened (the test's premise depends on
+        // the job doing the work it would do on the non-chunked path).
+        $this->assertGreaterThan(0, $result->totalRowsUpdated);
     }
 }
