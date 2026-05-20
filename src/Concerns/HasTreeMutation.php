@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Concerns;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
@@ -102,6 +103,129 @@ trait HasTreeMutation
     public function saveAsRoot(): bool
     {
         return $this->makeRoot()->save();
+    }
+
+    /**
+     * Queue this node to land under $parent at the given position among
+     * its siblings on the next save(). One ergonomic entry point that
+     * picks between {@see appendToNode}, {@see prependToNode}, and
+     * {@see insertBeforeNode} based on the resolved index.
+     *
+     * Position semantics:
+     *
+     * | `$position`        | Resolves to                              |
+     * | ------------------ | ---------------------------------------- |
+     * | `'last'` (default) | `appendToNode($parent)`                  |
+     * | `'first'`          | `prependToNode($parent)`                 |
+     * | `0`                | `prependToNode($parent)`                 |
+     * | `$n` (1..count-1)  | `insertBeforeNode(siblings[$n])`         |
+     * | `$n >= count`      | `appendToNode($parent)`                  |
+     * | negative `$n`      | throws `LogicException`                  |
+     *
+     * The index is counted after self-excluding `$this` if it already
+     * lives under `$parent`, so "position N" means "end up at final
+     * index N" rather than "skip N other siblings".
+     *
+     * Same-parent reorders use this same call shape:
+     * `$node->moveTo($node->parent, $newIndex)`. There is no dedicated
+     * `moveAt(int)` helper.
+     *
+     * @throws LogicException
+     *                        When the position is invalid, `$parent` is unsaved, or the underlying primitive rejects the move.
+     * @throws ScopeViolationException
+     *                                 When `$parent` belongs to a different scope (multi-tree models).
+     */
+    public function moveTo(HasNestedSet $parent, int|string $position = 'last'): static
+    {
+        if (is_string($position)) {
+            return match ($position) {
+                'last' => $this->appendToNode($parent),
+                'first' => $this->prependToNode($parent),
+                default => throw new LogicException(
+                    "moveTo() string position must be 'first' or 'last'. Got '{$position}'."
+                ),
+            };
+        }
+
+        if ($position < 0) {
+            throw new LogicException("moveTo() int position must be non-negative. Got {$position}.");
+        }
+
+        if ($position === 0) {
+            return $this->prependToNode($parent);
+        }
+
+        if (! $parent instanceof Model || ! $parent->exists) {
+            throw new LogicException('moveTo() requires a saved parent model.');
+        }
+
+        $siblings = $this->orderedSiblingsUnder($parent);
+
+        if ($position >= $siblings->count()) {
+            return $this->appendToNode($parent);
+        }
+
+        $target = $siblings->get($position);
+
+        if ($target === null) {
+            throw new LogicException("moveTo() could not locate sibling at position {$position}.");
+        }
+
+        return $this->insertBeforeNode($target);
+    }
+
+    /**
+     * Queue this node to become an immediate left-sibling of $sibling.
+     * Ergonomic alias of {@see insertBeforeNode}.
+     *
+     * @throws LogicException
+     * @throws ScopeViolationException
+     */
+    public function moveBefore(HasNestedSet $sibling): static
+    {
+        return $this->insertBeforeNode($sibling);
+    }
+
+    /**
+     * Queue this node to become an immediate right-sibling of $sibling.
+     * Ergonomic alias of {@see insertAfterNode}.
+     *
+     * @throws LogicException
+     * @throws ScopeViolationException
+     */
+    public function moveAfter(HasNestedSet $sibling): static
+    {
+        return $this->insertAfterNode($sibling);
+    }
+
+    /**
+     * Children of $parent in lft order, with $this excluded so positional
+     * arithmetic resolves to a final index rather than counting siblings
+     * to skip. Built from $this->newQuery() (rather than $parent->children())
+     * so the generic stays static<>, no `instanceof` narrowing of the
+     * relation is needed, and the scope predicates come from $this — which
+     * are by construction the same as $parent's once we've checked
+     * scope-compatibility.
+     *
+     * @return Collection<int, static>
+     */
+    private function orderedSiblingsUnder(Model&HasNestedSet $parent): Collection
+    {
+        NestedSetScopeResolver::assertSameScope($this, $parent);
+
+        $query = $this->newQuery()
+            ->where($this->getParentIdName(), $this->keyOf($parent))
+            ->orderBy($this->getLftName());
+
+        foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+            $query->where($col, $value);
+        }
+
+        if ($this->exists) {
+            $query->whereKeyNot($this->getKey());
+        }
+
+        return $query->get()->values();
     }
 
     /**
