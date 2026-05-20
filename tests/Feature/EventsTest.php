@@ -103,6 +103,32 @@ final class EventsTest extends TestCase
         });
     }
 
+    public function test_fix_tree_with_anchor_carries_anchor_id(): void
+    {
+        // The whole-table fixTree() test above already pins anchorId=null.
+        // This is the per-subtree case where fixTree($anchor) is given a
+        // persisted node and the event's `anchorId` should be that
+        // node's key — exercising the
+        //   $rootId = is_int($key) || is_string($key) ? $key : null
+        // narrowing for the non-null branch. Without this case, the
+        // `$anchor instanceof Model` guard, the ternary, and the
+        // `||` between the type checks can all be mutated without any
+        // observable failure (the unanchored test still passes because
+        // its expected anchorId is null).
+        $root = $this->seedMotivatingTree();
+
+        Event::fake([FixTreeCompleted::class]);
+
+        Area::fixTree($root);
+
+        Event::assertDispatched(FixTreeCompleted::class, function (FixTreeCompleted $e) use ($root): bool {
+            $this->assertSame(Area::class, $e->modelClass);
+            $this->assertSame($this->rootIdOf($root), $e->anchorId);
+
+            return true;
+        });
+    }
+
     // ----------------------------------------------------------------
     // FixAggregatesCompleted (non-chunked + chunked end-of-loop)
     // ----------------------------------------------------------------
