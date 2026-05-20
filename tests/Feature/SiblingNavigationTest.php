@@ -41,6 +41,7 @@ final class SiblingNavigationTest extends TestCase
             ['id' => 4, 'name' => 'C',    'lft' => 6,  'rgt' => 7,  'depth' => 1, 'parent_id' => 1],
             ['id' => 5, 'name' => 'D',    'lft' => 8,  'rgt' => 9,  'depth' => 1, 'parent_id' => 1],
         ]);
+        $this->syncSequence('categories');
     }
 
     private function find(int $id): Category

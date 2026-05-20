@@ -6,6 +6,8 @@ namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
+use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -30,6 +32,7 @@ final class IsSiblingOfTest extends TestCase
             ['id' => 2, 'name' => 'A',    'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
             ['id' => 3, 'name' => 'B',    'lft' => 4, 'rgt' => 5, 'depth' => 1, 'parent_id' => 1],
         ]);
+        $this->syncSequence('categories');
 
         $a = Category::query()->findOrFail(2);
         $b = Category::query()->findOrFail(3);
@@ -46,6 +49,7 @@ final class IsSiblingOfTest extends TestCase
             ['id' => 3, 'name' => 'R2', 'lft' => 5,  'rgt' => 8,  'depth' => 0, 'parent_id' => null],
             ['id' => 4, 'name' => 'C2', 'lft' => 6,  'rgt' => 7,  'depth' => 1, 'parent_id' => 3],
         ]);
+        $this->syncSequence('categories');
 
         $c1 = Category::query()->findOrFail(2);
         $c2 = Category::query()->findOrFail(4);
@@ -144,5 +148,141 @@ final class IsSiblingOfTest extends TestCase
 
         $this->assertFalse($root->isSiblingOf($child));
         $this->assertFalse($child->isSiblingOf($root));
+    }
+
+    /**
+     * Pins the non-Model fallback in {@see HasNodeInspection::isSiblingOf()}.
+     *
+     * The scope-equality check guards on `$this instanceof Model &&
+     * $other instanceof Model` — both must be Models for
+     * `NestedSetScopeResolver::sameScope()` to run (its signature
+     * requires `Model&HasNestedSet` on both sides). When `$other` is a
+     * `HasNestedSet` stub that isn't a Model (e.g. unit-test
+     * doubles), the method must return parent_id equality without
+     * attempting to call `sameScope` — otherwise the call would crash
+     * with a type error at runtime.
+     *
+     * Without the test below the `&&` short-circuit could be silently
+     * relaxed to a single-side `instanceof` check (a mutation
+     * Infection has been seen to escape) without any existing test
+     * failing. This case is unreachable from the package's public
+     * surface today — every NodeTrait host is a Model — but the
+     * interface intentionally widens `$other` to `HasNestedSet`, so
+     * the safety net belongs in the test suite.
+     */
+    public function test_non_model_other_falls_through_to_parent_id_equality(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        // Stub: implements HasNestedSet but is NOT an Eloquent Model.
+        // Same parent_id as $root (both null).
+        $stub = new class implements HasNestedSet
+        {
+            public function getLft(): int
+            {
+                return 11;
+            }
+
+            public function getRgt(): int
+            {
+                return 12;
+            }
+
+            public function getDepth(): int
+            {
+                return 0;
+            }
+
+            public function getParentId(): ?int
+            {
+                return null;
+            }
+
+            public function getBounds(): NodeBounds
+            {
+                return new NodeBounds(11, 12, 0);
+            }
+
+            public function getLftName(): string
+            {
+                return 'lft';
+            }
+
+            public function getRgtName(): string
+            {
+                return 'rgt';
+            }
+
+            public function getDepthName(): string
+            {
+                return 'depth';
+            }
+
+            public function getParentIdName(): string
+            {
+                return 'parent_id';
+            }
+        };
+
+        // Same parent_id (null vs null) AND non-Model fallback path →
+        // true. If the && guard were relaxed and sameScope were
+        // called with the stub, the Model&HasNestedSet type hint
+        // would throw a TypeError — proving the guard is what kept
+        // this path safe.
+        $this->assertTrue($root->isSiblingOf($stub));
+
+        // Differing parent_id still short-circuits to false before
+        // the Model check — independent of the fallback branch.
+        $stubWithParent = new class implements HasNestedSet
+        {
+            public function getLft(): int
+            {
+                return 11;
+            }
+
+            public function getRgt(): int
+            {
+                return 12;
+            }
+
+            public function getDepth(): int
+            {
+                return 1;
+            }
+
+            public function getParentId(): int
+            {
+                return 999;
+            }
+
+            public function getBounds(): NodeBounds
+            {
+                return new NodeBounds(11, 12, 1);
+            }
+
+            public function getLftName(): string
+            {
+                return 'lft';
+            }
+
+            public function getRgtName(): string
+            {
+                return 'rgt';
+            }
+
+            public function getDepthName(): string
+            {
+                return 'depth';
+            }
+
+            public function getParentIdName(): string
+            {
+                return 'parent_id';
+            }
+        };
+
+        $this->assertFalse($root->isSiblingOf($stubWithParent));
     }
 }
