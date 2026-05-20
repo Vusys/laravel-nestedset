@@ -42,6 +42,22 @@ final class NodeBoundsTest extends TestCase
         $this->assertFalse($node->contains($node));
     }
 
+    public function test_does_not_contain_node_with_equal_lft(): void
+    {
+        $outer = new NodeBounds(lft: 1, rgt: 10, depth: 0);
+        $inner = new NodeBounds(lft: 1, rgt: 5, depth: 1);
+
+        $this->assertFalse($outer->contains($inner));
+    }
+
+    public function test_does_not_contain_node_with_equal_rgt(): void
+    {
+        $outer = new NodeBounds(lft: 1, rgt: 10, depth: 0);
+        $inner = new NodeBounds(lft: 5, rgt: 10, depth: 1);
+
+        $this->assertFalse($outer->contains($inner));
+    }
+
     public function test_does_not_contain_sibling(): void
     {
         $parent = new NodeBounds(lft: 1, rgt: 10, depth: 0);
