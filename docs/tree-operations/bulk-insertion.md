@@ -28,6 +28,31 @@ $electronics->wasRecentlyCreated;              // true
 $laptops->parent_id === $computers->getKey();  // true
 ```
 
+The returned array is in depth-first pre-order — the same walk order
+as `defaultOrder()` once the rows are persisted. Top-level entries
+come first; each entry is immediately followed by its descendants.
+
+## Seeding new roots (unscoped models)
+
+Passing `appendTo: null` on an **unscoped** model seeds the input as
+new root(s) — the package starts one past the current `MAX(rgt)` so
+the new trees never overlap existing ones. Useful for first-run
+fixtures or admin-imported batches that should each become their own
+top-level tree:
+
+```php
+[$site1, $site2] = Category::bulkInsertTree([
+    ['name' => 'Site 1', 'children' => [['name' => 'Home']]],
+    ['name' => 'Site 2'],
+]);
+
+$site1->isRoot();   // true
+$site2->isRoot();   // true
+```
+
+Scoped models reject `appendTo: null` with `ScopeViolationException` —
+the anchor is also where the scope-column values come from.
+
 Each row goes through a normal `save()`, so per-row `creating` /
 `saving` / `created` / `saved` events still fire, every cast applies,
 observers run, mass-assignment guards are respected. The only

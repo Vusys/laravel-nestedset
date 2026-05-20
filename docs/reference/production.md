@@ -24,6 +24,28 @@ Pair with the `nestedset.aggregate_locking` config flag — `'never'` is
 safe on a read-only path; the locking modes only matter for the write
 path.
 
+## MariaDB: disabling `split_materialized`
+
+The fresh-aggregate read path uses a derived-table JOIN on MariaDB so
+the subquery is materialised once per outer query rather than once per
+row. MariaDB's optimizer can convert that derived JOIN into a LATERAL
+DERIVED via `split_materialized`, which collapses the materialise-once
+advantage and runs ~3× slower in practice. `withMariaDbSplitMaterializedOff()`
+prepends a `SET STATEMENT optimizer_switch='split_materialized=off' FOR …`
+to the next compiled SQL — scoped to the one statement, no session-state
+mutation:
+
+```php
+Category::query()
+    ->withFreshAggregates()
+    ->withMariaDbSplitMaterializedOff()
+    ->get();
+```
+
+No-op on MySQL/PostgreSQL/SQLite — the `SET STATEMENT` prefix is
+MariaDB-specific syntax. Only reach for it if profiling shows the
+fresh-aggregate path running unexpectedly slow on MariaDB.
+
 ## Telemetry
 
 The package fires typed events on Laravel's event bus around its

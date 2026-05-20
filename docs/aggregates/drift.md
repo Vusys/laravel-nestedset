@@ -98,7 +98,11 @@ drift and writes nothing. Safe to fire defensively.
   that invalidate the stored extremum trigger a SELECT-then-UPDATE
   recompute. Cheap-skipped when the change couldn't have affected the
   extremum — but if you have a deep, wide tree with hot MIN/MAX
-  columns, expect occasional spikes.
+  columns, expect occasional spikes. The SELECT-then-UPDATE concurrency
+  behaviour is governed by
+  [`aggregate_locking`](../reference/config.html#aggregate_locking) —
+  default `'auto'` adds a row-level lock on backends that need it, the
+  cost of which scales with subtree size.
 
 See `tests/Feature/Aggregates/` for executable examples of every
 maintenance path.

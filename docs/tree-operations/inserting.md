@@ -130,6 +130,15 @@ copy you used as a target has stale `lft` / `rgt` values; the next
 mutation against that same instance must `->refresh()` first or risk
 inserting at the wrong slot.
 
+The asymmetry is deliberate: the **target** node is read fresh from
+the DB inside every mutation (the package owns that read), so a stale
+target instance can't cause wrong-slot inserts — but the **moving**
+node is the user's object and the package can't safely refresh it
+without clobbering pending in-memory changes you may want persisted.
+If you've held a reference to a parent / sibling across multiple
+mutations, refresh that reference; if you've only handed it to one
+`appendToNode(...)->save()`, you don't need to.
+
 ## Cross-tree moves
 
 `appendToNode` and friends accept any `HasNestedSet` of the same model

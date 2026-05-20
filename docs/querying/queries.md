@@ -61,6 +61,11 @@ Category::query()
 // → ['Electronics', 'Computers', 'Laptops']
 ```
 
+`ancestorsOf($bounds)` and `descendantsOf($bounds)` are one-word aliases
+for `whereAncestorOf` / `whereDescendantOf` — exposed so call sites that
+read as English (`Category::query()->ancestorsOf(...)`) can avoid the
+`where*` prefix. Same behaviour, same arguments.
+
 ## Roots, leaves, ordering
 
 ```php

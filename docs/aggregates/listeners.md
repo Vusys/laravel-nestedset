@@ -146,6 +146,39 @@ The companion column names must follow the `__sum` / `__count`
 convention — the auto-promotion always derives them from the display
 column name, so renaming them isn't supported.
 
+## Exclusive listener aggregates
+
+`exclusive: true` opts out of self-inclusion — a node's stored value
+holds the function's rollup over its **descendants only**. A leaf's
+exclusive aggregate is always the zero/null element for the function
+(0 for Sum/Count, `null` for Min/Max). Same semantic as
+[`exclusive: true` on SQL aggregates](recipes.html#inclusive-vs-exclusive--totals-including-and-below);
+the contribution per node still comes from `contribution()`.
+
+```php
+#[NestedSetAggregateListener(
+    column: 'descendants_weighted_power',
+    listener: WeightedPowerListener::class,
+    operation: AggregateFunction::Sum,
+    exclusive: true,
+)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+In the method-override form, call `->exclusive()` on the fluent builder
+before `->into()`:
+
+```php
+protected function nestedSetListenerAggregates(): array
+{
+    return [
+        ListenerAggregate::sum(WeightedPowerListener::class)
+            ->exclusive()
+            ->into('descendants_weighted_power'),
+    ];
+}
+```
+
 ## Maintenance
 
 Listener aggregates ride the same lifecycle hooks as SQL aggregates.
