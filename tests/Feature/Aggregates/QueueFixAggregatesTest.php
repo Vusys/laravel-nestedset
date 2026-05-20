@@ -222,4 +222,37 @@ final class QueueFixAggregatesTest extends TestCase
         $this->assertSame(500, $job->chunkSize);
         Queue::assertPushed(FixAggregatesJob::class, fn (FixAggregatesJob $j): bool => $j->chunkSize === 500);
     }
+
+    // ----------------------------------------------------------------
+    // displayName() — Horizon / failed-jobs UI label
+    //
+    // displayName composes the model class and an optional anchor-id
+    // suffix into a single string used by Horizon, the Telescope
+    // failed-jobs UI, and `php artisan queue:failed`. The two arms of
+    // the conditional (with / without anchorId) weren't pinned by any
+    // existing test, leaving the `=== null` Identical mutant and the
+    // ternary arm-swap mutant escaping in the master Infection run.
+    // ----------------------------------------------------------------
+
+    public function test_display_name_includes_anchor_id_suffix_when_set(): void
+    {
+        $job = new FixAggregatesJob(
+            modelClass: Area::class,
+            anchorId: 42,
+            chunkSize: null,
+        );
+
+        $this->assertSame('fixAggregates('.Area::class.'#42)', $job->displayName());
+    }
+
+    public function test_display_name_omits_suffix_when_anchor_id_is_null(): void
+    {
+        $job = new FixAggregatesJob(
+            modelClass: Area::class,
+            anchorId: null,
+            chunkSize: null,
+        );
+
+        $this->assertSame('fixAggregates('.Area::class.')', $job->displayName());
+    }
 }
