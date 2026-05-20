@@ -29,15 +29,6 @@ final class UuidPrimaryKeyTest extends TestCase
 {
     use InteractsWithTrees;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! DB::connection()->getSchemaBuilder()->hasTable('uuid_tags')) {
-            $this->markTestSkipped('uuid_tags table not created — migration ordering issue.');
-        }
-    }
-
     // ----------------------------------------------------------------
     // Inserts and moves work
     // ----------------------------------------------------------------

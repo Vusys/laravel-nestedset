@@ -30,15 +30,6 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class CustomPrimaryKeyTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! DB::connection()->getSchemaBuilder()->hasTable('tags')) {
-            $this->markTestSkipped('tags table not created — migration ordering issue.');
-        }
-    }
-
     // ----------------------------------------------------------------
     // Inserts and moves work
     // ----------------------------------------------------------------
