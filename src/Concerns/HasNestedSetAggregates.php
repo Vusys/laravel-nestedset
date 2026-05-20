@@ -2653,14 +2653,19 @@ trait HasNestedSetAggregates
         $repairResult = null;
         $closureFailed = false;
 
-        if ($isOutermost) {
-            EventDispatcher::dispatch(new DeferredMaintenanceStarting(
-                modelClass: static::class,
-                anchorId: self::anchorRootId($anchor),
-            ));
-        }
-
         try {
+            if ($isOutermost) {
+                // Dispatch inside the try so a throwing listener still
+                // hits the finally that decrements $deferredDepth.
+                // Without this, a thrown listener would leak the
+                // counter and disable aggregate maintenance for the
+                // rest of the process.
+                EventDispatcher::dispatch(new DeferredMaintenanceStarting(
+                    modelClass: static::class,
+                    anchorId: self::anchorRootId($anchor),
+                ));
+            }
+
             $closureStartNs = hrtime(true);
             $result = $work();
             $closureMs = (hrtime(true) - $closureStartNs) / 1_000_000;

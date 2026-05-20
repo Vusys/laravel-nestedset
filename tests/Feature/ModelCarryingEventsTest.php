@@ -540,6 +540,48 @@ final class ModelCarryingEventsTest extends TestCase
         Event::assertDispatchedTimes(DeferredMaintenanceStarting::class, 1);
     }
 
+    public function test_throwing_deferred_maintenance_listener_does_not_leak_depth(): void
+    {
+        $root = new Area(['name' => 'Root', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        // A listener that throws on the opening boundary would, before
+        // the fix, leak self::$deferredDepth and disable aggregate
+        // maintenance for the rest of the process. Run two consecutive
+        // wrappers — the second one's per-row aggregate hooks must
+        // still fire after the first one's listener throws.
+        Event::listen(DeferredMaintenanceStarting::class, function (): never {
+            throw new \RuntimeException('listener boom');
+        });
+
+        try {
+            Area::withDeferredAggregateMaintenance(function (): void {
+                // empty
+            }, $root);
+            $this->fail('expected the listener to propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('listener boom', $e->getMessage());
+        }
+
+        // Detach the throwing listener so the second wrapper's opening
+        // boundary doesn't blow up again — what we're testing is that
+        // the counter recovered, not that the listener stops throwing.
+        Event::forget(DeferredMaintenanceStarting::class);
+
+        // A normal create inside withDeferredAggregateMaintenance: the
+        // closing fixAggregates must run, proving the depth counter
+        // came back to zero.
+        Area::withDeferredAggregateMaintenance(function () use ($root): void {
+            $child = new Area(['name' => 'leaf', 'tickets' => 7]);
+            $child->appendToNode($root->refresh())->save();
+        }, $root);
+
+        $rolledUp = $root->refresh()->getAttribute('tickets_total');
+        $this->assertIsNumeric($rolledUp);
+        $this->assertSame(7, (int) $rolledUp);
+    }
+
     public function test_scope_violation_detected_fires_before_exception(): void
     {
         Event::fake([ScopeViolationDetected::class]);
