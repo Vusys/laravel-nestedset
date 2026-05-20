@@ -179,7 +179,7 @@ variants walk every tree across every scope. To render just one tree,
 pass the scope value:
 
 ```php
-MenuItem::toMermaidScope(menuId: 7);
+MenuItem::toMermaidScope(7);
 MenuItem::toAsciiTreeScope(7, new AsciiOptions(unicode: false));
 ```
 

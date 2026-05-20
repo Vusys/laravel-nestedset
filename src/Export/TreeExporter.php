@@ -328,7 +328,10 @@ final readonly class TreeExporter
         if (is_string($value)) {
             return $value;
         }
-        if (is_int($value) || is_float($value) || is_bool($value)) {
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if (is_int($value) || is_float($value)) {
             return (string) $value;
         }
         if ($value instanceof Stringable) {

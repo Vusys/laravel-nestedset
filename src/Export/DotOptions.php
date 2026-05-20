@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 final readonly class DotOptions
 {
+    private const VALID_DIRECTIONS = ['TB', 'LR', 'BT', 'RL'];
+
     /**
      * @param  'TB'|'LR'|'BT'|'RL'  $direction
      * @param  LabelClosure|null  $label
@@ -25,5 +27,13 @@ final readonly class DotOptions
         public bool $showId = false,
         public array $showAggregates = [],
         public bool $withTrashed = false,
-    ) {}
+    ) {
+        if (! in_array($direction, self::VALID_DIRECTIONS, true)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Invalid Graphviz rankdir "%s". Expected one of: %s.',
+                $direction,
+                implode(', ', self::VALID_DIRECTIONS),
+            ));
+        }
+    }
 }

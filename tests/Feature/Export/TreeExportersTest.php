@@ -10,6 +10,7 @@ use Vusys\NestedSet\Export\DotOptions;
 use Vusys\NestedSet\Export\JsonOptions;
 use Vusys\NestedSet\Export\MermaidOptions;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
 use Vusys\NestedSet\Tests\TestCase;
@@ -306,15 +307,18 @@ final class TreeExportersTest extends TestCase
 
     public function test_scope_export_filters_to_one_tree(): void
     {
-        $m1 = new MenuItem(['name' => 'M1-root', 'menu_id' => 1]);
+        $menu1 = Menu::create(['name' => 'Menu 1']);
+        $menu2 = Menu::create(['name' => 'Menu 2']);
+
+        $m1 = new MenuItem(['name' => 'M1-root', 'menu_id' => $menu1->id]);
         $m1->saveAsRoot();
-        $m1Child = new MenuItem(['name' => 'M1-child', 'menu_id' => 1]);
+        $m1Child = new MenuItem(['name' => 'M1-child', 'menu_id' => $menu1->id]);
         $m1Child->appendToNode($m1->refresh())->save();
 
-        $m2 = new MenuItem(['name' => 'M2-root', 'menu_id' => 2]);
+        $m2 = new MenuItem(['name' => 'M2-root', 'menu_id' => $menu2->id]);
         $m2->saveAsRoot();
 
-        $ascii = MenuItem::toAsciiTreeScope(1);
+        $ascii = MenuItem::toAsciiTreeScope($menu1->id);
 
         $this->assertStringContainsString('M1-root', $ascii);
         $this->assertStringContainsString('M1-child', $ascii);
@@ -391,6 +395,33 @@ final class TreeExportersTest extends TestCase
         $mermaid = $electronics->toMermaid(new MermaidOptions(showAggregates: ['products_total']));
 
         $this->assertStringContainsString('Electronics<br/>products_total: 23', $mermaid);
+    }
+
+    public function test_mermaid_options_rejects_invalid_direction(): void
+    {
+        // Reflection bypasses the static narrow ('TD'|'LR'|'BT'|'RL'), so
+        // the runtime guard is what's actually under test here.
+        $this->expectException(\InvalidArgumentException::class);
+
+        (new \ReflectionClass(MermaidOptions::class))->newInstance('XX');
+    }
+
+    public function test_dot_options_rejects_invalid_direction(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        (new \ReflectionClass(DotOptions::class))->newInstance('TD');
+    }
+
+    public function test_aggregate_boolean_renders_as_true_false_not_empty_string(): void
+    {
+        [$electronics] = $this->buildElectronicsTree();
+        $electronics->setAttribute('featured', false);
+
+        $mermaid = $electronics->toMermaid(new MermaidOptions(showAggregates: ['featured']));
+
+        $this->assertStringContainsString('featured: false', $mermaid);
+        $this->assertStringNotContainsString('featured: <br/>', $mermaid);
     }
 
     public function test_mermaid_label_with_newline_renders_as_br(): void

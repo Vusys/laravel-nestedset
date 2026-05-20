@@ -85,7 +85,7 @@ the duplicate counts. The aggregate-drift check is the same cost as one
 
 > **Visualise the damage.** When `countErrors()` returns non-zero,
 > `dd($root->toAsciiTree())` or `Category::toMermaidForest()` often
-> makes the misshape obvious at a glance. The exporters fold by
+> makes the damage obvious at a glance. The exporters fold by
 > `parent_id` and throw `CorruptTreeException` on cycles, so the output
 > matches what `fixTree()` would rebuild. See
 > [Tree Exporters](../querying/exporters.md).
