@@ -13,6 +13,7 @@ use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
@@ -313,6 +314,20 @@ trait HasNestedSetAggregates
                 $watchCols = array_unique(array_merge(
                     $definition->source !== null ? [$definition->source] : [],
                     $definition->filter->watchColumns(),
+                ));
+                if ($watchCols !== [] && $this->isDirty($watchCols)) {
+                    $this->capturedChainRecomputes[$definition->column] = $definition;
+                }
+
+                continue;
+            }
+
+            // Non-numeric kinds: any change to a contributing column
+            // triggers a full subtree recompute up the ancestor chain.
+            if (self::requiresChainRecompute($definition->function)) {
+                $watchCols = array_unique(array_merge(
+                    AggregateSqlEmitter::watchColumns($definition),
+                    $definition->filter?->watchColumns() ?? [],
                 ));
                 if ($watchCols !== [] && $this->isDirty($watchCols)) {
                     $this->capturedChainRecomputes[$definition->column] = $definition;
@@ -671,6 +686,7 @@ trait HasNestedSetAggregates
                 'source' => $definition->source ?? '',
                 'inclusive' => $definition->inclusive,
                 'filter' => $definition->filter,
+                'definition' => $definition,
             ];
         }
 
@@ -688,6 +704,27 @@ trait HasNestedSetAggregates
             softDeletedColumn: $this->softDeleteColumn(),
             idCol: $this->getKeyName(),
         );
+    }
+
+    /**
+     * True for aggregate kinds that always need a full subtree recompute
+     * on every mutation — no delta or cheap-skip fast path applies.
+     *
+     * Includes the four non-numeric kinds (DistinctCount / StringAgg /
+     * JsonAgg / JsonObjectAgg). MIN/MAX are also recompute-only but
+     * carry a cheap-skip filter on the previous extremum value, so
+     * they get their own captured-recompute branch instead of going
+     * through chainRecomputes.
+     */
+    private static function requiresChainRecompute(AggregateFunction $fn): bool
+    {
+        return match ($fn) {
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => true,
+            default => false,
+        };
     }
 
     /**
@@ -749,6 +786,13 @@ trait HasNestedSetAggregates
             // logic for this definition.
             if ($definition->filter instanceof FilterPredicate
                 && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                $chainRecomputes[$definition->column] = $definition;
+
+                continue;
+            }
+
+            // Non-numeric kinds: always full subtree recompute.
+            if (self::requiresChainRecompute($definition->function)) {
                 $chainRecomputes[$definition->column] = $definition;
 
                 continue;
@@ -924,6 +968,13 @@ trait HasNestedSetAggregates
             // predicate. Recompute the column on the ancestor chain.
             if ($definition->filter instanceof FilterPredicate
                 && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                $chainRecomputes[$definition->column] = $definition;
+
+                continue;
+            }
+
+            // Non-numeric kinds: full subtree recompute over the ancestor chain.
+            if (self::requiresChainRecompute($definition->function)) {
                 $chainRecomputes[$definition->column] = $definition;
 
                 continue;
@@ -1125,7 +1176,7 @@ trait HasNestedSetAggregates
             // via excludeBounds since the structural SQL hasn't run.
             $isRawFilter = $def->filter instanceof FilterPredicate
                 && $def->filter->getKind() === FilterPredicateKind::Raw;
-            if (! $def->inclusive || $isRawFilter) {
+            if (! $def->inclusive || $isRawFilter || self::requiresChainRecompute($def->function)) {
                 $chainRecomputes[$def->column] = $def;
             }
         }
@@ -1165,7 +1216,7 @@ trait HasNestedSetAggregates
             if ($def instanceof AggregateDefinition) {
                 $isRawFilter = $def->filter instanceof FilterPredicate
                     && $def->filter->getKind() === FilterPredicateKind::Raw;
-                if (! $def->inclusive || $isRawFilter) {
+                if (! $def->inclusive || $isRawFilter || self::requiresChainRecompute($def->function)) {
                     $chainRecomputes[$def->column] = $def;
                 }
             } elseif ($def instanceof ListenerAggregateDefinition) {
@@ -1468,6 +1519,12 @@ trait HasNestedSetAggregates
 
             if ($definition->filter instanceof FilterPredicate
                 && $definition->filter->getKind() === FilterPredicateKind::Raw) {
+                $chainRecomputes[$definition->column] = $definition;
+
+                continue;
+            }
+
+            if (self::requiresChainRecompute($definition->function)) {
                 $chainRecomputes[$definition->column] = $definition;
 
                 continue;
