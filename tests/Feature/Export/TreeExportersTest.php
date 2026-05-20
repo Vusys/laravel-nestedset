@@ -661,14 +661,16 @@ final class TreeExportersTest extends TestCase
         // Hash offset matters: substr(md5(...), 0, 8) vs substr(..., 1, 8)
         // produce different but both-valid-hex strings, so the regex test
         // can't tell them apart. Assert the exact computed value to pin
-        // the offset.
+        // the offset. Use a real UUID literal — Postgres types the
+        // uuid_tags.id column as UUID and rejects arbitrary strings.
+        $fixedUuid = '0192f6c3-1234-7abc-8def-0123456789ab';
         $root = new UuidTag(['name' => 'Root']);
-        $root->id = 'fixed-key-for-hash-test';
+        $root->id = $fixedUuid;
         $root->saveAsRoot();
 
         $mermaid = $root->refresh()->toMermaid();
 
-        $expected = 'n'.substr(md5('fixed-key-for-hash-test'), 0, 8);
+        $expected = 'n'.substr(md5($fixedUuid), 0, 8);
         $this->assertStringContainsString("{$expected}[\"Root\"]", $mermaid);
     }
 }
