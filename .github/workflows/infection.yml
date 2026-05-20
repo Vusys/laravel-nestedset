@@ -33,13 +33,18 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           # Infection's --git-diff-base needs the base branch fetched.
           fetch-depth: 0
+          # zizmor `artipacked`: this job uploads artifacts (PR diff
+          # comments via --logger-github), so leaving the default
+          # GITHUB_TOKEN persisted in .git/config risks leaking it
+          # into any artifact bundle that includes the .git directory.
+          persist-credentials: false
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # v2
         with:
           php-version: '8.4'
           extensions: mbstring, pdo_sqlite
@@ -54,7 +59,7 @@ jobs:
         run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.composer/cache/files
           key: composer-infection-${{ hashFiles('composer.json') }}
@@ -97,10 +102,10 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # v2
         with:
           php-version: '8.4'
           extensions: mbstring, pdo_sqlite
@@ -113,7 +118,7 @@ jobs:
         run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.composer/cache/files
           key: composer-infection-${{ hashFiles('composer.json') }}
@@ -147,7 +152,7 @@ jobs:
 
       - name: Upload Infection report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: infection-report-${{ github.run_id }}
           path: build/infection/
