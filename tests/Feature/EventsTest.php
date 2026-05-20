@@ -187,6 +187,57 @@ final class EventsTest extends TestCase
         });
     }
 
+    public function test_fix_aggregates_with_anchor_carries_anchor_id(): void
+    {
+        // Companion to the whole-table test above. `fixAggregates($anchor)`
+        // narrows the anchor's key into the event's `anchorId` field via
+        // the shared `anchorRootId()` helper. Without this case the
+        // narrowing's `instanceof Model` guard, the `||` between
+        // `is_int`/`is_string`, and the ternary can all be mutated
+        // without observable failure — the no-anchor path expects
+        // `anchorId === null` and would still pass.
+        $root = $this->seedMotivatingTree();
+
+        Event::fake([FixAggregatesCompleted::class]);
+
+        Area::fixAggregates($root);
+
+        Event::assertDispatched(FixAggregatesCompleted::class, function (FixAggregatesCompleted $e) use ($root): bool {
+            $this->assertSame(Area::class, $e->modelClass);
+            $this->assertSame($this->rootIdOf($root), $e->anchorId);
+
+            return true;
+        });
+    }
+
+    public function test_fix_aggregates_chunk_event_with_anchor_carries_anchor_id(): void
+    {
+        // Chunked variant: same narrowing applies to every chunk event
+        // and to the closing completion event in the chunked path. The
+        // existing chunk-event test never passes an anchor so the
+        // chunked call site of `anchorRootId()` is unrepresented. Both
+        // events are asserted here so the narrowing is verified on
+        // every chunk dispatch AND on the closing completion that
+        // fires after the loop.
+        $root = $this->seedMotivatingTree();
+
+        Event::fake([FixAggregatesChunkCompleted::class, FixAggregatesCompleted::class]);
+
+        Area::fixAggregates($root, chunkSize: 2);
+
+        Event::assertDispatched(FixAggregatesChunkCompleted::class, function (FixAggregatesChunkCompleted $e) use ($root): bool {
+            $this->assertSame($this->rootIdOf($root), $e->anchorId);
+
+            return true;
+        });
+
+        Event::assertDispatched(FixAggregatesCompleted::class, function (FixAggregatesCompleted $e) use ($root): bool {
+            $this->assertSame($this->rootIdOf($root), $e->anchorId);
+
+            return true;
+        });
+    }
+
     // ----------------------------------------------------------------
     // FixAggregatesJobDispatched
     // ----------------------------------------------------------------
