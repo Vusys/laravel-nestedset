@@ -1,25 +1,8 @@
 # vusys/laravel-nestedset
 
-[![Tests](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/Vusys/laravel-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-nestedset)
-[![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/tests.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
-[![assertions](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/assertions.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml)
-[![test LOC](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/test-ratio.json)](tests/)
-[![CI matrix](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/matrix.json)](.github/workflows/tests.yml)
-[![Bencher](https://img.shields.io/badge/Bencher-tracked-FD6F1B?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDMgN3YxMGw5IDUgOS01VjdaIi8+PC9zdmc+)](https://bencher.dev/perf/vusys-laravel-nestedset)
-[![Mutation testing](https://img.shields.io/endpoint?style=flat&url=https://badge-api.stryker-mutator.io/github.com/Vusys/laravel-nestedset/master)](https://dashboard.stryker-mutator.io/reports/github.com/Vusys/laravel-nestedset/master)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Vusys/laravel-nestedset/badge)](https://scorecard.dev/viewer/?uri=github.com/Vusys/laravel-nestedset)
-[![PHP](https://img.shields.io/badge/php-%5E8.3-777BB4?logo=php&logoColor=white)](composer.json)
-[![Laravel](https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel)](composer.json)
-[![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](phpstan.neon)
-[![Rector](https://img.shields.io/badge/Rector-passing-brightgreen.svg)](rector.php)
-[![Code Style: Pint](https://img.shields.io/badge/code%20style-Laravel%20Pint-FF2D20.svg?logo=laravel)](https://github.com/laravel/pint)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml/badge.svg)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml) [![codecov](https://codecov.io/gh/Vusys/laravel-nestedset/graph/badge.svg)](https://codecov.io/gh/Vusys/laravel-nestedset) [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/tests.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml) [![assertions](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/assertions.json)](https://github.com/Vusys/laravel-nestedset/actions/workflows/tests.yml) [![test LOC](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/test-ratio.json)](tests/) [![CI matrix](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Vusys/laravel-nestedset/badges/matrix.json)](.github/workflows/tests.yml) [![Bencher](https://img.shields.io/badge/Bencher-tracked-FD6F1B?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDMgN3YxMGw5IDUgOS01VjdaIi8+PC9zdmc+)](https://bencher.dev/perf/vusys-laravel-nestedset) [![Mutation testing](https://img.shields.io/endpoint?style=flat&url=https://badge-api.stryker-mutator.io/github.com/Vusys/laravel-nestedset/master)](https://dashboard.stryker-mutator.io/reports/github.com/Vusys/laravel-nestedset/master) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Vusys/laravel-nestedset/badge)](https://scorecard.dev/viewer/?uri=github.com/Vusys/laravel-nestedset) [![PHP](https://img.shields.io/badge/php-%5E8.3-777BB4?logo=php&logoColor=white)](composer.json) [![Laravel](https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel)](composer.json) [![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](phpstan.neon) [![Rector](https://img.shields.io/badge/Rector-passing-brightgreen.svg)](rector.php) [![Code Style: Pint](https://img.shields.io/badge/code%20style-Laravel%20Pint-FF2D20.svg?logo=laravel)](https://github.com/laravel/pint) [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A modern Laravel implementation of the nested-set model for hierarchical
-data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations,
-multi-tree scoping, soft-delete cascade, live aggregate roll-ups, and an
-opinionated repair toolkit.
+A modern Laravel implementation of the nested-set model for hierarchical data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations, multi-tree scoping, soft-delete cascade, live aggregate roll-ups, and an opinionated repair toolkit.
 
 ```php
 use App\Models\Category;
@@ -40,8 +23,7 @@ $root->descendants()->get();         // collection containing $child
 $root->refresh()->getSubtreeSize();  // 2  (self + descendants)
 ```
 
-Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX
-roll-ups are maintained automatically as the tree changes:
+Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX roll-ups are maintained automatically as the tree changes:
 
 ```php
 use Illuminate\Database\Eloquent\Model;
@@ -73,15 +55,9 @@ Category::query()->withFreshAggregates()->get();   // ad-hoc correlated recomput
 
 ## Why nested set?
 
-The nested-set encoding stores `lft` and `rgt` integers on every node so any
-subtree, ancestor chain, or descendant set is a single `BETWEEN` query — no
-recursive CTEs, no N+1 loops. The price is that mutations (insert / move /
-delete) have to shift many rows to keep the lft/rgt sequence dense, so it's
-best suited to **read-heavy hierarchies**: category trees, menu structures,
-org charts, comment threads.
+The nested-set encoding stores `lft` and `rgt` integers on every node so any subtree, ancestor chain, or descendant set is a single `BETWEEN` query — no recursive CTEs, no N+1 loops. The price is that mutations (insert / move / delete) have to shift many rows to keep the lft/rgt sequence dense, so it's best suited to **read-heavy hierarchies**: category trees, menu structures, org charts, comment threads.
 
-This package executes every shift as a single `CASE WHEN UPDATE`, so even a
-subtree move that touches thousands of rows is one round trip.
+This package executes every shift as a single `CASE WHEN UPDATE`, so even a subtree move that touches thousands of rows is one round trip.
 
 ## Installation
 
@@ -89,8 +65,7 @@ subtree move that touches thousands of rows is one round trip.
 composer require vusys/laravel-nestedset
 ```
 
-The service provider auto-registers Blueprint macros and registers a
-publishable config file:
+The service provider auto-registers Blueprint macros and registers a publishable config file:
 
 ```bash
 php artisan vendor:publish \
@@ -98,8 +73,7 @@ php artisan vendor:publish \
     --tag=nestedset-config
 ```
 
-See the [Installation guide](https://vusys.github.io/laravel-nestedset/getting-started/installation.html)
-for the rest of the setup (migration macros, model trait, scoped trees).
+See the [Installation guide](https://vusys.github.io/laravel-nestedset/getting-started/installation.html) for the rest of the setup (migration macros, model trait, scoped trees).
 
 ## Documentation
 
@@ -112,8 +86,7 @@ Full documentation lives at **<https://vusys.github.io/laravel-nestedset/>**.
 - **Maintenance** — [Tree Repair](https://vusys.github.io/laravel-nestedset/maintenance/fix-tree.html) · [Repairing Aggregates](https://vusys.github.io/laravel-nestedset/maintenance/fix-aggregates.html) · [Corruption Reference](https://vusys.github.io/laravel-nestedset/maintenance/corruption.html)
 - **Reference** — [Configuration](https://vusys.github.io/laravel-nestedset/reference/config.html) · [Testing Helpers](https://vusys.github.io/laravel-nestedset/reference/testing.html) · [Transactions](https://vusys.github.io/laravel-nestedset/reference/transactions.html) · [Production Notes](https://vusys.github.io/laravel-nestedset/reference/production.html) · [vs. kalnoy/nestedset](https://vusys.github.io/laravel-nestedset/reference/comparison.html)
 
-The site is built from the markdown in [`docs/`](docs/) — if you spot an
-error, edit the source and open a PR.
+The site is built from the markdown in [`docs/`](docs/) — if you spot an error, edit the source and open a PR.
 
 ## Contributing
 

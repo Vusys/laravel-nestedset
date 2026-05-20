@@ -1,8 +1,6 @@
 # Inspection
 
-Reading-only methods that answer "where am I in the tree?" without
-firing any extra queries — they all derive from the row's stored
-`lft` / `rgt` / `depth` / `parent_id` values.
+Reading-only methods that answer "where am I in the tree?" without firing any extra queries — they all derive from the row's stored `lft` / `rgt` / `depth` / `parent_id` values.
 
 For the examples below, assume the [Category tree from Tree Queries](queries.html):
 
@@ -47,10 +45,7 @@ $unplaced->isPlacedInTree();    // false  — Category::create() without
 
 ## Subtree size
 
-`getSubtreeSize()` returns the raw `rgt - lft + 1` interval width — two
-slots per node, so a leaf is `2` and a subtree of `N` nodes is `2 * N`.
-`getDescendantCount()` is the more useful "count of strict descendants"
-view, derived as `(rgt - lft - 1) / 2`.
+`getSubtreeSize()` returns the raw `rgt - lft + 1` interval width — two slots per node, so a leaf is `2` and a subtree of `N` nodes is `2 * N`. `getDescendantCount()` is the more useful "count of strict descendants" view, derived as `(rgt - lft - 1) / 2`.
 
 ```php
 $electronics->getSubtreeSize();     // 12   (rgt - lft + 1 = 12 - 1 + 1)
@@ -59,21 +54,15 @@ $laptops->getSubtreeSize();         // 2
 $laptops->getDescendantCount();     // 0
 ```
 
-> `getNodeHeight()` is the legacy name; it still works (it delegates
-> to `getSubtreeSize()`) but is deprecated — the old name suggested
-> tree-theory height (max depth of a descendant) but the method
-> always returned the lft/rgt slot count.
+> `getNodeHeight()` is the legacy name; it still works (it delegates to `getSubtreeSize()`) but is deprecated — the old name suggested tree-theory height (max depth of a descendant) but the method always returned the lft/rgt slot count.
 
 Both are pure arithmetic on the row's columns — they cost nothing.
 
 ## NodeBounds — inspection without a model
 
-When you have just the bounds (e.g. cached from elsewhere) and not a
-hydrated row, the same primitives live on `NodeBounds`:
+When you have just the bounds (e.g. cached from elsewhere) and not a hydrated row, the same primitives live on `NodeBounds`:
 
-`contains()` and `depthDelta()` both take another `NodeBounds`, not a
-model — call `->getBounds()` on the other side if you have a hydrated
-row in hand:
+`contains()` and `depthDelta()` both take another `NodeBounds`, not a model — call `->getBounds()` on the other side if you have a hydrated row in hand:
 
 ```php
 $bounds = $electronics->getBounds();    // readonly NodeBounds
@@ -85,5 +74,4 @@ $bounds->depthDelta($computers->getBounds());   // 1
 $bounds->depthDelta($electronics->getBounds()); // 0     — same node
 ```
 
-`contains()` is the engine behind `whereDescendantOf` — the same
-interval-test, just in PHP rather than SQL.
+`contains()` is the engine behind `whereDescendantOf` — the same interval-test, just in PHP rather than SQL.

@@ -13,6 +13,4 @@ $category->restore();   // restores only descendants stamped with that same
                         // deleted_at — independent soft-deletes coexist
 ```
 
-A descendant that was independently trashed before the parent gets a
-different `deleted_at` and is left alone when the parent restores; restore
-it separately to bring it back.
+A descendant that was independently trashed before the parent gets a different `deleted_at` and is left alone when the parent restores; restore it separately to bring it back.

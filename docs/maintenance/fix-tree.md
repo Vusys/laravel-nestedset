@@ -1,7 +1,6 @@
 # Tree Repair
 
-Production tables get corrupted — failed migrations, manual SQL surgery,
-bugs in old code. The repair toolkit lets you validate and rebuild:
+Production tables get corrupted — failed migrations, manual SQL surgery, bugs in old code. The repair toolkit lets you validate and rebuild:
 
 ```php
 Category::isBroken();                       // bool
@@ -12,9 +11,7 @@ Category::fixTree();                        // rebuilds lft/rgt/depth from paren
 // → TreeFixResult { nodesUpdated: 15, errors: [...counts after repair...] }
 ```
 
-On a scoped model, an anchor node is required so the repair stays inside
-one tree (this prevents accidental full-table walks on multi-million-row
-forests):
+On a scoped model, an anchor node is required so the repair stays inside one tree (this prevents accidental full-table walks on multi-million-row forests):
 
 ```php
 MenuItem::isBroken();                       // ScopeViolationException — no anchor
@@ -25,10 +22,7 @@ MenuItem::fixTree($anchor);                 // repair one menu's tree
 
 ## What gets corrupted, what's auto-fixable, and how to avoid it
 
-The package treats **`parent_id` as the source of truth**. `fixTree()`
-rebuilds `lft`/`rgt`/`depth` from a `parent_id` walk, so as long as
-`parent_id` describes the tree you actually want, every other column is
-recoverable.
+The package treats **`parent_id` as the source of truth**. `fixTree()` rebuilds `lft`/`rgt`/`depth` from a `parent_id` walk, so as long as `parent_id` describes the tree you actually want, every other column is recoverable.
 
 | Corruption | Detected by `countErrors()`? | Repaired by `fixTree()`? | Typical cause |
 | --- | --- | --- | --- |
@@ -38,43 +32,20 @@ recoverable.
 | `parent_id` cycles | ❌ — not surfaced by `countErrors()` | ❌ — cycle members are silently skipped | Raw `UPDATE` on `parent_id` that bypassed Eloquent guards. |
 | Aggregate drift (stored `articles_total` ≠ computed) | ✅ via `aggregateErrors()` | ✅ via `fixAggregates()` | Raw `UPDATE` on the source column. |
 
-**Best practice in one rule:** mutate trees only through Eloquent on a
-`NodeTrait` model. Every `appendToNode`/`prependToNode`/`insertBeforeNode`/
-`insertAfterNode`/`makeRoot`/`delete`/`forceDelete`/`restore` call is
-wrapped in a transaction and maintains every invariant. Most of the
-corruption categories above are reachable only by bypassing that surface.
+**Best practice in one rule:** mutate trees only through Eloquent on a `NodeTrait` model. Every `appendToNode`/`prependToNode`/`insertBeforeNode`/ `insertAfterNode`/`makeRoot`/`delete`/`forceDelete`/`restore` call is wrapped in a transaction and maintains every invariant. Most of the corruption categories above are reachable only by bypassing that surface.
 
-See [Corruption Reference](corruption.html) for the full taxonomy with
-worked recovery recipes, diagnostic SQL for finding cycles, and
-`tests/Feature/Corruption/` for executable examples of every category.
+See [Corruption Reference](corruption.html) for the full taxonomy with worked recovery recipes, diagnostic SQL for finding cycles, and `tests/Feature/Corruption/` for executable examples of every category.
 
 ## Limitations
 
 ### `fixAggregates()` assumes a structurally-sound tree
 
-The fresh-aggregate read path relies on the nested-set invariant
-(`i.lft >= o.lft AND i.lft <= o.rgt` is equivalent to "i is a
-descendant of o" only when every row's `rgt` is consistent with its
-`lft`). Running `fixAggregates()` on a tree with `invalid_bounds`
-or `duplicate_lft`/`duplicate_rgt` errors can produce stored
-aggregates that disagree with what a healthy tree would compute.
+The fresh-aggregate read path relies on the nested-set invariant (`i.lft >= o.lft AND i.lft <= o.rgt` is equivalent to "i is a descendant of o" only when every row's `rgt` is consistent with its `lft`). Running `fixAggregates()` on a tree with `invalid_bounds` or `duplicate_lft`/`duplicate_rgt` errors can produce stored aggregates that disagree with what a healthy tree would compute.
 
-The package's `fixTree()` runs `fixAggregates()` internally **after**
-structural repair, so the recommended recovery order is the one
-`fixTree()` enforces: structure first, aggregates second. Don't call
-`fixAggregates()` standalone on a tree you know is structurally
-broken.
+The package's `fixTree()` runs `fixAggregates()` internally **after** structural repair, so the recommended recovery order is the one `fixTree()` enforces: structure first, aggregates second. Don't call `fixAggregates()` standalone on a tree you know is structurally broken.
 
 ### `fixTree($anchor)` rebuilds only the anchor's subtree
 
-When you pass an anchor to `fixTree()`, the rebuild walks down from
-that anchor using `parent_id` and reassigns `lft`/`rgt`/`depth` for
-every reachable descendant. Rows **outside** the anchor's subtree
-are untouched.
+When you pass an anchor to `fixTree()`, the rebuild walks down from that anchor using `parent_id` and reassigns `lft`/`rgt`/`depth` for every reachable descendant. Rows **outside** the anchor's subtree are untouched.
 
-If the anchor's subtree was corrupted in a way that changed its
-total size (e.g. orphans were force-deleted leaving phantom gaps,
-or descendants were added without `rgt`-shifting the ancestors),
-the rebuilt subtree may overlap surrounding rows in the same scope.
-In that case, fall back to the unanchored `fixTree()` which
-rebuilds every row in scope from `parent_id`.
+If the anchor's subtree was corrupted in a way that changed its total size (e.g. orphans were force-deleted leaving phantom gaps, or descendants were added without `rgt`-shifting the ancestors), the rebuilt subtree may overlap surrounding rows in the same scope. In that case, fall back to the unanchored `fixTree()` which rebuilds every row in scope from `parent_id`.
