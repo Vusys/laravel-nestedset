@@ -61,6 +61,11 @@ Category::query()
 // → ['Electronics', 'Computers', 'Laptops']
 ```
 
+`ancestorsOf($bounds)` and `descendantsOf($bounds)` are one-word aliases
+for `whereAncestorOf` / `whereDescendantOf` — exposed so call sites that
+read as English (`Category::query()->ancestorsOf(...)`) can avoid the
+`where*` prefix. Same behaviour, same arguments.
+
 ## Roots, leaves, ordering
 
 ```php
@@ -69,6 +74,13 @@ Category::query()->whereIsRoot()->pluck('name');
 
 Category::query()->whereIsLeaf()->pluck('name');
 // → ['Laptops', 'Desktops', 'Android', 'Fiction', 'Non-fiction']
+
+// leaves() is a one-word alias for whereIsLeaf().
+Category::query()->leaves()->pluck('name');
+
+// withoutRoot() excludes roots — the inverse of whereIsRoot().
+Category::query()->withoutRoot()->pluck('name');
+// → ['Computers', 'Laptops', 'Desktops', 'Phones', 'Android', 'Fiction', 'Non-fiction']
 
 // One-shot first-root lookup — sugar for whereIsRoot()->first():
 Category::query()->root();   // ?Category — first root by query order, or null if none
@@ -122,3 +134,25 @@ Category::query()
     ->defaultOrder()
     ->paginate(20);
 ```
+
+## Fresh aggregate reads
+
+When a model declares aggregate columns (see
+[Aggregates](../aggregates/overview.html)), the builder exposes
+`withFreshAggregates()` to re-compute them per outer row via a
+correlated subquery — useful for drift detection and as the
+authoritative read on hot paths where you don't trust stored values.
+
+```php
+Category::query()
+    ->withFreshAggregates()                              // all declared aggregates
+    ->get();
+
+Category::query()
+    ->withFreshAggregates(['tickets_total'])             // narrow to one column
+    ->get();
+```
+
+See [Reading Aggregates](../aggregates/reading.html) for the
+full contract and [Production Notes](../reference/production.html#routing-fresh-aggregate-reads-to-a-read-replica)
+for routing these reads to a read replica.

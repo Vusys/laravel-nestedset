@@ -20,6 +20,20 @@ Three filter forms:
 | Equality | `filter: ['col' => value, ...]` | All listed columns must match |
 | Not-null | `filterNotNull: 'col'` | `col IS NOT NULL` |
 | Raw SQL | `filterRaw: 'active = 1'`, `filterRawWatches: ['active']` | Arbitrary SQL predicate |
+| Raw SQL, no columns | `filterRaw: '1 = 1'`, `filterRawNoColumnDependencies: true` | Raw predicate that references no columns at all |
+
+`filterRawWatches` must list **every** column the raw SQL references —
+delta maintenance uses the list to decide whether a write could have
+flipped a row in or out of the filter. Omit a referenced column and the
+stored aggregate silently drifts; the registry validates this at boot
+time, so a missing entry surfaces as a startup
+`AggregateConfigurationException` rather than as runtime corruption.
+
+If the predicate genuinely references no columns at all
+(`'1 = 1'`, `'NOW() > "2000-01-01"'`, feature-flag-driven constants),
+set `filterRawNoColumnDependencies: true` to opt out of the watches
+requirement explicitly. The empty-watches case is the footgun the
+guard exists to remove — silent defaults aren't an option here.
 
 The fluent builder equivalents:
 

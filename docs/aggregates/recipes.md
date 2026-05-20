@@ -161,7 +161,7 @@ $rows = Project::query()
     ->withFreshAggregates([
         'p1_count'   => Aggregate::count()->filter(['priority' => 1]),
         'recent_sum' => Aggregate::sum('amount')
-            ->filterRaw('created_at >= CURRENT_DATE - INTERVAL 30 DAY'),
+            ->filterRaw('created_at >= CURRENT_DATE - INTERVAL 30 DAY', []),
     ])
     ->get();
 ```
@@ -169,6 +169,14 @@ $rows = Project::query()
 `filterRaw()` inlines its SQL verbatim — there is no parameter binding,
 so `?` placeholders are emitted literally. Pass only trusted constants
 written into the predicate; never user input.
+
+The second argument to `filterRaw()` is the `$watches` list — required
+on the fluent factory (no default). For declared aggregates the
+registry's boot-time validation enforces that this list is populated
+or that you opt out via `filterRawNoColumnDependencies: true`; ad-hoc
+aggregates skip that validation since they have no boot pass, but the
+signature still requires the array. Pass `[]` for read-only / one-shot
+queries where maintenance doesn't apply.
 
 The returned models have `p1_count` and `recent_sum` as computed
 attributes. Nothing's persisted; subsequent reads pay the

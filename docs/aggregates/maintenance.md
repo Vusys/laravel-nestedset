@@ -11,9 +11,12 @@ Aggregates ride the package's existing lifecycle events:
 | Soft-delete restore       | delta re-add to current chain             | 1            |
 
 MIN/MAX use a SELECT-then-UPDATE recompute path when the change may
-have invalidated the stored extremum — controlled by the
-`nestedset.aggregate_locking` config flag (`'auto'` / `'always'` /
-`'never'`; see [Configuration](../reference/config.html)).
+have invalidated the stored extremum — the same path applies to
+raw-filter columns whose `filterRawWatches` columns dirty on save.
+Concurrency between the SELECT and UPDATE is governed by the
+`nestedset.aggregate_locking` config flag (`'auto'` /
+`'always'` / `'never'`; see
+[Configuration → aggregate_locking](../reference/config.html#aggregate_locking)).
 
 ## Integrity tooling
 
@@ -42,6 +45,26 @@ $result->aggregatesFixed;    // AggregateFixResult — null on no-aggregate mode
 
 Scoped models require an anchor on `aggregateErrors`,
 `aggregatesAreBroken`, and `fixAggregates` (same as `fixTree`).
+
+## Observability
+
+Aggregate maintenance fires typed events on Laravel's event bus around
+its meaningful operations. Wire them to your metrics / errors backend:
+
+| Event | Fires when |
+|---|---|
+| `FixAggregatesCompleted` | `Model::fixAggregates()` finishes (sync, single-shot or chunked) |
+| `FixAggregatesChunkCompleted` | per chunk in sync chunked + per dispatch in queued chunked |
+| `FixAggregatesJobDispatched` | `Model::queueFixAggregates()` hands a job to the dispatcher |
+| `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair |
+| `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks — original is rethrown, but observers see the failure |
+
+All event classes live under `Vusys\NestedSet\Events\` and are readonly
+value objects. See
+[Production Notes → Telemetry](../reference/production.html#telemetry)
+for example wirings and a note about `AggregateMaintenanceFailed`'s
+`$exception` field not serialising cleanly across queue drivers. Set
+`nestedset.events_enabled => false` to silence every firing site.
 
 ## Adding aggregates to an existing model
 

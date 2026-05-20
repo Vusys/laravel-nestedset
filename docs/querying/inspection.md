@@ -36,6 +36,13 @@ $laptops->isSiblingOf($desktops);         // true   — same parent
 $laptops->isSiblingOf($android);          // false
 
 $node->hasMoved();              // true after a mutation this request
+
+$laptops->isPlacedInTree();     // true   — has been placed (lft / rgt > 0)
+$unplaced = new Category(['name' => 'Pending']);
+$unplaced->isPlacedInTree();    // false  — Category::create() without
+                                //          appendToNode/makeRoot leaves
+                                //          lft = rgt = 0; save() would throw
+                                //          UnplacedNodeException
 ```
 
 ## Subtree size
@@ -64,14 +71,18 @@ Both are pure arithmetic on the row's columns — they cost nothing.
 When you have just the bounds (e.g. cached from elsewhere) and not a
 hydrated row, the same primitives live on `NodeBounds`:
 
+`contains()` and `depthDelta()` both take another `NodeBounds`, not a
+model — call `->getBounds()` on the other side if you have a hydrated
+row in hand:
+
 ```php
 $bounds = $electronics->getBounds();    // readonly NodeBounds
 
-$bounds->height();                       // 6
-$bounds->contains($laptops);             // true — strict containment
-$bounds->depthDelta($laptops);           // 2     — laptops is 2 levels below
-$bounds->depthDelta($computers);         // 1
-$bounds->depthDelta($electronics);       // 0     — same node
+$bounds->height();                              // 12  (rgt - lft + 1)
+$bounds->contains($laptops->getBounds());       // true — strict containment
+$bounds->depthDelta($laptops->getBounds());     // 2     — laptops is 2 levels below
+$bounds->depthDelta($computers->getBounds());   // 1
+$bounds->depthDelta($electronics->getBounds()); // 0     — same node
 ```
 
 `contains()` is the engine behind `whereDescendantOf` — the same

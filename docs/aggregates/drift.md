@@ -35,10 +35,14 @@ Category::aggregatesAreBroken();  // bool
 **Repair** either synchronously or asynchronously:
 
 ```php
-// Sync — runs in the current process, returns when done.
-Category::fixAggregates();
+// Sync — runs in the current process, returns AggregateFixResult.
+$result = Category::fixAggregates();
+$result->totalRowsUpdated;     // int — across every aggregate column
+$result->perColumn;            // array<string, int> — drift per column
+$result->hasDrift();           // bool — true if any row was updated
 
 // Sync + chunked + progress — for CLI commands on large tables.
+// $r is an AggregateFixResult for the chunk; $i is the 0-indexed chunk number.
 Category::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
     echo "Chunk {$i}: {$r->totalRowsUpdated} rows\n";
 });
@@ -46,6 +50,18 @@ Category::fixAggregates(chunkSize: 1_000, onChunk: function ($r, $i) {
 // Async — hands the repair to a Laravel queue worker. Self-redispatches
 // per chunk; idempotent if run twice.
 Category::queueFixAggregates(chunkSize: 1_000);
+```
+
+**Scoped models require an anchor.** For multi-tree models declared
+with `#[NestedSetScope]`, every repair entry point
+(`aggregateErrors`, `aggregatesAreBroken`, `fixAggregates`,
+`queueFixAggregates`) takes an `?HasNestedSet $anchor` as its first
+argument and throws `ScopeViolationException` if you omit it — repair
+stays inside a single tree, never walks the whole partitioned table.
+
+```php
+MenuItem::fixAggregates($menuRoot);
+MenuItem::queueFixAggregates($menuRoot, chunkSize: 1_000);
 ```
 
 **Recommended mitigation pattern for workloads that mix Eloquent and
@@ -82,7 +98,11 @@ drift and writes nothing. Safe to fire defensively.
   that invalidate the stored extremum trigger a SELECT-then-UPDATE
   recompute. Cheap-skipped when the change couldn't have affected the
   extremum — but if you have a deep, wide tree with hot MIN/MAX
-  columns, expect occasional spikes.
+  columns, expect occasional spikes. The SELECT-then-UPDATE concurrency
+  behaviour is governed by
+  [`aggregate_locking`](../reference/config.html#aggregate_locking) —
+  default `'auto'` adds a row-level lock on backends that need it, the
+  cost of which scales with subtree size.
 
 See `tests/Feature/Aggregates/` for executable examples of every
 maintenance path.
