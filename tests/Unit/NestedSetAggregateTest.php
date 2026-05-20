@@ -83,7 +83,14 @@ final class NestedSetAggregateTest extends TestCase
     public function test_rejects_declaration_with_two_functions_at_once(): void
     {
         $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('multiple aggregate functions declared');
+        // The message must list the *function names* that were declared
+        // (`sum`, `max`) so the user can find the conflict, not the
+        // source columns / values that were passed alongside them. This
+        // assertion guards `implode(', ', array_keys($declared))` —
+        // dropping the `array_keys` wrapper would join the values
+        // (here both 'tickets') instead, and a substring-only assertion
+        // wouldn't notice.
+        $this->expectExceptionMessageMatches('/\bsum\b.*\bmax\b|\bmax\b.*\bsum\b/');
 
         (new NestedSetAggregate(
             column: 'tickets_total',
