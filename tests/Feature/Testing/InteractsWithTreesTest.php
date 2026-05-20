@@ -530,4 +530,139 @@ final class InteractsWithTreesTest extends TestCase
         $error = $this->expectFailure(fn () => $this->assertAggregateMatchesFresh($a1, 'tickets_min'));
         $this->assertStringContainsString('tickets_min', $error->getMessage());
     }
+
+    // ----------------------------------------------------------------
+    // Custom-message propagation
+    //
+    // Every assertion accepts an optional `$message` argument that
+    // overrides the default failure message. The implementation uses
+    // `$message !== '' ? $message : sprintf(...)`. The default-message
+    // path is exercised by the negative tests above; these tests
+    // exercise the *custom-message* path — without them, the
+    // `$message !== ''` Identical check and the surrounding ternary
+    // can both be mutated without observable failure.
+    //
+    // The fixed token "CUSTOM_FAIL_TOKEN_<assertion>" makes each
+    // failure traceable to its source; the helper's default message
+    // does not contain that token.
+    // ----------------------------------------------------------------
+
+    public function test_assert_is_root_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $a = Area::query()->where('name', 'A')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertIsRoot($a, 'CUSTOM_FAIL_TOKEN_isRoot'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isRoot', $error->getMessage());
+    }
+
+    public function test_assert_is_leaf_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $a = Area::query()->where('name', 'A')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertIsLeaf($a, 'CUSTOM_FAIL_TOKEN_isLeaf'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isLeaf', $error->getMessage());
+    }
+
+    public function test_assert_is_not_leaf_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $b = Area::query()->where('name', 'B')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertIsNotLeaf($b, 'CUSTOM_FAIL_TOKEN_isNotLeaf'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isNotLeaf', $error->getMessage());
+    }
+
+    public function test_assert_is_child_of_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $root = Area::query()->where('name', 'Root')->firstOrFail();
+        $a1 = Area::query()->where('name', 'A1')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertIsChildOf($a1, $root, 'CUSTOM_FAIL_TOKEN_isChildOf'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isChildOf', $error->getMessage());
+    }
+
+    public function test_assert_is_descendant_of_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $a = Area::query()->where('name', 'A')->firstOrFail();
+        $b = Area::query()->where('name', 'B')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertIsDescendantOf($a, $b, 'CUSTOM_FAIL_TOKEN_isDescendantOf'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isDescendantOf', $error->getMessage());
+    }
+
+    public function test_assert_is_ancestor_of_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $a1 = Area::query()->where('name', 'A1')->firstOrFail();
+        $root = Area::query()->where('name', 'Root')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertIsAncestorOf($a1, $root, 'CUSTOM_FAIL_TOKEN_isAncestorOf'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isAncestorOf', $error->getMessage());
+    }
+
+    public function test_assert_has_descendants_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $root = Area::query()->where('name', 'Root')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertHasDescendants($root, 999, 'CUSTOM_FAIL_TOKEN_hasDescendants'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_hasDescendants', $error->getMessage());
+    }
+
+    public function test_assert_has_children_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        $root = Area::query()->where('name', 'Root')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertHasChildren($root, 999, 'CUSTOM_FAIL_TOKEN_hasChildren'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_hasChildren', $error->getMessage());
+    }
+
+    public function test_assert_aggregate_matches_fresh_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        // Drift the stored aggregate so the assertion will fail.
+        DB::table('areas')->where('name', 'Root')->update(['tickets_total' => 0]);
+        $root = Area::query()->where('name', 'Root')->firstOrFail();
+
+        $error = $this->expectFailure(fn () => $this->assertAggregateMatchesFresh($root, 'tickets_total', 'CUSTOM_FAIL_TOKEN_aggregateMatchesFresh'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_aggregateMatchesFresh', $error->getMessage());
+    }
+
+    public function test_assert_tree_is_intact_uses_custom_message_on_failure(): void
+    {
+        // Corrupt the tree so the assertion fails.
+        $this->allowBrokenTreeAtTearDown = true;
+        DB::table('categories')->insert([
+            'name' => 'broken', 'lft' => 0, 'rgt' => 0, 'depth' => 0, 'parent_id' => null,
+        ]);
+
+        $error = $this->expectFailure(fn () => $this->assertTreeIsIntact(Category::class, message: 'CUSTOM_FAIL_TOKEN_treeIsIntact'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_treeIsIntact', $error->getMessage());
+    }
+
+    public function test_assert_aggregates_are_intact_uses_custom_message_on_failure(): void
+    {
+        $this->seedMotivatingTree();
+        // Drift a stored aggregate so the assertion fails.
+        DB::table('areas')->where('name', 'Root')->update(['tickets_total' => 99_999]);
+
+        $error = $this->expectFailure(fn () => $this->assertAggregatesAreIntact(Area::class, message: 'CUSTOM_FAIL_TOKEN_aggregatesAreIntact'));
+
+        $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_aggregatesAreIntact', $error->getMessage());
+    }
 }
