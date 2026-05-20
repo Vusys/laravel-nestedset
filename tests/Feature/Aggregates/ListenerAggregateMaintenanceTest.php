@@ -318,6 +318,41 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(5, $this->asInt($root->weakest_level));
     }
 
+    public function test_max_listener_recomputes_on_delete_of_extremum_holder(): void
+    {
+        // Companion to the Min-listener test above. The chain-inclusion
+        // logic in HasNestedSetAggregates checks both
+        //   $def->operation === AggregateFunction::Max
+        // and
+        //   $def->operation === AggregateFunction::Min
+        // separately — the Min test covered the Min arm but the Max
+        // arm escaped on master Infection because no fixture declared
+        // a Max listener. Mirrors the same shape: delete the row that
+        // holds the extremum, expect the ancestor to recompute.
+        $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
+        $root->saveAsRoot();
+
+        $a = new Monster(['name' => 'A', 'type' => 'water', 'base_power' => 1, 'level' => 9]);
+        $a->appendToNode($root)->save();
+
+        $b = new Monster(['name' => 'B', 'type' => 'water', 'base_power' => 1, 'level' => 7]);
+        $b->appendToNode($root)->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        // Root's strongest_level = max(5, 9, 7) = 9 (held by A).
+        $this->assertSame(9, $this->asInt($root->strongest_level));
+        $this->assertSame(9, $this->asInt($a->strongest_level));
+
+        // Deleting A removes the extremum holder. Root must recompute
+        // to max(5, 7) = 7.
+        $a->delete();
+        $root->refresh();
+
+        $this->assertSame(7, $this->asInt($root->strongest_level));
+    }
+
     public function test_min_listener_recompute_batches_subtree_reads(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 10]);

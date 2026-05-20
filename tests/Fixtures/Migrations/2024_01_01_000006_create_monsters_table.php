@@ -29,6 +29,12 @@ return new class extends Migration
             // smallest level in the subtree. Exercises the listener
             // Min/Max recompute path on delete.
             $table->integer('weakest_level')->nullable();
+            // Companion Max-listener column — required to exercise the
+            // `$def->operation === AggregateFunction::Max` arm of the
+            // chain-inclusion check in HasNestedSetAggregates. Without
+            // it the Min arm covers half the logic and the Max half
+            // escapes.
+            $table->integer('strongest_level')->nullable();
 
             // Listener AVG: display column + auto-promoted Sum + Count
             // companions. Decimal display column to preserve fractional
