@@ -189,14 +189,23 @@ final class EventsTest extends TestCase
         // Chunked variant: same narrowing applies to every chunk event
         // and to the closing completion event in the chunked path. The
         // existing chunk-event test never passes an anchor so the
-        // chunked call site of `anchorRootId()` is unrepresented.
+        // chunked call site of `anchorRootId()` is unrepresented. Both
+        // events are asserted here so the narrowing is verified on
+        // every chunk dispatch AND on the closing completion that
+        // fires after the loop.
         $root = $this->seedMotivatingTree();
 
-        Event::fake([FixAggregatesChunkCompleted::class]);
+        Event::fake([FixAggregatesChunkCompleted::class, FixAggregatesCompleted::class]);
 
         Area::fixAggregates($root, chunkSize: 2);
 
         Event::assertDispatched(FixAggregatesChunkCompleted::class, function (FixAggregatesChunkCompleted $e) use ($root): bool {
+            $this->assertSame($this->rootIdOf($root), $e->anchorId);
+
+            return true;
+        });
+
+        Event::assertDispatched(FixAggregatesCompleted::class, function (FixAggregatesCompleted $e) use ($root): bool {
             $this->assertSame($this->rootIdOf($root), $e->anchorId);
 
             return true;
