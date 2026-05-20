@@ -299,6 +299,37 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
+    public function test_assert_same_scope_treats_null_and_zero_as_different(): void
+    {
+        // PHP's loose-equality `null == 0` is true. The comparator's
+        // early-exit on either side being null is therefore load-bearing,
+        // not just an optimisation — without it, a node with `menu_id`
+        // set to null would silently appear to belong to the same scope
+        // as a node with `menu_id` set to 0.
+        $a = MenuItem::query()->findOrFail(2);
+        $b = MenuItem::query()->findOrFail(2);
+        $a->setRawAttributes(array_merge($a->getAttributes(), ['menu_id' => null]));
+        $b->setRawAttributes(array_merge($b->getAttributes(), ['menu_id' => 0]));
+
+        $this->expectException(ScopeViolationException::class);
+
+        NestedSetScopeResolver::assertSameScope($a, $b);
+    }
+
+    public function test_assert_same_scope_treats_zero_and_null_as_different(): void
+    {
+        // Reverse argument order to also exercise the right-hand
+        // `$b === null` branch of the null guard.
+        $a = MenuItem::query()->findOrFail(2);
+        $b = MenuItem::query()->findOrFail(2);
+        $a->setRawAttributes(array_merge($a->getAttributes(), ['menu_id' => 0]));
+        $b->setRawAttributes(array_merge($b->getAttributes(), ['menu_id' => null]));
+
+        $this->expectException(ScopeViolationException::class);
+
+        NestedSetScopeResolver::assertSameScope($a, $b);
+    }
+
     public function test_force_delete_cascade_uses_persisted_scope_not_dirty_in_memory_value(): void
     {
         // A user could mutate the scope attribute in memory without
