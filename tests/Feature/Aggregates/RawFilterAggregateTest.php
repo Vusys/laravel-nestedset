@@ -179,7 +179,8 @@ final class RawFilterAggregateTest extends TestCase
     // to Sum + Count companions, which are already covered by the Sum
     // tests above and the Count test below.
     //
-    // Tree: Root(10, active=1) > A(20, active=0) > B(40, active=1).
+    // Tree (see buildTree() above): Root(10, active=1) with two
+    // direct children — A(20, active=0) and B(40, active=1).
     // Active tickets in the subtree = {10, 40} (Root + B).
     // ----------------------------------------------------------------
 
