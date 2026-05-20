@@ -88,9 +88,14 @@ final class NestedSetAggregateTest extends TestCase
         // source columns / values that were passed alongside them. This
         // assertion guards `implode(', ', array_keys($declared))` —
         // dropping the `array_keys` wrapper would join the values
-        // (here both 'tickets') instead, and a substring-only assertion
-        // wouldn't notice.
-        $this->expectExceptionMessageMatches('/\bsum\b.*\bmax\b|\bmax\b.*\bsum\b/');
+        // (here both 'tickets') instead.
+        //
+        // The regex anchors inside the parenthesised list because the
+        // trailing static text ("Each declaration must use exactly one
+        // of sum, count, avg, min, max.") also contains "sum" and
+        // "max" — without the `\(...\)` anchor a substring-style match
+        // would still pass when the dynamic list is wrong.
+        $this->expectExceptionMessageMatches('/\((sum, max|max, sum)\)/');
 
         (new NestedSetAggregate(
             column: 'tickets_total',
