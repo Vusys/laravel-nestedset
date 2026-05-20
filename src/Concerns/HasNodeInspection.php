@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * Pure read predicates over a node's lft/rgt/parent_id values.
@@ -45,13 +46,30 @@ trait HasNodeInspection
         return $this->getBounds()->contains($other->getBounds());
     }
 
+    /**
+     * Same parent, same tree. For roots (parent_id IS NULL) the
+     * parent_id check is not on its own scope-isolating: every scope
+     * has its own NULL-parent roots and a multi-tree table can hold
+     * two unrelated roots sharing parent_id = null. The scope-equality
+     * check below keeps cross-scope roots from reporting as siblings,
+     * matching the convention `children()`, `prevSibling()`, and
+     * `nextSibling()` already follow.
+     */
     public function isSiblingOf(HasNestedSet $other): bool
     {
         if ($other === $this) {
             return false;
         }
 
-        return $this->getParentId() === $other->getParentId();
+        if ($this->getParentId() !== $other->getParentId()) {
+            return false;
+        }
+
+        if ($this instanceof Model && $other instanceof Model) {
+            return NestedSetScopeResolver::sameScope($this, $other);
+        }
+
+        return true;
     }
 
     /**
