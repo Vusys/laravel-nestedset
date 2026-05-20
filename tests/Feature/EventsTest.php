@@ -458,12 +458,16 @@ final class EventsTest extends TestCase
         DB::statement('CREATE TABLE areas_backup AS SELECT * FROM areas');
 
         try {
-            DB::statement('ALTER TABLE areas DROP COLUMN tickets_total');
-        } catch (\Throwable) {
-            $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
-        }
+            try {
+                DB::statement('ALTER TABLE areas DROP COLUMN tickets_total');
+            } catch (\Throwable) {
+                // Backup must be cleaned up even on the skip path — otherwise
+                // it lingers and breaks the next test's TRUNCATE on persistent
+                // backends.
+                DB::statement('DROP TABLE areas_backup');
+                $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
+            }
 
-        try {
             $node = new Area(['name' => 'fail', 'tickets' => 1]);
             try {
                 $node->appendToNode($root)->save();
@@ -511,12 +515,13 @@ final class EventsTest extends TestCase
         DB::statement('CREATE TABLE uuid_tags_backup AS SELECT * FROM uuid_tags');
 
         try {
-            DB::statement('ALTER TABLE uuid_tags DROP COLUMN tickets_total');
-        } catch (\Throwable) {
-            $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
-        }
+            try {
+                DB::statement('ALTER TABLE uuid_tags DROP COLUMN tickets_total');
+            } catch (\Throwable) {
+                DB::statement('DROP TABLE uuid_tags_backup');
+                $this->markTestSkipped('Backend rejects DROP COLUMN on this connection.');
+            }
 
-        try {
             $node = new UuidTag(['name' => 'fail', 'tickets' => 1]);
             try {
                 $node->appendToNode($root)->save();
