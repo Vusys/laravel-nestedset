@@ -5,15 +5,17 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Needs write access to push the computed JSON files to the orphan
-# `badges` branch. Other jobs in this repo keep `contents: read` because
-# they don't mutate the repo; this one explicitly opts in.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   metrics:
     runs-on: ubuntu-latest
+    # Needs write access to push the computed JSON files to the orphan
+    # `badges` branch. Other jobs in this repo keep `contents: read`
+    # because they don't mutate the repo; this one explicitly opts in.
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6

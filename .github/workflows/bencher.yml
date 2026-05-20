@@ -24,14 +24,19 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  checks: write
 
 jobs:
   benchmark:
     name: Bencher
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # `pull-requests` + `checks` are only exercised on PR runs (the
+    # `--github-actions` step that posts the comparison comment).
+    # Job-level scoping keeps push/master runs at read-only.
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
 
     steps:
       - uses: actions/checkout@v6
