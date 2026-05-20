@@ -170,6 +170,45 @@ final class CollectionTest extends TestCase
         $this->assertCount(0, $tree);
     }
 
+    public function test_to_tree_infers_root_from_lowest_lft_when_root_is_not_in_collection(): void
+    {
+        // When toTree() is called with no explicit root and the actual
+        // tree root isn't in the collection, the implementation walks
+        // every node to find the lowest-lft entry and uses its
+        // parent_id as the implicit root.
+        //
+        // The existing tests either include the root (parent_id=null,
+        // so the inference happens to coincide with the null fallback)
+        // or pass the root explicitly. Without this case, the
+        // `$leastLft === null` and the `||` short-circuit on the
+        // first loop iteration can be mutated without any observable
+        // test failure — they only matter when the inferred parent_id
+        // is something other than null.
+        //
+        // Build a descendants-only collection: Child A, AA, AB. The
+        // lowest lft (2 → Child A) has parent_id = 1 (Root). The
+        // implicit root key is therefore 1, which means the tree's
+        // top-level node should be Child A.
+        $sub = Category::query()
+            ->whereIn('id', [2, 3, 4])
+            ->orderBy('lft')
+            ->get();
+
+        $tree = $sub->toTree();
+
+        $this->assertCount(1, $tree, 'Inferred root should yield exactly one top-level node (Child A)');
+        $top = $tree->first();
+        $this->assertInstanceOf(Category::class, $top);
+        $this->assertSame('Child A', $top->name);
+
+        $children = $top->getRelation('children');
+        $this->assertInstanceOf(Collection::class, $children);
+        $this->assertSame(
+            ['AA', 'AB'],
+            $children->sortBy('lft')->pluck('name')->all(),
+        );
+    }
+
     // ----------------------------------------------------------------
     // toFlatTree
     // ----------------------------------------------------------------
