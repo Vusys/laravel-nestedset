@@ -372,11 +372,18 @@ final class EventsTest extends TestCase
                 // The trait propagates the failure; AggregateMaintenanceFailed should still have fired.
             }
 
-            Event::assertDispatched(AggregateMaintenanceFailed::class, function (AggregateMaintenanceFailed $e): bool {
+            Event::assertDispatched(AggregateMaintenanceFailed::class, function (AggregateMaintenanceFailed $e) use ($node): bool {
                 $this->assertSame(Area::class, $e->modelClass);
                 // stage is one of capture/apply/on_create/on_delete/on_restore
                 $this->assertContains($e->stage, ['capture', 'apply', 'on_create', 'on_delete', 'on_restore']);
                 $this->assertInstanceOf(\Throwable::class, $e->exception);
+
+                // anchorId narrows mixed Model::getKey() to int|string|null
+                // via `is_int($k) || is_string($k) ? $k : null`. For Area
+                // (int-keyed) the anchorId must equal the persisted key —
+                // pinning this guards the type-narrow ternary against
+                // mutants that flip the operator or swap the arms.
+                $this->assertSame($node->getKey(), $e->anchorId);
 
                 return true;
             });
