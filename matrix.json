@@ -1,7 +1,7 @@
 {
     "schemaVersion": 1,
     "label": "CI matrix",
-    "message": "24 configurations",
+    "message": "36 configurations",
     "color": "success",
     "cacheSeconds": 3600
 }
