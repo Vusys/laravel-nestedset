@@ -13,6 +13,7 @@ use RuntimeException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -331,6 +332,34 @@ final class BulkInsertTest extends TestCase
         MenuItem::bulkInsertTree([
             ['name' => 'orphan'],
         ]);
+    }
+
+    public function test_scoped_model_with_valid_anchor_inserts_under_anchor(): void
+    {
+        // Pins the happy-path inverse of the no-anchor case above. The
+        // scope guard at the top of bulkInsertTree should NOT trip
+        // when the anchor is a same-class persisted node — without
+        // this case, mutating the `instanceof HasNestedSet` check to
+        // its always-false form (always-throw) escapes, because the
+        // no-anchor and wrong-class tests also expect a throw and
+        // can't tell apart "throw for the right reason" from "throw
+        // for the wrong reason".
+        $menu = Menu::create(['name' => 'Sidebar']);
+        $root = new MenuItem(['name' => 'Root', 'menu_id' => $menu->id]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        $inserted = MenuItem::bulkInsertTree([
+            ['name' => 'a'],
+            ['name' => 'b'],
+        ], appendTo: $root);
+
+        $this->assertCount(2, $inserted);
+        $this->assertSame(['a', 'b'], array_map(fn (MenuItem $m): string => $m->name, $inserted));
+        foreach ($inserted as $item) {
+            $this->assertSame($menu->id, $item->menu_id);
+            $this->assertSame($root->getKey(), $item->parent_id);
+        }
     }
 
     public function test_unsaved_anchor_rejected(): void
