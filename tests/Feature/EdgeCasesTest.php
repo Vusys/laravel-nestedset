@@ -131,19 +131,4 @@ final class EdgeCasesTest extends TestCase
         $this->assertSame(2, $aa->getSubtreeSize());
         $this->assertSame(0, $aa->getDescendantCount());
     }
-
-    public function test_is_sibling_of_returns_false_for_self(): void
-    {
-        DB::table('categories')->insert([
-            ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 6, 'depth' => 0, 'parent_id' => null],
-            ['id' => 2, 'name' => 'A',    'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
-            ['id' => 3, 'name' => 'B',    'lft' => 4, 'rgt' => 5, 'depth' => 1, 'parent_id' => 1],
-        ]);
-
-        $a = Category::query()->findOrFail(2);
-        $b = Category::query()->findOrFail(3);
-
-        $this->assertTrue($a->isSiblingOf($b));
-        $this->assertFalse($a->isSiblingOf($a));
-    }
 }

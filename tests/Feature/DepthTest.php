@@ -23,8 +23,9 @@ final class DepthTest extends TestCase
 
     public function test_depth_increments_with_append(): void
     {
-        $root = (new Category(['name' => 'Root']))->saveAsRoot() ? Category::query()->whereNull('parent_id')->firstOrFail() : null;
-        $this->assertInstanceOf(Category::class, $root);
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+        $root = $root->refresh();
 
         $a = new Category(['name' => 'A']);
         $a->appendToNode($root)->save();
