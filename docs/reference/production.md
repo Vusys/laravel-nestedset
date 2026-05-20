@@ -32,18 +32,44 @@ No-op on MySQL/PostgreSQL/SQLite — the `SET STATEMENT` prefix is MariaDB-speci
 
 The package fires typed events on Laravel's event bus around its meaningful operations. Listen via standard `Event::listen()` to wire metrics (Datadog, New Relic, OpenTelemetry), errors (Sentry, Bugsnag), or audit logs.
 
+Events come in two flavours:
+
+- **Telemetry events** carry only scalar / array payloads (model class, ids, durations, counts). Safe to listen on with `ShouldQueue`.
+- **Model-carrying events** carry live Eloquent model instances and/or descendant-id lists for in-process decoration, indexing, cache priming. Not queue-safe by default — see the per-event docblock for the recommended capture-and-forward pattern.
+
 Events (all in `Vusys\NestedSet\Events\`):
 
-| Event | Fires when |
-|---|---|
-| `FixTreeCompleted` | `Model::fixTree()` finishes |
-| `FixAggregatesCompleted` | `Model::fixAggregates()` finishes (sync, single-shot or chunked) |
-| `FixAggregatesChunkCompleted` | per chunk in sync chunked + per dispatch in queued chunked |
-| `FixAggregatesJobDispatched` | `Model::queueFixAggregates()` hands a job to the dispatcher |
-| `BulkInsertTreeCompleted` | `Model::bulkInsertTree()` finishes |
-| `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair |
-| `NodeMoved` | structural mutation of an *existing* node (appendToNode, makeRoot, etc.) — new-node placements use Eloquent's `created` instead |
-| `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks — propagates the original, but lets observers see the failure |
+| Event | Fires when | Carries models? |
+|---|---|---|
+| `FixTreeCompleted` | `Model::fixTree()` finishes | — |
+| `FixAggregatesCompleted` | `Model::fixAggregates()` finishes (sync, single-shot or chunked) | — |
+| `FixAggregatesChunkCompleted` | per chunk in sync chunked + per dispatch in queued chunked | — |
+| `FixAggregatesJobDispatched` | `Model::queueFixAggregates()` hands a job to the dispatcher | — |
+| `BulkInsertTreeStarting` | top of `Model::bulkInsertTree()` before plan walk | raw tree + appendTo anchor |
+| `BulkInsertTreePlanned` | after the DFS plan walk, before save loop | plan array + appendTo anchor |
+| `BulkInsertNodeSaved` | once per row inside the save loop | saved model + parent reference |
+| `BulkInsertTreeSaved` | after all rows saved (before the closing fixAggregates) | `list<HasNestedSet>` of every saved model |
+| `BulkInsertTreeCompleted` | `Model::bulkInsertTree()` finishes | nodeIds only (queue-safe) |
+| `SubtreeSoftDeleting` / `SubtreeSoftDeleted` | bracketed around the cascade UPDATE that propagates `deleted_at` to descendants | anchor + descendant ids on the `…Deleted` side |
+| `SubtreeRestoring` / `SubtreeRestored` | bracketed around the cascade UPDATE that clears `deleted_at` on matching descendants | anchor + descendant ids on the `…Restored` side |
+| `SubtreeForceDeleting` / `SubtreeForceDeleted` | bracketed around the cascade DELETE of strict descendants on `forceDelete()` of an interior node | anchor + descendant ids |
+| `SoftDeleteMarkerCaptured` | inside `restoring` lifecycle, when the package captures the marker that will be matched on restore | anchor |
+| `NodeMoved` | structural mutation of an *existing* node (appendToNode, makeRoot, etc.) — new-node placements use Eloquent's `created` instead | — |
+| `SubtreeMoving` / `SubtreeMoved` | bracketed around the structural SQL for an existing-node mutation; carries descendant ids so listeners get the full subtree, not just the anchor | anchor + descendant ids on `…Moved` |
+| `NodesSwapped` | `up()` / `down()` sibling swap completes; frames the two `NodeMoved` events as one logical operation | both participants |
+| `NodePromotedToRoot` | `makeRoot()` on an existing node | anchor |
+| `NodeAggregatesRecomputed` | once per aggregate-maintenance lifecycle hook (create / delete / restore / move), when the model declares aggregates | — |
+| `AggregateDriftDetected` | `aggregateErrors()` finds at least one column with non-zero drift | — |
+| `TreeIntegrityChecked` | every `isBroken()` / `countErrors()` call, regardless of result | — |
+| `DeferredMaintenanceStarting` | outermost entry of `withDeferredAggregateMaintenance()` | — |
+| `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair | — |
+| `ScopeViolationDetected` | immediately before a `ScopeViolationException` is thrown | — |
+| `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks — propagates the original, but lets observers see the failure | — |
+
+Model-carrying events do extra work (a bounds SELECT for descendant
+ids on cascades and moves) **only when a real listener is registered**
+for the event. The check goes through `Event::hasListeners()`, so the
+hot path stays clean for callers that don't subscribe.
 
 ### Example wirings
 
@@ -74,6 +100,9 @@ Event::listen(AggregateMaintenanceFailed::class, function (AggregateMaintenanceF
 });
 ```
 
-All event classes are simple readonly value objects with scalar / array fields, so queued listeners (`ShouldQueue`) are safe — with one exception: `AggregateMaintenanceFailed::$exception` is a `Throwable` and won't serialise cleanly across most queue drivers. If you need to queue listeners on that event, capture the scalar fields you care about synchronously and forward those.
+Telemetry events are simple readonly value objects with scalar / array fields, so queued listeners (`ShouldQueue`) are safe. Two exceptions require synchronous capture-and-forward if you want to queue work:
+
+- `AggregateMaintenanceFailed::$exception` is a `Throwable` and won't serialise cleanly across most queue drivers.
+- Model-carrying events (`BulkInsertTreeStarting`, `BulkInsertTreePlanned`, `BulkInsertNodeSaved`, `BulkInsertTreeSaved`, `Subtree*`, `NodesSwapped`, `NodePromotedToRoot`, `SoftDeleteMarkerCaptured`) hold live Eloquent instances. Capture the fields you care about (ids, bounds, scope) synchronously and forward those.
 
 To disable every firing site (e.g. in a very-hot path), set `nestedset.events_enabled => false` in the published config. Default is `true`.

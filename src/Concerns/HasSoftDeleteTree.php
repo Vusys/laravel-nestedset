@@ -9,6 +9,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\SoftDeleteMarkerCaptured;
+use Vusys\NestedSet\Events\SubtreeRestored;
+use Vusys\NestedSet\Events\SubtreeRestoring;
+use Vusys\NestedSet\Events\SubtreeSoftDeleted;
+use Vusys\NestedSet\Events\SubtreeSoftDeleting;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -70,10 +76,32 @@ trait HasSoftDeleteTree
         }
 
         $bounds = $node->getBounds();
+        $scope = NestedSetScopeResolver::valuesFor($node);
+
+        EventDispatcher::dispatch(new SubtreeSoftDeleting(
+            modelClass: $node::class,
+            anchor: $node,
+            bounds: $bounds,
+            scope: $scope,
+            deletedAt: $deletedAt,
+        ));
+
+        $descendantIds = EventDispatcher::hasListeners(SubtreeSoftDeleted::class)
+            ? self::collectDescendantIds($node, $bounds->lft, $bounds->rgt, $deletedAtColumn, whereNull: true)
+            : [];
 
         self::descendantQuery($node, $bounds->lft, $bounds->rgt)
             ->whereNull($deletedAtColumn)
             ->update([$deletedAtColumn => $deletedAt]);
+
+        EventDispatcher::dispatch(new SubtreeSoftDeleted(
+            modelClass: $node::class,
+            anchor: $node,
+            bounds: $bounds,
+            scope: $scope,
+            deletedAt: $deletedAt,
+            descendantIds: $descendantIds,
+        ));
     }
 
     private static function captureRestoreMarker(Model $node): void
@@ -96,6 +124,12 @@ trait HasSoftDeleteTree
         if (method_exists($node, 'setRestoreMarker')) {
             $node->setRestoreMarker($deletedAt);
         }
+
+        EventDispatcher::dispatch(new SoftDeleteMarkerCaptured(
+            modelClass: $node::class,
+            anchor: $node,
+            marker: $deletedAt,
+        ));
     }
 
     /** @internal Called from NodeTrait's restored listener to keep ordering deterministic. */
@@ -122,10 +156,75 @@ trait HasSoftDeleteTree
         }
 
         $bounds = $node->getBounds();
+        $scope = NestedSetScopeResolver::valuesFor($node);
+
+        EventDispatcher::dispatch(new SubtreeRestoring(
+            modelClass: $node::class,
+            anchor: $node,
+            bounds: $bounds,
+            scope: $scope,
+            marker: $marker,
+        ));
+
+        $descendantIds = EventDispatcher::hasListeners(SubtreeRestored::class)
+            ? self::collectDescendantIds($node, $bounds->lft, $bounds->rgt, $deletedAtColumn, whereNull: false, equalsValue: $marker)
+            : [];
 
         self::descendantQuery($node, $bounds->lft, $bounds->rgt)
             ->where($deletedAtColumn, $marker)
             ->update([$deletedAtColumn => null]);
+
+        EventDispatcher::dispatch(new SubtreeRestored(
+            modelClass: $node::class,
+            anchor: $node,
+            bounds: $bounds,
+            scope: $scope,
+            marker: $marker,
+            descendantIds: $descendantIds,
+        ));
+    }
+
+    /**
+     * Gathers descendant primary keys that match the cascade's
+     * filter, used to populate the cascade event's `descendantIds`
+     * field. Cheap on the same bounds index the cascade UPDATE
+     * uses. Gated by {@see EventDispatcher::enabled()} at the
+     * call site so disabled telemetry pays no extra query.
+     *
+     * @return list<int|string>
+     */
+    private static function collectDescendantIds(
+        Model&HasNestedSet $node,
+        int $lft,
+        int $rgt,
+        string $deletedAtColumn,
+        bool $whereNull,
+        ?string $equalsValue = null,
+    ): array {
+        $query = self::descendantQuery($node, $lft, $rgt);
+
+        if ($whereNull) {
+            $query->whereNull($deletedAtColumn);
+        } elseif ($equalsValue !== null) {
+            $query->where($deletedAtColumn, $equalsValue);
+        }
+
+        $keyName = $node->getKeyName();
+        $isIntKey = $node->getKeyType() === 'int';
+
+        $rows = $query->select([$keyName])->get();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            /** @var \stdClass $row */
+            $value = $row->{$keyName} ?? null;
+            if ($value === null) {
+                continue;
+            }
+            $ids[] = $isIntKey ? (int) $value : (string) $value;
+        }
+
+        return $ids;
     }
 
     /**

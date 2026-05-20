@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use ReflectionClass;
 use Vusys\NestedSet\Attributes\NestedSetScope;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\ScopeViolationDetected;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 
 /**
@@ -74,9 +76,13 @@ final class NestedSetScopeResolver
     public static function assertSameScope(Model&HasNestedSet $a, Model&HasNestedSet $b): void
     {
         if ($a::class !== $b::class) {
-            throw new ScopeViolationException(
-                sprintf('Cannot relate %s to %s — different models.', $a::class, $b::class),
-            );
+            $message = sprintf('Cannot relate %s to %s — different models.', $a::class, $b::class);
+            EventDispatcher::dispatch(new ScopeViolationDetected(
+                modelClass: $a::class,
+                stage: 'mutation',
+                message: $message,
+            ));
+            throw new ScopeViolationException($message);
         }
 
         $columns = self::columns($a::class);
@@ -86,13 +92,19 @@ final class NestedSetScopeResolver
             $bValue = $b->getAttribute($column);
 
             if (! self::scopeValuesEqual($aValue, $bValue)) {
-                throw new ScopeViolationException(sprintf(
+                $message = sprintf(
                     'Cross-scope operation on %s: column %s differs (%s vs %s).',
                     $a::class,
                     $column,
                     self::format($aValue),
                     self::format($bValue),
+                );
+                EventDispatcher::dispatch(new ScopeViolationDetected(
+                    modelClass: $a::class,
+                    stage: 'mutation',
+                    message: $message,
                 ));
+                throw new ScopeViolationException($message);
             }
         }
     }

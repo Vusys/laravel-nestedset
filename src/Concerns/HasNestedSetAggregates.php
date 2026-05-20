@@ -20,11 +20,15 @@ use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Aggregates\TreeAggregateListener;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\AggregateDriftDetected;
 use Vusys\NestedSet\Events\DeferredAggregateMaintenanceCompleted;
+use Vusys\NestedSet\Events\DeferredMaintenanceStarting;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Events\FixAggregatesCompleted;
 use Vusys\NestedSet\Events\FixAggregatesJobDispatched;
+use Vusys\NestedSet\Events\NodeAggregatesRecomputed;
+use Vusys\NestedSet\Events\ScopeViolationDetected;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
@@ -698,6 +702,43 @@ trait HasNestedSetAggregates
     }
 
     /**
+     * Dispatches {@see NodeAggregatesRecomputed} for one lifecycle
+     * hook, naming every declared aggregate column on the model.
+     * No-op when the model declares no aggregates or has no primary
+     * key. Stage is one of 'on_create', 'on_delete', 'on_restore',
+     * 'move'.
+     */
+    private function dispatchAggregatesRecomputed(string $stage): void
+    {
+        $definitions = AggregateRegistry::for(static::class);
+
+        if ($definitions === []) {
+            return;
+        }
+
+        $key = $this->getKey();
+        if (! is_int($key) && ! is_string($key)) {
+            return;
+        }
+
+        $columns = [];
+        foreach ($definitions as $def) {
+            if ($def->isInternal()) {
+                continue;
+            }
+            $columns[] = $def->getColumn();
+        }
+        $columns = array_values(array_unique($columns));
+
+        EventDispatcher::dispatch(new NodeAggregatesRecomputed(
+            modelClass: static::class,
+            nodeId: $key,
+            columns: $columns,
+            stage: $stage,
+        ));
+    }
+
+    /**
      * `created` hook: a newly-inserted node has just been placed in
      * the tree (or it has not been — see {@see isPlacedInTree()} for
      * the guard). For each inclusive SUM/COUNT declaration, push the
@@ -868,6 +909,8 @@ trait HasNestedSetAggregates
                 definitions: $exclusiveListenerDefs,
             );
         }
+
+        $this->dispatchAggregatesRecomputed('on_create');
     }
 
     /**
@@ -1029,6 +1072,8 @@ trait HasNestedSetAggregates
                 includeSelf: false,   // deleted row not in DB anymore
             );
         }
+
+        $this->dispatchAggregatesRecomputed('on_delete');
     }
 
     /**
@@ -1213,6 +1258,8 @@ trait HasNestedSetAggregates
                 definitions: $listenerChainSpecs,
             );
         }
+
+        $this->dispatchAggregatesRecomputed('move');
     }
 
     /**
@@ -1435,6 +1482,8 @@ trait HasNestedSetAggregates
                 );
             }
 
+            $this->dispatchAggregatesRecomputed('on_restore');
+
             return;
         }
 
@@ -1555,6 +1604,8 @@ trait HasNestedSetAggregates
                 definitions: $listenerChainSpecs,
             );
         }
+
+        $this->dispatchAggregatesRecomputed('on_restore');
     }
 
     /**
@@ -2234,7 +2285,19 @@ trait HasNestedSetAggregates
         );
 
         // Columns never overlap between SQL and listener defs.
-        return array_merge($treeBuilderErrors, $listenerErrors);
+        $merged = array_merge($treeBuilderErrors, $listenerErrors);
+
+        $nonZero = array_filter($merged, static fn (int $count): bool => $count > 0);
+        if ($nonZero !== []) {
+            EventDispatcher::dispatch(new AggregateDriftDetected(
+                modelClass: static::class,
+                anchorId: $rootId,
+                perColumn: $nonZero,
+                totalDrift: array_sum($nonZero),
+            ));
+        }
+
+        return $merged;
     }
 
     /**
@@ -2590,6 +2653,13 @@ trait HasNestedSetAggregates
         $repairResult = null;
         $closureFailed = false;
 
+        if ($isOutermost) {
+            EventDispatcher::dispatch(new DeferredMaintenanceStarting(
+                modelClass: static::class,
+                anchorId: self::anchorRootId($anchor),
+            ));
+        }
+
         try {
             $closureStartNs = hrtime(true);
             $result = $work();
@@ -2674,11 +2744,17 @@ trait HasNestedSetAggregates
         // trace and avoids a poisoned queue entry.
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
         if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
-            throw new ScopeViolationException(sprintf(
+            $message = sprintf(
                 '%s declares a scope (%s); pass an anchor node to queueFixAggregates() so the job knows which tree to repair.',
                 static::class,
                 implode(', ', $scopeColumns),
+            );
+            EventDispatcher::dispatch(new ScopeViolationDetected(
+                modelClass: static::class,
+                stage: 'queue_dispatch',
+                message: $message,
             ));
+            throw new ScopeViolationException($message);
         }
 
         $job = new FixAggregatesJob(
@@ -2770,11 +2846,17 @@ trait HasNestedSetAggregates
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
 
         if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
-            throw new ScopeViolationException(sprintf(
+            $message = sprintf(
                 '%s declares a scope (%s); pass an anchor node to scope this operation.',
                 static::class,
                 implode(', ', $scopeColumns),
+            );
+            EventDispatcher::dispatch(new ScopeViolationDetected(
+                modelClass: static::class,
+                stage: 'repair',
+                message: $message,
             ));
+            throw new ScopeViolationException($message);
         }
 
         if ($anchor instanceof HasNestedSet && ! $anchor instanceof static) {

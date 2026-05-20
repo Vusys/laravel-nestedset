@@ -9,6 +9,12 @@ use LogicException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\NodeMoved;
+use Vusys\NestedSet\Events\NodePromotedToRoot;
+use Vusys\NestedSet\Events\NodesSwapped;
+use Vusys\NestedSet\Events\SubtreeForceDeleted;
+use Vusys\NestedSet\Events\SubtreeForceDeleting;
+use Vusys\NestedSet\Events\SubtreeMoved;
+use Vusys\NestedSet\Events\SubtreeMoving;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\PendingOperation;
@@ -144,7 +150,11 @@ trait HasTreeMutation
             return false;
         }
 
-        return $this->moveAndEmitSiblingSwap($sibling, fn (): bool => $this->insertBeforeNode($sibling)->save());
+        return $this->moveAndEmitSiblingSwap(
+            $sibling,
+            fn (): bool => $this->insertBeforeNode($sibling)->save(),
+            direction: 'up',
+        );
     }
 
     /**
@@ -161,22 +171,29 @@ trait HasTreeMutation
             return false;
         }
 
-        return $this->moveAndEmitSiblingSwap($sibling, fn (): bool => $this->insertAfterNode($sibling)->save());
+        return $this->moveAndEmitSiblingSwap(
+            $sibling,
+            fn (): bool => $this->insertAfterNode($sibling)->save(),
+            direction: 'down',
+        );
     }
 
     /**
      * Wraps an `insertBeforeNode` / `insertAfterNode` swap so a
-     * `NodeMoved` event also fires for the displaced sibling.
+     * `NodeMoved` event also fires for the displaced sibling, plus
+     * a single {@see NodesSwapped} that frames the swap as one
+     * logical operation.
      *
      * The wrapped `->save()` already emits `NodeMoved` for `$this`.
      * After it returns we re-read the sibling's post-swap bounds
      * (its in-memory copy is stale because the SQL shifted it) and
-     * dispatch a second event so observers see both endpoints.
+     * dispatch the second `NodeMoved` plus `NodesSwapped`.
      *
      * @param  \Closure(): bool  $perform
      */
-    private function moveAndEmitSiblingSwap(Model&HasNestedSet $sibling, \Closure $perform): bool
+    private function moveAndEmitSiblingSwap(Model&HasNestedSet $sibling, \Closure $perform, string $direction): bool
     {
+        $thisFrom = $this->getBounds();
         $siblingFrom = $sibling->getBounds();
         $startNs = hrtime(true);
 
@@ -195,6 +212,18 @@ trait HasTreeMutation
             fromBounds: $siblingFrom,
             toBounds: $sibling->getBounds(),
             operation: 'sibling-displaced',
+            durationMs: $durationMs,
+        ));
+
+        EventDispatcher::dispatch(new NodesSwapped(
+            modelClass: static::class,
+            movedNode: $this,
+            movedNodeFrom: $thisFrom,
+            movedNodeTo: $this->getBounds(),
+            displacedSibling: $sibling,
+            displacedFrom: $siblingFrom,
+            displacedTo: $sibling->getBounds(),
+            direction: $direction,
             durationMs: $durationMs,
         ));
 
@@ -229,6 +258,18 @@ trait HasTreeMutation
         // event handles their aggregate maintenance.
         $wasExisting = $this->exists;
         $from = $wasExisting ? $this->getBounds() : null;
+
+        $previousParentId = $wasExisting ? $this->getParentId() : null;
+        $previousDepth = $wasExisting ? $this->getDepth() : 0;
+
+        if ($wasExisting && $from !== null) {
+            EventDispatcher::dispatch(new SubtreeMoving(
+                modelClass: static::class,
+                anchor: $this,
+                fromBounds: $from,
+                operation: $op->action,
+            ));
+        }
 
         $work = function () use ($op, $wasExisting, $from): void {
             if ($wasExisting && $from !== null) {
@@ -267,15 +308,76 @@ trait HasTreeMutation
         // surface and confuse the "this was a move, not an insert"
         // intent of the event.
         if ($wasExisting && $from !== null) {
+            $toBounds = $this->getBounds();
+
             EventDispatcher::dispatch(new NodeMoved(
                 modelClass: static::class,
                 nodeId: $this->keyOf($this),
                 fromBounds: $from,
-                toBounds: $this->getBounds(),
+                toBounds: $toBounds,
                 operation: $op->action,
                 durationMs: $durationMs,
             ));
+
+            $descendantIds = EventDispatcher::hasListeners(SubtreeMoved::class)
+                ? $this->collectStrictDescendantIds($toBounds)
+                : [];
+
+            EventDispatcher::dispatch(new SubtreeMoved(
+                modelClass: static::class,
+                anchor: $this,
+                fromBounds: $from,
+                toBounds: $toBounds,
+                operation: $op->action,
+                descendantIds: $descendantIds,
+                durationMs: $durationMs,
+            ));
+
+            if ($op->action === 'root') {
+                EventDispatcher::dispatch(new NodePromotedToRoot(
+                    modelClass: static::class,
+                    anchor: $this,
+                    previousParentId: $previousParentId,
+                    previousDepth: $previousDepth,
+                ));
+            }
         }
+    }
+
+    /**
+     * Reads strict-descendant primary keys via a bounds SELECT in
+     * the node's scope. Used to populate {@see SubtreeMoved} and
+     * is gated by {@see EventDispatcher::enabled()} at the call
+     * site so disabled telemetry pays no extra query.
+     *
+     * @return list<int|string>
+     */
+    private function collectStrictDescendantIds(NodeBounds $bounds): array
+    {
+        $query = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getLftName(), '>', $bounds->lft)
+            ->where($this->getRgtName(), '<', $bounds->rgt);
+
+        foreach (NestedSetScopeResolver::valuesFor($this) as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        $keyName = $this->getKeyName();
+        $isIntKey = $this->getKeyType() === 'int';
+
+        $rows = $query->select([$keyName])->get();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $value = $row->{$keyName} ?? null;
+            if ($value === null) {
+                continue;
+            }
+            $ids[] = $isIntKey ? (int) $value : (string) $value;
+        }
+
+        return $ids;
     }
 
     /**
@@ -420,16 +522,78 @@ trait HasTreeMutation
             return;
         }
 
+        $scope = NestedSetScopeResolver::valuesFor($this);
+        $bounds = new NodeBounds(lft: $lft, rgt: $rgt, depth: $this->getDepth());
+
         $query = $this->getConnection()
             ->table($this->getTable())
             ->where($this->getLftName(), '>', $lft)
             ->where($this->getRgtName(), '<', $rgt);
 
-        foreach (NestedSetScopeResolver::valuesFor($this) as $column => $value) {
+        foreach ($scope as $column => $value) {
             $query->where($column, '=', $value);
         }
 
-        $query->delete();
+        $descendantIds = EventDispatcher::hasListeners(SubtreeForceDeleting::class)
+            || EventDispatcher::hasListeners(SubtreeForceDeleted::class)
+            ? $this->collectForceDeleteDescendantIds($lft, $rgt, $scope)
+            : [];
+
+        EventDispatcher::dispatch(new SubtreeForceDeleting(
+            modelClass: static::class,
+            anchor: $this,
+            bounds: $bounds,
+            scope: $scope,
+            descendantIds: $descendantIds,
+        ));
+
+        $affected = $query->delete();
+
+        EventDispatcher::dispatch(new SubtreeForceDeleted(
+            modelClass: static::class,
+            anchor: $this,
+            bounds: $bounds,
+            scope: $scope,
+            descendantIds: $descendantIds,
+            descendantsAffected: $affected,
+        ));
+    }
+
+    /**
+     * Reads descendant primary keys via a SELECT bounded by the
+     * same lft/rgt window the cascade DELETE uses. Cheap on the
+     * bounds index; gated by {@see EventDispatcher::enabled()} at
+     * the call site so disabled telemetry pays no extra query.
+     *
+     * @param  array<string, mixed>  $scope
+     * @return list<int|string>
+     */
+    private function collectForceDeleteDescendantIds(int $lft, int $rgt, array $scope): array
+    {
+        $query = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getLftName(), '>', $lft)
+            ->where($this->getRgtName(), '<', $rgt);
+
+        foreach ($scope as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        $keyName = $this->getKeyName();
+        $isIntKey = $this->getKeyType() === 'int';
+
+        $rows = $query->select([$keyName])->get();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $value = $row->{$keyName} ?? null;
+            if ($value === null) {
+                continue;
+            }
+            $ids[] = $isIntKey ? (int) $value : (string) $value;
+        }
+
+        return $ids;
     }
 
     private function actMakeRoot(): void
