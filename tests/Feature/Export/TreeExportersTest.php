@@ -433,4 +433,242 @@ final class TreeExportersTest extends TestCase
 
         $this->assertStringContainsString('Line1<br/>Line2', $mermaid);
     }
+
+    public function test_subtree_export_of_scoped_model_only_includes_same_scope(): void
+    {
+        // Two trees with overlapping lft/rgt (each scope restarts its
+        // sequence at 1). Without the scope filter on the descendants
+        // query, rows from the other tree would leak in.
+        $menu1 = Menu::create(['name' => 'M1']);
+        $menu2 = Menu::create(['name' => 'M2']);
+
+        $r1 = new MenuItem(['name' => 'M1-Root', 'menu_id' => $menu1->id]);
+        $r1->saveAsRoot();
+        $c1 = new MenuItem(['name' => 'M1-Child', 'menu_id' => $menu1->id]);
+        $c1->appendToNode($r1->refresh())->save();
+
+        $r2 = new MenuItem(['name' => 'M2-Root', 'menu_id' => $menu2->id]);
+        $r2->saveAsRoot();
+        $c2 = new MenuItem(['name' => 'M2-Child', 'menu_id' => $menu2->id]);
+        $c2->appendToNode($r2->refresh())->save();
+
+        $ascii = $r1->refresh()->toAsciiTree();
+
+        $this->assertStringContainsString('M1-Root', $ascii);
+        $this->assertStringContainsString('M1-Child', $ascii);
+        $this->assertStringNotContainsString('M2-Root', $ascii);
+        $this->assertStringNotContainsString('M2-Child', $ascii);
+    }
+
+    public function test_forest_groups_scoped_trees_by_scope_column(): void
+    {
+        // Auto-increment guarantees menu1.id < menu2.id even though we
+        // insert menu2's tree first. The Forest loader's `ORDER BY
+        // menu_id, lft` must put menu1's tree first in the output;
+        // without it, insert order would render menu2 first.
+        $menu1 = Menu::create(['name' => 'M1']);
+        $menu2 = Menu::create(['name' => 'M2']);
+
+        $r2 = new MenuItem(['name' => 'M2-Root', 'menu_id' => $menu2->id]);
+        $r2->saveAsRoot();
+
+        $r1 = new MenuItem(['name' => 'M1-Root', 'menu_id' => $menu1->id]);
+        $r1->saveAsRoot();
+        $c1 = new MenuItem(['name' => 'M1-Child', 'menu_id' => $menu1->id]);
+        $c1->appendToNode($r1->refresh())->save();
+
+        $ascii = MenuItem::toAsciiTreeForest();
+
+        $m1Root = strpos($ascii, 'M1-Root');
+        $m1Child = strpos($ascii, 'M1-Child');
+        $m2Root = strpos($ascii, 'M2-Root');
+
+        $this->assertNotFalse($m1Root);
+        $this->assertNotFalse($m1Child);
+        $this->assertNotFalse($m2Root);
+        $this->assertLessThan($m2Root, $m1Root, 'menu1 tree must render before menu2 tree (scope grouping).');
+        $this->assertLessThan($m1Child, $m1Root, 'within menu1, root must render before child (lft order).');
+    }
+
+    public function test_dot_forest_renders_digraph(): void
+    {
+        $a = new Category(['name' => 'A']);
+        $a->saveAsRoot();
+        $b = new Category(['name' => 'B']);
+        $b->saveAsRoot();
+
+        $dot = Category::toDotForest();
+
+        $this->assertStringStartsWith('digraph tree {', $dot);
+        $this->assertStringContainsString('label="A"', $dot);
+        $this->assertStringContainsString('label="B"', $dot);
+    }
+
+    public function test_ascii_tree_forest_renders_each_root(): void
+    {
+        $a = new Category(['name' => 'A']);
+        $a->saveAsRoot();
+        $b = new Category(['name' => 'B']);
+        $b->saveAsRoot();
+
+        $ascii = Category::toAsciiTreeForest();
+
+        $this->assertStringContainsString('A', $ascii);
+        $this->assertStringContainsString('B', $ascii);
+    }
+
+    public function test_json_tree_forest_returns_list_for_multiple_roots(): void
+    {
+        $a = new Category(['name' => 'A']);
+        $a->saveAsRoot();
+        $b = new Category(['name' => 'B']);
+        $b->saveAsRoot();
+
+        $json = Category::toJsonTreeForest();
+
+        $this->assertSame([
+            ['id' => $a->refresh()->id, 'label' => 'A', 'children' => []],
+            ['id' => $b->refresh()->id, 'label' => 'B', 'children' => []],
+        ], $json);
+    }
+
+    public function test_dot_scope_filters_to_one_tree(): void
+    {
+        $menu1 = Menu::create(['name' => 'M1']);
+        $menu2 = Menu::create(['name' => 'M2']);
+        (new MenuItem(['name' => 'M1-Root', 'menu_id' => $menu1->id]))->saveAsRoot();
+        (new MenuItem(['name' => 'M2-Root', 'menu_id' => $menu2->id]))->saveAsRoot();
+
+        $dot = MenuItem::toDotScope($menu1->id);
+
+        $this->assertStringContainsString('M1-Root', $dot);
+        $this->assertStringNotContainsString('M2-Root', $dot);
+    }
+
+    public function test_json_tree_scope_filters_to_one_tree(): void
+    {
+        $menu1 = Menu::create(['name' => 'M1']);
+        $menu2 = Menu::create(['name' => 'M2']);
+        (new MenuItem(['name' => 'M1-Root', 'menu_id' => $menu1->id]))->saveAsRoot();
+        (new MenuItem(['name' => 'M2-Root', 'menu_id' => $menu2->id]))->saveAsRoot();
+
+        $json = MenuItem::toJsonTreeScope($menu1->id);
+
+        $this->assertArrayHasKey('label', $json);
+        $this->assertSame('M1-Root', $json['label']);
+    }
+
+    public function test_mermaid_scope_filters_to_one_tree(): void
+    {
+        $menu1 = Menu::create(['name' => 'M1']);
+        $menu2 = Menu::create(['name' => 'M2']);
+        (new MenuItem(['name' => 'M1-Root', 'menu_id' => $menu1->id]))->saveAsRoot();
+        (new MenuItem(['name' => 'M2-Root', 'menu_id' => $menu2->id]))->saveAsRoot();
+
+        $mermaid = MenuItem::toMermaidScope($menu1->id);
+
+        $this->assertStringContainsString('"M1-Root"', $mermaid);
+        $this->assertStringNotContainsString('"M2-Root"', $mermaid);
+    }
+
+    public function test_mermaid_options_default_excludes_trashed(): void
+    {
+        [$electronics, , , , $android] = $this->buildElectronicsTree();
+        $android->delete();
+
+        $mermaid = $electronics->refresh()->toMermaid(new MermaidOptions);
+
+        $this->assertStringNotContainsString('"Android"', $mermaid);
+    }
+
+    public function test_dot_options_default_excludes_trashed(): void
+    {
+        [$electronics, , , , $android] = $this->buildElectronicsTree();
+        $android->delete();
+
+        $dot = $electronics->refresh()->toDot(new DotOptions);
+
+        $this->assertStringNotContainsString('"Android"', $dot);
+    }
+
+    public function test_json_tree_options_default_excludes_trashed(): void
+    {
+        [$electronics, , , $iphone, $android] = $this->buildElectronicsTree();
+        $android->delete();
+
+        $json = $electronics->refresh()->toJsonTree(new JsonOptions);
+
+        $encoded = json_encode($json);
+        $this->assertIsString($encoded);
+        $this->assertStringNotContainsString('Android', $encoded);
+        $this->assertStringContainsString('iPhone', $encoded);
+    }
+
+    public function test_forest_with_trashed_includes_soft_deleted_rows(): void
+    {
+        [, , , , $android] = $this->buildElectronicsTree();
+        $android->delete();
+
+        $withoutTrashed = Category::toAsciiTreeForest();
+        $withTrashed = Category::toAsciiTreeForest(new AsciiOptions(withTrashed: true));
+
+        $this->assertStringNotContainsString('Android', $withoutTrashed);
+        $this->assertStringContainsString('Android', $withTrashed);
+    }
+
+    public function test_ascii_tree_max_depth_at_2_renders_grandchildren_only(): void
+    {
+        $r = new Category(['name' => 'R']);
+        $r->saveAsRoot();
+        $a = new Category(['name' => 'A']);
+        $a->appendToNode($r->refresh())->save();
+        $aa = new Category(['name' => 'AA']);
+        $aa->appendToNode($a->refresh())->save();
+        $aaa = new Category(['name' => 'AAA']);
+        $aaa->appendToNode($aa->refresh())->save();
+
+        $ascii = $r->refresh()->toAsciiTree(new AsciiOptions(maxDepth: 2));
+
+        $this->assertStringContainsString('R', $ascii);
+        $this->assertStringContainsString('A', $ascii);
+        $this->assertStringContainsString('AA', $ascii);
+        $this->assertStringNotContainsString('AAA', $ascii);
+    }
+
+    public function test_dot_show_aggregates_renders_columns(): void
+    {
+        [$electronics] = $this->buildElectronicsTree();
+        $electronics->setAttribute('products_total', 23);
+
+        $dot = $electronics->toDot(new DotOptions(showAggregates: ['products_total']));
+
+        // DOT uses literal `\n` between label segments.
+        $this->assertStringContainsString('Electronics\\nproducts_total: 23', $dot);
+    }
+
+    public function test_aggregate_float_value_renders_in_label(): void
+    {
+        [$electronics] = $this->buildElectronicsTree();
+        $electronics->setAttribute('price_avg', 12.5);
+
+        $mermaid = $electronics->toMermaid(new MermaidOptions(showAggregates: ['price_avg']));
+
+        $this->assertStringContainsString('price_avg: 12.5', $mermaid);
+    }
+
+    public function test_uuid_node_id_is_deterministic_hash_of_key(): void
+    {
+        // Hash offset matters: substr(md5(...), 0, 8) vs substr(..., 1, 8)
+        // produce different but both-valid-hex strings, so the regex test
+        // can't tell them apart. Assert the exact computed value to pin
+        // the offset.
+        $root = new UuidTag(['name' => 'Root']);
+        $root->id = 'fixed-key-for-hash-test';
+        $root->saveAsRoot();
+
+        $mermaid = $root->refresh()->toMermaid();
+
+        $expected = 'n'.substr(md5('fixed-key-for-hash-test'), 0, 8);
+        $this->assertStringContainsString("{$expected}[\"Root\"]", $mermaid);
+    }
 }

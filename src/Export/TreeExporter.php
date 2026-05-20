@@ -187,9 +187,6 @@ final readonly class TreeExporter
 
         $children = $entry['children'];
         $count = count($children);
-        if ($count === 0) {
-            return;
-        }
 
         $childContinuation = $continuation;
         if ($isLastSibling !== null) {
