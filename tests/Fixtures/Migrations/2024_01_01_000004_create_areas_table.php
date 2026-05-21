@@ -24,17 +24,15 @@ return new class extends Migration
             $table->nestedSetAggregate('tickets_total');
             $table->nestedSetAggregate('tickets_count_all');
 
-            // AVG — nullable decimal; null on empty subtree
+            // AVG — nullable decimal; null on empty subtree. The macro
+            // also allocates the `tickets_avg__sum` and
+            // `tickets_avg__count` companion columns the maintenance
+            // machinery writes alongside the display value.
             $table->nestedSetAggregate('tickets_avg', type: 'avg');
 
             // MIN / MAX — nullable; empty subtree yields NULL
             $table->nestedSetAggregate('tickets_min', type: 'min_max');
             $table->nestedSetAggregate('tickets_max', type: 'min_max');
-
-            // Internal AVG companions — written by Phase E maintenance.
-            // Reserved here so the migration is forward-compatible.
-            $table->nestedSetAggregate('tickets_avg__sum');
-            $table->nestedSetAggregate('tickets_avg__count');
 
             $table->timestamps();
         });

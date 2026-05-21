@@ -8,12 +8,20 @@ use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\CompanionSpec;
 
 final class NestedSetServiceProvider extends ServiceProvider
 {
     /**
      * Type families accepted by the `nestedSetAggregate()` Blueprint
      * macro. Each maps to a specific column shape; see {@see boot()}.
+     *
+     * Types that name an aggregate function with a non-empty
+     * {@see AggregateFunction::companionSet()} (today: `avg`) also
+     * allocate the matching companion columns alongside the
+     * user-facing column. The `dropNestedSetAggregate` companion macro
+     * accepts the same `type` argument and drops the same set.
      */
     public const string AGGREGATE_TYPE_SUM_COUNT = 'sum_count';
 
@@ -97,81 +105,166 @@ final class NestedSetServiceProvider extends ServiceProvider
             string $type = NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
         ): void {
             /** @var Blueprint $this */
-            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT) {
-                // SUM / COUNT — non-null, default 0. Signed bigInteger
-                // (not unsigned) so MariaDB strict mode doesn't reject
-                // delta-subtraction expressions whose intermediate
-                // type would be unsigned-minus-int. Range is still
-                // 9.2 quintillion — ample for SUM over deep subtrees.
-                $this->bigInteger($column)->default(0);
+            NestedSetServiceProvider::addAggregateColumn($this, $column, $type);
 
-                return;
+            foreach (NestedSetServiceProvider::companionColumnsFor($column, $type) as $companionColumn) {
+                NestedSetServiceProvider::addAggregateColumn(
+                    $this,
+                    $companionColumn,
+                    NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+                );
             }
+        });
 
-            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_AVG) {
-                // AVG — nullable decimal. Null indicates "no rows contributed"
-                // (empty subtree under exclusive semantics, or after every
-                // descendant has been deleted).
-                $this->decimal($column, 12, 4)->nullable();
+        Blueprint::macro('dropNestedSetAggregate', function (
+            string $column,
+            string $type = NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+        ): void {
+            /** @var Blueprint $this */
+            $columns = [
+                $column,
+                ...NestedSetServiceProvider::companionColumnsFor($column, $type),
+            ];
 
-                return;
-            }
+            $this->dropColumn($columns);
+        });
+    }
 
-            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_MIN_MAX) {
-                // MIN / MAX — nullable signed big int. Signed because the
-                // source column may legitimately hold negative values, and
-                // empty subtrees yield NULL rather than 0.
-                $this->bigInteger($column)->nullable();
+    /**
+     * Emits a single aggregate storage column on $table. Internal helper
+     * for the `nestedSetAggregate` Blueprint macro; also used to emit
+     * companion columns (always shaped as `sum_count`).
+     */
+    public static function addAggregateColumn(Blueprint $table, string $column, string $type): void
+    {
+        if ($type === self::AGGREGATE_TYPE_SUM_COUNT) {
+            // SUM / COUNT — non-null, default 0. Signed bigInteger
+            // (not unsigned) so MariaDB strict mode doesn't reject
+            // delta-subtraction expressions whose intermediate
+            // type would be unsigned-minus-int. Range is still
+            // 9.2 quintillion — ample for SUM over deep subtrees.
+            $table->bigInteger($column)->default(0);
 
-                return;
-            }
+            return;
+        }
 
-            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_DISTINCT_COUNT) {
-                // DistinctCount — same shape as Count: non-null, default 0.
-                $this->bigInteger($column)->default(0);
+        if ($type === self::AGGREGATE_TYPE_AVG) {
+            // AVG — nullable decimal. Null indicates "no rows contributed"
+            // (empty subtree under exclusive semantics, or after every
+            // descendant has been deleted).
+            $table->decimal($column, 12, 4)->nullable();
 
-                return;
-            }
+            return;
+        }
 
-            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_STRING_AGG) {
-                // StringAgg — nullable text; empty subtree → NULL. Text rather
-                // than string(...) because the natural upper bound is the
-                // aggregate's `limit * avg_value_length`, not a fixed user
-                // value.
-                $this->text($column)->nullable();
+        if ($type === self::AGGREGATE_TYPE_MIN_MAX) {
+            // MIN / MAX — nullable signed big int. Signed because the
+            // source column may legitimately hold negative values, and
+            // empty subtrees yield NULL rather than 0.
+            $table->bigInteger($column)->nullable();
 
-                return;
-            }
+            return;
+        }
 
-            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_JSON) {
-                // JsonAgg / JsonObjectAgg — nullable. Backend-specific column
-                // type: PG defaults to jsonb (faster reads, key normalisation);
-                // MySQL/MariaDB use the JSON type; SQLite stores as text.
-                // Laravel's $this->json($column)->nullable() handles this
-                // dispatch correctly across all four backends.
-                $this->json($column)->nullable();
+        if ($type === self::AGGREGATE_TYPE_DISTINCT_COUNT) {
+            // DistinctCount — same shape as Count: non-null, default 0.
+            $table->bigInteger($column)->default(0);
 
-                return;
-            }
+            return;
+        }
 
-            throw new InvalidArgumentException(sprintf(
+        if ($type === self::AGGREGATE_TYPE_STRING_AGG) {
+            // StringAgg — nullable text; empty subtree → NULL. Text rather
+            // than string(...) because the natural upper bound is the
+            // aggregate's `limit * avg_value_length`, not a fixed user
+            // value.
+            $table->text($column)->nullable();
+
+            return;
+        }
+
+        if ($type === self::AGGREGATE_TYPE_JSON) {
+            // JsonAgg / JsonObjectAgg — nullable. Backend-specific column
+            // type: PG defaults to jsonb (faster reads, key normalisation);
+            // MySQL/MariaDB use the JSON type; SQLite stores as text.
+            // Laravel's $table->json($column)->nullable() handles this
+            // dispatch correctly across all four backends.
+            $table->json($column)->nullable();
+
+            return;
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            'nestedSetAggregate: unknown type "%s". Supported: %s.',
+            $type,
+            implode(', ', self::knownAggregateTypes()),
+        ));
+    }
+
+    /**
+     * Returns the list of companion column names for an aggregate of
+     * type $type targeting $column. Empty list when the type names
+     * a function without companions (today: sum_count, min_max,
+     * distinct_count, string_agg, json).
+     *
+     * Type → function mapping is loose by design — `sum_count` covers
+     * Sum, Count, and any other delta-maintainable kind; `min_max`
+     * covers Min and Max. AVG is the only type whose function
+     * declares companions, so today this routine returns either two
+     * companion names (for `avg`) or none.
+     *
+     * @return list<string>
+     */
+    public static function companionColumnsFor(string $column, string $type): array
+    {
+        $function = self::typeToFunction($type);
+        if (! $function instanceof AggregateFunction) {
+            return [];
+        }
+
+        return array_map(
+            static fn (CompanionSpec $spec): string => $spec->columnFor($column),
+            $function->companionSet(),
+        );
+    }
+
+    /**
+     * Map a `nestedSetAggregate` type string to the
+     * {@see AggregateFunction} whose companion set it represents.
+     * Returns null for types whose underlying functions have no
+     * companions today (sum_count, min_max, distinct_count,
+     * string_agg, json).
+     */
+    private static function typeToFunction(string $type): ?AggregateFunction
+    {
+        return match ($type) {
+            self::AGGREGATE_TYPE_AVG => AggregateFunction::Avg,
+            self::AGGREGATE_TYPE_SUM_COUNT,
+            self::AGGREGATE_TYPE_MIN_MAX,
+            self::AGGREGATE_TYPE_DISTINCT_COUNT,
+            self::AGGREGATE_TYPE_STRING_AGG,
+            self::AGGREGATE_TYPE_JSON => null,
+            default => throw new InvalidArgumentException(sprintf(
                 'nestedSetAggregate: unknown type "%s". Supported: %s.',
                 $type,
-                implode(', ', [
-                    NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_AVG,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_MIN_MAX,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_DISTINCT_COUNT,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_STRING_AGG,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_JSON,
-                ]),
-            ));
-        });
+                implode(', ', self::knownAggregateTypes()),
+            )),
+        };
+    }
 
-        Blueprint::macro('dropNestedSetAggregate', function (string $column): void {
-            /** @var Blueprint $this */
-            $this->dropColumn($column);
-        });
+    /**
+     * @return list<string>
+     */
+    private static function knownAggregateTypes(): array
+    {
+        return [
+            self::AGGREGATE_TYPE_SUM_COUNT,
+            self::AGGREGATE_TYPE_AVG,
+            self::AGGREGATE_TYPE_MIN_MAX,
+            self::AGGREGATE_TYPE_DISTINCT_COUNT,
+            self::AGGREGATE_TYPE_STRING_AGG,
+            self::AGGREGATE_TYPE_JSON,
+        ];
     }
 
     /**
