@@ -9,6 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\CompanionSourceOrigin;
 use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\CompanionSpec;
 
@@ -55,6 +56,15 @@ final class NestedSetServiceProvider extends ServiceProvider
     public const string AGGREGATE_TYPE_BOOL_OR = 'bool_or';
 
     public const string AGGREGATE_TYPE_BOOL_AND = 'bool_and';
+
+    /**
+     * Storage shape for the `Σ(weight·value)` / `Σ(weight)` companion
+     * columns of {@see self::AGGREGATE_TYPE_WEIGHTED_AVG}. Decimal —
+     * not bigint — because weight or value can hold fractional values
+     * and their sum needs to too; PostgreSQL otherwise rejects writes
+     * with `invalid input syntax for type bigint`.
+     */
+    public const string AGGREGATE_TYPE_DECIMAL_SUM = 'decimal_sum';
 
     #[\Override]
     public function register(): void
@@ -250,6 +260,18 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_DECIMAL_SUM) {
+            // Companion `Σ(weight·value)` / `Σ(weight)` of a weighted
+            // average. Wider than the display column (20,4) because the
+            // ancestor's sum can be much larger than any single row's
+            // product; default 0 because the delta path adds to it on
+            // every mutation and a NULL accumulator would poison the
+            // result.
+            $table->decimal($column, 20, 4)->default(0);
+
+            return;
+        }
+
         if ($type === self::AGGREGATE_TYPE_BOOL_OR || $type === self::AGGREGATE_TYPE_BOOL_AND) {
             // BoolOr / BoolAnd — nullable boolean. Empty subtree reads
             // as NULL; non-empty reads as TRUE/FALSE. Laravel's
@@ -307,9 +329,27 @@ final class NestedSetServiceProvider extends ServiceProvider
         return array_map(
             static fn (CompanionSpec $spec): array => [
                 'column' => $spec->columnFor($column),
-                'type' => $spec->sourceTransform === CompanionSourceTransform::Square
-                    ? self::AGGREGATE_TYPE_SUM_SQ
-                    : self::AGGREGATE_TYPE_SUM_COUNT,
+                'type' => match ($spec->sourceTransform) {
+                    // Variance / Stddev's squared-sum companion needs
+                    // a wider DECIMAL — see {@see self::AGGREGATE_TYPE_SUM_SQ}.
+                    CompanionSourceTransform::Square => self::AGGREGATE_TYPE_SUM_SQ,
+                    // WeightedAvg's `Σ(weight·value)` companion sums
+                    // products of decimal columns; needs DECIMAL storage
+                    // or PG rejects writes with `invalid input syntax
+                    // for type bigint`. Also covers the sibling
+                    // `Σ(weight)` companion below — its source is the
+                    // parent's weight column (decimal), so its sum is
+                    // decimal too.
+                    CompanionSourceTransform::TimesWeight => self::AGGREGATE_TYPE_DECIMAL_SUM,
+                    // The Identity-transformed companion of a WeightedAvg
+                    // parent is `Σ(weight)` — also needs decimal storage.
+                    // Distinguish by the parent's function via the spec's
+                    // sourceOrigin (ParentWeight only appears on WeightedAvg).
+                    CompanionSourceTransform::Identity => $spec->sourceOrigin === CompanionSourceOrigin::ParentWeight
+                        ? self::AGGREGATE_TYPE_DECIMAL_SUM
+                        : self::AGGREGATE_TYPE_SUM_COUNT,
+                    CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
+                },
             ],
             $function->companionSet(),
         );
@@ -332,6 +372,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_BOOL_OR => AggregateFunction::BoolOr,
             self::AGGREGATE_TYPE_BOOL_AND => AggregateFunction::BoolAnd,
             self::AGGREGATE_TYPE_SUM_COUNT,
+            self::AGGREGATE_TYPE_DECIMAL_SUM,
             self::AGGREGATE_TYPE_MIN_MAX,
             self::AGGREGATE_TYPE_SUM_SQ,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
@@ -358,6 +399,7 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_VARIANCE,
                 self::AGGREGATE_TYPE_STDDEV,
                 self::AGGREGATE_TYPE_SUM_SQ,
+                self::AGGREGATE_TYPE_DECIMAL_SUM,
                 self::AGGREGATE_TYPE_DISTINCT_COUNT,
                 self::AGGREGATE_TYPE_STRING_AGG,
                 self::AGGREGATE_TYPE_JSON,

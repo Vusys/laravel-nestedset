@@ -16,6 +16,7 @@ use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\DerivedAggregateFragments;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
@@ -642,7 +643,7 @@ final class TreeAggregateBuilder
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
                 'COALESCE(SUM(%s), 0)',
-                self::sourceExpressionFor($definition, $qualifier),
+                self::sumBody($definition, $qualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? 'COUNT(*)'
@@ -701,20 +702,6 @@ final class TreeAggregateBuilder
         return $connection;
     }
 
-    /**
-     * SQL fragment that yields the source value for a delta-maintainable
-     * aggregate, applying the companion's source transform if any.
-     * Identity transforms produce a plain `q.col` ref; Square transforms
-     * produce `(q.col * q.col)` — the input to `SumSq` companions of
-     * Variance / Stddev.
-     */
-    private static function sourceExpressionFor(AggregateDefinition $definition, string $qualifier): string
-    {
-        $sourceRef = $qualifier.self::requireSource($definition);
-
-        return $definition->sourceTransform->applySqlFragment($sourceRef);
-    }
-
     private static function filteredAggregateExpression(
         Connection $connection,
         AggregateDefinition $definition,
@@ -727,7 +714,7 @@ final class TreeAggregateBuilder
             AggregateFunction::Sum => sprintf(
                 'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                 $pred,
-                self::sourceExpressionFor($definition, $qualifier),
+                self::sumBody($definition, $qualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $pred)
@@ -844,7 +831,7 @@ final class TreeAggregateBuilder
             AggregateFunction::Sum => sprintf(
                 'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                 $rawFilter,
-                self::sourceExpressionFor($definition, $innerQualifier),
+                self::sumBody($definition, $innerQualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $rawFilter)
@@ -1033,7 +1020,7 @@ final class TreeAggregateBuilder
             AggregateFunction::Sum => sprintf(
                 'SUM(CASE WHEN %s THEN %s ELSE 0 END)',
                 $rawSql,
-                self::sourceExpressionFor($definition, $innerQualifier),
+                self::sumBody($definition, $innerQualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $rawSql)
@@ -1193,6 +1180,31 @@ final class TreeAggregateBuilder
         return "CASE WHEN {$sourceRef} IS NULL THEN NULL WHEN {$sourceRef} THEN TRUE ELSE FALSE END";
     }
 
+    /**
+     * Render the inner expression that the outer `SUM(...)` aggregates
+     * over for $definition, applying any companion
+     * {@see CompanionSourceTransform} (e.g. the `weight * value`
+     * product for a `Sum(w·x)` weighted-avg companion, the
+     * `CASE WHEN c THEN 1 ELSE 0 END` cast for a bool-as-int
+     * companion of `BoolOr` / `BoolAnd`). Plain (Identity) Sums
+     * short-circuit to a bare column reference so the existing SQL
+     * stays byte-for-byte identical for AVG and standalone Sum
+     * aggregates.
+     */
+    private static function sumBody(AggregateDefinition $definition, string $qualifier): string
+    {
+        $sourceRef = $qualifier.self::requireSource($definition);
+        if ($definition->sourceTransform === CompanionSourceTransform::Identity) {
+            return $sourceRef;
+        }
+
+        $weightRef = $definition->weight !== null && $definition->weight !== ''
+            ? $qualifier.$definition->weight
+            : null;
+
+        return $definition->sourceTransform->applySqlFragment($sourceRef, $weightRef);
+    }
+
     private static function requireSource(AggregateDefinition $definition): string
     {
         if ($definition->source === null) {
@@ -1254,7 +1266,7 @@ final class TreeAggregateBuilder
             $inline = match ($definition->function) {
                 AggregateFunction::Sum => sprintf(
                     'COALESCE(%s, 0)',
-                    self::sourceExpressionFor($definition, $tableQualifier),
+                    self::sumBody($definition, $tableQualifier),
                 ),
                 AggregateFunction::Count => $definition->source === null
                     ? '1'
@@ -1341,7 +1353,7 @@ final class TreeAggregateBuilder
             AggregateFunction::Sum => sprintf(
                 'COALESCE(CASE WHEN %s THEN %s ELSE 0 END, 0)',
                 $pred,
-                self::sourceExpressionFor($definition, $tableQualifier),
+                self::sumBody($definition, $tableQualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('CASE WHEN %s THEN 1 ELSE 0 END', $pred)
