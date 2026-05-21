@@ -454,6 +454,75 @@ final class AggregateSqlEmitter
     }
 
     /**
+     * PostgreSQL native ordered-set aggregate for Median / Percentile.
+     * PG supports `PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY col)` with an
+     * optional `FILTER (WHERE …)` clause.
+     */
+    public static function emitQuantileNativeExpression(
+        AggregateDefinition $def,
+        string $qualifier,
+        ?string $filterSql = null,
+    ): string {
+        $source = self::requireSource($def);
+        $p = number_format($def->percentilePoint, 10, '.', '');
+        $expr = "PERCENTILE_CONT({$p}) WITHIN GROUP (ORDER BY {$qualifier}{$source})";
+
+        if ($filterSql !== null) {
+            $expr .= " FILTER (WHERE {$filterSql})";
+        }
+
+        return $expr;
+    }
+
+    /**
+     * Window-function correlated subquery for Median / Percentile on
+     * MySQL / MariaDB / SQLite, which lack ordered-set aggregates.
+     *
+     * Returns a complete `SELECT formula FROM (inner) _q` fragment suitable
+     * for wrapping in parentheses as a scalar subquery.
+     *
+     * `$innerFromClause` is the `FROM … WHERE correlated-predicate` text
+     * (already contains the scope + lft/rgt bounds). `$qualifier` is the
+     * table alias prefix used inside that clause (`'d.'`, etc.).
+     * `$filterSql` is an optional extra AND condition inside the derived table.
+     *
+     * Linear interpolation matches PERCENTILE_CONT semantics:
+     *   result = (1 - frac) * val[low_rn] + frac * val[high_rn]
+     * where frac = p * (N-1) - FLOOR(p * (N-1)), low_rn = FLOOR(p*(N-1))+1,
+     * high_rn = CEIL(p*(N-1))+1 (1-indexed after ORDER BY).
+     */
+    public static function emitQuantileWindowSubquery(
+        AggregateDefinition $def,
+        string $innerFromClause,
+        string $qualifier = 'd.',
+        ?string $filterSql = null,
+    ): string {
+        $source = self::requireSource($def);
+        $p = number_format($def->percentilePoint, 10, '.', '');
+        $srcRef = $qualifier.$source;
+        $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
+
+        $innerSelect =
+            "SELECT {$srcRef} AS _src, "
+            ."ROW_NUMBER() OVER (ORDER BY {$srcRef}) AS _rn, "
+            .'COUNT(*) OVER () - 1 AS _cnt '
+            .$innerFromClause.$filterClause;
+
+        // coeff_low  = 1 - frac = 1 - (p*_cnt - FLOOR(p*_cnt))
+        //            = 1 - p*_cnt + FLOOR(p*_cnt)   (constant 1.0 keeps numeric type)
+        // coeff_high = frac = p*_cnt - FLOOR(p*_cnt)
+        // low_rn  = FLOOR(p*_cnt) + 1
+        // high_rn = CEIL(p*_cnt)  + 1
+        $formula =
+            "(1.0 - {$p} * MAX(_q._cnt) + FLOOR({$p} * MAX(_q._cnt)))"
+            .' * MAX(CASE WHEN _q._rn = FLOOR('.$p.' * _q._cnt) + 1 THEN _q._src END)'
+            ." + ({$p} * MAX(_q._cnt) - FLOOR({$p} * MAX(_q._cnt)))"
+            .' * MAX(CASE WHEN _q._rn = CEIL('.$p.' * _q._cnt) + 1 THEN _q._src END)';
+
+        return "SELECT {$formula} FROM ({$innerSelect}) _q";
+    }
+
+    /**
      * For collection aggregates a NULL-source row produces "no contribution":
      * COUNT(DISTINCT NULL) = 0, STRING_AGG skips, JSON_AGG would normally
      * include null — but FILTER handles that on PG; on other backends we

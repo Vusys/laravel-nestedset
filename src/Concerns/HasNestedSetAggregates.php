@@ -246,7 +246,9 @@ trait HasNestedSetAggregates
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
                 'Listener aggregates do not support %s; declare it via #[NestedSetAggregate] (column-based) instead.',
                 $definition->operation->value,
             )),
@@ -2344,7 +2346,9 @@ trait HasNestedSetAggregates
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => throw new AggregateConfigurationException(sprintf(
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
                 'Listener aggregates do not support %s; declare it via #[NestedSetAggregate] (column-based) instead.',
                 $def->operation->value,
             )),

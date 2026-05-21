@@ -67,7 +67,16 @@ final class TreeAggregateBuilder
 
         $resolved = self::resolveRequest($model, $request);
 
-        if ($resolved === []) {
+        // Median / Percentile are read-only via withFreshAggregates() only.
+        // They require backend-specific SQL (native PERCENTILE_CONT on PG,
+        // window-function subquery on MySQL / MariaDB / SQLite) that cannot
+        // be embedded inside a LATERAL or derived-table GROUP BY. Pre-extract
+        // them so the normal three routing paths see only the maintainable
+        // aggregate kinds, and handle quantiles as individual correlated
+        // subqueries regardless of which backend we're on.
+        ['quantiles' => $quantiles, 'rest' => $resolved] = self::splitQuantiles($resolved);
+
+        if ($resolved === [] && $quantiles === []) {
             return;
         }
 
@@ -88,30 +97,48 @@ final class TreeAggregateBuilder
 
         $connection = $model->getConnection();
 
-        if (self::supportsLateral($connection)) {
-            self::applyLateralFreshSelects($connection, $builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
+        // Route the non-quantile definitions through the optimal shape for
+        // each backend. Quantile definitions skip all three paths — see below.
+        if ($resolved !== []) {
+            if (self::supportsLateral($connection)) {
+                self::applyLateralFreshSelects($connection, $builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
+            } elseif (self::isMariaDb($connection)) {
+                self::applyMariaDbDerivedFreshSelects($connection, $builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
+            } else {
+                // Fallback: K correlated sub-queries (one per declared aggregate).
+                // SQLite stays on this path — it parses LATERAL but the planner
+                // doesn't pick a meaningfully different plan, and the correlated
+                // shape is already fast there.
+                //
+                // Leaf fast-path applies here too — and pays off most clearly on
+                // this backend because every correlated subquery is a per-row
+                // evaluation. Wrapping in CASE makes the subquery dead code on
+                // leaf rows; SQLite (and the others) skip dead branches in CASE,
+                // so on a wideShallow shape only the root pays the subquery cost.
+                foreach ($resolved as $alias => $definition) {
+                    $sql = self::buildCorrelatedSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+                    $cased = self::wrapLeafFastPath(
+                        $definition,
+                        "{$table}.",
+                        $lftCol,
+                        $rgtCol,
+                        "({$sql})",
+                        $softDeletedColumn,
+                        $connection,
+                    );
 
-            return;
+                    $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
+                }
+            }
         }
 
-        if (self::isMariaDb($connection)) {
-            self::applyMariaDbDerivedFreshSelects($connection, $builder, $resolved, $table, $lftCol, $rgtCol, $scopeCols, $softDeletedColumn);
-
-            return;
-        }
-
-        // Fallback: K correlated sub-queries (one per declared aggregate).
-        // SQLite stays on this path — it parses LATERAL but the planner
-        // doesn't pick a meaningfully different plan, and the correlated
-        // shape is already fast there.
-        //
-        // Leaf fast-path applies here too — and pays off most clearly on
-        // this backend because every correlated subquery is a per-row
-        // evaluation. Wrapping in CASE makes the subquery dead code on
-        // leaf rows; SQLite (and the others) skip dead branches in CASE,
-        // so on a wideShallow shape only the root pays the subquery cost.
-        foreach ($resolved as $alias => $definition) {
-            $sql = self::buildCorrelatedSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+        // Quantile definitions always use individual correlated subqueries,
+        // regardless of backend. On PG they emit PERCENTILE_CONT; on all
+        // other backends they emit the window-function interpolation subquery.
+        // The leaf fast-path still applies: a single-element subtree's quantile
+        // is just the source value itself.
+        foreach ($quantiles as $alias => $definition) {
+            $sql = self::buildQuantileSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
             $cased = self::wrapLeafFastPath(
                 $definition,
                 "{$table}.",
@@ -451,7 +478,8 @@ final class TreeAggregateBuilder
         $table = $node->getTable();
         $lftCol = $node->getLftName();
         $rgtCol = $node->getRgtName();
-        $aggregateExpr = self::aggregateExpression($definition, qualifier: '', connection: $node->getConnection());
+        $connection = $node->getConnection();
+
         $boundsClause = $definition->inclusive
             ? "{$lftCol} >= ? AND {$rgtCol} <= ?"
             : "{$lftCol} > ? AND {$rgtCol} < ?";
@@ -471,9 +499,26 @@ final class TreeAggregateBuilder
             $softClause = " AND {$softDeletedColumn} IS NULL";
         }
 
+        // Quantile kinds on non-PostgreSQL backends need the window-function
+        // subquery shape. PostgreSQL uses its native ordered-set aggregate
+        // (PERCENTILE_CONT) via the standard aggregateExpression() path below.
+        if (($definition->function === AggregateFunction::Median
+            || $definition->function === AggregateFunction::Percentile)
+            && $connection->getDriverName() !== 'pgsql'
+        ) {
+            $filterSql = $definition->filter instanceof FilterPredicate
+                ? self::filterPredicateSql($connection, $definition->filter, '')
+                : null;
+            $innerFromClause = "FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
+            $sql = AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, '', $filterSql);
+
+            return $connection->scalar($sql, $bindings);
+        }
+
+        $aggregateExpr = self::aggregateExpression($definition, qualifier: '', connection: $connection);
         $sql = "SELECT {$aggregateExpr} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
-        return $node->getConnection()->scalar($sql, $bindings);
+        return $connection->scalar($sql, $bindings);
     }
 
     /**
@@ -585,6 +630,85 @@ final class TreeAggregateBuilder
     }
 
     /**
+     * Splits a resolved-definitions map into quantile kinds (Median /
+     * Percentile) and everything else. Quantile definitions are routed
+     * through individual correlated subqueries in every backend; the
+     * remaining definitions go through the normal LATERAL / MariaDB
+     * derived / correlated routing.
+     *
+     * @param  array<string, AggregateDefinition>  $resolved
+     * @return array{quantiles: array<string, AggregateDefinition>, rest: array<string, AggregateDefinition>}
+     */
+    private static function splitQuantiles(array $resolved): array
+    {
+        $quantiles = [];
+        $rest = [];
+
+        foreach ($resolved as $alias => $definition) {
+            if ($definition->function === AggregateFunction::Median
+                || $definition->function === AggregateFunction::Percentile
+            ) {
+                $quantiles[$alias] = $definition;
+            } else {
+                $rest[$alias] = $definition;
+            }
+        }
+
+        return ['quantiles' => $quantiles, 'rest' => $rest];
+    }
+
+    /**
+     * Correlated subquery that computes one quantile value for the outer
+     * row's subtree. On PostgreSQL, emits the native ordered-set aggregate
+     * `PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY col)`. On MySQL / MariaDB /
+     * SQLite, emits the window-function linear-interpolation subquery.
+     *
+     * The returned SQL is meant to be wrapped in parentheses and embedded
+     * as a scalar expression in the outer SELECT.
+     *
+     * @param  list<string>  $scopeCols
+     */
+    private static function buildQuantileSubquery(
+        ConnectionInterface $connection,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+        AggregateDefinition $definition,
+        ?string $softDeletedColumn,
+    ): string {
+        $boundsClause = $definition->inclusive
+            ? "d.{$lftCol} >= {$table}.{$lftCol} AND d.{$rgtCol} <= {$table}.{$rgtCol}"
+            : "d.{$lftCol} > {$table}.{$lftCol} AND d.{$rgtCol} < {$table}.{$rgtCol}";
+
+        $scopeClause = '';
+        foreach ($scopeCols as $col) {
+            $scopeClause .= " AND d.{$col} = {$table}.{$col}";
+        }
+
+        $softClause = $softDeletedColumn === null
+            ? ''
+            : " AND d.{$softDeletedColumn} IS NULL";
+
+        $filterSql = null;
+        if ($definition->filter instanceof FilterPredicate
+            && $connection instanceof Connection
+        ) {
+            $filterSql = self::filterPredicateSql($connection, $definition->filter, 'd.');
+        }
+
+        if ($connection instanceof Connection && $connection->getDriverName() === 'pgsql') {
+            $aggregateExpr = AggregateSqlEmitter::emitQuantileNativeExpression($definition, 'd.', $filterSql);
+
+            return "SELECT {$aggregateExpr} FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
+        }
+
+        $innerFromClause = "FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
+
+        return AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, 'd.', $filterSql);
+    }
+
+    /**
      * @param  list<string>  $scopeCols
      */
     private static function buildCorrelatedSubquery(
@@ -680,6 +804,8 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $qualifier),
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => AggregateSqlEmitter::emitQuantileNativeExpression($definition, $qualifier),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -751,6 +877,8 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $qualifier, $pred),
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => AggregateSqlEmitter::emitQuantileNativeExpression($definition, $qualifier, $pred),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -870,6 +998,10 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFilter),
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => throw new \LogicException(
+                'Median/Percentile cannot appear in inlineRawFilterExpression() — they are pre-extracted as correlated subqueries.',
+            ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -1061,6 +1193,10 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerAlias.'.', $rawSql),
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => throw new \LogicException(
+                'Median/Percentile cannot appear in correlatedRawFilterExpression() — they are pre-extracted as correlated subqueries.',
+            ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -1284,7 +1420,9 @@ final class TreeAggregateBuilder
                 AggregateFunction::HarmonicMean,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
-                AggregateFunction::JsonObjectAgg => 'NULL',
+                AggregateFunction::JsonObjectAgg,
+                AggregateFunction::Median,
+                AggregateFunction::Percentile => 'NULL',
             };
         }
 
@@ -1330,6 +1468,12 @@ final class TreeAggregateBuilder
                 AggregateFunction::BoolAnd => self::leafInlineBool($definition, $tableQualifier),
                 AggregateFunction::GeometricMean => self::leafInlineGeometricMean($definition, $tableQualifier),
                 AggregateFunction::HarmonicMean => self::leafInlineHarmonicMean($definition, $tableQualifier),
+                AggregateFunction::Median,
+                AggregateFunction::Percentile => sprintf(
+                    '%s%s',
+                    $tableQualifier,
+                    self::requireSource($definition),
+                ),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -1366,7 +1510,9 @@ final class TreeAggregateBuilder
             AggregateFunction::HarmonicMean,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => 'NULL',
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => 'NULL',
         };
 
         return sprintf(
@@ -1440,6 +1586,13 @@ final class TreeAggregateBuilder
                 $pred,
                 $tableQualifier.self::requireSource($definition),
                 $tableQualifier.self::requireSource($definition),
+            ),
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => sprintf(
+                'CASE WHEN (%s) THEN %s%s ELSE NULL END',
+                $pred,
+                $tableQualifier,
+                self::requireSource($definition),
             ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
@@ -2283,7 +2436,9 @@ final class TreeAggregateBuilder
             AggregateFunction::HarmonicMean,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => null,
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => null,
         };
     }
 
@@ -2360,6 +2515,8 @@ final class TreeAggregateBuilder
             case AggregateFunction::StringAgg:
             case AggregateFunction::JsonAgg:
             case AggregateFunction::JsonObjectAgg:
+            case AggregateFunction::Median:
+            case AggregateFunction::Percentile:
                 throw new \LogicException(sprintf(
                     'chainFoldStep() does not handle %s — these kinds are recompute-only and skip the chain fold.',
                     $definition->function->value,

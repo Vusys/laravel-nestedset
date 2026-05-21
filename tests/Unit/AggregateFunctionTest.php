@@ -32,6 +32,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('string_agg', AggregateFunction::StringAgg->value);
         $this->assertSame('json_agg', AggregateFunction::JsonAgg->value);
         $this->assertSame('json_object_agg', AggregateFunction::JsonObjectAgg->value);
+        $this->assertSame('median', AggregateFunction::Median->value);
+        $this->assertSame('percentile', AggregateFunction::Percentile->value);
     }
 
     public function test_sum_and_count_support_delta_maintenance(): void

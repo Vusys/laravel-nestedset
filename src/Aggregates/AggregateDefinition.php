@@ -50,6 +50,7 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public array $sources = [],
         public ?string $weight = null,
         public bool $allowNonPositive = false,
+        public float $percentilePoint = 0.5,
     ) {}
 
     public function getColumn(): string

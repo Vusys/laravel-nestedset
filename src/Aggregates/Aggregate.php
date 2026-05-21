@@ -52,6 +52,7 @@ final readonly class Aggregate
         public array $sources = [],
         public ?string $weight = null,
         public bool $allowNonPositive = false,
+        public float $percentilePoint = 0.5,
     ) {}
 
     /**
@@ -243,6 +244,93 @@ final readonly class Aggregate
     }
 
     /**
+     * Median (p=0.5 percentile) of `$source` over the subtree.
+     * Available via `withFreshAggregates()` only — cannot be stored as a
+     * precalculated column and will be rejected by `#[NestedSetAggregate]`.
+     */
+    public static function median(string $source): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::median(): source column must not be empty.',
+            );
+        }
+
+        return new self(AggregateFunction::Median, $source, true);
+    }
+
+    /**
+     * Arbitrary percentile of `$source` over the subtree.
+     * `$p` must be in [0.0, 1.0]. Available via `withFreshAggregates()` only.
+     */
+    public static function percentile(string $source, float $p): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::percentile(): source column must not be empty.',
+            );
+        }
+
+        if ($p < 0.0 || $p > 1.0) {
+            throw new AggregateConfigurationException(
+                'Aggregate::percentile(): percentile point must be in [0.0, 1.0].',
+            );
+        }
+
+        return new self(AggregateFunction::Percentile, $source, true, percentilePoint: $p);
+    }
+
+    /**
+     * Multiple percentiles of `$source` in one call — returns a map of
+     * `alias => Aggregate` ready to spread into `withFreshAggregates()`:
+     *
+     *     ->withFreshAggregates([...Aggregate::percentiles('price', ['p50' => 0.5, 'p95' => 0.95])])
+     *
+     * Each alias must be a non-empty string. Each point must be in [0.0, 1.0].
+     *
+     * @param  array<string, float>  $points  alias => percentile point
+     * @return array<string, self>
+     */
+    public static function percentiles(string $source, array $points): array
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::percentiles(): source column must not be empty.',
+            );
+        }
+
+        if ($points === []) {
+            throw new AggregateConfigurationException(
+                'Aggregate::percentiles(): points array must not be empty.',
+            );
+        }
+
+        $result = [];
+
+        foreach ($points as $alias => $p) {
+            if ($alias === '') {
+                throw new AggregateConfigurationException(
+                    'Aggregate::percentiles(): each point must be keyed by a non-empty string alias.',
+                );
+            }
+
+            $result[$alias] = self::percentile($source, (float) $p);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Sugar for `percentiles($source, ['q1' => 0.25, 'median' => 0.5, 'q3' => 0.75])`.
+     *
+     * @return array<string, self>
+     */
+    public static function quartiles(string $source): array
+    {
+        return self::percentiles($source, ['q1' => 0.25, 'median' => 0.5, 'q3' => 0.75]);
+    }
+
+    /**
      * Opt into silent-skip semantics for source values that violate the
      * positivity / non-zero constraint of geometric and harmonic mean
      * aggregates. By default a save that writes a non-positive (geomMean)
@@ -268,6 +356,7 @@ final readonly class Aggregate
             sources: $this->sources,
             weight: $this->weight,
             allowNonPositive: true,
+            percentilePoint: $this->percentilePoint,
         );
     }
 
@@ -461,6 +550,8 @@ final readonly class Aggregate
             valueColumn: $this->valueColumn,
             sources: $this->sources,
             weight: $this->weight,
+            allowNonPositive: $this->allowNonPositive,
+            percentilePoint: $this->percentilePoint,
         );
     }
 
@@ -502,6 +593,7 @@ final readonly class Aggregate
             sources: $this->sources,
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
+            percentilePoint: $this->percentilePoint,
         );
     }
 
@@ -580,6 +672,7 @@ final readonly class Aggregate
             sources: $this->sources,
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
+            percentilePoint: $this->percentilePoint,
         );
     }
 
@@ -647,6 +740,7 @@ final readonly class Aggregate
             sources: $this->sources,
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
+            percentilePoint: $this->percentilePoint,
         );
     }
 
