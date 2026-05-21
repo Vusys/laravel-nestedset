@@ -16,7 +16,7 @@ use Vusys\NestedSet\NodeTrait;
  *
  * The four display columns share a single source column (`tickets`),
  * so the registry auto-promotes one Sum, one SumSq, and one Count
- * companion per (function, sample) tuple; all six display columns are
+ * companion per declaration; all four display columns are
  * delta-maintained from those companions on every mutation.
  *
  * @property int $id
