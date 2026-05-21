@@ -46,7 +46,7 @@ $electronics->refresh()->products_total;   // 23  — rolled up from descendants
 $phones->update(['products' => 20]);
 $electronics->refresh()->products_total;   // 30  — ancestors updated in the same write
 
-$phones->appendToNode($gadgets)->save();   // move the Phones subtree to a different root
+$phones->moveTo($gadgets)->save();         // move the Phones subtree to a different root
 $electronics->refresh()->products_total;   // 10  — old ancestors shrink
 $gadgets->refresh()->products_total;       // 20  — new ancestors grow
 

@@ -2,6 +2,8 @@
 
 Every mutation is a method on the model that queues a pending operation; the actual work happens on the next `save()`, wrapped in a transaction (configurable, on by default). This page walks through each positional method using a single example tree, and shows what the tree looks like after each operation.
 
+For "put this node under that parent at slot N" — the common drag-and-drop / REST-PATCH shape — skip ahead to the `moveTo` section, which wraps the four primitives below into one ergonomic entry point.
+
 ## Building the example tree
 
 ```php
@@ -58,6 +60,50 @@ Electronics
 ├── Phones
 └── Tablets       ← inserted after Phones
 ```
+
+## moveTo — pick a destination by position
+
+The four primitives above (`appendToNode`, `prependToNode`, `insertBeforeNode`, `insertAfterNode`) cover every move you can express in the nested set, but most call sites think in terms of "put this node under that parent at slot N". `moveTo` collapses the four into one entry point that picks the right primitive for you.
+
+```php
+$node->moveTo($parent, 'last');          // → appendToNode
+$node->moveTo($parent, 'first');         // → prependToNode
+$node->moveTo($parent, 0);               // → prependToNode (alias of 'first')
+$node->moveTo($parent, 2);               // → insertBeforeNode(siblings[2])
+$node->moveTo($parent, 99);              // → appendToNode (clamped past the end)
+```
+
+`'last'` is the default, so `$node->moveTo($parent)` is the same as `appendToNode`. Negative positions and unrecognised strings throw `LogicException`.
+
+The integer index is **0-based** and counted *after* removing `$node` from its current siblings if it already lives under `$parent`. That means "position N" reads as "end up at final index N" rather than "skip N other siblings" — same-parent reorders use the same call shape:
+
+```php
+$audio->refresh()->moveTo($audio->parent, 3);   // move Audio so it lands at index 3
+```
+
+```text
+Electronics
+├── Computers
+├── Accessories
+├── Phones
+├── Audio          ← was index 0, now index 3
+└── Tablets
+```
+
+### moveBefore / moveAfter — sibling-relative aliases
+
+When you already have a sibling reference, the explicit aliases read better than computing an index:
+
+```php
+$tablets->moveBefore($phones);   // wraps insertBeforeNode($phones)
+$tablets->moveAfter($audio);     // wraps insertAfterNode($audio)
+```
+
+### Things to know
+
+- **Same-position moves still emit `NodeMoved`.** Resolving to a position the node already occupies skips the structural SQL — the underlying `CASE WHEN` is a no-op — but the event surface still fires with `fromBounds === toBounds`. Consumers wiring audit listeners that treat `NodeMoved` as "the tree changed" should filter on `fromBounds !== toBounds`.
+- **Cross-scope rejection happens at different times depending on the position arm.** Integer positions ≥ 1 do an eager `assertSameScope` (the sibling lookup needs scope to build the query); the string-equivalent arms (`'first'`, `'last'`, `0`) defer to `save()` time, matching the primitives they wrap.
+- **The parent must be saved for integer positions ≥ 1.** `moveTo($unsavedParent, 1)` throws `LogicException` because there's no parent key to look up siblings against. `'first'` / `'last'` / `0` delegate straight to the primitives without that constraint (though `save()` will still fail against an unplaced parent).
 
 ## up / down — reorder among siblings
 
