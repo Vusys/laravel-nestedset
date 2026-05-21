@@ -204,6 +204,144 @@ final class AggregateRegistry
     }
 
     /**
+     * For each inclusive Variance / Stddev declaration on $class, returns
+     * the column names of its Sum, SumSq, and Count companions plus the
+     * sample/population flag. The result is consumed by Phase E
+     * maintenance to write `variance = (n·SumSq − Sum²) / N` (with
+     * `N = n²` for pop or `n(n−1)` for sample) in the same UPDATE as
+     * the companion deltas.
+     *
+     * Companions are matched by source column + filter + inclusivity +
+     * source transform (Sum vs SumSq differ only by transform). A
+     * Variance declaration without a complete companion set is skipped
+     * — that state is unreachable when declarations come through the
+     * registry's auto-promotion, but the skip keeps the helper robust
+     * against direct {@see AggregateDefinition} construction in tests.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return array<string, array{sum: string, sum_sq: string, count: string, function: AggregateFunction, sample: bool}>
+     */
+    public static function varianceCompanionsFor(string $class): array
+    {
+        $definitions = self::for($class);
+        $bySource = self::indexBySource($definitions);
+
+        $result = [];
+
+        foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+            if ($definition->function !== AggregateFunction::Variance
+                && $definition->function !== AggregateFunction::Stddev) {
+                continue;
+            }
+            if ($definition->source === null) {
+                continue;
+            }
+            if (! $definition->inclusive) {
+                continue;
+            }
+
+            $candidates = $bySource[$definition->source] ?? [];
+
+            // First pass: prefer the canonical auto-promoted columns
+            // (`<display>__sum`, `<display>__sum_sq`, `<display>__count`).
+            // When the user has declared multiple Variance / Stddev
+            // aggregates over the same source, each gets its own
+            // companion triple under this naming convention — picking
+            // the canonical one rather than the first match avoids
+            // accidentally driving one display column off another's
+            // companions.
+            $sumColumn = self::findCanonicalCompanion($candidates, $definition, AggregateFunction::Sum, CompanionSourceTransform::Identity, '__sum');
+            $sumSqColumn = self::findCanonicalCompanion($candidates, $definition, AggregateFunction::Sum, CompanionSourceTransform::Square, '__sum_sq');
+            $countColumn = self::findCanonicalCompanion($candidates, $definition, AggregateFunction::Count, CompanionSourceTransform::Identity, '__count');
+
+            // Second pass for any companion the canonical lookup
+            // missed — allows power users to satisfy a Variance /
+            // Stddev's companion requirement with a hand-declared
+            // Sum / Count that happens to compute the same value.
+            // Order-sensitive: takes the first compatible match.
+            foreach ($candidates as $candidate) {
+                if (! self::filtersMatch($candidate->filter, $definition->filter)) {
+                    continue;
+                }
+                if ($candidate->inclusive !== $definition->inclusive) {
+                    continue;
+                }
+                if ($candidate->function === AggregateFunction::Sum
+                    && $candidate->sourceTransform === CompanionSourceTransform::Identity
+                    && $sumColumn === null) {
+                    $sumColumn = $candidate->column;
+                }
+                if ($candidate->function === AggregateFunction::Sum
+                    && $candidate->sourceTransform === CompanionSourceTransform::Square
+                    && $sumSqColumn === null) {
+                    $sumSqColumn = $candidate->column;
+                }
+                if ($candidate->function === AggregateFunction::Count
+                    && $candidate->sourceTransform === CompanionSourceTransform::Identity
+                    && $countColumn === null) {
+                    $countColumn = $candidate->column;
+                }
+            }
+
+            if ($sumColumn !== null && $sumSqColumn !== null && $countColumn !== null) {
+                $result[$definition->column] = [
+                    'sum' => $sumColumn,
+                    'sum_sq' => $sumSqColumn,
+                    'count' => $countColumn,
+                    'function' => $definition->function,
+                    'sample' => $definition->sample,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return the candidate companion column matching the canonical
+     * naming convention `<displayColumn><suffix>` — used by
+     * {@see varianceCompanionsFor()} to pick the companion that was
+     * auto-promoted *for this specific display column*, not any other
+     * Variance / Stddev sharing the same source.
+     *
+     * @param  list<AggregateDefinition>  $candidates
+     */
+    private static function findCanonicalCompanion(
+        array $candidates,
+        AggregateDefinition $parent,
+        AggregateFunction $function,
+        CompanionSourceTransform $transform,
+        string $suffix,
+    ): ?string {
+        $expected = $parent->column.$suffix;
+
+        foreach ($candidates as $candidate) {
+            if ($candidate->column !== $expected) {
+                continue;
+            }
+            if ($candidate->function !== $function) {
+                continue;
+            }
+            if ($candidate->sourceTransform !== $transform) {
+                continue;
+            }
+            if ($candidate->inclusive !== $parent->inclusive) {
+                continue;
+            }
+            if (! self::filtersMatch($candidate->filter, $parent->filter)) {
+                continue;
+            }
+
+            return $candidate->column;
+        }
+
+        return null;
+    }
+
+    /**
      * @param  class-string<Model&HasNestedSet>  $class
      * @return list<AggregateDefinition>
      */
@@ -381,7 +519,7 @@ final class AggregateRegistry
                 ));
 
                 foreach ($companionSet as $spec) {
-                    if (self::hasFunction($companionsForSource, $spec->function)) {
+                    if (self::hasCompanion($companionsForSource, $spec)) {
                         continue;
                     }
 
@@ -392,6 +530,7 @@ final class AggregateRegistry
                         inclusive: $definition->inclusive,
                         internal: true,
                         filter: $definition->filter,
+                        sourceTransform: $spec->sourceTransform,
                     );
                 }
 
@@ -480,12 +619,22 @@ final class AggregateRegistry
     }
 
     /**
+     * True when one of $definitions matches the given companion spec —
+     * same underlying function AND same source transformation.
+     *
+     * Source transform must match because two `Sum` companions over
+     * the same source column may carry different transforms — e.g.
+     * Variance needs one identity-Sum and one square-Sum companion;
+     * picking the wrong one (identity counted as the SumSq companion)
+     * would silently store the wrong value.
+     *
      * @param  list<AggregateDefinition>  $definitions
      */
-    private static function hasFunction(array $definitions, AggregateFunction $function): bool
+    private static function hasCompanion(array $definitions, CompanionSpec $spec): bool
     {
         foreach ($definitions as $definition) {
-            if ($definition->function === $function) {
+            if ($definition->function === $spec->function
+                && $definition->sourceTransform === $spec->sourceTransform) {
                 return true;
             }
         }

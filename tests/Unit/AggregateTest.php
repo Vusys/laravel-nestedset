@@ -55,6 +55,51 @@ final class AggregateTest extends TestCase
         $this->assertSame(AggregateFunction::Max, Aggregate::max('tickets')->function);
     }
 
+    public function test_variance_factory_defaults_to_population(): void
+    {
+        $aggregate = Aggregate::variance('tickets');
+
+        $this->assertSame(AggregateFunction::Variance, $aggregate->function);
+        $this->assertSame('tickets', $aggregate->source);
+        $this->assertFalse($aggregate->sample, 'variance() default is population variance');
+    }
+
+    public function test_variance_factory_with_sample_flag(): void
+    {
+        $this->assertTrue(Aggregate::variance('tickets', sample: true)->sample);
+    }
+
+    public function test_stddev_factory_defaults_to_population(): void
+    {
+        $aggregate = Aggregate::stddev('tickets');
+
+        $this->assertSame(AggregateFunction::Stddev, $aggregate->function);
+        $this->assertSame('tickets', $aggregate->source);
+        $this->assertFalse($aggregate->sample);
+    }
+
+    public function test_stddev_factory_with_sample_flag(): void
+    {
+        $this->assertTrue(Aggregate::stddev('tickets', sample: true)->sample);
+    }
+
+    public function test_sample_flag_persists_across_modifier_calls(): void
+    {
+        $aggregate = Aggregate::stddev('tickets', sample: true)
+            ->exclusive()
+            ->filter(['type' => 'fire']);
+
+        $this->assertTrue($aggregate->sample);
+        $this->assertFalse($aggregate->inclusive);
+    }
+
+    public function test_into_propagates_sample_flag_to_definition(): void
+    {
+        $definition = Aggregate::stddev('tickets', sample: true)->into('tickets_stddev');
+
+        $this->assertTrue($definition->sample);
+    }
+
     public function test_inclusive_is_the_default(): void
     {
         $this->assertTrue(Aggregate::sum('tickets')->inclusive);

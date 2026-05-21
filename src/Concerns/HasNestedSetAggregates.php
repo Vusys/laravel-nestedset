@@ -232,6 +232,10 @@ trait HasNestedSetAggregates
             AggregateFunction::Min => $min,
             AggregateFunction::Max => $max,
             AggregateFunction::Avg => $count === 0 ? null : $sum / $count,
+            AggregateFunction::Variance, AggregateFunction::Stddev => throw new \LogicException(
+                'Variance / Stddev are not supported for listener aggregates. '
+                .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
+            ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -365,8 +369,8 @@ trait HasNestedSetAggregates
             $source = $definition->source;
 
             if ($definition->function === AggregateFunction::Sum && $source !== null) {
-                $newSource = self::numeric($this->getAttribute($source));
-                $oldSource = self::numeric($this->getOriginal($source));
+                $newSource = $definition->sourceTransform->applyPhp(self::numeric($this->getAttribute($source)));
+                $oldSource = $definition->sourceTransform->applyPhp(self::numeric($this->getOriginal($source)));
                 $delta = ($newPred ? $newSource : 0) - ($oldPred ? $oldSource : 0);
 
                 if ($delta !== 0) {
@@ -601,6 +605,7 @@ trait HasNestedSetAggregates
             avgs: AggregateRegistry::avgCompanionsFor(static::class),
             extremes: $extremes,
             softDeletedColumn: $this->softDeleteColumn(),
+            variances: AggregateRegistry::varianceCompanionsFor(static::class),
         );
 
         if ($recomputes !== []) {
@@ -844,7 +849,9 @@ trait HasNestedSetAggregates
                     && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
                     continue;
                 }
-                $value = self::numeric($this->getAttribute($definition->source));
+                $value = $definition->sourceTransform->applyPhp(
+                    self::numeric($this->getAttribute($definition->source)),
+                );
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
                 }
@@ -946,6 +953,7 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
                 softDeletedColumn: $this->softDeleteColumn(),
+                variances: AggregateRegistry::varianceCompanionsFor(static::class),
             );
         }
 
@@ -1103,6 +1111,7 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 softDeletedColumn: $this->softDeleteColumn(),
+                variances: AggregateRegistry::varianceCompanionsFor(static::class),
             );
         }
 
@@ -1172,6 +1181,7 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 softDeletedColumn: $this->softDeleteColumn(),
+                variances: AggregateRegistry::varianceCompanionsFor(static::class),
             );
         }
 
@@ -1293,6 +1303,7 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $candidateExtremes,
                 softDeletedColumn: $this->softDeleteColumn(),
+                variances: AggregateRegistry::varianceCompanionsFor(static::class),
             );
         }
 
@@ -1654,6 +1665,7 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
                 softDeletedColumn: $this->softDeleteColumn(),
+                variances: AggregateRegistry::varianceCompanionsFor(static::class),
             );
         }
 
@@ -2120,6 +2132,10 @@ trait HasNestedSetAggregates
             AggregateFunction::Avg => $contributions === []
                 ? null
                 : array_sum($contributions) / count($contributions),
+            AggregateFunction::Variance, AggregateFunction::Stddev => throw new \LogicException(
+                'Variance / Stddev are not supported for listener aggregates. '
+                .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
+            ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
