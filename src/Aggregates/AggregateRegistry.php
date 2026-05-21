@@ -33,11 +33,19 @@ final class AggregateRegistry
 {
     /**
      * Internal companion column suffix for the SUM half of an AVG.
+     *
+     * Retained for backwards compatibility — callers that need to
+     * derive AVG companion column names by string concatenation can
+     * use this constant. New code should ask the aggregate function
+     * directly via {@see AggregateFunction::companionSet()} rather
+     * than baking the convention into call sites.
      */
     public const string AVG_SUM_SUFFIX = '__sum';
 
     /**
      * Internal companion column suffix for the COUNT half of an AVG.
+     *
+     * See {@see self::AVG_SUM_SUFFIX} for the same caveat.
      */
     public const string AVG_COUNT_SUFFIX = '__count';
 
@@ -76,7 +84,7 @@ final class AggregateRegistry
             self::fromListenerMethodOverride($class),
         );
 
-        $definitions = self::autoPromoteAvgCompanions($definitions);
+        $definitions = self::autoPromoteCompanions($definitions);
 
         self::assertNoDuplicateColumns($definitions, $class);
         self::assertNoAggregateColumnsInFillable($definitions, $class);
@@ -307,22 +315,27 @@ final class AggregateRegistry
     }
 
     /**
-     * For each AVG definition that lacks a sibling SUM and COUNT on the
-     * same source, adds internal companions. If the user has already
-     * declared compatible companions (a SUM(source) and a COUNT(source)
-     * or COUNT(*) on the same model), we leave the AVG to reference
-     * those at maintenance time and skip auto-promotion. The decision
-     * is made by source-column match; the actual reference resolution
-     * lives in later phases.
+     * For each aggregate definition that declares a non-empty
+     * {@see AggregateFunction::companionSet()}, adds the missing
+     * companion definitions as `internal: true`. Companions inherit
+     * the parent's source, inclusivity, and filter predicate so they
+     * stay semantically aligned with the user-facing aggregate they
+     * support.
+     *
+     * Skip rule: if a user has already declared a matching companion
+     * (same function, same source, equivalent filter), the existing
+     * declaration is adopted and no internal duplicate is added. Filter
+     * equivalence is decided by {@see self::filtersMatch()} — a Sum
+     * with a different predicate than the AVG would silently read a
+     * different row set and is therefore not a valid companion.
      *
      * Non-{@see AggregateDefinition} entries (e.g. {@see ListenerAggregateDefinition})
-     * are passed through unchanged; only SQL-function definitions participate
-     * in AVG companion promotion.
+     * follow an analogous path keyed on listener class + inclusivity.
      *
      * @param  list<AggregateDefinitionContract>  $definitions
      * @return list<AggregateDefinitionContract>
      */
-    private static function autoPromoteAvgCompanions(array $definitions): array
+    private static function autoPromoteCompanions(array $definitions): array
     {
         $bySource = self::indexBySource($definitions);
         $listenerBySource = self::indexListenersByClassAndInclusive($definitions);
@@ -332,23 +345,25 @@ final class AggregateRegistry
 
         foreach ($definitions as $definition) {
             if ($definition instanceof AggregateDefinition) {
-                if ($definition->function !== AggregateFunction::Avg) {
+                $companionSet = $definition->function->companionSet();
+                if ($companionSet === []) {
                     continue;
                 }
 
                 if ($definition->source === null) {
                     throw new AggregateConfigurationException(sprintf(
-                        'AggregateDefinition for column "%s": AVG requires a source column.',
+                        'AggregateDefinition for column "%s": %s requires a source column.',
                         $definition->column,
+                        strtoupper($definition->function->value),
                     ));
                 }
 
                 $source = $definition->source;
                 $companionsForSource = $bySource[$source] ?? [];
-                // Only candidates whose filter matches the AVG's count
-                // as valid companions. Otherwise the auto-promotion
+                // Only candidates whose filter matches the parent's
+                // count as valid companions. Otherwise the auto-promotion
                 // adopts a Sum with a different filter (e.g. fire-only)
-                // and the AVG silently reads filtered data.
+                // and the parent silently reads filtered data.
                 $companionsForSource = array_values(array_filter(
                     $companionsForSource,
                     static fn (AggregateDefinition $candidate): bool => self::filtersMatch(
@@ -357,24 +372,14 @@ final class AggregateRegistry
                     ),
                 ));
 
-                $hasSum = self::hasFunction($companionsForSource, AggregateFunction::Sum);
-                $hasCount = self::hasFunction($companionsForSource, AggregateFunction::Count);
+                foreach ($companionSet as $spec) {
+                    if (self::hasFunction($companionsForSource, $spec->function)) {
+                        continue;
+                    }
 
-                if (! $hasSum) {
                     $extras[] = new AggregateDefinition(
-                        column: $definition->column.self::AVG_SUM_SUFFIX,
-                        function: AggregateFunction::Sum,
-                        source: $source,
-                        inclusive: $definition->inclusive,
-                        internal: true,
-                        filter: $definition->filter,
-                    );
-                }
-
-                if (! $hasCount) {
-                    $extras[] = new AggregateDefinition(
-                        column: $definition->column.self::AVG_COUNT_SUFFIX,
-                        function: AggregateFunction::Count,
+                        column: $spec->columnFor($definition->column),
+                        function: $spec->function,
                         source: $source,
                         inclusive: $definition->inclusive,
                         internal: true,
@@ -385,42 +390,32 @@ final class AggregateRegistry
                 continue;
             }
 
-            if ($definition instanceof ListenerAggregateDefinition
-                && $definition->operation === AggregateFunction::Avg) {
-                // Listener AVG: auto-promote Sum + Count companions
-                // over the same listener class, same inclusivity. The
-                // AVG display column is maintained as
-                // `sum_col / NULLIF(count_col, 0)` after every delta
-                // — same recipe as SQL AVG.
+            if ($definition instanceof ListenerAggregateDefinition) {
+                $companionSet = $definition->operation->companionSet();
+                if ($companionSet === []) {
+                    continue;
+                }
+
                 $key = $definition->listenerClass.'|'.($definition->inclusive ? 'inc' : 'exc');
                 $companions = $listenerBySource[$key] ?? [];
 
-                $hasSum = false;
-                $hasCount = false;
-                foreach ($companions as $companion) {
-                    if ($companion->operation === AggregateFunction::Sum) {
-                        $hasSum = true;
+                foreach ($companionSet as $spec) {
+                    $alreadyDeclared = false;
+                    foreach ($companions as $companion) {
+                        if ($companion->operation === $spec->function) {
+                            $alreadyDeclared = true;
+                            break;
+                        }
                     }
-                    if ($companion->operation === AggregateFunction::Count) {
-                        $hasCount = true;
+
+                    if ($alreadyDeclared) {
+                        continue;
                     }
-                }
 
-                if (! $hasSum) {
                     $extras[] = new ListenerAggregateDefinition(
-                        column: $definition->column.self::AVG_SUM_SUFFIX,
+                        column: $spec->columnFor($definition->column),
                         listenerClass: $definition->listenerClass,
-                        operation: AggregateFunction::Sum,
-                        inclusive: $definition->inclusive,
-                        internal: true,
-                    );
-                }
-
-                if (! $hasCount) {
-                    $extras[] = new ListenerAggregateDefinition(
-                        column: $definition->column.self::AVG_COUNT_SUFFIX,
-                        listenerClass: $definition->listenerClass,
-                        operation: AggregateFunction::Count,
+                        operation: $spec->function,
                         inclusive: $definition->inclusive,
                         internal: true,
                     );

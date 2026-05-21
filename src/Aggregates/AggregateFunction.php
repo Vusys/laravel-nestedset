@@ -58,4 +58,27 @@ enum AggregateFunction: string
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg => true,
         };
     }
+
+    /**
+     * Declares the delta-maintainable companion columns this function
+     * needs in order to be maintainable. `Avg` is promoted to a
+     * `Sum + Count` companion pair; future maths aggregates declare
+     * their own sets here (e.g. variance → `Sum`, `SumSq`, `Count`).
+     *
+     * Functions that are themselves delta-maintainable (`Sum`,
+     * `Count`) or that route through full subtree recompute (`Min`,
+     * `Max`) declare no companions.
+     *
+     * @return list<CompanionSpec>
+     */
+    public function companionSet(): array
+    {
+        return match ($this) {
+            self::Avg => [
+                new CompanionSpec('__sum', self::Sum),
+                new CompanionSpec('__count', self::Count),
+            ],
+            self::Sum, self::Count, self::Min, self::Max => [],
+        };
+    }
 }

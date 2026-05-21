@@ -64,4 +64,29 @@ final class AggregateFunctionTest extends TestCase
         $this->assertTrue(AggregateFunction::JsonAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonObjectAgg->nullableOnEmpty());
     }
+
+    public function test_avg_declares_sum_and_count_companions(): void
+    {
+        $companions = AggregateFunction::Avg->companionSet();
+
+        $this->assertCount(2, $companions);
+
+        $suffixesByFunction = [
+            $companions[0]->function->value => $companions[0]->suffix,
+            $companions[1]->function->value => $companions[1]->suffix,
+        ];
+
+        $this->assertSame(
+            ['sum' => '__sum', 'count' => '__count'],
+            $suffixesByFunction,
+        );
+    }
+
+    public function test_sum_count_min_max_declare_no_companions(): void
+    {
+        $this->assertSame([], AggregateFunction::Sum->companionSet());
+        $this->assertSame([], AggregateFunction::Count->companionSet());
+        $this->assertSame([], AggregateFunction::Min->companionSet());
+        $this->assertSame([], AggregateFunction::Max->companionSet());
+    }
 }
