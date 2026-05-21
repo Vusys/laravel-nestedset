@@ -276,6 +276,63 @@ final class BlueprintMacroTest extends TestCase
         $this->assertSame([], NestedSetServiceProvider::companionColumnsFor('tickets_max', 'min_max'));
     }
 
+    public function test_nested_set_aggregate_variance_and_stddev_types_allocate_three_companions_each(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('tickets_variance', type: 'variance');
+            $table->nestedSetAggregate('tickets_stddev', type: 'stddev');
+        });
+
+        $byName = $this->columnsByName();
+
+        // Display columns: nullable.
+        $this->assertTrue($byName['tickets_variance']['nullable']);
+        $this->assertTrue($byName['tickets_stddev']['nullable']);
+
+        // Three companions each — Sum, SumSq, Count — non-null with default 0.
+        foreach (['tickets_variance', 'tickets_stddev'] as $display) {
+            foreach (['__sum', '__sum_sq', '__count'] as $suffix) {
+                $col = $display.$suffix;
+                $this->assertArrayHasKey($col, $byName, "missing companion {$col}");
+                $this->assertFalse($byName[$col]['nullable'], "{$col} should be non-null");
+                $this->assertDefaultIsZero($byName[$col]['default']);
+            }
+        }
+    }
+
+    public function test_drop_nested_set_aggregate_variance_type_drops_all_three_companions(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('tickets_variance', type: 'variance');
+        });
+
+        foreach (['tickets_variance', 'tickets_variance__sum', 'tickets_variance__sum_sq', 'tickets_variance__count'] as $col) {
+            $this->assertTrue(Schema::hasColumn($this->table, $col), "expected {$col} created");
+        }
+
+        Schema::table($this->table, function (Blueprint $table): void {
+            $table->dropNestedSetAggregate('tickets_variance', type: 'variance');
+        });
+
+        foreach (['tickets_variance', 'tickets_variance__sum', 'tickets_variance__sum_sq', 'tickets_variance__count'] as $col) {
+            $this->assertFalse(Schema::hasColumn($this->table, $col), "expected {$col} dropped");
+        }
+    }
+
+    public function test_companion_columns_for_returns_variance_companions(): void
+    {
+        $this->assertSame(
+            ['tickets_variance__sum', 'tickets_variance__sum_sq', 'tickets_variance__count'],
+            NestedSetServiceProvider::companionColumnsFor('tickets_variance', 'variance'),
+        );
+        $this->assertSame(
+            ['tickets_stddev__sum', 'tickets_stddev__sum_sq', 'tickets_stddev__count'],
+            NestedSetServiceProvider::companionColumnsFor('tickets_stddev', 'stddev'),
+        );
+    }
+
     public function test_companion_columns_for_rejects_unknown_type(): void
     {
         $this->expectException(\InvalidArgumentException::class);

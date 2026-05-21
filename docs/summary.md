@@ -39,6 +39,7 @@ Format:
 - [Declaring Aggregates](aggregates/declaring.md)
 - [Filtered Aggregates](aggregates/filtered.md)
 - [Listener Aggregates](aggregates/listeners.md)
+- [Variance & Stddev](aggregates/maths.md)
 - [Recipes](aggregates/recipes.md)
 - [Maintenance](aggregates/maintenance.md)
 - [Drift & Limitations](aggregates/drift.md)

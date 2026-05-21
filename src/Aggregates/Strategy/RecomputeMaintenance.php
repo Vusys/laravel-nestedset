@@ -8,9 +8,11 @@ use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeBounds;
 
@@ -34,7 +36,7 @@ use Vusys\NestedSet\NodeBounds;
 final class RecomputeMaintenance
 {
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      *                                                         column => previous_value pairs ORed into the WHERE.
@@ -98,7 +100,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      * @param  'always'|'auto'|'never'  $locking
@@ -214,7 +216,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}>  $columns
+     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
      * @param  list<array<string, mixed>>  $candidates
      */
     private static function writeRecomputedValues(
@@ -252,16 +254,29 @@ final class RecomputeMaintenance
     }
 
     /**
-     * Builds the inner SUM/COUNT/AVG/MIN/MAX expression for the
-     * recompute subquery — wrapping the source column reference in a
-     * `CASE WHEN <filter> THEN … ELSE …` when a filter is present.
+     * Builds the inner SUM/COUNT/AVG/MIN/MAX/VARIANCE/STDDEV expression
+     * for the recompute subquery — wrapping the source column reference
+     * in a `CASE WHEN <filter> THEN … ELSE …` when a filter is present.
      *
-     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}  $spec
+     * Honours the column spec's `sourceTransform` (today: `Identity` or
+     * `Square`) so the SumSq companion of Variance / Stddev sums the
+     * squared source values; the `sample` flag picks between the
+     * `n²` and `n(n−1)` denominators in the variance formula.
+     *
+     * The collection-aggregate kinds (DistinctCount / StringAgg /
+     * JsonAgg / JsonObjectAgg) route through {@see AggregateSqlEmitter}
+     * for backend-specific SQL — the spec carries an `AggregateDefinition`
+     * reference for those.
+     *
+     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}  $spec
      */
     private static function innerAggregateExpression(Connection $connection, array $spec, ?FilterPredicate $filter): string
     {
         $source = $spec['source'];
         $sourceRef = "inner_a.{$source}";
+        $sourceTransform = $spec['sourceTransform'] ?? CompanionSourceTransform::Identity;
+        $sourceExpression = $sourceTransform->applySqlFragment($sourceRef);
+        $sample = $spec['sample'] ?? false;
 
         if ($filter instanceof FilterPredicate) {
             $pred = self::filterPredicateSql($connection, $filter, 'inner_a.');
@@ -270,7 +285,7 @@ final class RecomputeMaintenance
                 AggregateFunction::Sum => sprintf(
                     'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                     $pred,
-                    $sourceRef,
+                    $sourceExpression,
                 ),
                 AggregateFunction::Count => sprintf(
                     // COUNT(NULL) and COUNT(expr-returning-NULL) both yield 0
@@ -297,6 +312,8 @@ final class RecomputeMaintenance
                     $pred,
                     $sourceRef,
                 ),
+                AggregateFunction::Variance => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: false),
+                AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: true),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -310,13 +327,25 @@ final class RecomputeMaintenance
         }
 
         return match ($spec['function']) {
-            AggregateFunction::Sum => "COALESCE(SUM({$sourceRef}), 0)",
+            AggregateFunction::Sum => "COALESCE(SUM({$sourceExpression}), 0)",
             AggregateFunction::Count => $spec['source'] === ''
                 ? 'COUNT(*)'
                 : "COUNT({$sourceRef})",
             AggregateFunction::Avg => "AVG({$sourceRef})",
             AggregateFunction::Min => "MIN({$sourceRef})",
             AggregateFunction::Max => "MAX({$sourceRef})",
+            AggregateFunction::Variance => VarianceSqlFragments::variance(
+                sumExpr: "SUM({$sourceRef})",
+                sumSqExpr: "SUM({$sourceRef} * {$sourceRef})",
+                countExpr: "COUNT({$sourceRef})",
+                sample: $sample,
+            ),
+            AggregateFunction::Stddev => VarianceSqlFragments::stddev(
+                sumExpr: "SUM({$sourceRef})",
+                sumSqExpr: "SUM({$sourceRef} * {$sourceRef})",
+                countExpr: "COUNT({$sourceRef})",
+                sample: $sample,
+            ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -329,7 +358,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, definition?: AggregateDefinition|null}  $spec
+     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}  $spec
      */
     private static function requireDefinitionFromSpec(array $spec): AggregateDefinition
     {
@@ -344,6 +373,27 @@ final class RecomputeMaintenance
         }
 
         return $definition;
+    }
+
+    /**
+     * Filtered companion fragment for variance / stddev recompute. Each
+     * Sum / Count subexpression is wrapped in a CASE that returns NULL
+     * on non-matching rows so the inner aggregates ignore them — same
+     * shape the unfiltered fragments produce naturally.
+     */
+    private static function filteredVarianceFragment(
+        string $sourceRef,
+        string $pred,
+        bool $sample,
+        bool $stddev,
+    ): string {
+        $sumExpr = sprintf('SUM(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
+        $sumSqExpr = sprintf('SUM(CASE WHEN %s THEN %s * %s ELSE NULL END)', $pred, $sourceRef, $sourceRef);
+        $countExpr = sprintf('COUNT(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
+
+        return $stddev
+            ? VarianceSqlFragments::stddev($sumExpr, $sumSqExpr, $countExpr, $sample)
+            : VarianceSqlFragments::variance($sumExpr, $sumSqExpr, $countExpr, $sample);
     }
 
     private static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string

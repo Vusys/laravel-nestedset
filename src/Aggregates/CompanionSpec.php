@@ -30,6 +30,7 @@ final readonly class CompanionSpec
     public function __construct(
         public string $suffix,
         public AggregateFunction $function,
+        public CompanionSourceTransform $sourceTransform = CompanionSourceTransform::Identity,
     ) {}
 
     /**

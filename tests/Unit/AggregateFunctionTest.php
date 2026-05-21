@@ -9,9 +9,9 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_nine_cases(): void
+    public function test_has_exactly_eleven_cases(): void
     {
-        $this->assertCount(9, AggregateFunction::cases());
+        $this->assertCount(11, AggregateFunction::cases());
     }
 
     public function test_each_case_is_backed_by_its_string_name(): void
@@ -21,6 +21,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('avg', AggregateFunction::Avg->value);
         $this->assertSame('min', AggregateFunction::Min->value);
         $this->assertSame('max', AggregateFunction::Max->value);
+        $this->assertSame('variance', AggregateFunction::Variance->value);
+        $this->assertSame('stddev', AggregateFunction::Stddev->value);
         $this->assertSame('distinct_count', AggregateFunction::DistinctCount->value);
         $this->assertSame('string_agg', AggregateFunction::StringAgg->value);
         $this->assertSame('json_agg', AggregateFunction::JsonAgg->value);
@@ -33,11 +35,13 @@ final class AggregateFunctionTest extends TestCase
         $this->assertTrue(AggregateFunction::Count->supportsDelta());
     }
 
-    public function test_avg_min_max_do_not_support_delta_maintenance(): void
+    public function test_derived_and_recompute_kinds_do_not_support_delta_maintenance(): void
     {
         $this->assertFalse(AggregateFunction::Avg->supportsDelta());
         $this->assertFalse(AggregateFunction::Min->supportsDelta());
         $this->assertFalse(AggregateFunction::Max->supportsDelta());
+        $this->assertFalse(AggregateFunction::Variance->supportsDelta());
+        $this->assertFalse(AggregateFunction::Stddev->supportsDelta());
     }
 
     public function test_distinct_count_and_string_and_json_kinds_do_not_support_delta(): void
@@ -55,11 +59,13 @@ final class AggregateFunctionTest extends TestCase
         $this->assertFalse(AggregateFunction::DistinctCount->nullableOnEmpty());
     }
 
-    public function test_avg_min_max_string_and_json_kinds_are_nullable_on_empty(): void
+    public function test_derived_and_recompute_kinds_are_nullable_on_empty(): void
     {
         $this->assertTrue(AggregateFunction::Avg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::Min->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::Max->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::Variance->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::Stddev->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::StringAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonObjectAgg->nullableOnEmpty());
@@ -88,5 +94,40 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame([], AggregateFunction::Count->companionSet());
         $this->assertSame([], AggregateFunction::Min->companionSet());
         $this->assertSame([], AggregateFunction::Max->companionSet());
+    }
+
+    public function test_distinct_count_string_and_json_declare_no_companions(): void
+    {
+        $this->assertSame([], AggregateFunction::DistinctCount->companionSet());
+        $this->assertSame([], AggregateFunction::StringAgg->companionSet());
+        $this->assertSame([], AggregateFunction::JsonAgg->companionSet());
+        $this->assertSame([], AggregateFunction::JsonObjectAgg->companionSet());
+    }
+
+    public function test_variance_and_stddev_declare_sum_sumsq_count_companions(): void
+    {
+        foreach ([AggregateFunction::Variance, AggregateFunction::Stddev] as $kind) {
+            $companions = $kind->companionSet();
+
+            $this->assertCount(3, $companions, $kind->value.' should declare three companions');
+
+            $signature = [];
+            foreach ($companions as $spec) {
+                $signature[$spec->suffix] = [
+                    'function' => $spec->function->value,
+                    'transform' => $spec->sourceTransform->name,
+                ];
+            }
+
+            $this->assertSame(
+                [
+                    '__sum' => ['function' => 'sum', 'transform' => 'Identity'],
+                    '__sum_sq' => ['function' => 'sum', 'transform' => 'Square'],
+                    '__count' => ['function' => 'count', 'transform' => 'Identity'],
+                ],
+                $signature,
+                $kind->value.' must declare Sum, SumSq (squared source), Count',
+            );
+        }
     }
 }

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\TreeExpression;
 
@@ -52,6 +53,8 @@ final class DeltaMaintenance
      *                                            over integer source columns pass ints.
      * @param  array<string, array{sum: string, count: string}>  $avgs
      *                                                                  avg_display_col => {sum companion, count companion}
+     * @param  array<string, array{sum: string, sum_sq: string, count: string, function: AggregateFunction, sample: bool}>  $variances
+     *                                                                                                                                  variance/stddev_display_col => {companion columns, function: Variance|Stddev, sample}
      * @param  array<string, array{function: AggregateFunction, value: int|float}>  $extremes
      *                                                                                         cheap-delta candidates: aggregate column =>
      *                                                                                         {function: Min|Max, value: candidate}.
@@ -75,19 +78,21 @@ final class DeltaMaintenance
         array $avgs = [],
         array $extremes = [],
         ?string $softDeletedColumn = null,
+        array $variances = [],
     ): int {
         // Order matters on MySQL / MariaDB: SET clauses are evaluated
         // left-to-right with each prior assignment visible to later
-        // ones. The AVG formula references the SUM and COUNT
-        // companions, which are themselves being delta-updated in this
-        // same statement — so we must emit AVG FIRST while those
-        // columns still hold their pre-update values. Adding the delta
-        // inside the AVG expression then produces the correct new
-        // value. PostgreSQL and SQLite evaluate all SET clauses
-        // against pre-update values regardless of order, so the same
-        // ordering is correct for them.
+        // ones. The AVG and Variance / Stddev formulas reference their
+        // delta-maintained companions in this same statement — so we
+        // must emit the derived display columns FIRST while the
+        // companions still hold their pre-update values. Adding the
+        // delta inside each derived expression then produces the
+        // correct new value. PostgreSQL and SQLite evaluate all SET
+        // clauses against pre-update values regardless of order, so
+        // the same ordering is correct for them.
         $setExpressions = array_merge(
             self::buildAvgSetClauses($deltas, $avgs),
+            self::buildVarianceSetClauses($deltas, $variances),
             self::buildDeltaSetClauses($deltas),
             self::buildExtremeSetClauses($extremes),
         );
@@ -164,6 +169,37 @@ final class DeltaMaintenance
             // MySQL/MariaDB already widen but the multiplier is harmless.
             $clauses[$avgCol] = new TreeExpression(
                 "(1.0 * ({$sumExpression})) / NULLIF(({$countExpression}), 0)",
+            );
+        }
+
+        return $clauses;
+    }
+
+    /**
+     * Build SET clauses for variance / stddev display columns. Each
+     * clause references the column's three companions ({sum}, {sum_sq},
+     * {count}), substituting `column + Δ` for any companion that's
+     * being delta-updated in the same statement. The portable
+     * companion-based formula from {@see VarianceSqlFragments} then
+     * yields the new variance / stddev value.
+     *
+     * @param  array<string, int|float>  $deltas
+     * @param  array<string, array{sum: string, sum_sq: string, count: string, function: AggregateFunction, sample: bool}>  $variances
+     * @return array<string, TreeExpression>
+     */
+    private static function buildVarianceSetClauses(array $deltas, array $variances): array
+    {
+        $clauses = [];
+
+        foreach ($variances as $displayCol => $spec) {
+            $sumExpression = self::columnPlusDelta($spec['sum'], $deltas[$spec['sum']] ?? 0);
+            $sumSqExpression = self::columnPlusDelta($spec['sum_sq'], $deltas[$spec['sum_sq']] ?? 0);
+            $countExpression = self::columnPlusDelta($spec['count'], $deltas[$spec['count']] ?? 0);
+
+            $clauses[$displayCol] = new TreeExpression(
+                $spec['function'] === AggregateFunction::Stddev
+                    ? VarianceSqlFragments::stddev($sumExpression, $sumSqExpression, $countExpression, $spec['sample'])
+                    : VarianceSqlFragments::variance($sumExpression, $sumSqExpression, $countExpression, $spec['sample']),
             );
         }
 

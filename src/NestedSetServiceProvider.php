@@ -9,6 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\CompanionSpec;
 
 final class NestedSetServiceProvider extends ServiceProvider
@@ -28,6 +29,20 @@ final class NestedSetServiceProvider extends ServiceProvider
     public const string AGGREGATE_TYPE_AVG = 'avg';
 
     public const string AGGREGATE_TYPE_MIN_MAX = 'min_max';
+
+    public const string AGGREGATE_TYPE_VARIANCE = 'variance';
+
+    public const string AGGREGATE_TYPE_STDDEV = 'stddev';
+
+    /**
+     * Squared-sum companion column shape — wider numeric storage for
+     * the `__sum_sq` companion of variance / stddev. The squared
+     * source values grow far faster than the plain sum (`x²` for a
+     * uint32 source already overruns `bigInteger`), so the macro
+     * emits this companion as a high-precision DECIMAL rather than
+     * reusing the standard sum/count shape.
+     */
+    public const string AGGREGATE_TYPE_SUM_SQ = 'sum_sq';
 
     public const string AGGREGATE_TYPE_DISTINCT_COUNT = 'distinct_count';
 
@@ -107,11 +122,11 @@ final class NestedSetServiceProvider extends ServiceProvider
             /** @var Blueprint $this */
             NestedSetServiceProvider::addAggregateColumn($this, $column, $type);
 
-            foreach (NestedSetServiceProvider::companionColumnsFor($column, $type) as $companionColumn) {
+            foreach (NestedSetServiceProvider::companionAllocationsFor($column, $type) as $companion) {
                 NestedSetServiceProvider::addAggregateColumn(
                     $this,
-                    $companionColumn,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+                    $companion['column'],
+                    $companion['type'],
                 );
             }
         });
@@ -148,11 +163,17 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
-        if ($type === self::AGGREGATE_TYPE_AVG) {
-            // AVG — nullable decimal. Null indicates "no rows contributed"
-            // (empty subtree under exclusive semantics, or after every
-            // descendant has been deleted).
-            $table->decimal($column, 12, 4)->nullable();
+        if (in_array($type, [self::AGGREGATE_TYPE_AVG, self::AGGREGATE_TYPE_VARIANCE, self::AGGREGATE_TYPE_STDDEV], true)) {
+            // AVG / VARIANCE / STDDEV — nullable decimal. Null indicates
+            // "no rows contributed" (empty subtree under exclusive
+            // semantics, or after every descendant has been deleted).
+            // The wider 18,6 shape on the maths kinds accommodates the
+            // higher arithmetic range of sum-of-squares-derived
+            // intermediates without losing the four post-decimal digits
+            // most domain values (prices, ratings, durations) expect.
+            $precision = $type === self::AGGREGATE_TYPE_AVG ? 12 : 18;
+            $scale = $type === self::AGGREGATE_TYPE_AVG ? 4 : 6;
+            $table->decimal($column, $precision, $scale)->nullable();
 
             return;
         }
@@ -194,6 +215,20 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_SUM_SQ) {
+            // SUM-OF-SQUARES — non-null, default 0. Each contributing
+            // row adds `source²`; for a uint32 source the single-row
+            // contribution can be ~1.8e19, already past the 9.2e18
+            // bigInteger ceiling, and the per-subtree SUM grows on
+            // top of that. DECIMAL(38, 0) gives headroom for any
+            // realistic workload (Postgres NUMERIC and MySQL
+            // DECIMAL both accept that precision; SQLite stores
+            // it as numeric).
+            $table->decimal($column, 38, 0)->default(0);
+
+            return;
+        }
+
         throw new InvalidArgumentException(sprintf(
             'nestedSetAggregate: unknown type "%s". Supported: %s.',
             $type,
@@ -229,6 +264,33 @@ final class NestedSetServiceProvider extends ServiceProvider
     }
 
     /**
+     * Like {@see companionColumnsFor()} but returns per-companion type
+     * info so the Blueprint macro can pick the right column shape for
+     * each companion. Today only the variance / stddev `__sum_sq`
+     * companion needs the wider DECIMAL(38, 0) shape; every other
+     * companion is the standard `sum_count` bigInteger.
+     *
+     * @return list<array{column: string, type: string}>
+     */
+    public static function companionAllocationsFor(string $column, string $type): array
+    {
+        $function = self::typeToFunction($type);
+        if (! $function instanceof AggregateFunction) {
+            return [];
+        }
+
+        return array_map(
+            static fn (CompanionSpec $spec): array => [
+                'column' => $spec->columnFor($column),
+                'type' => $spec->sourceTransform === CompanionSourceTransform::Square
+                    ? self::AGGREGATE_TYPE_SUM_SQ
+                    : self::AGGREGATE_TYPE_SUM_COUNT,
+            ],
+            $function->companionSet(),
+        );
+    }
+
+    /**
      * Map a `nestedSetAggregate` type string to the
      * {@see AggregateFunction} whose companion set it represents.
      * Returns null for types whose underlying functions have no
@@ -239,8 +301,11 @@ final class NestedSetServiceProvider extends ServiceProvider
     {
         return match ($type) {
             self::AGGREGATE_TYPE_AVG => AggregateFunction::Avg,
+            self::AGGREGATE_TYPE_VARIANCE => AggregateFunction::Variance,
+            self::AGGREGATE_TYPE_STDDEV => AggregateFunction::Stddev,
             self::AGGREGATE_TYPE_SUM_COUNT,
             self::AGGREGATE_TYPE_MIN_MAX,
+            self::AGGREGATE_TYPE_SUM_SQ,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
             self::AGGREGATE_TYPE_STRING_AGG,
             self::AGGREGATE_TYPE_JSON => null,
@@ -261,6 +326,9 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_SUM_COUNT,
             self::AGGREGATE_TYPE_AVG,
             self::AGGREGATE_TYPE_MIN_MAX,
+            self::AGGREGATE_TYPE_VARIANCE,
+            self::AGGREGATE_TYPE_STDDEV,
+            self::AGGREGATE_TYPE_SUM_SQ,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
             self::AGGREGATE_TYPE_STRING_AGG,
             self::AGGREGATE_TYPE_JSON,

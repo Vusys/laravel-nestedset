@@ -19,6 +19,7 @@ use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -639,9 +640,8 @@ final class TreeAggregateBuilder
 
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
-                'COALESCE(SUM(%s%s), 0)',
-                $qualifier,
-                self::requireSource($definition),
+                'COALESCE(SUM(%s), 0)',
+                self::sourceExpressionFor($definition, $qualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? 'COUNT(*)'
@@ -660,6 +660,18 @@ final class TreeAggregateBuilder
                 'MAX(%s%s)',
                 $qualifier,
                 self::requireSource($definition),
+            ),
+            AggregateFunction::Variance => VarianceSqlFragments::variance(
+                sumExpr: sprintf('SUM(%s%s)', $qualifier, self::requireSource($definition)),
+                sumSqExpr: sprintf('SUM(%s%s * %s%s)', $qualifier, self::requireSource($definition), $qualifier, $definition->source),
+                countExpr: sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition)),
+                sample: $definition->sample,
+            ),
+            AggregateFunction::Stddev => VarianceSqlFragments::stddev(
+                sumExpr: sprintf('SUM(%s%s)', $qualifier, self::requireSource($definition)),
+                sumSqExpr: sprintf('SUM(%s%s * %s%s)', $qualifier, self::requireSource($definition), $qualifier, $definition->source),
+                countExpr: sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition)),
+                sample: $definition->sample,
             ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
@@ -685,6 +697,20 @@ final class TreeAggregateBuilder
         return $connection;
     }
 
+    /**
+     * SQL fragment that yields the source value for a delta-maintainable
+     * aggregate, applying the companion's source transform if any.
+     * Identity transforms produce a plain `q.col` ref; Square transforms
+     * produce `(q.col * q.col)` — the input to `SumSq` companions of
+     * Variance / Stddev.
+     */
+    private static function sourceExpressionFor(AggregateDefinition $definition, string $qualifier): string
+    {
+        $sourceRef = $qualifier.self::requireSource($definition);
+
+        return $definition->sourceTransform->applySqlFragment($sourceRef);
+    }
+
     private static function filteredAggregateExpression(
         Connection $connection,
         AggregateDefinition $definition,
@@ -695,10 +721,9 @@ final class TreeAggregateBuilder
 
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
-                'COALESCE(SUM(CASE WHEN %s THEN %s%s ELSE 0 END), 0)',
+                'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                 $pred,
-                $qualifier,
-                self::requireSource($definition),
+                self::sourceExpressionFor($definition, $qualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $pred)
@@ -726,6 +751,8 @@ final class TreeAggregateBuilder
                 $qualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::Variance => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: false),
+            AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: true),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -736,6 +763,31 @@ final class TreeAggregateBuilder
                 $pred,
             ),
         };
+    }
+
+    /**
+     * Build a filtered variance / stddev fragment from a CASE-wrapped
+     * source. Each companion subexpression evaluates to NULL on
+     * filtered-out rows so SUM ignores them and COUNT excludes them —
+     * exactly the behaviour the unfiltered case relies on, just with
+     * the CASE wrapper in front.
+     */
+    private static function filteredVarianceFragment(
+        AggregateDefinition $definition,
+        string $qualifier,
+        string $pred,
+        bool $stddev,
+    ): string {
+        $source = self::requireSource($definition);
+        $sourceRef = $qualifier.$source;
+
+        $sumExpr = sprintf('SUM(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
+        $sumSqExpr = sprintf('SUM(CASE WHEN %s THEN %s * %s ELSE NULL END)', $pred, $sourceRef, $sourceRef);
+        $countExpr = sprintf('COUNT(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
+
+        return $stddev
+            ? VarianceSqlFragments::stddev($sumExpr, $sumSqExpr, $countExpr, $definition->sample)
+            : VarianceSqlFragments::variance($sumExpr, $sumSqExpr, $countExpr, $definition->sample);
     }
 
     private static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string
@@ -783,10 +835,9 @@ final class TreeAggregateBuilder
     ): string {
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
-                'COALESCE(SUM(CASE WHEN %s THEN %s%s ELSE 0 END), 0)',
+                'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                 $rawFilter,
-                $innerQualifier,
-                self::requireSource($definition),
+                self::sourceExpressionFor($definition, $innerQualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $rawFilter)
@@ -814,6 +865,8 @@ final class TreeAggregateBuilder
                 $innerQualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::Variance => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: false),
+            AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: true),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -965,12 +1018,12 @@ final class TreeAggregateBuilder
 
         $innerAlias = 'nss_rf';
 
+        $innerQualifier = $innerAlias.'.';
         $aggInner = match ($definition->function) {
             AggregateFunction::Sum => sprintf(
-                'SUM(CASE WHEN %s THEN %s.%s ELSE 0 END)',
+                'SUM(CASE WHEN %s THEN %s ELSE 0 END)',
                 $rawSql,
-                $innerAlias,
-                self::requireSource($definition),
+                self::sourceExpressionFor($definition, $innerQualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $rawSql)
@@ -998,6 +1051,8 @@ final class TreeAggregateBuilder
                 $innerAlias,
                 self::requireSource($definition),
             ),
+            AggregateFunction::Variance => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: false),
+            AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: true),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -1127,6 +1182,8 @@ final class TreeAggregateBuilder
                 AggregateFunction::Avg,
                 AggregateFunction::Min,
                 AggregateFunction::Max,
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
                 AggregateFunction::JsonObjectAgg => 'NULL',
@@ -1143,9 +1200,8 @@ final class TreeAggregateBuilder
         } else {
             $inline = match ($definition->function) {
                 AggregateFunction::Sum => sprintf(
-                    'COALESCE(%s%s, 0)',
-                    $tableQualifier,
-                    self::requireSource($definition),
+                    'COALESCE(%s, 0)',
+                    self::sourceExpressionFor($definition, $tableQualifier),
                 ),
                 AggregateFunction::Count => $definition->source === null
                     ? '1'
@@ -1161,6 +1217,16 @@ final class TreeAggregateBuilder
                     $tableQualifier,
                     self::requireSource($definition),
                 ),
+                // Single-row subtree: population variance/stddev of {x} = 0,
+                // sample variants are undefined (NULL) because n−1 = 0.
+                // Source NULL → no contribution → NULL across all four.
+                AggregateFunction::Variance, AggregateFunction::Stddev => $definition->sample
+                    ? 'NULL'
+                    : sprintf(
+                        'CASE WHEN %s%s IS NULL THEN NULL ELSE 0 END',
+                        $tableQualifier,
+                        self::requireSource($definition),
+                    ),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -1188,6 +1254,8 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg,
             AggregateFunction::Min,
             AggregateFunction::Max,
+            AggregateFunction::Variance,
+            AggregateFunction::Stddev,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => 'NULL',
@@ -1212,10 +1280,9 @@ final class TreeAggregateBuilder
 
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
-                'COALESCE(CASE WHEN %s THEN %s%s ELSE 0 END, 0)',
+                'COALESCE(CASE WHEN %s THEN %s ELSE 0 END, 0)',
                 $pred,
-                $tableQualifier,
-                self::requireSource($definition),
+                self::sourceExpressionFor($definition, $tableQualifier),
             ),
             AggregateFunction::Count => $definition->source === null
                 ? sprintf('CASE WHEN %s THEN 1 ELSE 0 END', $pred)
@@ -1232,6 +1299,16 @@ final class TreeAggregateBuilder
                 $pred,
                 $tableQualifier,
                 self::requireSource($definition),
+            ),
+            // See {@see leafInlineExpression()} for the unfiltered counterpart.
+            // The filter wraps the leaf inline: when the predicate is false,
+            // the leaf contributes nothing → NULL across all four functions.
+            AggregateFunction::Variance, AggregateFunction::Stddev => sprintf(
+                'CASE WHEN %s AND %s%s IS NOT NULL THEN %s ELSE NULL END',
+                $pred,
+                $tableQualifier,
+                self::requireSource($definition),
+                $definition->sample ? 'NULL' : '0',
             ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
@@ -1804,11 +1881,14 @@ final class TreeAggregateBuilder
             // first iteration, where `prev` is still the empty value.
             $prevInclusive = self::chainFoldEmpty($definition);
 
-            // For AVG: we need parallel SUM/COUNT accumulators because
-            // AVG is a derived ratio. SUM accumulates non-null sources,
-            // COUNT counts non-null sources. Combined at emit time.
-            $prevSumAvg = 0;
-            $prevCountAvg = 0;
+            // For derived-from-companions kinds (Avg / Variance / Stddev)
+            // we keep parallel Sum, SumSq, Count accumulators because the
+            // displayed value is a ratio (Avg) or a quadratic combination
+            // (Variance / Stddev) of those companions. Combined at emit
+            // time via {@see deriveCompanionDisplay()}.
+            $prevSum = 0.0;
+            $prevSumSq = 0.0;
+            $prevCount = 0;
 
             foreach ($rows as $row) {
                 $id = $row[$idCol] ?? null;
@@ -1822,13 +1902,14 @@ final class TreeAggregateBuilder
 
                 // Combine source with previous-row's inclusive to get
                 // current row's inclusive.
-                if ($definition->function === AggregateFunction::Avg) {
-                    $sumDelta = is_numeric($sourceValue) ? (float) $sourceValue : 0.0;
-                    $countDelta = is_numeric($sourceValue) ? 1 : 0;
-                    $currentSum = $prevSumAvg + $sumDelta;
-                    $currentCount = $prevCountAvg + $countDelta;
-                    $currentInclusive = $currentCount > 0 ? $currentSum / $currentCount : null;
-                    $previousInclusive = $prevCountAvg > 0 ? $prevSumAvg / $prevCountAvg : null;
+                if (self::isCompanionDerivedFunction($definition->function)) {
+                    $contributes = is_numeric($sourceValue);
+                    $sourceFloat = $contributes ? (float) $sourceValue : 0.0;
+                    $currentSum = $prevSum + $sourceFloat;
+                    $currentSumSq = $prevSumSq + $sourceFloat * $sourceFloat;
+                    $currentCount = $prevCount + ($contributes ? 1 : 0);
+                    $currentInclusive = self::deriveCompanionDisplay($definition, $currentSum, $currentSumSq, $currentCount);
+                    $previousInclusive = self::deriveCompanionDisplay($definition, $prevSum, $prevSumSq, $prevCount);
                 } else {
                     $currentInclusive = self::chainFoldStep($definition, $sourceValue, $prevInclusive);
                     $previousInclusive = $prevInclusive;
@@ -1842,15 +1923,87 @@ final class TreeAggregateBuilder
                 $output[$id][self::storedAlias($definition->column)] = $row[$definition->column] ?? null;
                 $output[$id][self::computedAlias($definition->column)] = $computedValue;
 
-                if ($definition->function === AggregateFunction::Avg) {
-                    $prevSumAvg = $currentSum;
-                    $prevCountAvg = $currentCount;
+                if (self::isCompanionDerivedFunction($definition->function)) {
+                    $prevSum = $currentSum;
+                    $prevSumSq = $currentSumSq;
+                    $prevCount = $currentCount;
                 }
                 $prevInclusive = $currentInclusive;
             }
         }
 
         return array_values($output);
+    }
+
+    /**
+     * True when the function is derived from companion columns at
+     * read/emit time (Avg, Variance, Stddev). The chain fold uses
+     * three parallel Sum/SumSq/Count accumulators for these kinds
+     * rather than calling the per-row step function.
+     */
+    private static function isCompanionDerivedFunction(AggregateFunction $function): bool
+    {
+        return in_array($function, [AggregateFunction::Avg, AggregateFunction::Variance, AggregateFunction::Stddev], true);
+    }
+
+    /**
+     * Compute the display value of a companion-derived aggregate from
+     * the three parallel accumulators (Sum, SumSq, Count). Mirrors the
+     * SQL formula the in-UPDATE SET clause computes — used by the chain
+     * fold so the PHP-side recomputed value matches the SQL-side
+     * delta-maintained value within floating-point tolerance.
+     */
+    private static function deriveCompanionDisplay(
+        AggregateDefinition $definition,
+        float $sum,
+        float $sumSq,
+        int $count,
+    ): ?float {
+        if ($count === 0) {
+            return null;
+        }
+
+        return match ($definition->function) {
+            AggregateFunction::Avg => $sum / $count,
+            AggregateFunction::Variance => self::computeVarianceFromCompanions($sum, $sumSq, $count, $definition->sample),
+            AggregateFunction::Stddev => self::computeStddevFromCompanions($sum, $sumSq, $count, $definition->sample),
+            // chainFoldStep handles the non-companion-derived kinds.
+            AggregateFunction::Sum,
+            AggregateFunction::Count,
+            AggregateFunction::Min,
+            AggregateFunction::Max => throw new \LogicException(
+                'deriveCompanionDisplay called with non-companion-derived function '.$definition->function->value,
+            ),
+        };
+    }
+
+    private static function computeVarianceFromCompanions(float $sum, float $sumSq, int $count, bool $sample): ?float
+    {
+        if ($sample && $count < 2) {
+            return null;
+        }
+
+        $denominator = $sample ? $count * ($count - 1) : $count * $count;
+        if ($denominator === 0) {
+            return null;
+        }
+        $numerator = $count * $sumSq - $sum * $sum;
+
+        return $numerator / $denominator;
+    }
+
+    private static function computeStddevFromCompanions(float $sum, float $sumSq, int $count, bool $sample): ?float
+    {
+        $variance = self::computeVarianceFromCompanions($sum, $sumSq, $count, $sample);
+        if ($variance === null) {
+            return null;
+        }
+
+        // Floating-point cancellation around large clustered values can
+        // leave the textbook formula returning a tiny negative variance.
+        // Clamp to 0 so sqrt() doesn't blow up — matches the CASE-zero
+        // clamp the SQL fragment uses.
+        return $variance <= 0.0 ? 0.0 : sqrt($variance);
     }
 
     /**
@@ -1868,6 +2021,8 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg,
             AggregateFunction::Min,
             AggregateFunction::Max,
+            AggregateFunction::Variance,
+            AggregateFunction::Stddev,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => null,
@@ -1929,6 +2084,14 @@ final class TreeAggregateBuilder
                 // AVG is handled inline by the caller because it needs
                 // two parallel accumulators (SUM and COUNT-of-non-null).
                 throw new \LogicException('AVG must be handled inline in the chain fold.');
+            case AggregateFunction::Variance:
+            case AggregateFunction::Stddev:
+                // Like AVG, these are handled inline by the caller —
+                // their companions (Sum + SumSq + Count) drive the fold
+                // and the display column is computed from those.
+                throw new \LogicException(
+                    'Variance / Stddev must be handled inline in the chain fold.',
+                );
             case AggregateFunction::DistinctCount:
             case AggregateFunction::StringAgg:
             case AggregateFunction::JsonAgg:
