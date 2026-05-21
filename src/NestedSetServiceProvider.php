@@ -66,11 +66,19 @@ final class NestedSetServiceProvider extends ServiceProvider
      * columns of {@see self::AGGREGATE_TYPE_WEIGHTED_AVG}. Decimal —
      * not bigint — because weight or value can hold fractional values
      * and their sum needs to too; PostgreSQL otherwise rejects writes
-     * with `invalid input syntax for type bigint`. Also used for the
-     * companion columns of geometric_mean (Σ LN(x)) and harmonic_mean
-     * (Σ 1/x), which are fractional by construction.
+     * with `invalid input syntax for type bigint`.
      */
     public const string AGGREGATE_TYPE_DECIMAL_SUM = 'decimal_sum';
+
+    /**
+     * High-precision decimal storage for geometric/harmonic mean
+     * companion sums (Σ LN(x) and Σ 1/x). Wider fractional precision
+     * than `decimal_sum` (10 vs 4 digits) because LN(x) and 1/x are
+     * irrational; 4 fractional digits accumulate visible rounding error
+     * across a deep subtree (e.g. EXP(Σ LN(2)) drifts past ±0.0001
+     * after only a handful of rows on MySQL/MariaDB/PG).
+     */
+    public const string AGGREGATE_TYPE_HIGH_PRECISION_SUM = 'high_precision_sum';
 
     #[\Override]
     public function register(): void
@@ -278,6 +286,16 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_HIGH_PRECISION_SUM) {
+            // Companion Σ LN(x) / Σ (1/x) for geometric and harmonic mean.
+            // 10 fractional digits vs the 4 of decimal_sum because these
+            // values are irrational; coarser precision causes visible drift
+            // in the EXP/reciprocal display formula on real decimal backends.
+            $table->decimal($column, 30, 10)->default(0);
+
+            return;
+        }
+
         if ($type === self::AGGREGATE_TYPE_BOOL_OR || $type === self::AGGREGATE_TYPE_BOOL_AND) {
             // BoolOr / BoolAnd — nullable boolean. Empty subtree reads
             // as NULL; non-empty reads as TRUE/FALSE. Laravel's
@@ -367,11 +385,11 @@ final class NestedSetServiceProvider extends ServiceProvider
                         : self::AGGREGATE_TYPE_SUM_COUNT,
                     CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
                     // GeometricMean's `Σ(LN(source))` and HarmonicMean's
-                    // `Σ(1/source)` both hold real-valued sums; the count
-                    // companion (Identity transform above) keeps the
-                    // integer-flavoured sum_count layout.
+                    // `Σ(1/source)` hold irrational sums that need wider
+                    // DECIMAL(30,10) storage; the count companion (Identity
+                    // transform above) keeps the sum_count layout.
                     CompanionSourceTransform::Ln,
-                    CompanionSourceTransform::Recip => self::AGGREGATE_TYPE_DECIMAL_SUM,
+                    CompanionSourceTransform::Recip => self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
                 },
             ],
             $function->companionSet(),
@@ -398,6 +416,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_HARMONIC_MEAN => AggregateFunction::HarmonicMean,
             self::AGGREGATE_TYPE_SUM_COUNT,
             self::AGGREGATE_TYPE_DECIMAL_SUM,
+            self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
             self::AGGREGATE_TYPE_MIN_MAX,
             self::AGGREGATE_TYPE_SUM_SQ,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
@@ -425,6 +444,7 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_STDDEV,
                 self::AGGREGATE_TYPE_SUM_SQ,
                 self::AGGREGATE_TYPE_DECIMAL_SUM,
+                self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
                 self::AGGREGATE_TYPE_DISTINCT_COUNT,
                 self::AGGREGATE_TYPE_STRING_AGG,
                 self::AGGREGATE_TYPE_JSON,

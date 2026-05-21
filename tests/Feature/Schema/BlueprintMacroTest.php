@@ -411,6 +411,96 @@ final class BlueprintMacroTest extends TestCase
         $this->assertTrue($byName['tickets_max']['nullable']);
     }
 
+    public function test_nested_set_aggregate_geometric_mean_type_allocates_high_precision_sum_and_integer_count(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('value_gmean', type: 'geometric_mean');
+        });
+
+        $byName = $this->columnsByName();
+
+        $this->assertTrue($byName['value_gmean']['nullable'], 'display column should be nullable');
+        $this->assertFalse($byName['value_gmean__sum_log']['nullable'], '__sum_log must be non-null');
+        $this->assertDefaultIsZero($byName['value_gmean__sum_log']['default']);
+        $this->assertFalse($byName['value_gmean__count']['nullable'], '__count must be non-null');
+        $this->assertDefaultIsZero($byName['value_gmean__count']['default']);
+    }
+
+    public function test_nested_set_aggregate_harmonic_mean_type_allocates_high_precision_sum_and_integer_count(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('value_hmean', type: 'harmonic_mean');
+        });
+
+        $byName = $this->columnsByName();
+
+        $this->assertTrue($byName['value_hmean']['nullable'], 'display column should be nullable');
+        $this->assertFalse($byName['value_hmean__sum_recip']['nullable'], '__sum_recip must be non-null');
+        $this->assertDefaultIsZero($byName['value_hmean__sum_recip']['default']);
+        $this->assertFalse($byName['value_hmean__count']['nullable'], '__count must be non-null');
+        $this->assertDefaultIsZero($byName['value_hmean__count']['default']);
+    }
+
+    public function test_drop_nested_set_aggregate_geometric_mean_type_drops_all_companions(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('value_gmean', type: 'geometric_mean');
+        });
+
+        Schema::table($this->table, function (Blueprint $table): void {
+            $table->dropNestedSetAggregate('value_gmean', type: 'geometric_mean');
+        });
+
+        $byName = $this->columnsByName();
+
+        $this->assertArrayNotHasKey('value_gmean', $byName);
+        $this->assertArrayNotHasKey('value_gmean__sum_log', $byName);
+        $this->assertArrayNotHasKey('value_gmean__count', $byName);
+    }
+
+    public function test_drop_nested_set_aggregate_harmonic_mean_type_drops_all_companions(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('value_hmean', type: 'harmonic_mean');
+        });
+
+        Schema::table($this->table, function (Blueprint $table): void {
+            $table->dropNestedSetAggregate('value_hmean', type: 'harmonic_mean');
+        });
+
+        $byName = $this->columnsByName();
+
+        $this->assertArrayNotHasKey('value_hmean', $byName);
+        $this->assertArrayNotHasKey('value_hmean__sum_recip', $byName);
+        $this->assertArrayNotHasKey('value_hmean__count', $byName);
+    }
+
+    public function test_companion_columns_with_types_returns_per_companion_storage_types(): void
+    {
+        $gmean = NestedSetServiceProvider::companionColumnsWithTypes('v_gmean', 'geometric_mean');
+        $hmean = NestedSetServiceProvider::companionColumnsWithTypes('v_hmean', 'harmonic_mean');
+        $avg   = NestedSetServiceProvider::companionColumnsWithTypes('v_avg', 'avg');
+
+        $this->assertSame([
+            ['v_gmean__sum_log', 'high_precision_sum'],
+            ['v_gmean__count', 'sum_count'],
+        ], $gmean);
+
+        $this->assertSame([
+            ['v_hmean__sum_recip', 'high_precision_sum'],
+            ['v_hmean__count', 'sum_count'],
+        ], $hmean);
+
+        $this->assertSame([
+            ['v_avg__sum', 'sum_count'],
+            ['v_avg__count', 'sum_count'],
+        ], $avg);
+    }
+
     /**
      * Backends format integer defaults differently — SQLite as the
      * literal `'0'` string (quotes preserved from the CREATE TABLE SQL),
