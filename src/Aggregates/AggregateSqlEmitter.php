@@ -10,7 +10,7 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 
 /**
- * Per-driver SQL fragment factory for the non-numeric aggregate kinds:
+ * Per-driver SQL fragment factory for the collection-aggregate kinds:
  * `DistinctCount`, `StringAgg`, `JsonAgg`, `JsonObjectAgg`.
  *
  * Centralises the backend dispatch so the various aggregate-expression
@@ -52,7 +52,7 @@ final class AggregateSqlEmitter
             AggregateFunction::JsonAgg => self::emitJsonAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
             AggregateFunction::JsonObjectAgg => self::emitJsonObjectAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
             default => throw new AggregateConfigurationException(sprintf(
-                'AggregateSqlEmitter::emit() does not handle %s — only the non-numeric kinds belong here.',
+                'AggregateSqlEmitter::emit() does not handle %s — only the collection-aggregate kinds belong here.',
                 $def->function->value,
             )),
         };
@@ -440,7 +440,7 @@ final class AggregateSqlEmitter
     }
 
     /**
-     * For new-kind aggregates a NULL-source row produces "no contribution":
+     * For collection aggregates a NULL-source row produces "no contribution":
      * COUNT(DISTINCT NULL) = 0, STRING_AGG skips, JSON_AGG would normally
      * include null — but FILTER handles that on PG; on other backends we
      * already null-wrap when filtered. For unfiltered jsonAgg of a single

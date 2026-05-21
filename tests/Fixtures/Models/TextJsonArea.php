@@ -11,7 +11,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
 
 /**
- * Fixture for the non-numeric aggregate kinds — exercises every code
+ * Fixture for the collection-aggregate kinds — exercises every code
  * path through DistinctCount / StringAgg (plain + DISTINCT) / JsonAgg
  * (scalar + multi-column) / JsonObjectAgg.
  *

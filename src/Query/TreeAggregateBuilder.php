@@ -1606,7 +1606,7 @@ final class TreeAggregateBuilder
                 && $definition->function !== AggregateFunction::Min
                 && $definition->function !== AggregateFunction::Max
             ) {
-                // The four new kinds (DistinctCount / StringAgg / JsonAgg /
+                // The four collection-aggregate kinds (DistinctCount / StringAgg / JsonAgg /
                 // JsonObjectAgg) can't fold via the linear chain pass —
                 // each ancestor's value depends on a *set* of descendant
                 // values, not a per-row delta. Skip the chain-fold fast
@@ -2204,7 +2204,7 @@ final class TreeAggregateBuilder
     }
 
     /**
-     * Definition-aware drift check. The four non-numeric kinds need
+     * Definition-aware drift check. The four collection-aggregate kinds need
      * specialised comparators:
      *
      *  - JSON kinds: do not "optimise" to a string compare — jsonb

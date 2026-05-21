@@ -10,12 +10,12 @@ use Vusys\NestedSet\Tests\Fixtures\Models\TextJsonArea;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
- * Drift detection + repair for the four non-numeric aggregate kinds.
+ * Drift detection + repair for the four collection-aggregate kinds.
  * Each test corrupts a stored aggregate column directly, asserts the
  * drift is reported, runs `fixAggregates`, and asserts the second run
  * is a no-op (idempotency).
  */
-final class NewKindsDriftTest extends TestCase
+final class CollectionAggregatesDriftTest extends TestCase
 {
     /**
      * The fixture tearDown integrity check fails after we've manually

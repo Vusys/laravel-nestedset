@@ -21,7 +21,7 @@ use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
  * need to know which kind it holds.
  *
  * The properties from `$separator` onward are only meaningful for the
- * non-numeric aggregate kinds (StringAgg / JsonAgg / JsonObjectAgg /
+ * collection-aggregate kinds (StringAgg / JsonAgg / JsonObjectAgg /
  * DistinctCount). The numeric SUM/COUNT/AVG/MIN/MAX kinds ignore them
  * — their defaults are no-ops.
  */

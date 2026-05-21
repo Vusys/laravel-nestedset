@@ -29,7 +29,7 @@ use Vusys\NestedSet\Tests\TestCase;
  *     drift, normalised via {@see TreeAggregateBuilder::aggregateValuesEqual()}).
  */
 #[Group('fuzzer')]
-final class NewKindsFuzzerTest extends TestCase
+final class CollectionAggregatesFuzzerTest extends TestCase
 {
     /**
      * @return iterable<string, array{seed: int, steps: int}>
@@ -67,7 +67,7 @@ final class NewKindsFuzzerTest extends TestCase
             $node->appendToNode($parent)->save();
         }
 
-        $tag = "[NewKinds seed={$seed}]";
+        $tag = "[CollectionAggregates seed={$seed}]";
         $this->assertInvariants("{$tag} seed");
 
         $history = [];

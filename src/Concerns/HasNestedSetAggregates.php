@@ -322,7 +322,7 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Non-numeric kinds: any change to a contributing column
+            // Collection aggregate kinds: any change to a contributing column
             // triggers a full subtree recompute up the ancestor chain.
             if (self::requiresChainRecompute($definition->function)) {
                 $watchCols = array_unique(array_merge(
@@ -710,7 +710,7 @@ trait HasNestedSetAggregates
      * True for aggregate kinds that always need a full subtree recompute
      * on every mutation — no delta or cheap-skip fast path applies.
      *
-     * Includes the four non-numeric kinds (DistinctCount / StringAgg /
+     * Includes the four collection-aggregate kinds (DistinctCount / StringAgg /
      * JsonAgg / JsonObjectAgg). MIN/MAX are also recompute-only but
      * carry a cheap-skip filter on the previous extremum value, so
      * they get their own captured-recompute branch instead of going
@@ -791,7 +791,7 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Non-numeric kinds: always full subtree recompute.
+            // Collection aggregate kinds: always full subtree recompute.
             if (self::requiresChainRecompute($definition->function)) {
                 $chainRecomputes[$definition->column] = $definition;
 
@@ -973,7 +973,7 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Non-numeric kinds: full subtree recompute over the ancestor chain.
+            // Collection aggregate kinds: full subtree recompute over the ancestor chain.
             if (self::requiresChainRecompute($definition->function)) {
                 $chainRecomputes[$definition->column] = $definition;
 

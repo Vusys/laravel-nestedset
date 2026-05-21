@@ -10,14 +10,14 @@ use Vusys\NestedSet\Tests\Fixtures\Models\TextJsonArea;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
- * Standard lifecycle matrix for the four non-numeric aggregate kinds:
+ * Standard lifecycle matrix for the four collection-aggregate kinds:
  * create / move / delete / withFreshAggregates parity.
  *
  * All four go through {@see RecomputeMaintenance}
  * (delta is unsupported); these tests verify the stored columns
  * converge to the SQL-fresh values after each operation.
  */
-final class NewKindsMaintenanceTest extends TestCase
+final class CollectionAggregatesMaintenanceTest extends TestCase
 {
     protected function setUp(): void
     {

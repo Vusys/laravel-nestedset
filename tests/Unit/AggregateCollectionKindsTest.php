@@ -9,7 +9,7 @@ use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
-final class AggregateNewKindsTest extends TestCase
+final class AggregateCollectionKindsTest extends TestCase
 {
     public function test_distinct_count_factory(): void
     {

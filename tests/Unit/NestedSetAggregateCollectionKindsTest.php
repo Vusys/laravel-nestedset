@@ -9,7 +9,7 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
-final class NestedSetAggregateNewKindsTest extends TestCase
+final class NestedSetAggregateCollectionKindsTest extends TestCase
 {
     public function test_distinct_count_produces_a_distinct_count_definition(): void
     {

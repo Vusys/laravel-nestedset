@@ -9,7 +9,7 @@ namespace Vusys\NestedSet\Aggregates;
  *
  * The first five — SUM/COUNT/AVG/MIN/MAX — are the SQL-standard numeric
  * roll-ups. The remaining four (DistinctCount / StringAgg / JsonAgg /
- * JsonObjectAgg) are non-numeric or non-deltable kinds added by the
+ * JsonObjectAgg) are collection-aggregate kinds (recompute-only) added by the
  * "more aggregate kinds" design: they all go through recompute on every
  * mutation, never the delta fast-path.
  *
