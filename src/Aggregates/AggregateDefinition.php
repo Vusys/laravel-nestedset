@@ -46,6 +46,8 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public ?string $keyColumn = null,
         public ?string $valueColumn = null,
         public array $sources = [],
+        public ?string $weight = null,
+        public CompanionSourceTransform $sourceTransform = CompanionSourceTransform::Identity,
     ) {}
 
     public function getColumn(): string

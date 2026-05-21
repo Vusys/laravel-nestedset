@@ -8,6 +8,7 @@ use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
@@ -262,6 +263,26 @@ final class RecomputeMaintenance
     {
         $source = $spec['source'];
         $sourceRef = "inner_a.{$source}";
+        // Companions with a non-Identity transform (weighted product,
+        // bool-as-int) compile the SUM around a derived expression
+        // instead of a plain column ref. The transform comes from
+        // the definition's `sourceTransform`; falls back to Identity
+        // for non-companion specs (which the existing builders pass
+        // without setting the field).
+        $definition = $spec['definition'] ?? null;
+        $transform = $definition instanceof AggregateDefinition
+            ? $definition->sourceTransform
+            : CompanionSourceTransform::Identity;
+        $weightRef = $definition instanceof AggregateDefinition
+            && $definition->weight !== null
+            && $definition->weight !== ''
+            ? 'inner_a.'.$definition->weight
+            : null;
+        $transformed = $transform->applySqlFragment($sourceRef, $weightRef);
+        // BoolOr / BoolAnd never reach RecomputeMaintenance directly —
+        // their delta path writes the display column via DeltaMaintenance.
+        // The companion Sum (transform = AsInt) is the only place an
+        // inner SUM over a boolean column appears here.
 
         if ($filter instanceof FilterPredicate) {
             $pred = self::filterPredicateSql($connection, $filter, 'inner_a.');
@@ -270,7 +291,7 @@ final class RecomputeMaintenance
                 AggregateFunction::Sum => sprintf(
                     'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                     $pred,
-                    $sourceRef,
+                    $transformed,
                 ),
                 AggregateFunction::Count => sprintf(
                     // COUNT(NULL) and COUNT(expr-returning-NULL) both yield 0
@@ -297,6 +318,13 @@ final class RecomputeMaintenance
                     $pred,
                     $sourceRef,
                 ),
+                AggregateFunction::WeightedAvg,
+                AggregateFunction::BoolOr,
+                AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+                    'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
+                    .'in DeltaMaintenance and should never reach this inner-expression builder.',
+                    strtoupper($spec['function']->value),
+                )),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -310,13 +338,20 @@ final class RecomputeMaintenance
         }
 
         return match ($spec['function']) {
-            AggregateFunction::Sum => "COALESCE(SUM({$sourceRef}), 0)",
+            AggregateFunction::Sum => "COALESCE(SUM({$transformed}), 0)",
             AggregateFunction::Count => $spec['source'] === ''
                 ? 'COUNT(*)'
                 : "COUNT({$sourceRef})",
             AggregateFunction::Avg => "AVG({$sourceRef})",
             AggregateFunction::Min => "MIN({$sourceRef})",
             AggregateFunction::Max => "MAX({$sourceRef})",
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+                'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
+                .'in DeltaMaintenance and should never reach this inner-expression builder.',
+                strtoupper($spec['function']->value),
+            )),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,

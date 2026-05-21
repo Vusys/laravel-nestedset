@@ -16,6 +16,7 @@ use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\DerivedAggregateFragments;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
@@ -661,6 +662,9 @@ final class TreeAggregateBuilder
                 $qualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $qualifier),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -726,6 +730,9 @@ final class TreeAggregateBuilder
                 $qualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $qualifier, $pred),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -814,6 +821,9 @@ final class TreeAggregateBuilder
                 $innerQualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFilter),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -998,6 +1008,9 @@ final class TreeAggregateBuilder
                 $innerAlias,
                 self::requireSource($definition),
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $innerAlias.'.', $rawSql),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -1088,6 +1101,43 @@ final class TreeAggregateBuilder
         return self::aggregateExpression($definition, $innerQualifier, $connection);
     }
 
+    /**
+     * Leaf-row inline expression for a {@see AggregateFunction::WeightedAvg}.
+     * For a single-row subtree the weighted average degenerates to
+     * `(weight * value) / weight = value`, but the closed form below
+     * preserves NULL when the weight is missing or zero — matching
+     * the join-derived path's `Σ(w · x) / NULLIF(Σ(w), 0)` semantics
+     * exactly.
+     */
+    private static function leafInlineWeightedAvg(AggregateDefinition $definition, string $tableQualifier): string
+    {
+        $source = self::requireSource($definition);
+        if ($definition->weight === null || $definition->weight === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'WeightedAvg "%s" is missing its weight column.',
+                $definition->column,
+            ));
+        }
+        $weightRef = $tableQualifier.$definition->weight;
+        $sourceRef = $tableQualifier.$source;
+
+        return "(1.0 * ({$weightRef} * {$sourceRef})) / NULLIF({$weightRef}, 0)";
+    }
+
+    /**
+     * Leaf-row inline expression for {@see AggregateFunction::BoolOr}
+     * and {@see AggregateFunction::BoolAnd}. A single-row subtree's
+     * boolean rollup is the row's value itself, except when that value
+     * is NULL (which the join path treats as an empty contribution and
+     * returns NULL for).
+     */
+    private static function leafInlineBool(AggregateDefinition $definition, string $tableQualifier): string
+    {
+        $sourceRef = $tableQualifier.self::requireSource($definition);
+
+        return "CASE WHEN {$sourceRef} IS NULL THEN NULL WHEN {$sourceRef} THEN TRUE ELSE FALSE END";
+    }
+
     private static function requireSource(AggregateDefinition $definition): string
     {
         if ($definition->source === null) {
@@ -1127,6 +1177,9 @@ final class TreeAggregateBuilder
                 AggregateFunction::Avg,
                 AggregateFunction::Min,
                 AggregateFunction::Max,
+                AggregateFunction::WeightedAvg,
+                AggregateFunction::BoolOr,
+                AggregateFunction::BoolAnd,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
                 AggregateFunction::JsonObjectAgg => 'NULL',
@@ -1161,6 +1214,9 @@ final class TreeAggregateBuilder
                     $tableQualifier,
                     self::requireSource($definition),
                 ),
+                AggregateFunction::WeightedAvg => self::leafInlineWeightedAvg($definition, $tableQualifier),
+                AggregateFunction::BoolOr,
+                AggregateFunction::BoolAnd => self::leafInlineBool($definition, $tableQualifier),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -1188,6 +1244,9 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg,
             AggregateFunction::Min,
             AggregateFunction::Max,
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => 'NULL',
@@ -1232,6 +1291,17 @@ final class TreeAggregateBuilder
                 $pred,
                 $tableQualifier,
                 self::requireSource($definition),
+            ),
+            AggregateFunction::WeightedAvg => sprintf(
+                'CASE WHEN %s THEN %s ELSE NULL END',
+                $pred,
+                self::leafInlineWeightedAvg($definition, $tableQualifier),
+            ),
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => sprintf(
+                'CASE WHEN %s THEN %s ELSE NULL END',
+                $pred,
+                self::leafInlineBool($definition, $tableQualifier),
             ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
@@ -1760,6 +1830,9 @@ final class TreeAggregateBuilder
             if ($definition->source !== null) {
                 $needed[] = $definition->source;
             }
+            if ($definition->weight !== null && $definition->weight !== '') {
+                $needed[] = $definition->weight;
+            }
             $needed[] = $definition->column;
         }
         $columns = array_values(array_unique($needed));
@@ -1804,11 +1877,18 @@ final class TreeAggregateBuilder
             // first iteration, where `prev` is still the empty value.
             $prevInclusive = self::chainFoldEmpty($definition);
 
-            // For AVG: we need parallel SUM/COUNT accumulators because
-            // AVG is a derived ratio. SUM accumulates non-null sources,
-            // COUNT counts non-null sources. Combined at emit time.
-            $prevSumAvg = 0;
+            // Parallel accumulators for the derived-from-companions
+            // kinds (AVG, WeightedAvg, BoolOr, BoolAnd): each needs a
+            // pair of numerators / denominators that a single int|float
+            // fold can't carry. AVG: SUM(value) + COUNT(non-null).
+            // WeightedAvg: SUM(weight·value) + SUM(weight).
+            // Bool kinds: SUM(asInt) + COUNT(non-null).
+            $prevSumAvg = 0.0;
             $prevCountAvg = 0;
+            $prevSumWx = 0.0;
+            $prevSumW = 0.0;
+            $prevBoolSum = 0;
+            $prevBoolCount = 0;
 
             foreach ($rows as $row) {
                 $id = $row[$idCol] ?? null;
@@ -1820,6 +1900,13 @@ final class TreeAggregateBuilder
                     ? ($row[$definition->source] ?? null)
                     : null;
 
+                $currentSum = $prevSumAvg;
+                $currentCount = $prevCountAvg;
+                $currentSumWx = $prevSumWx;
+                $currentSumW = $prevSumW;
+                $currentBoolSum = $prevBoolSum;
+                $currentBoolCount = $prevBoolCount;
+
                 // Combine source with previous-row's inclusive to get
                 // current row's inclusive.
                 if ($definition->function === AggregateFunction::Avg) {
@@ -1829,6 +1916,25 @@ final class TreeAggregateBuilder
                     $currentCount = $prevCountAvg + $countDelta;
                     $currentInclusive = $currentCount > 0 ? $currentSum / $currentCount : null;
                     $previousInclusive = $prevCountAvg > 0 ? $prevSumAvg / $prevCountAvg : null;
+                } elseif ($definition->function === AggregateFunction::WeightedAvg) {
+                    $weightValue = $definition->weight !== null && $definition->weight !== ''
+                        ? ($row[$definition->weight] ?? null)
+                        : null;
+                    $weightNumeric = is_numeric($weightValue) ? (float) $weightValue : 0.0;
+                    $valueNumeric = is_numeric($sourceValue) ? (float) $sourceValue : 0.0;
+                    $currentSumWx = $prevSumWx + ($weightNumeric * $valueNumeric);
+                    $currentSumW = $prevSumW + $weightNumeric;
+                    $currentInclusive = $currentSumW !== 0.0 ? $currentSumWx / $currentSumW : null;
+                    $previousInclusive = $prevSumW !== 0.0 ? $prevSumWx / $prevSumW : null;
+                } elseif ($definition->function === AggregateFunction::BoolOr
+                    || $definition->function === AggregateFunction::BoolAnd
+                ) {
+                    $boolContribution = self::asBoolInt($sourceValue);
+                    $boolCountDelta = $sourceValue !== null ? 1 : 0;
+                    $currentBoolSum = $prevBoolSum + $boolContribution;
+                    $currentBoolCount = $prevBoolCount + $boolCountDelta;
+                    $currentInclusive = self::boolFoldOutput($definition->function, $currentBoolSum, $currentBoolCount);
+                    $previousInclusive = self::boolFoldOutput($definition->function, $prevBoolSum, $prevBoolCount);
                 } else {
                     $currentInclusive = self::chainFoldStep($definition, $sourceValue, $prevInclusive);
                     $previousInclusive = $prevInclusive;
@@ -1845,8 +1951,22 @@ final class TreeAggregateBuilder
                 if ($definition->function === AggregateFunction::Avg) {
                     $prevSumAvg = $currentSum;
                     $prevCountAvg = $currentCount;
+                } elseif ($definition->function === AggregateFunction::WeightedAvg) {
+                    $prevSumWx = $currentSumWx;
+                    $prevSumW = $currentSumW;
+                } elseif ($definition->function === AggregateFunction::BoolOr
+                    || $definition->function === AggregateFunction::BoolAnd
+                ) {
+                    $prevBoolSum = $currentBoolSum;
+                    $prevBoolCount = $currentBoolCount;
+                } else {
+                    // Only the int|float|null chain-fold kinds reuse
+                    // $prevInclusive as the next iteration's
+                    // accumulator; the derived families above use
+                    // their dedicated pairs instead.
+                    /** @var int|float|null $currentInclusive */
+                    $prevInclusive = $currentInclusive;
                 }
-                $prevInclusive = $currentInclusive;
             }
         }
 
@@ -1868,6 +1988,9 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg,
             AggregateFunction::Min,
             AggregateFunction::Max,
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => null,
@@ -1926,9 +2049,18 @@ final class TreeAggregateBuilder
                 return self::isWhole($maxValue) ? (int) $maxValue : $maxValue;
 
             case AggregateFunction::Avg:
-                // AVG is handled inline by the caller because it needs
-                // two parallel accumulators (SUM and COUNT-of-non-null).
-                throw new \LogicException('AVG must be handled inline in the chain fold.');
+            case AggregateFunction::WeightedAvg:
+            case AggregateFunction::BoolOr:
+            case AggregateFunction::BoolAnd:
+                // Derived-from-companions kinds — AVG, WeightedAvg,
+                // BoolOr, BoolAnd — are handled inline by the caller
+                // because each needs two parallel accumulators
+                // (sum + count, or sum-of-products + sum-of-weights)
+                // that a single int|float fold can't carry.
+                throw new \LogicException(sprintf(
+                    '%s must be handled inline in the chain fold.',
+                    strtoupper($definition->function->value),
+                ));
             case AggregateFunction::DistinctCount:
             case AggregateFunction::StringAgg:
             case AggregateFunction::JsonAgg:
@@ -1938,6 +2070,57 @@ final class TreeAggregateBuilder
                     $definition->function->value,
                 ));
         }
+    }
+
+    /**
+     * Cast a raw column value to the 0/1 contribution the bool-as-int
+     * companion would store. Mirrors the SQL fragment
+     * `CASE WHEN c THEN 1 ELSE 0 END` so the chain fold's accumulator
+     * matches what {@see Strategy\DeltaMaintenance} writes per row.
+     */
+    private static function asBoolInt(mixed $value): int
+    {
+        if ($value === null) {
+            return 0;
+        }
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+        if (is_int($value) || is_float($value)) {
+            return $value !== 0 && $value !== 0.0 ? 1 : 0;
+        }
+        if (is_string($value)) {
+            // PG returns 't'/'f' for boolean columns; MySQL/MariaDB use
+            // '0'/'1'; SQLite (under Laravel's bool cast) the same.
+            // Treat the explicit false markers as 0 and anything else
+            // numeric or truthy-textual as 1 — defensive against driver
+            // differences when the column has not been cast yet.
+            $trimmed = strtolower(trim($value));
+            if (in_array($trimmed, ['', '0', 'f', 'false'], true)) {
+                return 0;
+            }
+
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Combine the chain fold's running sum / count for BoolOr / BoolAnd
+     * into the user-facing value. Empty subtree (no contributing rows)
+     * is NULL; otherwise BoolOr is "any truthy contributor" and BoolAnd
+     * is "all contributors truthy".
+     */
+    private static function boolFoldOutput(AggregateFunction $function, int $sum, int $count): ?bool
+    {
+        if ($count === 0) {
+            return null;
+        }
+
+        return $function === AggregateFunction::BoolAnd
+            ? $sum === $count
+            : $sum > 0;
     }
 
     /**
@@ -2226,8 +2409,42 @@ final class TreeAggregateBuilder
             AggregateFunction::StringAgg => $def->distinct
                 ? self::distinctStringAggEqual($def, $stored, $computed)
                 : self::aggregatesEqual($stored, $computed),
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => self::boolValuesEqual($stored, $computed),
             default => self::aggregatesEqual($stored, $computed),
         };
+    }
+
+    /**
+     * Boolean drift-detection comparator. Normalises raw driver
+     * outputs ('t'/'f' from PG, 0/1 from MySQL/SQLite, native bool
+     * after an Eloquent cast) so a stored TRUE compares equal to
+     * the chain-fold's computed `true` regardless of which driver
+     * fetched the row.
+     */
+    private static function boolValuesEqual(mixed $stored, mixed $computed): bool
+    {
+        return self::normaliseBool($stored) === self::normaliseBool($computed);
+    }
+
+    private static function normaliseBool(mixed $value): ?bool
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value) || is_float($value)) {
+            return $value !== 0 && $value !== 0.0;
+        }
+        if (is_string($value)) {
+            $trimmed = strtolower(trim($value));
+
+            return ! in_array($trimmed, ['', '0', 'f', 'false'], true);
+        }
+
+        return null;
     }
 
     private static function jsonValuesEqual(mixed $a, mixed $b): bool

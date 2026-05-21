@@ -52,6 +52,10 @@ final class DeltaMaintenance
      *                                            over integer source columns pass ints.
      * @param  array<string, array{sum: string, count: string}>  $avgs
      *                                                                  avg_display_col => {sum companion, count companion}
+     * @param  array<string, array{sum_wx: string, sum_w: string}>  $weightedAvgs
+     *                                                                             weighted-avg display column => companion column names
+     * @param  array<string, array{sum: string, count: string, function: AggregateFunction}>  $bools
+     *                                                                                                boolOr/boolAnd display column => companion columns + which function
      * @param  array<string, array{function: AggregateFunction, value: int|float}>  $extremes
      *                                                                                         cheap-delta candidates: aggregate column =>
      *                                                                                         {function: Min|Max, value: candidate}.
@@ -75,19 +79,24 @@ final class DeltaMaintenance
         array $avgs = [],
         array $extremes = [],
         ?string $softDeletedColumn = null,
+        array $weightedAvgs = [],
+        array $bools = [],
     ): int {
         // Order matters on MySQL / MariaDB: SET clauses are evaluated
         // left-to-right with each prior assignment visible to later
-        // ones. The AVG formula references the SUM and COUNT
-        // companions, which are themselves being delta-updated in this
-        // same statement — so we must emit AVG FIRST while those
-        // columns still hold their pre-update values. Adding the delta
-        // inside the AVG expression then produces the correct new
-        // value. PostgreSQL and SQLite evaluate all SET clauses
-        // against pre-update values regardless of order, so the same
-        // ordering is correct for them.
+        // ones. The AVG / WeightedAvg / Bool formulas reference the
+        // SUM and COUNT companions, which are themselves being
+        // delta-updated in this same statement — so we must emit the
+        // derived display columns FIRST while the companions still
+        // hold their pre-update values. Adding the delta inside each
+        // derived expression then produces the correct new value.
+        // PostgreSQL and SQLite evaluate all SET clauses against
+        // pre-update values regardless of order, so the same ordering
+        // is correct for them.
         $setExpressions = array_merge(
             self::buildAvgSetClauses($deltas, $avgs),
+            self::buildWeightedAvgSetClauses($deltas, $weightedAvgs),
+            self::buildBoolSetClauses($deltas, $bools),
             self::buildDeltaSetClauses($deltas),
             self::buildExtremeSetClauses($extremes),
         );
@@ -164,6 +173,67 @@ final class DeltaMaintenance
             // MySQL/MariaDB already widen but the multiplier is harmless.
             $clauses[$avgCol] = new TreeExpression(
                 "(1.0 * ({$sumExpression})) / NULLIF(({$countExpression}), 0)",
+            );
+        }
+
+        return $clauses;
+    }
+
+    /**
+     * Build SET clauses for weighted-average display columns. Each
+     * clause expresses `(sum_wx + Δ_sum_wx) / NULLIF(sum_w + Δ_sum_w, 0)`
+     * — NULL when no contributing row carries any weight (matches
+     * SQL's `0 / 0 = NULL` convention).
+     *
+     * @param  array<string, int|float>  $deltas
+     * @param  array<string, array{sum_wx: string, sum_w: string}>  $weightedAvgs
+     * @return array<string, TreeExpression>
+     */
+    private static function buildWeightedAvgSetClauses(array $deltas, array $weightedAvgs): array
+    {
+        $clauses = [];
+
+        foreach ($weightedAvgs as $displayCol => $companions) {
+            $sumWxExpression = self::columnPlusDelta($companions['sum_wx'], $deltas[$companions['sum_wx']] ?? 0);
+            $sumWExpression = self::columnPlusDelta($companions['sum_w'], $deltas[$companions['sum_w']] ?? 0);
+
+            $clauses[$displayCol] = new TreeExpression(
+                "(1.0 * ({$sumWxExpression})) / NULLIF(({$sumWExpression}), 0)",
+            );
+        }
+
+        return $clauses;
+    }
+
+    /**
+     * Build SET clauses for boolOr / boolAnd display columns. Each
+     * clause is `CASE WHEN (count + Δcount) = 0 THEN NULL
+     *                WHEN (sum + Δsum) > 0   THEN TRUE  ELSE FALSE END`
+     * for BoolOr, and
+     *               `CASE WHEN (count + Δcount) = 0 THEN NULL
+     *                WHEN (sum + Δsum) = (count + Δcount) THEN TRUE  ELSE FALSE END`
+     * for BoolAnd. TRUE / FALSE are portable across the four supported
+     * backends (PG: native; MySQL / MariaDB / SQLite: aliases for 1 / 0).
+     *
+     * @param  array<string, int|float>  $deltas
+     * @param  array<string, array{sum: string, count: string, function: AggregateFunction}>  $bools
+     * @return array<string, TreeExpression>
+     */
+    private static function buildBoolSetClauses(array $deltas, array $bools): array
+    {
+        $clauses = [];
+
+        foreach ($bools as $displayCol => $spec) {
+            $sumExpression = self::columnPlusDelta($spec['sum'], $deltas[$spec['sum']] ?? 0);
+            $countExpression = self::columnPlusDelta($spec['count'], $deltas[$spec['count']] ?? 0);
+
+            $resultExpression = $spec['function'] === AggregateFunction::BoolAnd
+                ? "({$sumExpression}) = ({$countExpression})"
+                : "({$sumExpression}) > 0";
+
+            $clauses[$displayCol] = new TreeExpression(
+                "CASE WHEN ({$countExpression}) = 0 THEN NULL "
+                ."WHEN {$resultExpression} THEN TRUE ELSE FALSE END",
             );
         }
 

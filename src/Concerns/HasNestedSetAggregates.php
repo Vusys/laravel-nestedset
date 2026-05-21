@@ -232,6 +232,9 @@ trait HasNestedSetAggregates
             AggregateFunction::Min => $min,
             AggregateFunction::Max => $max,
             AggregateFunction::Avg => $count === 0 ? null : $sum / $count,
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -340,10 +343,17 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Determine trigger columns: source column + filter watch columns.
+            // Determine trigger columns: source column + filter watch
+            // columns + (for weighted-product companions) the weight
+            // column too. Without the weight trigger, a row whose value
+            // is unchanged but whose weight changed would miss the
+            // delta capture and leave `Σ(w · x)` stale.
             $watchCols = $definition->filter?->watchColumns() ?? [];
             $triggerCols = array_unique(array_merge(
                 $definition->source !== null ? [$definition->source] : [],
+                $definition->sourceTransform->requiresWeight() && $definition->weight !== null
+                    ? [$definition->weight]
+                    : [],
                 $watchCols,
             ));
             // Skip if nothing relevant is dirty.
@@ -365,8 +375,18 @@ trait HasNestedSetAggregates
             $source = $definition->source;
 
             if ($definition->function === AggregateFunction::Sum && $source !== null) {
-                $newSource = self::numeric($this->getAttribute($source));
-                $oldSource = self::numeric($this->getOriginal($source));
+                $newSource = $definition->sourceTransform->applyPhp(
+                    $this->getAttribute($source),
+                    $definition->weight !== null
+                        ? self::nullableNumeric($this->getAttribute($definition->weight))
+                        : null,
+                );
+                $oldSource = $definition->sourceTransform->applyPhp(
+                    $this->getOriginal($source),
+                    $definition->weight !== null
+                        ? self::nullableNumeric($this->getOriginal($definition->weight))
+                        : null,
+                );
                 $delta = ($newPred ? $newSource : 0) - ($oldPred ? $oldSource : 0);
 
                 if ($delta !== 0) {
@@ -601,6 +621,8 @@ trait HasNestedSetAggregates
             avgs: AggregateRegistry::avgCompanionsFor(static::class),
             extremes: $extremes,
             softDeletedColumn: $this->softDeleteColumn(),
+            weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+            bools: AggregateRegistry::boolCompanionsFor(static::class),
         );
 
         if ($recomputes !== []) {
@@ -844,7 +866,12 @@ trait HasNestedSetAggregates
                     && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
                     continue;
                 }
-                $value = self::numeric($this->getAttribute($definition->source));
+                $value = $definition->sourceTransform->applyPhp(
+                    $this->getAttribute($definition->source),
+                    $definition->weight !== null
+                        ? self::nullableNumeric($this->getAttribute($definition->weight))
+                        : null,
+                );
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
                 }
@@ -946,6 +973,8 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
                 softDeletedColumn: $this->softDeleteColumn(),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1103,6 +1132,8 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 softDeletedColumn: $this->softDeleteColumn(),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1172,6 +1203,8 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 softDeletedColumn: $this->softDeleteColumn(),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1293,6 +1326,8 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $candidateExtremes,
                 softDeletedColumn: $this->softDeleteColumn(),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1654,6 +1689,8 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
                 softDeletedColumn: $this->softDeleteColumn(),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -2120,6 +2157,9 @@ trait HasNestedSetAggregates
             AggregateFunction::Avg => $contributions === []
                 ? null
                 : array_sum($contributions) / count($contributions),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -2276,6 +2316,30 @@ trait HasNestedSetAggregates
     private static function listenerContributionValue(int|float|null $value): int|float
     {
         return $value ?? 0;
+    }
+
+    /**
+     * Null-preserving variant of {@see numeric()}. Returns null when
+     * the value is missing or non-numeric so the weighted-average
+     * delta path can distinguish "no weight recorded" (no
+     * contribution) from "weight = 0" (also no contribution but
+     * arithmetically explicit). Companion source-transform
+     * helpers consume this to decide whether to participate in a
+     * delta.
+     */
+    private static function nullableNumeric(mixed $value): int|float|null
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return $value + 0;
     }
 
     /**

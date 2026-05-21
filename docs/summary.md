@@ -39,6 +39,7 @@ Format:
 - [Declaring Aggregates](aggregates/declaring.md)
 - [Filtered Aggregates](aggregates/filtered.md)
 - [Listener Aggregates](aggregates/listeners.md)
+- [Weighted Average & Boolean Rollups](aggregates/weighted-avg-and-booleans.md)
 - [Recipes](aggregates/recipes.md)
 - [Maintenance](aggregates/maintenance.md)
 - [Drift & Limitations](aggregates/drift.md)
