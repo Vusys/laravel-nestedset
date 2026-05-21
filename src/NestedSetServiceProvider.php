@@ -41,6 +41,15 @@ final class NestedSetServiceProvider extends ServiceProvider
 
     public const string AGGREGATE_TYPE_BOOL_AND = 'bool_and';
 
+    /**
+     * Storage shape for the `Σ(weight·value)` / `Σ(weight)` companion
+     * columns of {@see self::AGGREGATE_TYPE_WEIGHTED_AVG}. Decimal —
+     * not bigint — because weight or value can hold fractional values
+     * and their sum needs to too; PostgreSQL otherwise rejects writes
+     * with `invalid input syntax for type bigint`.
+     */
+    public const string AGGREGATE_TYPE_DECIMAL_SUM = 'decimal_sum';
+
     #[\Override]
     public function register(): void
     {
@@ -113,11 +122,12 @@ final class NestedSetServiceProvider extends ServiceProvider
             /** @var Blueprint $this */
             NestedSetServiceProvider::addAggregateColumn($this, $column, $type);
 
+            $companionType = NestedSetServiceProvider::companionAggregateTypeFor($type);
             foreach (NestedSetServiceProvider::companionColumnsFor($column, $type) as $companionColumn) {
                 NestedSetServiceProvider::addAggregateColumn(
                     $this,
                     $companionColumn,
-                    NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+                    $companionType,
                 );
             }
         });
@@ -209,6 +219,18 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_DECIMAL_SUM) {
+            // Companion `Σ(weight·value)` / `Σ(weight)` of a weighted
+            // average. Wider than the display column (20,4) because the
+            // ancestor's sum can be much larger than any single row's
+            // product; default 0 because the delta path adds to it on
+            // every mutation and a NULL accumulator would poison the
+            // result.
+            $table->decimal($column, 20, 4)->default(0);
+
+            return;
+        }
+
         if ($type === self::AGGREGATE_TYPE_BOOL_OR || $type === self::AGGREGATE_TYPE_BOOL_AND) {
             // BoolOr / BoolAnd — nullable boolean. Empty subtree reads
             // as NULL; non-empty reads as TRUE/FALSE. Laravel's
@@ -256,6 +278,22 @@ final class NestedSetServiceProvider extends ServiceProvider
     }
 
     /**
+     * The storage shape to use for companion columns of an aggregate
+     * declared with `nestedSetAggregate('col', type: $type)`. AVG and
+     * Bool rollups stick with the default integer-flavoured
+     * `sum_count` companions (their sources are integer-shaped);
+     * weighted-average companions hold sums of (decimal × decimal)
+     * products and need decimal storage to avoid PG type errors.
+     */
+    public static function companionAggregateTypeFor(string $type): string
+    {
+        return match ($type) {
+            self::AGGREGATE_TYPE_WEIGHTED_AVG => self::AGGREGATE_TYPE_DECIMAL_SUM,
+            default => self::AGGREGATE_TYPE_SUM_COUNT,
+        };
+    }
+
+    /**
      * Map a `nestedSetAggregate` type string to the
      * {@see AggregateFunction} whose companion set it represents.
      * Returns null for types whose underlying functions have no
@@ -270,6 +308,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_BOOL_OR => AggregateFunction::BoolOr,
             self::AGGREGATE_TYPE_BOOL_AND => AggregateFunction::BoolAnd,
             self::AGGREGATE_TYPE_SUM_COUNT,
+            self::AGGREGATE_TYPE_DECIMAL_SUM,
             self::AGGREGATE_TYPE_MIN_MAX,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
             self::AGGREGATE_TYPE_STRING_AGG,
@@ -297,6 +336,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_WEIGHTED_AVG,
             self::AGGREGATE_TYPE_BOOL_OR,
             self::AGGREGATE_TYPE_BOOL_AND,
+            self::AGGREGATE_TYPE_DECIMAL_SUM,
         ];
     }
 
