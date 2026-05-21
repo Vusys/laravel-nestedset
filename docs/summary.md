@@ -38,6 +38,7 @@ Format:
 - [Reading Values](aggregates/reading.md)
 - [Declaring Aggregates](aggregates/declaring.md)
 - [Filtered Aggregates](aggregates/filtered.md)
+- [Collection Aggregates](aggregates/text-and-json.md)
 - [Listener Aggregates](aggregates/listeners.md)
 - [Recipes](aggregates/recipes.md)
 - [Maintenance](aggregates/maintenance.md)
