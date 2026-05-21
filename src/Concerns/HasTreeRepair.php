@@ -9,6 +9,8 @@ use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\FixTreeCompleted;
+use Vusys\NestedSet\Events\ScopeViolationDetected;
+use Vusys\NestedSet\Events\TreeIntegrityChecked;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Query\TreeRepairBuilder;
@@ -42,7 +44,9 @@ trait HasTreeRepair
      */
     public static function isBroken(?HasNestedSet $anchor = null): bool
     {
-        return self::repairBuilder($anchor)->isBroken();
+        $errors = self::countErrors($anchor);
+
+        return array_sum($errors) > 0;
     }
 
     /**
@@ -56,7 +60,23 @@ trait HasTreeRepair
      */
     public static function countErrors(?HasNestedSet $anchor = null): array
     {
-        return self::repairBuilder($anchor)->countErrors();
+        $errors = self::repairBuilder($anchor)->countErrors();
+
+        $totalErrors = array_sum($errors);
+        $anchorId = null;
+        if ($anchor instanceof Model) {
+            $key = $anchor->getKey();
+            $anchorId = is_int($key) || is_string($key) ? $key : null;
+        }
+
+        EventDispatcher::dispatch(new TreeIntegrityChecked(
+            modelClass: static::class,
+            anchorId: $anchorId,
+            errors: $errors,
+            totalErrors: $totalErrors,
+        ));
+
+        return $errors;
     }
 
     /**
@@ -134,11 +154,17 @@ trait HasTreeRepair
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
 
         if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
-            throw new ScopeViolationException(sprintf(
+            $message = sprintf(
                 '%s declares a scope (%s); pass an anchor node to scope this operation.',
                 static::class,
                 implode(', ', $scopeColumns),
+            );
+            EventDispatcher::dispatch(new ScopeViolationDetected(
+                modelClass: static::class,
+                stage: 'repair',
+                message: $message,
             ));
+            throw new ScopeViolationException($message);
         }
 
         if ($anchor instanceof HasNestedSet && ! $anchor instanceof static) {

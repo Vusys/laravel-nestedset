@@ -54,5 +54,6 @@ Format:
 - [Configuration](reference/config.md)
 - [Testing Helpers](reference/testing.md)
 - [Transactions](reference/transactions.md)
+- [Events](reference/events.md)
 - [Production Notes](reference/production.md)
 - [vs. kalnoy/nestedset](reference/comparison.md)

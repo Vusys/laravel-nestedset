@@ -7,8 +7,13 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\BulkInsertNodeSaved;
 use Vusys\NestedSet\Events\BulkInsertTreeCompleted;
+use Vusys\NestedSet\Events\BulkInsertTreePlanned;
+use Vusys\NestedSet\Events\BulkInsertTreeSaved;
+use Vusys\NestedSet\Events\BulkInsertTreeStarting;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Events\ScopeViolationDetected;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Query\TreeMutationBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -76,15 +81,40 @@ trait HasBulkInsert
             return [];
         }
 
+        // The HasNestedSet contract intentionally doesn't require Model so
+        // that unit-test stubs without a database can implement it, but
+        // every real anchor passed at runtime is a Model — its primary key,
+        // table, and persistence state are read below. Narrow once here so
+        // the event payloads (which carry the anchor as `Model&HasNestedSet`)
+        // see the correctly-typed value without per-site casts.
+        if ($appendTo instanceof HasNestedSet && ! $appendTo instanceof Model) {
+            throw new InvalidArgumentException(sprintf(
+                'bulkInsertTree: $appendTo must be a Model instance; got %s.',
+                get_debug_type($appendTo),
+            ));
+        }
+
+        EventDispatcher::dispatch(new BulkInsertTreeStarting(
+            modelClass: static::class,
+            appendTo: $appendTo,
+            tree: $tree,
+        ));
+
         // Scoped models need an anchor — the scope-column values are
         // copied from it onto every inserted row.
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
         if ($scopeColumns !== [] && ! $appendTo instanceof HasNestedSet) {
-            throw new ScopeViolationException(sprintf(
+            $message = sprintf(
                 '%s declares a scope (%s); pass an anchor node so bulkInsertTree can scope the inserted rows.',
                 static::class,
                 implode(', ', $scopeColumns),
+            );
+            EventDispatcher::dispatch(new ScopeViolationDetected(
+                modelClass: static::class,
+                stage: 'bulk_insert',
+                message: $message,
             ));
+            throw new ScopeViolationException($message);
         }
 
         if ($appendTo instanceof HasNestedSet && ! $appendTo instanceof static) {
@@ -117,6 +147,12 @@ trait HasBulkInsert
 
         // 1. DFS walk → flat plan with relative lft/rgt/depth.
         $plan = self::bulkInsertPlan($tree, $reservedCols);
+
+        EventDispatcher::dispatch(new BulkInsertTreePlanned(
+            modelClass: static::class,
+            appendTo: $appendTo,
+            plan: $plan,
+        ));
 
         $totalNodes = count($plan);
         $gapSize = 2 * $totalNodes;
@@ -154,6 +190,7 @@ trait HasBulkInsert
                 $parentIdCol,
                 $scopeValues,
                 $mutator,
+                $appendTo,
             ): array {
                 if ($anchorRgt !== null) {
                     $mutator->makeGap($anchorRgt, $gapSize);
@@ -168,8 +205,9 @@ trait HasBulkInsert
                 }
 
                 $saved = [];
+                $totalNodes = count($plan);
 
-                foreach ($plan as $node) {
+                foreach ($plan as $planIndex => $node) {
                     $model = new static($node['attributes']);
 
                     foreach ($scopeValues as $col => $val) {
@@ -178,9 +216,12 @@ trait HasBulkInsert
 
                     if ($node['parentPlanIndex'] === null) {
                         $parentId = $anchorParentId;
+                        $parentNode = $appendTo;
                     } else {
-                        $parentKey = $saved[$node['parentPlanIndex']]->getKey();
+                        $parentModel = $saved[$node['parentPlanIndex']];
+                        $parentKey = $parentModel->getKey();
                         $parentId = is_int($parentKey) || is_string($parentKey) ? $parentKey : null;
+                        $parentNode = $parentModel;
                     }
 
                     $model->setAttribute($lftCol, $node['lft'] + $boundsOffset);
@@ -191,6 +232,14 @@ trait HasBulkInsert
                     $model->save();
 
                     $saved[] = $model;
+
+                    EventDispatcher::dispatch(new BulkInsertNodeSaved(
+                        modelClass: static::class,
+                        node: $model,
+                        planIndex: $planIndex,
+                        totalNodes: $totalNodes,
+                        parent: $parentNode,
+                    ));
                 }
 
                 return $saved;
@@ -199,11 +248,27 @@ trait HasBulkInsert
         );
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
+        EventDispatcher::dispatch(new BulkInsertTreeSaved(
+            modelClass: static::class,
+            anchorId: $anchorParentId,
+            appendTo: $appendTo,
+            nodes: $saved,
+        ));
+
+        $nodeIds = [];
+        foreach ($saved as $savedNode) {
+            $key = $savedNode->getKey();
+            if (is_int($key) || is_string($key)) {
+                $nodeIds[] = $key;
+            }
+        }
+
         EventDispatcher::dispatch(new BulkInsertTreeCompleted(
             modelClass: static::class,
             anchorId: $anchorParentId,
             rowsInserted: count($saved),
             durationMs: $durationMs,
+            nodeIds: $nodeIds,
         ));
 
         return $saved;
