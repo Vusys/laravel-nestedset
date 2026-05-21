@@ -333,6 +333,56 @@ final class BlueprintMacroTest extends TestCase
         );
     }
 
+    public function test_companion_allocations_assign_sum_sq_to_a_wider_decimal_shape(): void
+    {
+        $this->assertSame(
+            [
+                ['column' => 'tickets_variance__sum', 'type' => 'sum_count'],
+                ['column' => 'tickets_variance__sum_sq', 'type' => 'sum_sq'],
+                ['column' => 'tickets_variance__count', 'type' => 'sum_count'],
+            ],
+            NestedSetServiceProvider::companionAllocationsFor('tickets_variance', 'variance'),
+        );
+    }
+
+    public function test_sum_sq_companion_is_emitted_as_a_high_precision_decimal(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('tickets_variance', type: 'variance');
+        });
+
+        $byName = $this->columnsByName();
+
+        // sum_sq companion → decimal/numeric, wide enough to absorb
+        // squared-source contributions without overflowing the bigInt
+        // ceiling that the plain Sum companion uses. (Backends report
+        // bigInteger differently — 'bigint' on MySQL/MariaDB/PG,
+        // 'integer' on SQLite — so we don't pin the Sum side here; the
+        // sum_sq side is what matters for this regression.)
+        $sumSqType = strtolower($this->columnTypeName($byName['tickets_variance__sum_sq']));
+        $this->assertTrue(
+            str_starts_with($sumSqType, 'decimal') || str_starts_with($sumSqType, 'numeric'),
+            "expected decimal/numeric type for __sum_sq companion, got {$sumSqType}",
+        );
+    }
+
+    /**
+     * Returns the backend-specific type name string from a Laravel
+     * Schema::getColumns() row. SQLite reports it under `type`
+     * (`integer`, `numeric`); MySQL / MariaDB / PG return things
+     * like `bigint`, `decimal(38,0)`, `numeric(38,0)` — the prefix
+     * is what matters for the test.
+     *
+     * @param  array<string, mixed>  $column
+     */
+    private function columnTypeName(array $column): string
+    {
+        $type = $column['type_name'] ?? $column['type'] ?? '';
+
+        return is_string($type) ? $type : '';
+    }
+
     public function test_companion_columns_for_rejects_unknown_type(): void
     {
         $this->expectException(\InvalidArgumentException::class);

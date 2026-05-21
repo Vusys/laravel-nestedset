@@ -163,6 +163,20 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_SUM_SQ) {
+            // SUM-OF-SQUARES — non-null, default 0. Each contributing
+            // row adds `source²`; for a uint32 source the single-row
+            // contribution can be ~1.8e19, already past the 9.2e18
+            // bigInteger ceiling, and the per-subtree SUM grows on
+            // top of that. DECIMAL(38, 0) gives headroom for any
+            // realistic workload (Postgres NUMERIC and MySQL
+            // DECIMAL both accept that precision; SQLite stores
+            // it as numeric).
+            $table->decimal($column, 38, 0)->default(0);
+
+            return;
+        }
+
         if (in_array($type, [self::AGGREGATE_TYPE_AVG, self::AGGREGATE_TYPE_VARIANCE, self::AGGREGATE_TYPE_STDDEV], true)) {
             // AVG / VARIANCE / STDDEV — nullable decimal. Null indicates
             // "no rows contributed" (empty subtree under exclusive
@@ -215,25 +229,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
-        if ($type === self::AGGREGATE_TYPE_SUM_SQ) {
-            // SUM-OF-SQUARES — non-null, default 0. Each contributing
-            // row adds `source²`; for a uint32 source the single-row
-            // contribution can be ~1.8e19, already past the 9.2e18
-            // bigInteger ceiling, and the per-subtree SUM grows on
-            // top of that. DECIMAL(38, 0) gives headroom for any
-            // realistic workload (Postgres NUMERIC and MySQL
-            // DECIMAL both accept that precision; SQLite stores
-            // it as numeric).
-            $table->decimal($column, 38, 0)->default(0);
-
-            return;
-        }
-
-        throw new InvalidArgumentException(sprintf(
-            'nestedSetAggregate: unknown type "%s". Supported: %s.',
-            $type,
-            implode(', ', self::knownAggregateTypes()),
-        ));
+        throw new InvalidArgumentException(self::unknownTypeMessage($type));
     }
 
     /**
@@ -244,31 +240,27 @@ final class NestedSetServiceProvider extends ServiceProvider
      *
      * Type → function mapping is loose by design — `sum_count` covers
      * Sum, Count, and any other delta-maintainable kind; `min_max`
-     * covers Min and Max. AVG is the only type whose function
-     * declares companions, so today this routine returns either two
-     * companion names (for `avg`) or none.
+     * covers Min and Max. AVG declares two companions (sum + count);
+     * VARIANCE / STDDEV declare three (sum + sum_sq + count).
      *
      * @return list<string>
      */
     public static function companionColumnsFor(string $column, string $type): array
     {
-        $function = self::typeToFunction($type);
-        if (! $function instanceof AggregateFunction) {
-            return [];
-        }
-
         return array_map(
-            static fn (CompanionSpec $spec): string => $spec->columnFor($column),
-            $function->companionSet(),
+            static fn (array $allocation): string => $allocation['column'],
+            self::companionAllocationsFor($column, $type),
         );
     }
 
     /**
-     * Like {@see companionColumnsFor()} but returns per-companion type
-     * info so the Blueprint macro can pick the right column shape for
-     * each companion. Today only the variance / stddev `__sum_sq`
-     * companion needs the wider DECIMAL(38, 0) shape; every other
-     * companion is the standard `sum_count` bigInteger.
+     * Returns the companion column allocations for an aggregate of
+     * type $type targeting $column — each entry pairs the companion
+     * column name with the storage type the macro should emit it
+     * under. Used by the `nestedSetAggregate` macro to give the
+     * squared-sum companion of variance / stddev its own wider
+     * DECIMAL shape (see {@see self::AGGREGATE_TYPE_SUM_SQ}); the
+     * Sum and Count companions keep the standard sum_count layout.
      *
      * @return list<array{column: string, type: string}>
      */
@@ -309,30 +301,32 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
             self::AGGREGATE_TYPE_STRING_AGG,
             self::AGGREGATE_TYPE_JSON => null,
-            default => throw new InvalidArgumentException(sprintf(
-                'nestedSetAggregate: unknown type "%s". Supported: %s.',
-                $type,
-                implode(', ', self::knownAggregateTypes()),
-            )),
+            default => throw new InvalidArgumentException(self::unknownTypeMessage($type)),
         };
     }
 
     /**
-     * @return list<string>
+     * Composes the "unknown type" exception message shared by
+     * {@see addAggregateColumn()} and {@see typeToFunction()} so both
+     * paths surface every supported value when a typo lands.
      */
-    private static function knownAggregateTypes(): array
+    private static function unknownTypeMessage(string $type): string
     {
-        return [
-            self::AGGREGATE_TYPE_SUM_COUNT,
-            self::AGGREGATE_TYPE_AVG,
-            self::AGGREGATE_TYPE_MIN_MAX,
-            self::AGGREGATE_TYPE_VARIANCE,
-            self::AGGREGATE_TYPE_STDDEV,
-            self::AGGREGATE_TYPE_SUM_SQ,
-            self::AGGREGATE_TYPE_DISTINCT_COUNT,
-            self::AGGREGATE_TYPE_STRING_AGG,
-            self::AGGREGATE_TYPE_JSON,
-        ];
+        return sprintf(
+            'nestedSetAggregate: unknown type "%s". Supported: %s.',
+            $type,
+            implode(', ', [
+                self::AGGREGATE_TYPE_SUM_COUNT,
+                self::AGGREGATE_TYPE_AVG,
+                self::AGGREGATE_TYPE_MIN_MAX,
+                self::AGGREGATE_TYPE_VARIANCE,
+                self::AGGREGATE_TYPE_STDDEV,
+                self::AGGREGATE_TYPE_SUM_SQ,
+                self::AGGREGATE_TYPE_DISTINCT_COUNT,
+                self::AGGREGATE_TYPE_STRING_AGG,
+                self::AGGREGATE_TYPE_JSON,
+            ]),
+        );
     }
 
     /**

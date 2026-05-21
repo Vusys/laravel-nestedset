@@ -79,7 +79,7 @@ $rows = Product::query()
     ->get();
 ```
 
-The SQL guards against the closely-related "tiny negative variance" case (a near-zero `n·SumSq − Sum²` that floating-point rounds below zero) by clamping with `CASE WHEN var < 0 THEN 0 ELSE var END` before taking the square root — without it, PostgreSQL would error on `SQRT(-0.0000001)` while the other backends would silently return `NULL`. The clamp produces `0`, which is also what Welford would compute for a constant sequence.
+The SQL guards against the closely related "tiny negative variance" case (a near-zero `n·SumSq − Sum²` that floating-point rounds below zero) by clamping with `CASE WHEN var < 0 THEN 0 ELSE var END` before taking the square root — without it, PostgreSQL would error on `SQRT(-0.0000001)` while the other backends would silently return `NULL`. The clamp produces `0`, which is also what Welford would compute for a constant sequence.
 
 ## Limitations
 

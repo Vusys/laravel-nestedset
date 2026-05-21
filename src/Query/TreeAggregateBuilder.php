@@ -1971,7 +1971,11 @@ final class TreeAggregateBuilder
             AggregateFunction::Sum,
             AggregateFunction::Count,
             AggregateFunction::Min,
-            AggregateFunction::Max => throw new \LogicException(
+            AggregateFunction::Max,
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => throw new \LogicException(
                 'deriveCompanionDisplay called with non-companion-derived function '.$definition->function->value,
             ),
         };
