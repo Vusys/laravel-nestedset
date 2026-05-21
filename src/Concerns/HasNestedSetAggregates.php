@@ -695,6 +695,16 @@ trait HasNestedSetAggregates
                 'source' => $definition->source ?? '',
                 'inclusive' => $definition->inclusive,
                 'filter' => $definition->filter,
+                // Variance / Stddev recomputes need the sample flag to
+                // pick the right denominator; the SumSq companion of
+                // those kinds needs its Square source-transform so the
+                // inner SQL emits `SUM(x * x)` instead of `SUM(x)`.
+                // Without these two fields, chain recomputes triggered
+                // by raw-filter / exclusive / move / restore paths
+                // silently fall back to population maths and rebuild
+                // SumSq as a plain Sum.
+                'sample' => $definition->sample,
+                'sourceTransform' => $definition->sourceTransform,
                 'definition' => $definition,
             ];
         }

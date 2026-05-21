@@ -50,7 +50,7 @@ Variance and stddev are derived in SQL from their three delta-maintained compani
 
 On every mutation the same `UPDATE` that adjusts the companions also rewrites the display column using the textbook `E[X²] − E[X]²` form:
 
-```
+```text
 variance_pop  = (n·SumSq − Sum²) / n²
 variance_samp = (n·SumSq − Sum²) / n(n−1)
 stddev        = SQRT(variance)

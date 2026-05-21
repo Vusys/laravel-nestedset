@@ -221,4 +221,30 @@ final class VarianceMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(100.0, $this->asFloat($root->tickets_variance), 0.01);
         $this->assertEqualsWithDelta(10.0, $this->asFloat($root->tickets_stddev), 0.01);
     }
+
+    public function test_aggregate_errors_is_silent_on_correctly_maintained_chain_tree(): void
+    {
+        // Chain-shape (every parent has exactly one child) takes the
+        // PHP chain-fold fast path in selectStoredAndComputed*().
+        // Regression guard: without applying the SumSq companion's
+        // `Square` source transform inside the chain fold, the fast
+        // path would fold raw x and flag the (correctly-maintained)
+        // stored SumSq column as drifted.
+        $values = [3, 7, 11, 5, 17];
+        $previous = null;
+        foreach ($values as $i => $value) {
+            $node = new MetricArea(['name' => 'Node'.$i, 'tickets' => $value]);
+            if (! $previous instanceof MetricArea) {
+                $node->saveAsRoot();
+            } else {
+                $node->appendToNode($previous->refresh())->save();
+            }
+            $previous = $node;
+        }
+
+        // No drift after a clean delta-maintained build.
+        $errors = MetricArea::countErrors();
+
+        $this->assertSame(0, array_sum($errors), 'aggregateErrors() flagged drift on a clean chain: '.json_encode($errors));
+    }
 }

@@ -1911,7 +1911,19 @@ final class TreeAggregateBuilder
                     $currentInclusive = self::deriveCompanionDisplay($definition, $currentSum, $currentSumSq, $currentCount);
                     $previousInclusive = self::deriveCompanionDisplay($definition, $prevSum, $prevSumSq, $prevCount);
                 } else {
-                    $currentInclusive = self::chainFoldStep($definition, $sourceValue, $prevInclusive);
+                    // Apply the companion's source transform (Identity
+                    // for everything but the SumSq companion of
+                    // Variance / Stddev, which needs x² in the fold) so
+                    // the fast path's accumulator matches what the slow
+                    // SQL path would compute via `SUM(x * x)`. Without
+                    // this, a chain-shaped tree's SumSq companion folds
+                    // x instead of x², and fixAggregates() would
+                    // overwrite the correct stored companion with the
+                    // wrong value.
+                    $foldValue = is_numeric($sourceValue)
+                        ? $definition->sourceTransform->applyPhp((float) $sourceValue)
+                        : $sourceValue;
+                    $currentInclusive = self::chainFoldStep($definition, $foldValue, $prevInclusive);
                     $previousInclusive = $prevInclusive;
                 }
 
