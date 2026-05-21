@@ -1,17 +1,12 @@
 # Tree Exporters
 
-Read-only formatters that render a node (or whole forest) as Mermaid,
-Graphviz DOT, ASCII tree, or nested JSON. Useful for:
+Read-only formatters that render a node (or whole forest) as Mermaid, Graphviz DOT, ASCII tree, or nested JSON. Useful for:
 
 - **Debugging.** `dd($root->toAsciiTree())` when a tree assertion fails.
-- **Docs.** Paste a `toMermaid()` snippet into a markdown file and
-  GitHub renders the diagram.
-- **Frontend handoff.** `toJsonTree()` returns the shape `jsTree`,
-  `react-arborist`, and `vue-tree` accept directly.
+- **Docs.** Paste a `toMermaid()` snippet into a markdown file and GitHub renders the diagram.
+- **Frontend handoff.** `toJsonTree()` returns the shape `jsTree`, `react-arborist`, and `vue-tree` accept directly.
 
-Every exporter is a pure function of state already on the model — no
-mutation, no schema changes. Each instance method runs **one**
-`lft`-ordered query for the subtree, then folds in PHP.
+Every exporter is a pure function of state already on the model — no mutation, no schema changes. Each instance method runs **one** `lft`-ordered query for the subtree, then folds in PHP.
 
 ## ASCII tree
 
@@ -61,9 +56,7 @@ echo $electronics->toMermaid();
 //     n3 --> n5
 ```
 
-Paste the output into a markdown ` ```mermaid ` block and GitHub
-renders it. Direction defaults to `TD` (top-down); pass `LR`, `BT`, or
-`RL` to flip.
+Paste the output into a markdown ` ```mermaid ` block and GitHub renders it. Direction defaults to `TD` (top-down); pass `LR`, `BT`, or `RL` to flip.
 
 Aggregate columns can ride along on each label:
 
@@ -86,10 +79,7 @@ $electronics->toMermaid(new MermaidOptions(
 | `showAggregates` | `list<string>` | `[]` | Aggregate columns appended as extra label lines. |
 | `withTrashed` | `bool` | `false` | Include soft-deleted descendants. |
 
-Special characters in labels are HTML-escaped (`"` → `&quot;`, `<` →
-`&lt;`, newlines → `<br/>`). UUID primary keys hash to a short
-alphanumeric prefix (`n4a91f2c0`) so the identifiers stay valid Mermaid
-syntax.
+Special characters in labels are HTML-escaped (`"` → `&quot;`, `<` → `&lt;`, newlines → `<br/>`). UUID primary keys hash to a short alphanumeric prefix (`n4a91f2c0`) so the identifiers stay valid Mermaid syntax.
 
 ## Graphviz / DOT
 
@@ -114,8 +104,7 @@ digraph tree {
 }
 ```
 
-`DotOptions` mirrors `MermaidOptions` (direction defaults to `TB`).
-Quotes and backslashes in labels are DOT-escaped.
+`DotOptions` mirrors `MermaidOptions` (direction defaults to `TB`). Quotes and backslashes in labels are DOT-escaped.
 
 ## JSON
 
@@ -145,8 +134,7 @@ Output shape:
 }
 ```
 
-The method is named `toJsonTree()` (not `toJson()`) because Eloquent
-already defines `Model::toJson(int $options)` for serialising one row.
+The method is named `toJsonTree()` (not `toJson()`) because Eloquent already defines `Model::toJson(int $options)` for serialising one row.
 
 `JsonOptions` knobs:
 
@@ -159,8 +147,7 @@ already defines `Model::toJson(int $options)` for serialising one row.
 
 ## Whole-tree exports
 
-The instance methods above render `$node` + its descendants. To export
-**every** root in the table, use the `*Forest` static methods:
+The instance methods above render `$node` + its descendants. To export **every** root in the table, use the `*Forest` static methods:
 
 ```php
 Category::toMermaidForest();
@@ -169,14 +156,11 @@ Category::toAsciiTreeForest();
 Category::toJsonTreeForest();
 ```
 
-When there are multiple roots, `toJsonTreeForest()` returns a list of
-roots rather than a single dict.
+When there are multiple roots, `toJsonTreeForest()` returns a list of roots rather than a single dict.
 
 ## Scoped (multi-tree) models
 
-For models that declare `#[NestedSetScope(...)]`, the `*Forest`
-variants walk every tree across every scope. To render just one tree,
-pass the scope value:
+For models that declare `#[NestedSetScope(...)]`, the `*Forest` variants walk every tree across every scope. To render just one tree, pass the scope value:
 
 ```php
 MenuItem::toMermaidScope(7);
@@ -189,24 +173,12 @@ Multi-column scopes accept an array:
 Comment::toMermaidScope(['tenant_id' => 42, 'post_id' => 99]);
 ```
 
-Calling `*Scope` on an unscoped model throws `LogicException` — use the
-`*Forest` variant instead.
+Calling `*Scope` on an unscoped model throws `LogicException` — use the `*Forest` variant instead.
 
 ## Edge cases
 
-- **Soft deletes.** Excluded by default. Pass `withTrashed: true` on
-  any options object to include them; combine with a custom `label`
-  closure if you want to mark them visually (`[deleted] {$name}`).
-- **Unplaced node** (`lft = rgt = 0`). The descendants query returns
-  nothing, so the export is just the root row.
-- **Cyclic `parent_id`.** Detected during the fold; throws
-  `Vusys\NestedSet\Exceptions\CorruptTreeException` rather than
-  infinite-looping. This only triggers on corrupt data — see
-  [Tree Repair](../maintenance/fix-tree.md).
-- **Label fallback.** If the `label` closure throws or returns
-  `null` / `''` / a non-stringable object, the renderer falls back to
-  the primary key.
-- **Large trees.** The exporters are debug / UI tools, not analytics
-  pipelines — they load the whole subtree into memory. Use `maxDepth`
-  for ASCII rendering, or paginate by anchor for forests larger than
-  ~10k nodes.
+- **Soft deletes.** Excluded by default. Pass `withTrashed: true` on any options object to include them; combine with a custom `label` closure if you want to mark them visually (`[deleted] {$name}`).
+- **Unplaced node** (`lft = rgt = 0`). The descendants query returns nothing, so the export is just the root row.
+- **Cyclic `parent_id`.** Detected during the fold; throws `Vusys\NestedSet\Exceptions\CorruptTreeException` rather than infinite-looping. This only triggers on corrupt data — see [Tree Repair](../maintenance/fix-tree.md).
+- **Label fallback.** If the `label` closure throws or returns `null` / `''` / a non-stringable object, the renderer falls back to the primary key.
+- **Large trees.** The exporters are debug / UI tools, not analytics pipelines — they load the whole subtree into memory. Use `maxDepth` for ASCII rendering, or paginate by anchor for forests larger than ~10k nodes.

@@ -83,12 +83,7 @@ the duplicate counts. The aggregate-drift check is the same cost as one
 > indirectly as "rows you couldn't see in the tree after a repair" —
 > see §3.4. Detection SQL is in §7.
 
-> **Visualise the damage.** When `countErrors()` returns non-zero,
-> `dd($root->toAsciiTree())` or `Category::toMermaidForest()` often
-> makes the damage obvious at a glance. The exporters fold by
-> `parent_id` and throw `CorruptTreeException` on cycles, so the output
-> matches what `fixTree()` would rebuild. See
-> [Tree Exporters](../querying/exporters.md).
+> **Visualise the damage.** When `countErrors()` returns non-zero, `dd($root->toAsciiTree())` or `Category::toMermaidForest()` often makes the damage obvious at a glance. The exporters fold by `parent_id` and throw `CorruptTreeException` on cycles, so the output matches what `fixTree()` would rebuild. See [Tree Exporters](../querying/exporters.md).
 
 ## 3. Corruption categories
 
