@@ -21,6 +21,7 @@ use Vusys\NestedSet\Aggregates\DerivedAggregateFragments;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
@@ -79,6 +80,8 @@ final class TreeAggregateBuilder
         if ($resolved === [] && $quantiles === []) {
             return;
         }
+
+        SqliteBitwiseAggregates::ensureInstalled($model->getConnection());
 
         $table = $model->getTable();
         $lftCol = $builder->lftColumn();
@@ -474,6 +477,8 @@ final class TreeAggregateBuilder
      */
     public static function scalar(Model&HasNestedSet $node, AggregateDefinition $definition, bool $withTrashed = false): mixed
     {
+        SqliteBitwiseAggregates::ensureInstalled($node->getConnection());
+
         $bounds = $node->getBounds();
         $table = $node->getTable();
         $lftCol = $node->getLftName();
@@ -803,6 +808,14 @@ final class TreeAggregateBuilder
                 countExpr: sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition)),
                 sample: $definition->sample,
             ),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => sprintf(
+                '%s(%s%s)',
+                self::bitwiseFunctionName($definition->function),
+                $qualifier,
+                self::requireSource($definition),
+            ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -817,6 +830,24 @@ final class TreeAggregateBuilder
                 self::requireConnection($connection, $definition),
                 $definition,
                 $qualifier,
+            ),
+        };
+    }
+
+    /**
+     * SQL aggregate-function name for a bitwise rollup. Uniform across
+     * every supported backend — MySQL, MariaDB, and PG ≥ 14 have all
+     * three natively; SQLite gets them via the UDAs registered in
+     * {@see SqliteBitwiseAggregates::ensureInstalled()}.
+     */
+    private static function bitwiseFunctionName(AggregateFunction $function): string
+    {
+        return match ($function) {
+            AggregateFunction::BitOr => 'BIT_OR',
+            AggregateFunction::BitAnd => 'BIT_AND',
+            AggregateFunction::BitXor => 'BIT_XOR',
+            default => throw new AggregateConfigurationException(
+                'bitwiseFunctionName(): not a bitwise aggregate function: '.$function->value,
             ),
         };
     }
@@ -876,6 +907,15 @@ final class TreeAggregateBuilder
             ),
             AggregateFunction::Variance => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: false),
             AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: true),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => sprintf(
+                '%s(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                self::bitwiseFunctionName($definition->function),
+                $pred,
+                $qualifier,
+                self::requireSource($definition),
+            ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -997,6 +1037,15 @@ final class TreeAggregateBuilder
             ),
             AggregateFunction::Variance => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: false),
             AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: true),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => sprintf(
+                '%s(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                self::bitwiseFunctionName($definition->function),
+                $rawFilter,
+                $innerQualifier,
+                self::requireSource($definition),
+            ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -1192,6 +1241,15 @@ final class TreeAggregateBuilder
             ),
             AggregateFunction::Variance => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: false),
             AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: true),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => sprintf(
+                '%s(CASE WHEN %s THEN %s.%s ELSE NULL END)',
+                self::bitwiseFunctionName($definition->function),
+                $rawSql,
+                $innerAlias,
+                self::requireSource($definition),
+            ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -1422,6 +1480,9 @@ final class TreeAggregateBuilder
                 AggregateFunction::BoolAnd,
                 AggregateFunction::GeometricMean,
                 AggregateFunction::HarmonicMean,
+                AggregateFunction::BitOr,
+                AggregateFunction::BitAnd,
+                AggregateFunction::BitXor,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
                 AggregateFunction::JsonObjectAgg,
@@ -1452,7 +1513,10 @@ final class TreeAggregateBuilder
                     ),
                 AggregateFunction::Avg,
                 AggregateFunction::Min,
-                AggregateFunction::Max => sprintf(
+                AggregateFunction::Max,
+                AggregateFunction::BitOr,
+                AggregateFunction::BitAnd,
+                AggregateFunction::BitXor => sprintf(
                     '%s%s',
                     $tableQualifier,
                     self::requireSource($definition),
@@ -1512,6 +1576,9 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean,
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg,
@@ -1552,7 +1619,10 @@ final class TreeAggregateBuilder
                 ),
             AggregateFunction::Avg,
             AggregateFunction::Min,
-            AggregateFunction::Max => sprintf(
+            AggregateFunction::Max,
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => sprintf(
                 'CASE WHEN %s THEN %s%s ELSE NULL END',
                 $pred,
                 $tableQualifier,
@@ -1682,6 +1752,8 @@ final class TreeAggregateBuilder
             return [];
         }
 
+        SqliteBitwiseAggregates::ensureInstalled($connection);
+
         $rows = self::selectStoredAndComputed(
             connection: $connection,
             table: $table,
@@ -1754,6 +1826,8 @@ final class TreeAggregateBuilder
         if ($sqlDefinitions === []) {
             return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
         }
+
+        SqliteBitwiseAggregates::ensureInstalled($connection);
 
         // An empty (but non-null) outerIds list means "this chunk has
         // no rows" — short-circuit, otherwise the SQL becomes `id IN ()`
@@ -2378,6 +2452,9 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean,
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -2440,6 +2517,9 @@ final class TreeAggregateBuilder
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean,
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg,
@@ -2517,6 +2597,40 @@ final class TreeAggregateBuilder
                     '%s must be handled inline in the chain fold.',
                     strtoupper($definition->function->value),
                 ));
+
+            case AggregateFunction::BitOr:
+                if (! is_numeric($sourceValue)) {
+                    return $previousInclusive;
+                }
+                $sourceInt = (int) $sourceValue;
+                if ($previousInclusive === null) {
+                    return $sourceInt;
+                }
+
+                return ((int) $previousInclusive) | $sourceInt;
+
+            case AggregateFunction::BitAnd:
+                if (! is_numeric($sourceValue)) {
+                    return $previousInclusive;
+                }
+                $sourceInt = (int) $sourceValue;
+                if ($previousInclusive === null) {
+                    return $sourceInt;
+                }
+
+                return ((int) $previousInclusive) & $sourceInt;
+
+            case AggregateFunction::BitXor:
+                if (! is_numeric($sourceValue)) {
+                    return $previousInclusive;
+                }
+                $sourceInt = (int) $sourceValue;
+                if ($previousInclusive === null) {
+                    return $sourceInt;
+                }
+
+                return ((int) $previousInclusive) ^ $sourceInt;
+
             case AggregateFunction::DistinctCount:
             case AggregateFunction::StringAgg:
             case AggregateFunction::JsonAgg:

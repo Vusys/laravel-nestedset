@@ -9,9 +9,9 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_eighteen_cases(): void
+    public function test_has_exactly_twenty_one_cases(): void
     {
-        $this->assertCount(18, AggregateFunction::cases());
+        $this->assertCount(21, AggregateFunction::cases());
     }
 
     public function test_each_case_is_backed_by_its_string_name(): void
@@ -28,6 +28,9 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('bool_and', AggregateFunction::BoolAnd->value);
         $this->assertSame('geometric_mean', AggregateFunction::GeometricMean->value);
         $this->assertSame('harmonic_mean', AggregateFunction::HarmonicMean->value);
+        $this->assertSame('bit_or', AggregateFunction::BitOr->value);
+        $this->assertSame('bit_and', AggregateFunction::BitAnd->value);
+        $this->assertSame('bit_xor', AggregateFunction::BitXor->value);
         $this->assertSame('distinct_count', AggregateFunction::DistinctCount->value);
         $this->assertSame('string_agg', AggregateFunction::StringAgg->value);
         $this->assertSame('json_agg', AggregateFunction::JsonAgg->value);
@@ -36,10 +39,11 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('percentile', AggregateFunction::Percentile->value);
     }
 
-    public function test_sum_and_count_support_delta_maintenance(): void
+    public function test_sum_count_and_bit_xor_support_delta_maintenance(): void
     {
         $this->assertTrue(AggregateFunction::Sum->supportsDelta());
         $this->assertTrue(AggregateFunction::Count->supportsDelta());
+        $this->assertTrue(AggregateFunction::BitXor->supportsDelta());
     }
 
     public function test_derived_and_recompute_kinds_do_not_support_delta_maintenance(): void
@@ -49,6 +53,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertFalse(AggregateFunction::Max->supportsDelta());
         $this->assertFalse(AggregateFunction::Variance->supportsDelta());
         $this->assertFalse(AggregateFunction::Stddev->supportsDelta());
+        $this->assertFalse(AggregateFunction::BitOr->supportsDelta());
+        $this->assertFalse(AggregateFunction::BitAnd->supportsDelta());
         $this->assertFalse(AggregateFunction::Median->supportsDelta());
         $this->assertFalse(AggregateFunction::Percentile->supportsDelta());
     }
@@ -117,6 +123,9 @@ final class AggregateFunctionTest extends TestCase
         $this->assertTrue(AggregateFunction::Max->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::Variance->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::Stddev->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::BitOr->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::BitAnd->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::BitXor->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::StringAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonObjectAgg->nullableOnEmpty());
@@ -171,6 +180,13 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame([], AggregateFunction::Max->companionSet());
         $this->assertSame([], AggregateFunction::Median->companionSet());
         $this->assertSame([], AggregateFunction::Percentile->companionSet());
+    }
+
+    public function test_bitwise_kinds_declare_no_companions(): void
+    {
+        $this->assertSame([], AggregateFunction::BitOr->companionSet());
+        $this->assertSame([], AggregateFunction::BitAnd->companionSet());
+        $this->assertSame([], AggregateFunction::BitXor->companionSet());
     }
 
     public function test_distinct_count_string_and_json_declare_no_companions(): void

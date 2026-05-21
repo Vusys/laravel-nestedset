@@ -64,6 +64,14 @@ final class DeltaMaintenance
      * @param  array<string, array{function: AggregateFunction, value: int|float}>  $extremes
      *                                                                                         cheap-delta candidates: aggregate column =>
      *                                                                                         {function: Min|Max, value: candidate}.
+     * @param  array<string, array{function: AggregateFunction, value: int|float}>  $bitwise
+     *                                                                                        bitwise SET clauses: aggregate column => {function:
+     *                                                                                        BitOr|BitXor, value: int|float}. BitOr emits `col = COALESCE(col, 0) | v`
+     *                                                                                        (NULL-safe — empty subtree starts at 0 once a row contributes);
+     *                                                                                        BitXor emits `col = COALESCE(col, 0) ^ v` with the same NULL handling.
+     *                                                                                        Values are coerced to integer at SET-clause emission — bitwise
+     *                                                                                        operators only have well-defined semantics on integers.
+     *                                                                                        BitAnd never appears here — it always routes through recompute.
      * @param  array<string, mixed>  $scope  column => value, applied as equality WHEREs
      * @param  string|null  $softDeletedColumn  when set, restricts the UPDATE to rows where this
      *                                          column is NULL. Snapshot semantics for soft-deleted
@@ -83,6 +91,7 @@ final class DeltaMaintenance
         array $scope = [],
         array $avgs = [],
         array $extremes = [],
+        array $bitwise = [],
         ?string $softDeletedColumn = null,
         array $variances = [],
         array $weightedAvgs = [],
@@ -108,6 +117,7 @@ final class DeltaMaintenance
             self::buildMeanSetClauses($deltas, $means),
             self::buildDeltaSetClauses($deltas),
             self::buildExtremeSetClauses($extremes),
+            self::buildBitwiseSetClauses($bitwise),
         );
 
         if ($setExpressions === []) {
@@ -345,6 +355,52 @@ final class DeltaMaintenance
             $clauses[$column] = new TreeExpression(
                 "CASE WHEN {$column} IS NULL OR {$value} {$operator} {$column} THEN {$value} ELSE {$column} END",
             );
+        }
+
+        return $clauses;
+    }
+
+    /**
+     * Builds SET clauses for bitwise BitOr and BitXor delta paths. The
+     * column is COALESCE'd to 0 because bitwise display columns are
+     * nullable — an empty subtree reads NULL, and the first row's
+     * contribution promotes it to a concrete integer.
+     *
+     * BitXor is the unusual one: it's emitted by both the insert and
+     * delete capture paths because XOR is self-inverse (`(x ^ a) ^ a = x`).
+     * BitOr emits only on insert (`col |= new`); deletes route through
+     * RecomputeMaintenance because a lost bit can't be derived from
+     * the rolled-up value alone.
+     *
+     * @param  array<string, array{function: AggregateFunction, value: int|float}>  $bitwise
+     * @return array<string, TreeExpression>
+     */
+    private static function buildBitwiseSetClauses(array $bitwise): array
+    {
+        $clauses = [];
+
+        foreach ($bitwise as $column => $spec) {
+            $value = (int) $spec['value'];
+            $current = "COALESCE({$column}, 0)";
+
+            // BitOr is straightforward — every backend has `|`. BitXor
+            // uses the identity `a XOR b = (a | b) - (a & b)` so the
+            // delta works on SQLite (no XOR operator) and PostgreSQL
+            // (where `^` is exponentiation, not XOR). MySQL/MariaDB
+            // would happily emit `a ^ b` but the portable form costs
+            // one extra arithmetic op per row — negligible alongside
+            // the index-driven ancestor scan.
+            $expression = match ($spec['function']) {
+                AggregateFunction::BitOr => "{$current} | {$value}",
+                AggregateFunction::BitXor => "({$current} | {$value}) - ({$current} & {$value})",
+                default => throw new \LogicException(sprintf(
+                    'buildBitwiseSetClauses: unsupported bitwise function %s for delta path '
+                    .'(BitAnd always routes through recompute).',
+                    $spec['function']->value,
+                )),
+            };
+
+            $clauses[$column] = new TreeExpression($expression);
         }
 
         return $clauses;
