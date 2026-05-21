@@ -483,7 +483,7 @@ final class BlueprintMacroTest extends TestCase
     {
         $gmean = NestedSetServiceProvider::companionColumnsWithTypes('v_gmean', 'geometric_mean');
         $hmean = NestedSetServiceProvider::companionColumnsWithTypes('v_hmean', 'harmonic_mean');
-        $avg   = NestedSetServiceProvider::companionColumnsWithTypes('v_avg', 'avg');
+        $avg = NestedSetServiceProvider::companionColumnsWithTypes('v_avg', 'avg');
 
         $this->assertSame([
             ['v_gmean__sum_log', 'high_precision_sum'],
