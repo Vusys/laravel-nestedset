@@ -1342,7 +1342,7 @@ final class TreeAggregateBuilder
                 $stored = $row[self::storedAlias($definition->column)] ?? null;
                 $computed = $row[self::computedAlias($definition->column)] ?? null;
 
-                if (! self::aggregatesEqual($stored, $computed)) {
+                if (! self::aggregateValuesEqual($definition, $stored, $computed)) {
                     $errors[$definition->column]++;
                 }
             }
@@ -1440,7 +1440,7 @@ final class TreeAggregateBuilder
                 $stored = $row[self::storedAlias($definition->column)] ?? null;
                 $computed = $row[self::computedAlias($definition->column)] ?? null;
 
-                if (! self::aggregatesEqual($stored, $computed)) {
+                if (! self::aggregateValuesEqual($definition, $stored, $computed)) {
                     $updates[$definition->column] = $computed;
                     if (! $definition->isInternal()) {
                         $perColumn[$definition->column] = ($perColumn[$definition->column] ?? 0) + 1;
@@ -2183,6 +2183,109 @@ final class TreeAggregateBuilder
         }
 
         return $diff / $scale < 1e-9;
+    }
+
+    /**
+     * Definition-aware drift check. The four non-numeric kinds need
+     * specialised comparators:
+     *
+     *  - JSON kinds: do not "optimise" to a string compare — jsonb
+     *    reorders object keys on read, so two semantically-equal values
+     *    may differ as bytes. Decode both sides and compare structurally.
+     *  - StringAgg with `distinct: true`: backends differ on segment
+     *    ordering when DISTINCT is set (SQLite preserves insertion
+     *    order; PG/MySQL order by source). Split on the separator,
+     *    sort, and compare as a set.
+     *
+     * Everything else (numeric kinds, plain stringAgg) delegates to
+     * {@see aggregatesEqual()} which keeps the numeric-tolerance shape.
+     */
+    public static function aggregateValuesEqual(AggregateDefinition $def, mixed $stored, mixed $computed): bool
+    {
+        return match ($def->function) {
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::jsonValuesEqual($stored, $computed),
+            AggregateFunction::StringAgg => $def->distinct
+                ? self::distinctStringAggEqual($def, $stored, $computed)
+                : self::aggregatesEqual($stored, $computed),
+            default => self::aggregatesEqual($stored, $computed),
+        };
+    }
+
+    private static function jsonValuesEqual(mixed $a, mixed $b): bool
+    {
+        if ($a === null && $b === null) {
+            return true;
+        }
+        if ($a === null || $b === null) {
+            return false;
+        }
+
+        $decodedA = self::decodeJsonValue($a);
+        $decodedB = self::decodeJsonValue($b);
+
+        // Both decode to identical PHP structures regardless of which
+        // backend wrote them — but assoc arrays are order-sensitive
+        // under `===` in PHP, so normalise key order recursively before
+        // comparing.
+        return self::normaliseJsonStructure($decodedA) === self::normaliseJsonStructure($decodedB);
+    }
+
+    private static function normaliseJsonStructure(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (array_is_list($value)) {
+            return array_map(self::normaliseJsonStructure(...), $value);
+        }
+
+        ksort($value);
+        $result = [];
+        foreach ($value as $k => $v) {
+            $result[$k] = self::normaliseJsonStructure($v);
+        }
+
+        return $result;
+    }
+
+    private static function decodeJsonValue(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, associative: true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $decoded;
+            }
+        }
+
+        return $value;
+    }
+
+    private static function distinctStringAggEqual(AggregateDefinition $def, mixed $stored, mixed $computed): bool
+    {
+        if ($stored === null && $computed === null) {
+            return true;
+        }
+        if ($stored === null || $computed === null) {
+            return false;
+        }
+        if (! is_string($stored) || ! is_string($computed)) {
+            return $stored === $computed;
+        }
+
+        // Split on the configured separator, with optional whitespace
+        // tolerance for SQLite (where DISTINCT loses the separator).
+        $separator = $def->separator;
+        $pattern = '/'.preg_quote(rtrim($separator), '/').'\s*/';
+
+        $segmentsA = preg_split($pattern, $stored) ?: [];
+        $segmentsB = preg_split($pattern, $computed) ?: [];
+
+        sort($segmentsA);
+        sort($segmentsB);
+
+        return $segmentsA === $segmentsB;
     }
 
     private static function computedAlias(string $column): string
