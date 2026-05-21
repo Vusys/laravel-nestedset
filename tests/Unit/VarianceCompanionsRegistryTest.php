@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
-use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\MetricArea;
+use Vusys\NestedSet\Tests\TestCase;
 
 /**
  * Pins the contract of {@see AggregateRegistry::varianceCompanionsFor()}:
