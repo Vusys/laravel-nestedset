@@ -159,16 +159,10 @@ trait HasTreeMutation
             throw new LogicException('moveTo() requires a saved parent model.');
         }
 
-        $siblings = $this->orderedSiblingsUnder($parent);
-
-        if ($position >= $siblings->count()) {
-            return $this->appendToNode($parent);
-        }
-
-        $target = $siblings->get($position);
+        $target = $this->orderedSiblingsUnder($parent)->skip($position)->first();
 
         if ($target === null) {
-            throw new LogicException("moveTo() could not locate sibling at position {$position}.");
+            return $this->appendToNode($parent);
         }
 
         return $this->insertBeforeNode($target);
