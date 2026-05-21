@@ -105,13 +105,13 @@ final class AggregateSqlEmitterTest extends TestCase
         );
     }
 
-    public function test_pg_string_agg_distinct_omits_custom_order_clause(): void
+    public function test_pg_string_agg_distinct_casts_order_clause(): void
     {
         $def = Aggregate::stringAgg('tag')->distinct()->into('distinct_tags');
         $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
 
         $this->assertSame(
-            "STRING_AGG(DISTINCT i.tag::text, ', ' ORDER BY i.tag)",
+            "STRING_AGG(DISTINCT i.tag::text, ', ' ORDER BY i.tag::text)",
             $sql,
         );
     }
@@ -243,6 +243,25 @@ final class AggregateSqlEmitterTest extends TestCase
 
         $this->assertSame(
             "STRING_AGG(CASE WHEN i.published = 1 THEN i.name::text ELSE NULL END, ', ' ORDER BY i.name)",
+            $sql,
+        );
+    }
+
+    public function test_pg_string_agg_distinct_with_filter_uses_filter_clause(): void
+    {
+        // PG rejects DISTINCT aggregates whose ORDER BY expressions don't appear
+        // in the argument list. Wrapping the value in CASE breaks that rule —
+        // the FILTER clause keeps the argument simple and identical to ORDER BY.
+        $def = Aggregate::stringAgg('tag')->distinct()->into('distinct_tags');
+        $sql = AggregateSqlEmitter::emit(
+            $this->fakeDriver('pgsql'),
+            $def,
+            'i.',
+            'i.published = 1',
+        );
+
+        $this->assertSame(
+            "STRING_AGG(DISTINCT i.tag::text, ', ' ORDER BY i.tag::text) FILTER (WHERE i.published = 1)",
             $sql,
         );
     }

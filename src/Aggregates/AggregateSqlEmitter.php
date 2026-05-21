@@ -138,31 +138,43 @@ final class AggregateSqlEmitter
         $orderBy = $def->orderBy !== null ? $qualifier.$def->orderBy : null;
         $distinctKw = $def->distinct ? 'DISTINCT ' : '';
 
-        // Source value used inside the aggregator. For filter, wrap in CASE
-        // so non-matching rows produce NULL (all string aggregators skip NULL).
+        // Source value used inside the aggregator. The PG path keeps the raw
+        // (cast-only) value for distinct+filter so the FILTER clause can
+        // exclude rows without producing a CASE expression that breaks PG's
+        // "ORDER BY in DISTINCT must match the argument list" rule.
         $valueExpr = match ($driver) {
             'pgsql' => "{$ref}::text",
             default => $ref,
         };
+
+        if ($driver === 'pgsql' && $def->distinct && $filterSql !== null) {
+            return self::pgStringAgg($ref, $valueExpr, $sep, $orderBy, $distinctKw)
+                ." FILTER (WHERE {$filterSql})";
+        }
+
         if ($filterSql !== null) {
             $valueExpr = "CASE WHEN {$filterSql} THEN {$valueExpr} ELSE NULL END";
         }
 
         return match ($driver) {
-            'pgsql' => self::pgStringAgg($valueExpr, $sep, $orderBy, $distinctKw),
+            'pgsql' => self::pgStringAgg($ref, $valueExpr, $sep, $orderBy, $distinctKw),
             'mysql', 'mariadb' => self::mysqlStringAgg($valueExpr, $sep, $orderBy, $distinctKw),
             'sqlite' => self::sqliteStringAgg($valueExpr, $sep, $distinctKw),
             default => throw self::unsupportedDriver('stringAgg', $driver),
         };
     }
 
-    private static function pgStringAgg(string $valueExpr, string $sep, ?string $orderBy, string $distinctKw): string
+    private static function pgStringAgg(string $ref, string $valueExpr, string $sep, ?string $orderBy, string $distinctKw): string
     {
-        // PG only accepts ORDER BY columns that appear in the DISTINCT set; the
-        // attribute-construction guard already enforces that orderBy == source
-        // when distinct is set, so it's safe to emit ORDER BY here in both
-        // cases.
-        $orderClause = $orderBy !== null ? " ORDER BY {$orderBy}" : '';
+        // PG requires ORDER BY expressions in a DISTINCT aggregate to syntactically
+        // match the argument list, so when distinct is on we cast the ORDER BY
+        // column the same way as the aggregated value (::text). The attribute
+        // guard forces orderBy == source under distinct, so casting is safe.
+        $orderClause = '';
+        if ($orderBy !== null) {
+            $orderExpr = ($distinctKw !== '' && $orderBy === $ref) ? "{$orderBy}::text" : $orderBy;
+            $orderClause = " ORDER BY {$orderExpr}";
+        }
 
         return "STRING_AGG({$distinctKw}{$valueExpr}, {$sep}{$orderClause})";
     }
@@ -351,11 +363,13 @@ final class AggregateSqlEmitter
             return self::pgJsonObjectAgg($keyExpr, $valueRef, self::pgOrderByClause($def, $qualifier)).$filterClause;
         }
 
-        // MySQL / MariaDB / SQLite: emulate FILTER via key-null trick.
-        // JSON_OBJECTAGG / JSON_GROUP_OBJECT both skip rows where the key
-        // is NULL — wrap the key expression so non-matching rows produce
-        // a NULL key. This means $allowNullKeys: true plus a filter is
-        // not preservable on these backends; documented as a trade-off.
+        // MySQL / MariaDB / SQLite: SQLite's JSON_GROUP_OBJECT skips rows where
+        // the key is NULL, so wrapping the key in a guarded CASE filters them
+        // out. MySQL/MariaDB error on a NULL key — the same wrapper does NOT
+        // filter on those backends; users hitting a NULL key in the source
+        // data on MySQL/MariaDB must avoid it themselves (push the IS NOT NULL
+        // guard into their query, or use PostgreSQL). $allowNullKeys: true
+        // plus a filter cannot be preserved on these backends either.
         $guardParts = [];
         if (! $def->allowNullKeys) {
             $guardParts[] = "{$keyRef} IS NOT NULL";

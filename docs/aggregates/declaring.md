@@ -33,7 +33,7 @@ The auto-promoted companions follow the `{avg_column}__sum` / `{avg_column}__cou
 
 ## Beyond the SQL-standard five
 
-`Aggregate::distinctCount`, `Aggregate::stringAgg`, `Aggregate::jsonAgg` and `Aggregate::jsonObjectAgg` build collection-shaped rollups (distinct counts, concatenated text, JSON arrays/objects) . They use the same `#[NestedSetAggregate]` attribute and method-override form as the SQL-standard functions, but always go through full subtree recompute (no delta fast path). See [Collection Aggregates](text-and-json.html) for the full surface, backend caveats, and recipe examples.
+`Aggregate::distinctCount`, `Aggregate::stringAgg`, `Aggregate::jsonAgg` and `Aggregate::jsonObjectAgg` build collection-shaped rollups (distinct counts, concatenated text, JSON arrays/objects). They use the same `#[NestedSetAggregate]` attribute and method-override form as the SQL-standard functions, but always go through full subtree recompute (no delta fast path). See [Collection Aggregates](text-and-json.html) for the full surface, backend caveats, and recipe examples.
 
 The existing `min` / `max` factories also work on text columns and produce lexicographic min/max — useful for "first alphabetical descendant tag" and similar queries.
 
