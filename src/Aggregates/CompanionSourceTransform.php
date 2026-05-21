@@ -28,6 +28,18 @@ enum CompanionSourceTransform
     case Square;
     case TimesWeight;
     case AsInt;
+    /**
+     * Natural logarithm — companion stores `Σ LN(source)`.
+     * Only defined for `source > 0`; non-positive rows contribute 0
+     * to the delta (SQL skips NULLs returned by LN of ≤ 0 naturally).
+     */
+    case Ln;
+    /**
+     * Reciprocal — companion stores `Σ (1 / source)`.
+     * Only defined for `source ≠ 0`; zero rows contribute 0 to the
+     * delta (SQL uses `NULLIF(source, 0)` so SUM skips them).
+     */
+    case Recip;
 
     /**
      * Apply the transformation to a single contributor row's source
@@ -51,6 +63,12 @@ enum CompanionSourceTransform
                 ? (float) $sourceValue * (float) $weightValue
                 : 0,
             self::AsInt => self::truthy($sourceValue) ? 1 : 0,
+            self::Ln => (is_numeric($sourceValue) && (float) $sourceValue > 0)
+                ? log((float) $sourceValue)
+                : 0.0,
+            self::Recip => (is_numeric($sourceValue) && (float) $sourceValue != 0)
+                ? 1.0 / (float) $sourceValue
+                : 0.0,
         };
     }
 
@@ -100,6 +118,12 @@ enum CompanionSourceTransform
                 $sourceRef,
             ),
             self::AsInt => sprintf('(CASE WHEN %s THEN 1 ELSE 0 END)', $sourceRef),
+            self::Ln => sprintf(
+                'LN(CASE WHEN %s > 0 THEN %s ELSE NULL END)',
+                $sourceRef,
+                $sourceRef,
+            ),
+            self::Recip => sprintf('(1.0 / NULLIF(%s, 0))', $sourceRef),
         };
     }
 
@@ -112,5 +136,26 @@ enum CompanionSourceTransform
     public function requiresWeight(): bool
     {
         return $this === self::TimesWeight;
+    }
+
+    /**
+     * True when the transform produces undefined output for non-positive
+     * source values. Used by the violation-check path to decide whether
+     * a row's source value requires validation against the positivity
+     * constraint of its parent aggregate.
+     */
+    public function requiresPositiveSource(): bool
+    {
+        return $this === self::Ln;
+    }
+
+    /**
+     * True when the transform produces undefined output for zero source
+     * values (but is valid for negative values). Used by the
+     * violation-check path for the harmonic-mean companion.
+     */
+    public function requiresNonZeroSource(): bool
+    {
+        return $this === self::Recip;
     }
 }

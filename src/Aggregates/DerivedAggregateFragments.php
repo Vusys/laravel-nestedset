@@ -10,7 +10,9 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 /**
  * SQL fragment builders for the *derived-from-companions* aggregate
  * families ({@see AggregateFunction::WeightedAvg},
- * {@see AggregateFunction::BoolOr}, {@see AggregateFunction::BoolAnd}).
+ * {@see AggregateFunction::BoolOr}, {@see AggregateFunction::BoolAnd},
+ * {@see AggregateFunction::GeometricMean},
+ * {@see AggregateFunction::HarmonicMean}).
  *
  * These aggregates have no native single-function SQL form portable
  * across the four supported backends — instead they compile to a
@@ -20,6 +22,10 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *    weight participates).
  *  - **BoolOr / BoolAnd**: a count-and-sum-of-truthies pair gated by
  *    a CASE that returns NULL on an empty subtree.
+ *  - **GeometricMean**: `EXP(Σ LN(source) / n)` where only positive
+ *    source values contribute. NULL when no positive row exists.
+ *  - **HarmonicMean**: `n / Σ(1 / source)` where only non-zero source
+ *    values contribute. NULL when the subtree is empty.
  *
  * The same fragments serve both *fresh* aggregate emission (used by
  * `withFreshAggregates` and the in-query subtree projection) and the
@@ -40,7 +46,9 @@ final class DerivedAggregateFragments
         return match ($function) {
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => true,
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => true,
             default => false,
         };
     }
@@ -73,6 +81,8 @@ final class DerivedAggregateFragments
             AggregateFunction::WeightedAvg => self::weightedAvgSql($definition, $qualifier, $sourceRef, $filterSql),
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd => self::boolSql($definition, $sourceRef, $filterSql),
+            AggregateFunction::GeometricMean => self::geometricMeanSql($sourceRef, $filterSql),
+            AggregateFunction::HarmonicMean => self::harmonicMeanSql($sourceRef, $filterSql),
             default => throw new AggregateConfigurationException(sprintf(
                 'DerivedAggregateFragments::build(): %s is not a derived-from-companions aggregate.',
                 $definition->function->value,
@@ -132,5 +142,43 @@ final class DerivedAggregateFragments
 
         return "CASE WHEN ({$countExpr}) = 0 THEN NULL "
             ."WHEN {$check} THEN TRUE ELSE FALSE END";
+    }
+
+    /**
+     * Geometric mean: `EXP(Σ LN(src) / n)` where only positive rows
+     * contribute. The guard `CASE WHEN src > 0 THEN src ELSE NULL END`
+     * makes `LN` return NULL for non-positive rows so `SUM` skips them
+     * on all four backends (on PostgreSQL `LN` of a negative number
+     * raises an error rather than returning NULL — the guard prevents
+     * that). NULL when no positive row exists.
+     */
+    private static function geometricMeanSql(string $sourceRef, ?string $filterSql): string
+    {
+        $positiveGuard = $filterSql !== null
+            ? "CASE WHEN ({$filterSql}) AND {$sourceRef} > 0 THEN {$sourceRef} ELSE NULL END"
+            : "CASE WHEN {$sourceRef} > 0 THEN {$sourceRef} ELSE NULL END";
+
+        $sumLog = "SUM(LN({$positiveGuard}))";
+        $countPos = "NULLIF(COUNT({$positiveGuard}), 0)";
+
+        return "EXP({$sumLog} / {$countPos})";
+    }
+
+    /**
+     * Harmonic mean: `n / Σ(1 / src)` where only non-zero rows
+     * contribute. `NULLIF(src, 0)` makes the reciprocal NULL for zero
+     * rows so `SUM` skips them. NULL when the subtree is empty.
+     */
+    private static function harmonicMeanSql(string $sourceRef, ?string $filterSql): string
+    {
+        if ($filterSql !== null) {
+            $recipExpr = "CASE WHEN ({$filterSql}) AND {$sourceRef} <> 0 THEN (1.0 / {$sourceRef}) ELSE NULL END";
+            $countExpr = "COUNT(CASE WHEN ({$filterSql}) THEN 1 ELSE NULL END)";
+        } else {
+            $recipExpr = "(1.0 / NULLIF({$sourceRef}, 0))";
+            $countExpr = "COUNT({$sourceRef})";
+        }
+
+        return "NULLIF({$countExpr}, 0) / NULLIF(SUM({$recipExpr}), 0)";
     }
 }

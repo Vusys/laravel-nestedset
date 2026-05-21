@@ -57,12 +57,18 @@ final class NestedSetServiceProvider extends ServiceProvider
 
     public const string AGGREGATE_TYPE_BOOL_AND = 'bool_and';
 
+    public const string AGGREGATE_TYPE_GEOMETRIC_MEAN = 'geometric_mean';
+
+    public const string AGGREGATE_TYPE_HARMONIC_MEAN = 'harmonic_mean';
+
     /**
      * Storage shape for the `Σ(weight·value)` / `Σ(weight)` companion
      * columns of {@see self::AGGREGATE_TYPE_WEIGHTED_AVG}. Decimal —
      * not bigint — because weight or value can hold fractional values
      * and their sum needs to too; PostgreSQL otherwise rejects writes
-     * with `invalid input syntax for type bigint`.
+     * with `invalid input syntax for type bigint`. Also used for the
+     * companion columns of geometric_mean (Σ LN(x)) and harmonic_mean
+     * (Σ 1/x), which are fractional by construction.
      */
     public const string AGGREGATE_TYPE_DECIMAL_SUM = 'decimal_sum';
 
@@ -284,6 +290,17 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_GEOMETRIC_MEAN
+            || $type === self::AGGREGATE_TYPE_HARMONIC_MEAN
+        ) {
+            // Geometric / harmonic mean display column — nullable decimal.
+            // NULL when no contributing row exists (no positive value for
+            // geometric, or the denominator is zero for harmonic).
+            $table->decimal($column, 12, 4)->nullable();
+
+            return;
+        }
+
         throw new InvalidArgumentException(self::unknownTypeMessage($type));
     }
 
@@ -349,6 +366,12 @@ final class NestedSetServiceProvider extends ServiceProvider
                         ? self::AGGREGATE_TYPE_DECIMAL_SUM
                         : self::AGGREGATE_TYPE_SUM_COUNT,
                     CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
+                    // GeometricMean's `Σ(LN(source))` and HarmonicMean's
+                    // `Σ(1/source)` both hold real-valued sums; the count
+                    // companion (Identity transform above) keeps the
+                    // integer-flavoured sum_count layout.
+                    CompanionSourceTransform::Ln,
+                    CompanionSourceTransform::Recip => self::AGGREGATE_TYPE_DECIMAL_SUM,
                 },
             ],
             $function->companionSet(),
@@ -371,6 +394,8 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_WEIGHTED_AVG => AggregateFunction::WeightedAvg,
             self::AGGREGATE_TYPE_BOOL_OR => AggregateFunction::BoolOr,
             self::AGGREGATE_TYPE_BOOL_AND => AggregateFunction::BoolAnd,
+            self::AGGREGATE_TYPE_GEOMETRIC_MEAN => AggregateFunction::GeometricMean,
+            self::AGGREGATE_TYPE_HARMONIC_MEAN => AggregateFunction::HarmonicMean,
             self::AGGREGATE_TYPE_SUM_COUNT,
             self::AGGREGATE_TYPE_DECIMAL_SUM,
             self::AGGREGATE_TYPE_MIN_MAX,
@@ -406,6 +431,8 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_WEIGHTED_AVG,
                 self::AGGREGATE_TYPE_BOOL_OR,
                 self::AGGREGATE_TYPE_BOOL_AND,
+                self::AGGREGATE_TYPE_GEOMETRIC_MEAN,
+                self::AGGREGATE_TYPE_HARMONIC_MEAN,
             ]),
         );
     }

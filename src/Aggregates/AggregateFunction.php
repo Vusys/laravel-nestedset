@@ -13,10 +13,10 @@ namespace Vusys\NestedSet\Aggregates;
  * Families:
  *  - *delta-maintainable*: Sum, Count.
  *  - *derived-from-companions*: Avg, Variance, Stddev, WeightedAvg,
- *    BoolOr, BoolAnd — each declares a {@see CompanionSpec} set that
- *    the registry auto-promotes into delta-maintainable internal
- *    columns; the user-facing column is written by a SQL formula over
- *    the companions on every mutation.
+ *    BoolOr, BoolAnd, GeometricMean, HarmonicMean — each declares a
+ *    {@see CompanionSpec} set that the registry auto-promotes into
+ *    delta-maintainable internal columns; the user-facing column is
+ *    written by a SQL formula over the companions on every mutation.
  *  - *recompute-only*: Min, Max, DistinctCount, StringAgg, JsonAgg,
  *    JsonObjectAgg — no companions; each mutation re-reads the subtree.
  */
@@ -32,6 +32,8 @@ enum AggregateFunction: string
     case WeightedAvg = 'weighted_avg';
     case BoolOr = 'bool_or';
     case BoolAnd = 'bool_and';
+    case GeometricMean = 'geometric_mean';
+    case HarmonicMean = 'harmonic_mean';
     case DistinctCount = 'distinct_count';
     case StringAgg = 'string_agg';
     case JsonAgg = 'json_agg';
@@ -49,6 +51,7 @@ enum AggregateFunction: string
             self::Sum, self::Count => true,
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::WeightedAvg, self::BoolOr, self::BoolAnd,
+            self::GeometricMean, self::HarmonicMean,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg => false,
         };
@@ -66,6 +69,7 @@ enum AggregateFunction: string
             self::Sum, self::Count, self::DistinctCount => false,
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::WeightedAvg, self::BoolOr, self::BoolAnd,
+            self::GeometricMean, self::HarmonicMean,
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg => true,
         };
     }
@@ -108,6 +112,14 @@ enum AggregateFunction: string
             ],
             self::BoolOr, self::BoolAnd => [
                 new CompanionSpec('__sum', self::Sum, CompanionSourceTransform::AsInt),
+                new CompanionSpec('__count', self::Count),
+            ],
+            self::GeometricMean => [
+                new CompanionSpec('__sum_log', self::Sum, CompanionSourceTransform::Ln),
+                new CompanionSpec('__count', self::Count),
+            ],
+            self::HarmonicMean => [
+                new CompanionSpec('__sum_recip', self::Sum, CompanionSourceTransform::Recip),
                 new CompanionSpec('__count', self::Count),
             ],
             self::Sum, self::Count, self::Min, self::Max,

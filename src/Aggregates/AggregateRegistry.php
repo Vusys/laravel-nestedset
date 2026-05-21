@@ -484,6 +484,78 @@ final class AggregateRegistry
     }
 
     /**
+     * For each inclusive GeometricMean / HarmonicMean declaration on
+     * $class, returns the companion column names needed at delta time to
+     * derive the display value. Shape:
+     *  `{displayCol} => {sum_log|sum_recip: string, count: string, function: AggregateFunction}`
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return array<string, array{sum_companion: string, count: string, function: AggregateFunction, allowNonPositive: bool}>
+     */
+    public static function meanCompanionsFor(string $class): array
+    {
+        $definitions = self::for($class);
+        $bySource = self::indexBySource($definitions);
+
+        $result = [];
+
+        foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+            if ($definition->function !== AggregateFunction::GeometricMean
+                && $definition->function !== AggregateFunction::HarmonicMean) {
+                continue;
+            }
+            if (! $definition->inclusive) {
+                continue;
+            }
+            if ($definition->source === null) {
+                continue;
+            }
+
+            $companionTransform = $definition->function === AggregateFunction::GeometricMean
+                ? CompanionSourceTransform::Ln
+                : CompanionSourceTransform::Recip;
+
+            $sumCompanionColumn = null;
+            $countColumn = null;
+
+            foreach ($bySource[$definition->source] ?? [] as $companion) {
+                if (! self::filtersMatch($companion->filter, $definition->filter)) {
+                    continue;
+                }
+                if ($companion->inclusive !== $definition->inclusive) {
+                    continue;
+                }
+                if ($companion->function === AggregateFunction::Sum
+                    && $companion->sourceTransform === $companionTransform
+                    && str_starts_with($companion->column, $definition->column.'__')
+                    && $sumCompanionColumn === null) {
+                    $sumCompanionColumn = $companion->column;
+                }
+                if ($companion->function === AggregateFunction::Count
+                    && $companion->sourceTransform === CompanionSourceTransform::Identity
+                    && str_starts_with($companion->column, $definition->column.'__')
+                    && $countColumn === null) {
+                    $countColumn = $companion->column;
+                }
+            }
+
+            if ($sumCompanionColumn !== null && $countColumn !== null) {
+                $result[$definition->column] = [
+                    'sum_companion' => $sumCompanionColumn,
+                    'count' => $countColumn,
+                    'function' => $definition->function,
+                    'allowNonPositive' => $definition->allowNonPositive,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * @param  class-string<Model&HasNestedSet>  $class
      * @return list<AggregateDefinition>
      */

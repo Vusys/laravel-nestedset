@@ -31,6 +31,7 @@ use Vusys\NestedSet\Events\FixAggregatesJobDispatched;
 use Vusys\NestedSet\Events\NodeAggregatesRecomputed;
 use Vusys\NestedSet\Events\ScopeViolationDetected;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Exceptions\AggregateSourceConstraintViolationException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\NodeBounds;
@@ -239,6 +240,8 @@ trait HasNestedSetAggregates
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -285,6 +288,10 @@ trait HasNestedSetAggregates
         if (self::$deferredDepth > 0) {
             return;
         }
+
+        // Constraint check runs for both inserts (exists=false) and
+        // updates (exists=true) so it fires before the row is persisted.
+        $this->validateAggregateSourceConstraints();
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
@@ -576,6 +583,90 @@ trait HasNestedSetAggregates
     }
 
     /**
+     * Validates that any GeometricMean or HarmonicMean aggregate source
+     * value on this model satisfies its positivity / non-zero constraint.
+     * Runs for both inserts and updates (called from
+     * {@see captureAggregateDeltas()} before the early-return gate).
+     *
+     * For inserts: checks the current attribute value.
+     * For updates: checks only when the source column is dirty.
+     *
+     * A violation throws {@see AggregateSourceConstraintViolationException}
+     * unless the aggregate was declared with `->allowNonPositive()` /
+     * `allowNonPositive: true`, in which case the row silently
+     * contributes nothing to the companion sum.
+     *
+     * @throws AggregateSourceConstraintViolationException
+     */
+    private function validateAggregateSourceConstraints(): void
+    {
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+
+            if ($definition->function !== AggregateFunction::GeometricMean
+                && $definition->function !== AggregateFunction::HarmonicMean) {
+                continue;
+            }
+
+            if ($definition->allowNonPositive) {
+                continue;
+            }
+
+            if ($definition->internal) {
+                continue;
+            }
+
+            $source = $definition->source;
+            if ($source === null) {
+                continue;
+            }
+
+            // For updates: only validate when source is dirty.
+            if ($this->exists && ! $this->isDirty($source)) {
+                continue;
+            }
+
+            $value = $this->getAttribute($source);
+            if ($value === null) {
+                continue;
+            }
+
+            if (! is_numeric($value)) {
+                continue;
+            }
+
+            $numeric = (float) $value;
+
+            if ($definition->function === AggregateFunction::GeometricMean && $numeric <= 0) {
+                throw new AggregateSourceConstraintViolationException(sprintf(
+                    '%s: source column "%s" = %s violates the positivity constraint of geometricMean("%s"). '
+                    .'Only strictly positive values are valid. '
+                    .'Declare the aggregate with ->allowNonPositive() / allowNonPositive: true to '
+                    .'silently exclude non-positive rows instead.',
+                    static::class,
+                    $source,
+                    $value,
+                    $source,
+                ));
+            }
+
+            if ($definition->function === AggregateFunction::HarmonicMean && $numeric == 0) {
+                throw new AggregateSourceConstraintViolationException(sprintf(
+                    '%s: source column "%s" = 0 violates the non-zero constraint of harmonicMean("%s"). '
+                    .'Zero values produce a division by zero in the reciprocal sum. '
+                    .'Declare the aggregate with ->allowNonPositive() / allowNonPositive: true to '
+                    .'silently exclude zero rows instead.',
+                    static::class,
+                    $source,
+                    $source,
+                ));
+            }
+        }
+    }
+
+    /**
      * `saved` hook: issue the delta UPDATE captured in
      * {@see captureAggregateDeltas()}. Touches self + ancestors so the
      * node's own stored aggregate stays in sync alongside the rollup.
@@ -625,6 +716,7 @@ trait HasNestedSetAggregates
             variances: AggregateRegistry::varianceCompanionsFor(static::class),
             weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
             bools: AggregateRegistry::boolCompanionsFor(static::class),
+            means: AggregateRegistry::meanCompanionsFor(static::class),
         );
 
         if ($recomputes !== []) {
@@ -1022,6 +1114,7 @@ trait HasNestedSetAggregates
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
                 bools: AggregateRegistry::boolCompanionsFor(static::class),
+                means: AggregateRegistry::meanCompanionsFor(static::class),
             );
         }
 
@@ -1101,9 +1194,10 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                // Preserve numeric type — Sum companions of WeightedAvg
-                // hold decimal sums; numeric() would int-truncate them
-                // and the subtracted delta would lose the fraction.
+                // Preserve numeric type — Sum companions of WeightedAvg /
+                // GeometricMean / HarmonicMean hold decimal sums (sum_wx,
+                // sum_log, sum_recip) that numeric() would truncate to 0
+                // or int-cast away the fractional part.
                 $value = self::numericPreserveType($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $deltas[$definition->column] = -$value;
@@ -1185,6 +1279,7 @@ trait HasNestedSetAggregates
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
                 bools: AggregateRegistry::boolCompanionsFor(static::class),
+                means: AggregateRegistry::meanCompanionsFor(static::class),
             );
         }
 
@@ -1257,6 +1352,7 @@ trait HasNestedSetAggregates
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
                 bools: AggregateRegistry::boolCompanionsFor(static::class),
+                means: AggregateRegistry::meanCompanionsFor(static::class),
             );
         }
 
@@ -1381,6 +1477,7 @@ trait HasNestedSetAggregates
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
                 bools: AggregateRegistry::boolCompanionsFor(static::class),
+                means: AggregateRegistry::meanCompanionsFor(static::class),
             );
         }
 
@@ -1438,7 +1535,8 @@ trait HasNestedSetAggregates
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
                 // Preserve numeric type — see captureSubtreeContribution()
-                // for why decimal WeightedAvg companions need this.
+                // for why decimal WeightedAvg / GeometricMean / HarmonicMean
+                // companions need this.
                 $value = self::numericPreserveType($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $sumCount[$definition->column] = $value;
@@ -1672,7 +1770,8 @@ trait HasNestedSetAggregates
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
                 // Preserve numeric type — decimal Sum companions of
-                // WeightedAvg would lose their fraction under numeric().
+                // WeightedAvg / GeometricMean / HarmonicMean would lose
+                // their fraction under numeric().
                 $value = self::numericPreserveType($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $deltas[$definition->column] = $value;
@@ -1749,6 +1848,7 @@ trait HasNestedSetAggregates
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
                 bools: AggregateRegistry::boolCompanionsFor(static::class),
+                means: AggregateRegistry::meanCompanionsFor(static::class),
             );
         }
 
@@ -2222,6 +2322,8 @@ trait HasNestedSetAggregates
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,

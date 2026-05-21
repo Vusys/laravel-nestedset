@@ -83,6 +83,9 @@ final readonly class NestedSetAggregate
         public ?string $weight = null,
         public ?string $boolOr = null,
         public ?string $boolAnd = null,
+        public ?string $geometricMean = null,
+        public ?string $harmonicMean = null,
+        public bool $allowNonPositive = false,
         public bool $exclusive = false,
         public ?array $filter = null,
         public ?string $filterNotNull = null,
@@ -116,7 +119,8 @@ final readonly class NestedSetAggregate
             throw new AggregateConfigurationException(sprintf(
                 'NestedSetAggregate for column "%s": no aggregate function declared. '
                 .'Provide exactly one of sum, count, avg, min, max, variance, stddev, '
-                .'weightedAvg, boolOr, boolAnd, distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
+                .'weightedAvg, boolOr, boolAnd, geometricMean, harmonicMean, '
+                .'distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
                 $this->column,
             ));
         }
@@ -194,6 +198,12 @@ final readonly class NestedSetAggregate
         if ($this->boolAnd !== null) {
             $declared['boolAnd'] = $this->boolAnd;
         }
+        if ($this->geometricMean !== null) {
+            $declared['geometricMean'] = $this->geometricMean;
+        }
+        if ($this->harmonicMean !== null) {
+            $declared['harmonicMean'] = $this->harmonicMean;
+        }
 
         return $declared;
     }
@@ -215,6 +225,8 @@ final readonly class NestedSetAggregate
             'weightedAvg' => $this->weightedAvgDefinition(),
             'boolOr' => $this->boolRollupDefinition(AggregateFunction::BoolOr, $this->boolOr),
             'boolAnd' => $this->boolRollupDefinition(AggregateFunction::BoolAnd, $this->boolAnd),
+            'geometricMean' => $this->meanDefinition(AggregateFunction::GeometricMean, $this->geometricMean),
+            'harmonicMean' => $this->meanDefinition(AggregateFunction::HarmonicMean, $this->harmonicMean),
             default => throw new AggregateConfigurationException(
                 'Unreachable: declaredFunctions() returned an unknown key.',
             ),
@@ -271,6 +283,26 @@ final readonly class NestedSetAggregate
             source: $source,
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
+        );
+    }
+
+    private function meanDefinition(AggregateFunction $function, ?string $source): AggregateDefinition
+    {
+        if ($source === null || $source === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": %s requires a non-empty column name.',
+                $this->column,
+                $function->value,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: $function,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            allowNonPositive: $this->allowNonPositive,
         );
     }
 

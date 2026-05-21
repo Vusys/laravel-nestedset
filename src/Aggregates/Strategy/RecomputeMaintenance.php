@@ -333,7 +333,9 @@ final class RecomputeMaintenance
                 AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: true),
                 AggregateFunction::WeightedAvg,
                 AggregateFunction::BoolOr,
-                AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+                AggregateFunction::BoolAnd,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean => throw new AggregateConfigurationException(sprintf(
                     'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                     .'in DeltaMaintenance and should never reach this inner-expression builder.',
                     strtoupper($spec['function']->value),
@@ -372,7 +374,9 @@ final class RecomputeMaintenance
             ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => throw new AggregateConfigurationException(sprintf(
                 'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                 .'in DeltaMaintenance and should never reach this inner-expression builder.',
                 strtoupper($spec['function']->value),

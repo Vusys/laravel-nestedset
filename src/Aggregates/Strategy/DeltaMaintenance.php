@@ -59,6 +59,8 @@ final class DeltaMaintenance
      *                                                                             weighted-avg display column => companion column names
      * @param  array<string, array{sum: string, count: string, function: AggregateFunction}>  $bools
      *                                                                                                boolOr/boolAnd display column => companion columns + which function
+     * @param  array<string, array{sum_companion: string, count: string, function: AggregateFunction, allowNonPositive: bool}>  $means
+     *                                                                                                                                  geometricMean/harmonicMean display column => companion columns + which function
      * @param  array<string, array{function: AggregateFunction, value: int|float}>  $extremes
      *                                                                                         cheap-delta candidates: aggregate column =>
      *                                                                                         {function: Min|Max, value: candidate}.
@@ -85,23 +87,25 @@ final class DeltaMaintenance
         array $variances = [],
         array $weightedAvgs = [],
         array $bools = [],
+        array $means = [],
     ): int {
         // Order matters on MySQL / MariaDB: SET clauses are evaluated
         // left-to-right with each prior assignment visible to later
-        // ones. The AVG / Variance / Stddev / WeightedAvg / Bool
-        // formulas reference the SUM and COUNT companions, which are
-        // themselves being delta-updated in this same statement — so
-        // we must emit the derived display columns FIRST while the
-        // companions still hold their pre-update values. Adding the
-        // delta inside each derived expression then produces the
-        // correct new value. PostgreSQL and SQLite evaluate all SET
-        // clauses against pre-update values regardless of order, so
-        // the same ordering is correct for them.
+        // ones. The derived display columns (AVG, Variance, Stddev,
+        // WeightedAvg, Bool, GeometricMean, HarmonicMean) reference the
+        // companion columns, which are themselves being delta-updated in
+        // this same statement — so we must emit derived display columns
+        // FIRST while the companions still hold their pre-update values.
+        // Adding the delta inside each derived expression then produces
+        // the correct new value. PostgreSQL and SQLite evaluate all SET
+        // clauses against pre-update values regardless of order, so the
+        // same ordering is correct for them.
         $setExpressions = array_merge(
             self::buildAvgSetClauses($deltas, $avgs),
             self::buildVarianceSetClauses($deltas, $variances),
             self::buildWeightedAvgSetClauses($deltas, $weightedAvgs),
             self::buildBoolSetClauses($deltas, $bools),
+            self::buildMeanSetClauses($deltas, $means),
             self::buildDeltaSetClauses($deltas),
             self::buildExtremeSetClauses($extremes),
         );
@@ -271,6 +275,38 @@ final class DeltaMaintenance
                 "CASE WHEN ({$countExpression}) = 0 THEN NULL "
                 ."WHEN {$resultExpression} THEN TRUE ELSE FALSE END",
             );
+        }
+
+        return $clauses;
+    }
+
+    /**
+     * Build SET clauses for geometric / harmonic mean display columns.
+     *
+     * GeometricMean: `EXP((sum_log + Δ) / NULLIF(count + Δ, 0))`
+     * HarmonicMean:  `NULLIF(count + Δ, 0) / NULLIF((sum_recip + Δ), 0)`
+     *
+     * Both formulas reference the pre-update companion values augmented
+     * by the in-flight deltas — the same "emit display first" ordering
+     * that AVG uses.
+     *
+     * @param  array<string, int|float>  $deltas
+     * @param  array<string, array{sum_companion: string, count: string, function: AggregateFunction, allowNonPositive: bool}>  $means
+     * @return array<string, TreeExpression>
+     */
+    private static function buildMeanSetClauses(array $deltas, array $means): array
+    {
+        $clauses = [];
+
+        foreach ($means as $displayCol => $spec) {
+            $sumExpr = self::columnPlusDelta($spec['sum_companion'], $deltas[$spec['sum_companion']] ?? 0);
+            $countExpr = self::columnPlusDelta($spec['count'], $deltas[$spec['count']] ?? 0);
+
+            $clause = $spec['function'] === AggregateFunction::GeometricMean
+                ? "EXP(({$sumExpr}) / NULLIF(({$countExpr}), 0))"
+                : "NULLIF(({$countExpr}), 0) / NULLIF(({$sumExpr}), 0)";
+
+            $clauses[$displayCol] = new TreeExpression($clause);
         }
 
         return $clauses;
