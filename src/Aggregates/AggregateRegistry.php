@@ -152,6 +152,13 @@ final class AggregateRegistry
                     if (! self::filtersMatch($companion->filter, $definition->filter)) {
                         continue;
                     }
+                    // Inclusivity must match too — an inclusive AVG that
+                    // silently adopts an exclusive Sum (or vice versa)
+                    // reads a different row set than its count companion
+                    // and produces drift the user can't see.
+                    if ($companion->inclusive !== $definition->inclusive) {
+                        continue;
+                    }
                     if ($companion->function === AggregateFunction::Sum && $sumColumn === null) {
                         $sumColumn = $companion->column;
                     }
@@ -360,16 +367,17 @@ final class AggregateRegistry
 
                 $source = $definition->source;
                 $companionsForSource = $bySource[$source] ?? [];
-                // Only candidates whose filter matches the parent's
-                // count as valid companions. Otherwise the auto-promotion
-                // adopts a Sum with a different filter (e.g. fire-only)
-                // and the parent silently reads filtered data.
+                // Only candidates whose filter AND inclusivity match
+                // the parent count as valid companions. A different
+                // filter would silently feed the parent filtered data;
+                // a different inclusivity would feed it a different
+                // row set (descendants vs. descendants-plus-self).
                 $companionsForSource = array_values(array_filter(
                     $companionsForSource,
                     static fn (AggregateDefinition $candidate): bool => self::filtersMatch(
                         $candidate->filter,
                         $definition->filter,
-                    ),
+                    ) && $candidate->inclusive === $definition->inclusive,
                 ));
 
                 foreach ($companionSet as $spec) {

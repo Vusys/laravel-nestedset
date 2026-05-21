@@ -78,7 +78,9 @@ enum AggregateFunction: string
                 new CompanionSpec('__sum', self::Sum),
                 new CompanionSpec('__count', self::Count),
             ],
-            self::Sum, self::Count, self::Min, self::Max => [],
+            self::Sum, self::Count, self::Min, self::Max,
+            self::DistinctCount, self::StringAgg,
+            self::JsonAgg, self::JsonObjectAgg => [],
         };
     }
 }

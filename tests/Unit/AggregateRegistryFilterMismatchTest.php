@@ -13,6 +13,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithMatchingEqualityFilterArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithMatchingNotNullFilterArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithMatchingRawFilterArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\MismatchedFilterAvgArea;
+use Vusys\NestedSet\Tests\Fixtures\Aggregates\MismatchedInclusiveAvgArea;
 
 /**
  * Locks in registry behaviour when a user declares Sum(x, filter=...)
@@ -118,5 +119,61 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
             ['sum' => 'typed_total', 'count' => 'typed_count'],
             $companions['typed_avg'] ?? null,
         );
+    }
+
+    public function test_avg_does_not_adopt_a_user_sum_with_different_inclusivity(): void
+    {
+        $definitions = AggregateRegistry::for(MismatchedInclusiveAvgArea::class);
+        $companions = AggregateRegistry::avgCompanionsFor(MismatchedInclusiveAvgArea::class);
+
+        // The user's exclusive Sum must not become the inclusive AVG's
+        // companion — different inclusivity = different row set.
+        $this->assertArrayHasKey('tickets_avg', $companions);
+        $sumColumn = $companions['tickets_avg']['sum'];
+
+        $this->assertNotSame('tickets_sum_exc', $sumColumn);
+
+        $sumDefinition = $this->findColumnDefinition($definitions, $sumColumn);
+
+        $this->assertNotNull($sumDefinition, "auto-promoted Sum '{$sumColumn}' must exist");
+        $this->assertTrue(
+            $sumDefinition->inclusive,
+            'Auto-promoted Sum must match the inclusive AVG, not adopt the exclusive declaration.',
+        );
+    }
+
+    public function test_avg_does_not_adopt_a_user_count_with_different_inclusivity(): void
+    {
+        $definitions = AggregateRegistry::for(MismatchedInclusiveAvgArea::class);
+        $companions = AggregateRegistry::avgCompanionsFor(MismatchedInclusiveAvgArea::class);
+
+        // Mirror of the Sum-side guard: the user's exclusive Count
+        // must not be adopted as the inclusive AVG's Count companion.
+        $this->assertArrayHasKey('tickets_avg', $companions);
+        $countColumn = $companions['tickets_avg']['count'];
+
+        $this->assertNotSame('tickets_count_exc', $countColumn);
+
+        $countDefinition = $this->findColumnDefinition($definitions, $countColumn);
+
+        $this->assertNotNull($countDefinition, "auto-promoted Count '{$countColumn}' must exist");
+        $this->assertTrue(
+            $countDefinition->inclusive,
+            'Auto-promoted Count must match the inclusive AVG, not adopt the exclusive declaration.',
+        );
+    }
+
+    /**
+     * @param  iterable<AggregateDefinition|object>  $definitions
+     */
+    private function findColumnDefinition(iterable $definitions, string $column): ?AggregateDefinition
+    {
+        foreach ($definitions as $definition) {
+            if ($definition instanceof AggregateDefinition && $definition->column === $column) {
+                return $definition;
+            }
+        }
+
+        return null;
     }
 }
