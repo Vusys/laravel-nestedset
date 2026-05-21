@@ -21,6 +21,12 @@ final class NestedSetServiceProvider extends ServiceProvider
 
     public const string AGGREGATE_TYPE_MIN_MAX = 'min_max';
 
+    public const string AGGREGATE_TYPE_DISTINCT_COUNT = 'distinct_count';
+
+    public const string AGGREGATE_TYPE_STRING_AGG = 'string_agg';
+
+    public const string AGGREGATE_TYPE_JSON = 'json';
+
     #[\Override]
     public function register(): void
     {
@@ -120,12 +126,45 @@ final class NestedSetServiceProvider extends ServiceProvider
                 return;
             }
 
+            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_DISTINCT_COUNT) {
+                // DistinctCount — same shape as Count: non-null, default 0.
+                $this->bigInteger($column)->default(0);
+
+                return;
+            }
+
+            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_STRING_AGG) {
+                // StringAgg — nullable text; empty subtree → NULL. Text rather
+                // than string(...) because the natural upper bound is the
+                // aggregate's `limit * avg_value_length`, not a fixed user
+                // value.
+                $this->text($column)->nullable();
+
+                return;
+            }
+
+            if ($type === NestedSetServiceProvider::AGGREGATE_TYPE_JSON) {
+                // JsonAgg / JsonObjectAgg — nullable. Backend-specific column
+                // type: PG defaults to jsonb (faster reads, key normalisation);
+                // MySQL/MariaDB use the JSON type; SQLite stores as text.
+                // Laravel's $this->json($column)->nullable() handles this
+                // dispatch correctly across all four backends.
+                $this->json($column)->nullable();
+
+                return;
+            }
+
             throw new InvalidArgumentException(sprintf(
-                'nestedSetAggregate: unknown type "%s". Use "%s", "%s", or "%s".',
+                'nestedSetAggregate: unknown type "%s". Supported: %s.',
                 $type,
-                NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
-                NestedSetServiceProvider::AGGREGATE_TYPE_AVG,
-                NestedSetServiceProvider::AGGREGATE_TYPE_MIN_MAX,
+                implode(', ', [
+                    NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+                    NestedSetServiceProvider::AGGREGATE_TYPE_AVG,
+                    NestedSetServiceProvider::AGGREGATE_TYPE_MIN_MAX,
+                    NestedSetServiceProvider::AGGREGATE_TYPE_DISTINCT_COUNT,
+                    NestedSetServiceProvider::AGGREGATE_TYPE_STRING_AGG,
+                    NestedSetServiceProvider::AGGREGATE_TYPE_JSON,
+                ]),
             ));
         });
 

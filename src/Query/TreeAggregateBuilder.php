@@ -15,6 +15,7 @@ use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
@@ -660,7 +661,28 @@ final class TreeAggregateBuilder
                 $qualifier,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                self::requireConnection($connection, $definition),
+                $definition,
+                $qualifier,
+            ),
         };
+    }
+
+    private static function requireConnection(?Connection $connection, AggregateDefinition $definition): Connection
+    {
+        if (! $connection instanceof Connection) {
+            throw new AggregateConfigurationException(sprintf(
+                'Aggregate "%s" (%s) requires a connection — its SQL is backend-specific.',
+                $definition->column,
+                $definition->function->value,
+            ));
+        }
+
+        return $connection;
     }
 
     private static function filteredAggregateExpression(
@@ -703,6 +725,15 @@ final class TreeAggregateBuilder
                 $pred,
                 $qualifier,
                 self::requireSource($definition),
+            ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                $connection,
+                $definition,
+                $qualifier,
+                $pred,
             ),
         };
     }
@@ -748,6 +779,7 @@ final class TreeAggregateBuilder
         AggregateDefinition $definition,
         string $rawFilter,
         string $innerQualifier,
+        ?Connection $connection = null,
     ): string {
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
@@ -781,6 +813,15 @@ final class TreeAggregateBuilder
                 $rawFilter,
                 $innerQualifier,
                 self::requireSource($definition),
+            ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                self::requireConnection($connection, $definition),
+                $definition,
+                $innerQualifier,
+                $rawFilter,
             ),
         };
     }
@@ -909,6 +950,7 @@ final class TreeAggregateBuilder
         string $lftCol,
         string $rgtCol,
         array $scopeCols,
+        ?Connection $connection = null,
     ): string {
         $filter = $definition->filter;
         if (! $filter instanceof FilterPredicate || $filter->getKind() !== FilterPredicateKind::Raw) {
@@ -956,6 +998,15 @@ final class TreeAggregateBuilder
                 $innerAlias,
                 self::requireSource($definition),
             ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                self::requireConnection($connection, $definition),
+                $definition,
+                $innerAlias.'.',
+                $rawSql,
+            ),
         };
 
         // Single-column predicate on lft so MySQL's planner can use a
@@ -977,9 +1028,9 @@ final class TreeAggregateBuilder
 
         $expr = "(SELECT {$aggInner} FROM {$table} AS {$innerAlias} WHERE {$bounds}{$scopeClause})";
 
-        // SUM and COUNT must produce 0 for an empty subtree (NOT NULL
-        // storage convention); MIN/MAX/AVG can stay NULL.
-        if ($definition->function === AggregateFunction::Sum || $definition->function === AggregateFunction::Count) {
+        // SUM / COUNT / DistinctCount must produce 0 for an empty subtree
+        // (NOT NULL storage convention); the remaining kinds stay NULL.
+        if (! $definition->function->nullableOnEmpty()) {
             return "COALESCE({$expr}, 0)";
         }
 
@@ -1019,6 +1070,7 @@ final class TreeAggregateBuilder
                         'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
                     ),
                     $innerQualifier,
+                    $connection,
                 );
             }
 
@@ -1029,6 +1081,7 @@ final class TreeAggregateBuilder
                 $lftCol,
                 $rgtCol,
                 $scopeCols,
+                $connection,
             );
         }
 
@@ -1068,8 +1121,15 @@ final class TreeAggregateBuilder
     ): string {
         if (! $definition->inclusive) {
             return match ($definition->function) {
-                AggregateFunction::Sum, AggregateFunction::Count => '0',
-                AggregateFunction::Avg, AggregateFunction::Min, AggregateFunction::Max => 'NULL',
+                AggregateFunction::Sum,
+                AggregateFunction::Count,
+                AggregateFunction::DistinctCount => '0',
+                AggregateFunction::Avg,
+                AggregateFunction::Min,
+                AggregateFunction::Max,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => 'NULL',
             };
         }
 
@@ -1101,6 +1161,14 @@ final class TreeAggregateBuilder
                     $tableQualifier,
                     self::requireSource($definition),
                 ),
+                AggregateFunction::DistinctCount,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
+                    self::requireConnection($connection, $definition),
+                    $definition,
+                    $tableQualifier,
+                ),
             };
         }
 
@@ -1114,8 +1182,15 @@ final class TreeAggregateBuilder
         // fast-path stays consistent with the join path on `withTrashed()`
         // queries.
         $emptyResult = match ($definition->function) {
-            AggregateFunction::Sum, AggregateFunction::Count => '0',
-            AggregateFunction::Avg, AggregateFunction::Min, AggregateFunction::Max => 'NULL',
+            AggregateFunction::Sum,
+            AggregateFunction::Count,
+            AggregateFunction::DistinctCount => '0',
+            AggregateFunction::Avg,
+            AggregateFunction::Min,
+            AggregateFunction::Max,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => 'NULL',
         };
 
         return sprintf(
@@ -1157,6 +1232,15 @@ final class TreeAggregateBuilder
                 $pred,
                 $tableQualifier,
                 self::requireSource($definition),
+            ),
+            AggregateFunction::DistinctCount,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
+                $connection,
+                $definition,
+                $tableQualifier,
+                $pred,
             ),
         };
     }
@@ -1258,7 +1342,7 @@ final class TreeAggregateBuilder
                 $stored = $row[self::storedAlias($definition->column)] ?? null;
                 $computed = $row[self::computedAlias($definition->column)] ?? null;
 
-                if (! self::aggregatesEqual($stored, $computed)) {
+                if (! self::aggregateValuesEqual($definition, $stored, $computed)) {
                     $errors[$definition->column]++;
                 }
             }
@@ -1356,7 +1440,7 @@ final class TreeAggregateBuilder
                 $stored = $row[self::storedAlias($definition->column)] ?? null;
                 $computed = $row[self::computedAlias($definition->column)] ?? null;
 
-                if (! self::aggregatesEqual($stored, $computed)) {
+                if (! self::aggregateValuesEqual($definition, $stored, $computed)) {
                     $updates[$definition->column] = $computed;
                     if (! $definition->isInternal()) {
                         $perColumn[$definition->column] = ($perColumn[$definition->column] ?? 0) + 1;
@@ -1515,8 +1599,26 @@ final class TreeAggregateBuilder
             }
         }
 
+        $anyRecomputeOnly = false;
+        foreach ($definitions as $definition) {
+            if (! $definition->function->supportsDelta()
+                && $definition->function !== AggregateFunction::Avg
+                && $definition->function !== AggregateFunction::Min
+                && $definition->function !== AggregateFunction::Max
+            ) {
+                // The four collection-aggregate kinds (DistinctCount / StringAgg / JsonAgg /
+                // JsonObjectAgg) can't fold via the linear chain pass —
+                // each ancestor's value depends on a *set* of descendant
+                // values, not a per-row delta. Skip the chain-fold fast
+                // path entirely for these.
+                $anyRecomputeOnly = true;
+                break;
+            }
+        }
+
         if (
             ! $anyFiltered
+            && ! $anyRecomputeOnly
             && $outerIds === null
             && $parentIdCol !== null
             && $depthCol !== null
@@ -1761,10 +1863,14 @@ final class TreeAggregateBuilder
     {
         return match ($definition->function) {
             AggregateFunction::Sum,
-            AggregateFunction::Count => 0,
+            AggregateFunction::Count,
+            AggregateFunction::DistinctCount => 0,
             AggregateFunction::Avg,
             AggregateFunction::Min,
-            AggregateFunction::Max => null,
+            AggregateFunction::Max,
+            AggregateFunction::StringAgg,
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => null,
         };
     }
 
@@ -1823,6 +1929,14 @@ final class TreeAggregateBuilder
                 // AVG is handled inline by the caller because it needs
                 // two parallel accumulators (SUM and COUNT-of-non-null).
                 throw new \LogicException('AVG must be handled inline in the chain fold.');
+            case AggregateFunction::DistinctCount:
+            case AggregateFunction::StringAgg:
+            case AggregateFunction::JsonAgg:
+            case AggregateFunction::JsonObjectAgg:
+                throw new \LogicException(sprintf(
+                    'chainFoldStep() does not handle %s — these kinds are recompute-only and skip the chain fold.',
+                    $definition->function->value,
+                ));
         }
     }
 
@@ -1919,7 +2033,8 @@ final class TreeAggregateBuilder
 
             $outerComputed = match ($definition->function) {
                 AggregateFunction::Sum,
-                AggregateFunction::Count => "COALESCE(agg.{$computedAlias}, 0)",
+                AggregateFunction::Count,
+                AggregateFunction::DistinctCount => "COALESCE(agg.{$computedAlias}, 0)",
                 default => "agg.{$computedAlias}",
             };
             $outerSelects[] = "{$outerComputed} AS {$computedAlias}";
@@ -2086,6 +2201,109 @@ final class TreeAggregateBuilder
         }
 
         return $diff / $scale < 1e-9;
+    }
+
+    /**
+     * Definition-aware drift check. The four collection-aggregate kinds need
+     * specialised comparators:
+     *
+     *  - JSON kinds: do not "optimise" to a string compare — jsonb
+     *    reorders object keys on read, so two semantically-equal values
+     *    may differ as bytes. Decode both sides and compare structurally.
+     *  - StringAgg with `distinct: true`: backends differ on segment
+     *    ordering when DISTINCT is set (SQLite preserves insertion
+     *    order; PG/MySQL order by source). Split on the separator,
+     *    sort, and compare as a set.
+     *
+     * Everything else (numeric kinds, plain stringAgg) delegates to
+     * {@see aggregatesEqual()} which keeps the numeric-tolerance shape.
+     */
+    public static function aggregateValuesEqual(AggregateDefinition $def, mixed $stored, mixed $computed): bool
+    {
+        return match ($def->function) {
+            AggregateFunction::JsonAgg,
+            AggregateFunction::JsonObjectAgg => self::jsonValuesEqual($stored, $computed),
+            AggregateFunction::StringAgg => $def->distinct
+                ? self::distinctStringAggEqual($def, $stored, $computed)
+                : self::aggregatesEqual($stored, $computed),
+            default => self::aggregatesEqual($stored, $computed),
+        };
+    }
+
+    private static function jsonValuesEqual(mixed $a, mixed $b): bool
+    {
+        if ($a === null && $b === null) {
+            return true;
+        }
+        if ($a === null || $b === null) {
+            return false;
+        }
+
+        $decodedA = self::decodeJsonValue($a);
+        $decodedB = self::decodeJsonValue($b);
+
+        // Both decode to identical PHP structures regardless of which
+        // backend wrote them — but assoc arrays are order-sensitive
+        // under `===` in PHP, so normalise key order recursively before
+        // comparing.
+        return self::normaliseJsonStructure($decodedA) === self::normaliseJsonStructure($decodedB);
+    }
+
+    private static function normaliseJsonStructure(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (array_is_list($value)) {
+            return array_map(self::normaliseJsonStructure(...), $value);
+        }
+
+        ksort($value);
+        $result = [];
+        foreach ($value as $k => $v) {
+            $result[$k] = self::normaliseJsonStructure($v);
+        }
+
+        return $result;
+    }
+
+    private static function decodeJsonValue(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, associative: true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $decoded;
+            }
+        }
+
+        return $value;
+    }
+
+    private static function distinctStringAggEqual(AggregateDefinition $def, mixed $stored, mixed $computed): bool
+    {
+        if ($stored === null && $computed === null) {
+            return true;
+        }
+        if ($stored === null || $computed === null) {
+            return false;
+        }
+        if (! is_string($stored) || ! is_string($computed)) {
+            return $stored === $computed;
+        }
+
+        // Split on the configured separator, with optional whitespace
+        // tolerance for SQLite (where DISTINCT loses the separator).
+        $separator = $def->separator;
+        $pattern = '/'.preg_quote(rtrim($separator), '/').'\s*/';
+
+        $segmentsA = preg_split($pattern, $stored) ?: [];
+        $segmentsB = preg_split($pattern, $computed) ?: [];
+
+        sort($segmentsA);
+        sort($segmentsB);
+
+        return $segmentsA === $segmentsB;
     }
 
     private static function computedAlias(string $column): string

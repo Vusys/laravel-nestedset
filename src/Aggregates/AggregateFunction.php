@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates;
 
 /**
- * The five SQL standard aggregate functions the package supports for
- * precalculated columns.
+ * Aggregate functions the package can maintain as precalculated columns.
+ *
+ * The first five — SUM/COUNT/AVG/MIN/MAX — are the SQL-standard numeric
+ * roll-ups. The remaining four (DistinctCount / StringAgg / JsonAgg /
+ * JsonObjectAgg) are collection-aggregate kinds (recompute-only) added by the
+ * "more aggregate kinds" design: they all go through recompute on every
+ * mutation, never the delta fast-path.
  *
  * Backed by string so values appear human-readable in error messages,
  * logs, and debug dumps.
@@ -18,6 +23,10 @@ enum AggregateFunction: string
     case Avg = 'avg';
     case Min = 'min';
     case Max = 'max';
+    case DistinctCount = 'distinct_count';
+    case StringAgg = 'string_agg';
+    case JsonAgg = 'json_agg';
+    case JsonObjectAgg = 'json_object_agg';
 
     /**
      * True for functions whose maintenance can be expressed as a single
@@ -29,20 +38,24 @@ enum AggregateFunction: string
     {
         return match ($this) {
             self::Sum, self::Count => true,
-            self::Avg, self::Min, self::Max => false,
+            self::Avg, self::Min, self::Max,
+            self::DistinctCount, self::StringAgg,
+            self::JsonAgg, self::JsonObjectAgg => false,
         };
     }
 
     /**
      * True for functions whose canonical "empty subtree" answer is NULL
      * rather than zero. Aggregate columns of these functions are stored
-     * nullable; SUM and COUNT default to 0 and stay non-null.
+     * nullable; SUM, COUNT and DistinctCount default to 0 and stay
+     * non-null.
      */
     public function nullableOnEmpty(): bool
     {
         return match ($this) {
-            self::Sum, self::Count => false,
-            self::Avg, self::Min, self::Max => true,
+            self::Sum, self::Count, self::DistinctCount => false,
+            self::Avg, self::Min, self::Max,
+            self::StringAgg, self::JsonAgg, self::JsonObjectAgg => true,
         };
     }
 }

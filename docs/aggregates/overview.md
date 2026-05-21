@@ -46,6 +46,7 @@ Every node carries its own subtree's rollup — `Computers` independently report
 - [Reading Values](reading.html) — stored vs fresh recomputation
 - [Declaring Aggregates](declaring.html) — attribute and method-override forms
 - [Filtered Aggregates](filtered.html) — equality, not-null, and raw SQL filters
+- [Collection Aggregates](text-and-json.html) — distinctCount, stringAgg, jsonAgg, jsonObjectAgg
 - [Listener Aggregates](listeners.html) — PHP-computed contributions
 - [Recipes](recipes.html) — common shapes
 - [Maintenance](maintenance.html) — what runs when, plus integrity tooling

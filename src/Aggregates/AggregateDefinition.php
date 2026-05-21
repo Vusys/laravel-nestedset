@@ -19,9 +19,18 @@ use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
  * Implements {@see AggregateDefinitionContract} so it can be handled
  * alongside {@see ListenerAggregateDefinition} by code that does not
  * need to know which kind it holds.
+ *
+ * The properties from `$separator` onward are only meaningful for the
+ * collection-aggregate kinds (StringAgg / JsonAgg / JsonObjectAgg /
+ * DistinctCount). The numeric SUM/COUNT/AVG/MIN/MAX kinds ignore them
+ * — their defaults are no-ops.
  */
 final readonly class AggregateDefinition implements AggregateDefinitionContract
 {
+    /**
+     * @param  array<string,string>  $sources  multi-column source map for JsonAgg
+     *                                         (JSON key => source column). Empty for scalar / non-JSON kinds.
+     */
     public function __construct(
         public string $column,
         public AggregateFunction $function,
@@ -29,6 +38,14 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public bool $inclusive,
         public bool $internal = false,
         public ?FilterPredicate $filter = null,
+        public string $separator = ', ',
+        public ?int $limit = null,
+        public ?string $orderBy = null,
+        public bool $distinct = false,
+        public bool $allowNullKeys = false,
+        public ?string $keyColumn = null,
+        public ?string $valueColumn = null,
+        public array $sources = [],
     ) {}
 
     public function getColumn(): string
