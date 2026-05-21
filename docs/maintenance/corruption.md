@@ -65,6 +65,8 @@ The structural check is fast — index range scans plus a `GROUP BY` for the dup
 
 > **Cycles are not currently surfaced by `countErrors()`.** They appear indirectly as "rows you couldn't see in the tree after a repair" — see §3.4. Detection SQL is in §7.
 
+> **Visualise the damage.** When `countErrors()` returns non-zero, `dd($root->toAsciiTree())` or `Category::toMermaidForest()` often makes the damage obvious at a glance. The exporters fold by `parent_id` and throw `CorruptTreeException` on cycles, so the output matches what `fixTree()` would rebuild. See [Tree Exporters](../querying/exporters.md).
+
 ## 3. Corruption categories
 
 ### 3.1 `invalid_bounds`
