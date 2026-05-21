@@ -1599,8 +1599,26 @@ final class TreeAggregateBuilder
             }
         }
 
+        $anyRecomputeOnly = false;
+        foreach ($definitions as $definition) {
+            if (! $definition->function->supportsDelta()
+                && $definition->function !== AggregateFunction::Avg
+                && $definition->function !== AggregateFunction::Min
+                && $definition->function !== AggregateFunction::Max
+            ) {
+                // The four new kinds (DistinctCount / StringAgg / JsonAgg /
+                // JsonObjectAgg) can't fold via the linear chain pass —
+                // each ancestor's value depends on a *set* of descendant
+                // values, not a per-row delta. Skip the chain-fold fast
+                // path entirely for these.
+                $anyRecomputeOnly = true;
+                break;
+            }
+        }
+
         if (
             ! $anyFiltered
+            && ! $anyRecomputeOnly
             && $outerIds === null
             && $parentIdCol !== null
             && $depthCol !== null
