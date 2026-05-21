@@ -79,6 +79,10 @@ final readonly class NestedSetAggregate
         public ?string $stringAgg = null,
         public string|array|null $jsonAgg = null,
         public ?array $jsonObjectAgg = null,
+        public ?string $weightedAvg = null,
+        public ?string $weight = null,
+        public ?string $boolOr = null,
+        public ?string $boolAnd = null,
         public bool $exclusive = false,
         public ?array $filter = null,
         public ?string $filterNotNull = null,
@@ -180,6 +184,15 @@ final readonly class NestedSetAggregate
         if ($this->jsonObjectAgg !== null) {
             $declared['jsonObjectAgg'] = $this->jsonObjectAgg;
         }
+        if ($this->weightedAvg !== null) {
+            $declared['weightedAvg'] = $this->weightedAvg;
+        }
+        if ($this->boolOr !== null) {
+            $declared['boolOr'] = $this->boolOr;
+        }
+        if ($this->boolAnd !== null) {
+            $declared['boolAnd'] = $this->boolAnd;
+        }
 
         return $declared;
     }
@@ -198,10 +211,66 @@ final readonly class NestedSetAggregate
             'stringAgg' => $this->stringAggDefinition(),
             'jsonAgg' => $this->jsonAggDefinition(),
             'jsonObjectAgg' => $this->jsonObjectAggDefinition(),
+            'weightedAvg' => $this->weightedAvgDefinition(),
+            'boolOr' => $this->boolRollupDefinition(AggregateFunction::BoolOr, $this->boolOr),
+            'boolAnd' => $this->boolRollupDefinition(AggregateFunction::BoolAnd, $this->boolAnd),
             default => throw new AggregateConfigurationException(
                 'Unreachable: declaredFunctions() returned an unknown key.',
             ),
         };
+    }
+
+    private function weightedAvgDefinition(): AggregateDefinition
+    {
+        $value = $this->weightedAvg;
+        if ($value === null || $value === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": weightedAvg requires a non-empty value column.',
+                $this->column,
+            ));
+        }
+
+        if ($this->weight === null || $this->weight === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": weightedAvg requires a non-empty `weight` column.',
+                $this->column,
+            ));
+        }
+
+        if ($value === $this->weight) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": weightedAvg value and weight must differ.',
+                $this->column,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: AggregateFunction::WeightedAvg,
+            source: $value,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            weight: $this->weight,
+        );
+    }
+
+    private function boolRollupDefinition(AggregateFunction $function, ?string $source): AggregateDefinition
+    {
+        if ($source === null || $source === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": %s requires a non-empty column name.',
+                $this->column,
+                $function->value,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: $function,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+        );
     }
 
     private function simpleDefinition(AggregateFunction $function, ?string $source): AggregateDefinition

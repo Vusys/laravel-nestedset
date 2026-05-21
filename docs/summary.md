@@ -41,6 +41,7 @@ Format:
 - [Collection Aggregates](aggregates/text-and-json.md)
 - [Listener Aggregates](aggregates/listeners.md)
 - [Variance & Stddev](aggregates/maths.md)
+- [Weighted Average & Boolean Rollups](aggregates/weighted-avg-and-booleans.md)
 - [Recipes](aggregates/recipes.md)
 - [Maintenance](aggregates/maintenance.md)
 - [Drift & Limitations](aggregates/drift.md)

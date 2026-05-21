@@ -274,8 +274,25 @@ final class RecomputeMaintenance
     {
         $source = $spec['source'];
         $sourceRef = "inner_a.{$source}";
-        $sourceTransform = $spec['sourceTransform'] ?? CompanionSourceTransform::Identity;
-        $sourceExpression = $sourceTransform->applySqlFragment($sourceRef);
+        // Companions with a non-Identity transform (square for
+        // variance/stddev, weight*value for weightedAvg, bool-as-int
+        // for boolOr/boolAnd) compile the SUM around a derived
+        // expression instead of a plain column ref. The transform
+        // comes from either `$spec['sourceTransform']` (existing
+        // variance call sites) or the definition's `sourceTransform`
+        // (companion paths that carry a full definition); falls back
+        // to Identity for non-companion specs.
+        $definition = $spec['definition'] ?? null;
+        $sourceTransform = $spec['sourceTransform']
+            ?? ($definition instanceof AggregateDefinition
+                ? $definition->sourceTransform
+                : CompanionSourceTransform::Identity);
+        $weightRef = $definition instanceof AggregateDefinition
+            && $definition->weight !== null
+            && $definition->weight !== ''
+            ? 'inner_a.'.$definition->weight
+            : null;
+        $sourceExpression = $sourceTransform->applySqlFragment($sourceRef, $weightRef);
         $sample = $spec['sample'] ?? false;
 
         if ($filter instanceof FilterPredicate) {
@@ -314,6 +331,13 @@ final class RecomputeMaintenance
                 ),
                 AggregateFunction::Variance => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: false),
                 AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: true),
+                AggregateFunction::WeightedAvg,
+                AggregateFunction::BoolOr,
+                AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+                    'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
+                    .'in DeltaMaintenance and should never reach this inner-expression builder.',
+                    strtoupper($spec['function']->value),
+                )),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -346,6 +370,13 @@ final class RecomputeMaintenance
                 countExpr: "COUNT({$sourceRef})",
                 sample: $sample,
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+                'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
+                .'in DeltaMaintenance and should never reach this inner-expression builder.',
+                strtoupper($spec['function']->value),
+            )),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,

@@ -236,6 +236,9 @@ trait HasNestedSetAggregates
                 'Variance / Stddev are not supported for listener aggregates. '
                 .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -344,10 +347,17 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Determine trigger columns: source column + filter watch columns.
+            // Determine trigger columns: source column + filter watch
+            // columns + (for weighted-product companions) the weight
+            // column too. Without the weight trigger, a row whose value
+            // is unchanged but whose weight changed would miss the
+            // delta capture and leave `Σ(w · x)` stale.
             $watchCols = $definition->filter?->watchColumns() ?? [];
             $triggerCols = array_unique(array_merge(
                 $definition->source !== null ? [$definition->source] : [],
+                $definition->sourceTransform->requiresWeight() && $definition->weight !== null
+                    ? [$definition->weight]
+                    : [],
                 $watchCols,
             ));
             // Skip if nothing relevant is dirty.
@@ -369,8 +379,18 @@ trait HasNestedSetAggregates
             $source = $definition->source;
 
             if ($definition->function === AggregateFunction::Sum && $source !== null) {
-                $newSource = $definition->sourceTransform->applyPhp(self::numeric($this->getAttribute($source)));
-                $oldSource = $definition->sourceTransform->applyPhp(self::numeric($this->getOriginal($source)));
+                $newSource = $definition->sourceTransform->applyPhp(
+                    $this->getAttribute($source),
+                    $definition->weight !== null
+                        ? self::nullableNumeric($this->getAttribute($definition->weight))
+                        : null,
+                );
+                $oldSource = $definition->sourceTransform->applyPhp(
+                    $this->getOriginal($source),
+                    $definition->weight !== null
+                        ? self::nullableNumeric($this->getOriginal($definition->weight))
+                        : null,
+                );
                 $delta = ($newPred ? $newSource : 0) - ($oldPred ? $oldSource : 0);
 
                 if ($delta !== 0) {
@@ -616,6 +636,8 @@ trait HasNestedSetAggregates
             extremes: $extremes,
             softDeletedColumn: $this->softDeleteColumn(),
             variances: AggregateRegistry::varianceCompanionsFor(static::class),
+            weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+            bools: AggregateRegistry::boolCompanionsFor(static::class),
         );
 
         if ($recomputes !== []) {
@@ -870,7 +892,10 @@ trait HasNestedSetAggregates
                     continue;
                 }
                 $value = $definition->sourceTransform->applyPhp(
-                    self::numeric($this->getAttribute($definition->source)),
+                    $this->getAttribute($definition->source),
+                    $definition->weight !== null
+                        ? self::nullableNumeric($this->getAttribute($definition->weight))
+                        : null,
                 );
                 if ($value !== 0) {
                     $deltas[$definition->column] = $value;
@@ -987,6 +1012,8 @@ trait HasNestedSetAggregates
                 extremes: $extremes,
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1145,6 +1172,8 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1215,6 +1244,8 @@ trait HasNestedSetAggregates
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1337,6 +1368,8 @@ trait HasNestedSetAggregates
                 extremes: $candidateExtremes,
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -1699,6 +1732,8 @@ trait HasNestedSetAggregates
                 extremes: $extremes,
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
+                weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
+                bools: AggregateRegistry::boolCompanionsFor(static::class),
             );
         }
 
@@ -2169,6 +2204,9 @@ trait HasNestedSetAggregates
                 'Variance / Stddev are not supported for listener aggregates. '
                 .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
             ),
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -2325,6 +2363,30 @@ trait HasNestedSetAggregates
     private static function listenerContributionValue(int|float|null $value): int|float
     {
         return $value ?? 0;
+    }
+
+    /**
+     * Null-preserving variant of {@see numeric()}. Returns null when
+     * the value is missing or non-numeric so the weighted-average
+     * delta path can distinguish "no weight recorded" (no
+     * contribution) from "weight = 0" (also no contribution but
+     * arithmetically explicit). Companion source-transform
+     * helpers consume this to decide whether to participate in a
+     * delta.
+     */
+    private static function nullableNumeric(mixed $value): int|float|null
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return $value + 0;
     }
 
     /**

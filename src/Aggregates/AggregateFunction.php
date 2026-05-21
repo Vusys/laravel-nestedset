@@ -12,10 +12,11 @@ namespace Vusys\NestedSet\Aggregates;
  *
  * Families:
  *  - *delta-maintainable*: Sum, Count.
- *  - *derived-from-companions*: Avg, Variance, Stddev — each declares a
- *    {@see CompanionSpec} set that the registry auto-promotes into
- *    delta-maintainable internal columns; the user-facing column is
- *    written by a SQL formula over the companions.
+ *  - *derived-from-companions*: Avg, Variance, Stddev, WeightedAvg,
+ *    BoolOr, BoolAnd — each declares a {@see CompanionSpec} set that
+ *    the registry auto-promotes into delta-maintainable internal
+ *    columns; the user-facing column is written by a SQL formula over
+ *    the companions on every mutation.
  *  - *recompute-only*: Min, Max, DistinctCount, StringAgg, JsonAgg,
  *    JsonObjectAgg — no companions; each mutation re-reads the subtree.
  */
@@ -28,6 +29,9 @@ enum AggregateFunction: string
     case Max = 'max';
     case Variance = 'variance';
     case Stddev = 'stddev';
+    case WeightedAvg = 'weighted_avg';
+    case BoolOr = 'bool_or';
+    case BoolAnd = 'bool_and';
     case DistinctCount = 'distinct_count';
     case StringAgg = 'string_agg';
     case JsonAgg = 'json_agg';
@@ -44,6 +48,7 @@ enum AggregateFunction: string
         return match ($this) {
             self::Sum, self::Count => true,
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
+            self::WeightedAvg, self::BoolOr, self::BoolAnd,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg => false,
         };
@@ -60,6 +65,7 @@ enum AggregateFunction: string
         return match ($this) {
             self::Sum, self::Count, self::DistinctCount => false,
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
+            self::WeightedAvg, self::BoolOr, self::BoolAnd,
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg => true,
         };
     }
@@ -70,7 +76,12 @@ enum AggregateFunction: string
      * `Sum + Count` companion pair; `Variance` and `Stddev` add a
      * `Sum(source * source)` "sum of squares" companion on top, so the
      * textbook `E[X²] − E[X]²` form is available without re-reading the
-     * subtree on every mutation.
+     * subtree on every mutation. `WeightedAvg` adds a
+     * `Sum(weight * value)` and a `Sum(weight)` pair; `BoolOr` and
+     * `BoolAnd` are derived from a `Sum(source AS INT)` + `Count`
+     * companion pair so a single set of stored integers serves
+     * "any descendant true?" and "all descendants true?" without
+     * recomputing the subtree.
      *
      * Functions that are themselves delta-maintainable (`Sum`,
      * `Count`) or that route through full subtree recompute (`Min`,
@@ -89,6 +100,14 @@ enum AggregateFunction: string
             self::Variance, self::Stddev => [
                 new CompanionSpec('__sum', self::Sum),
                 new CompanionSpec('__sum_sq', self::Sum, CompanionSourceTransform::Square),
+                new CompanionSpec('__count', self::Count),
+            ],
+            self::WeightedAvg => [
+                new CompanionSpec('__sum_wx', self::Sum, CompanionSourceTransform::TimesWeight),
+                new CompanionSpec('__sum_w', self::Sum, sourceOrigin: CompanionSourceOrigin::ParentWeight),
+            ],
+            self::BoolOr, self::BoolAnd => [
+                new CompanionSpec('__sum', self::Sum, CompanionSourceTransform::AsInt),
                 new CompanionSpec('__count', self::Count),
             ],
             self::Sum, self::Count, self::Min, self::Max,

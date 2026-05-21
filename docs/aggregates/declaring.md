@@ -35,6 +35,8 @@ The auto-promoted companions follow the `{avg_column}__sum` / `{avg_column}__cou
 
 `Aggregate::distinctCount`, `Aggregate::stringAgg`, `Aggregate::jsonAgg` and `Aggregate::jsonObjectAgg` build collection-shaped rollups (distinct counts, concatenated text, JSON arrays/objects). They use the same `#[NestedSetAggregate]` attribute and method-override form as the SQL-standard functions, but always go through full subtree recompute (no delta fast path). See [Collection Aggregates](text-and-json.html) for the full surface, backend caveats, and recipe examples.
 
+`Aggregate::weightedAvg(value, weight)`, `Aggregate::boolOr(source)`, and `Aggregate::boolAnd(source)` are delta-maintainable but derived from companion sums — `weightedAvg` rides on `Σ(weight · value)` and `Σ(weight)`; the boolean rollups share a single `Sum(source AS INT)` + `Count` pair. See [Weighted Average & Boolean Rollups](weighted-avg-and-booleans.html) for the API, migration shape, and the per-backend storage caveats.
+
 The existing `min` / `max` factories also work on text columns and produce lexicographic min/max — useful for "first alphabetical descendant tag" and similar queries.
 
 ## Introspection

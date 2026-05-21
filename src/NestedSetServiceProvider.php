@@ -50,6 +50,12 @@ final class NestedSetServiceProvider extends ServiceProvider
 
     public const string AGGREGATE_TYPE_JSON = 'json';
 
+    public const string AGGREGATE_TYPE_WEIGHTED_AVG = 'weighted_avg';
+
+    public const string AGGREGATE_TYPE_BOOL_OR = 'bool_or';
+
+    public const string AGGREGATE_TYPE_BOOL_AND = 'bool_and';
+
     #[\Override]
     public function register(): void
     {
@@ -235,6 +241,27 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_WEIGHTED_AVG) {
+            // Weighted average — same shape as AVG. Nullable decimal so
+            // an empty (or zero-total-weight) subtree reads as NULL
+            // matching SQL's `0 / 0 = NULL` convention.
+            $table->decimal($column, 12, 4)->nullable();
+
+            return;
+        }
+
+        if ($type === self::AGGREGATE_TYPE_BOOL_OR || $type === self::AGGREGATE_TYPE_BOOL_AND) {
+            // BoolOr / BoolAnd — nullable boolean. Empty subtree reads
+            // as NULL; non-empty reads as TRUE/FALSE. Laravel's
+            // $table->boolean() materialises as native BOOLEAN on PG,
+            // TINYINT(1) on MySQL/MariaDB, INTEGER on SQLite — all
+            // accept TRUE / FALSE keywords from the maintenance SET
+            // clauses.
+            $table->boolean($column)->nullable();
+
+            return;
+        }
+
         throw new InvalidArgumentException(self::unknownTypeMessage($type));
     }
 
@@ -301,6 +328,9 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_AVG => AggregateFunction::Avg,
             self::AGGREGATE_TYPE_VARIANCE => AggregateFunction::Variance,
             self::AGGREGATE_TYPE_STDDEV => AggregateFunction::Stddev,
+            self::AGGREGATE_TYPE_WEIGHTED_AVG => AggregateFunction::WeightedAvg,
+            self::AGGREGATE_TYPE_BOOL_OR => AggregateFunction::BoolOr,
+            self::AGGREGATE_TYPE_BOOL_AND => AggregateFunction::BoolAnd,
             self::AGGREGATE_TYPE_SUM_COUNT,
             self::AGGREGATE_TYPE_MIN_MAX,
             self::AGGREGATE_TYPE_SUM_SQ,
@@ -331,6 +361,9 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_DISTINCT_COUNT,
                 self::AGGREGATE_TYPE_STRING_AGG,
                 self::AGGREGATE_TYPE_JSON,
+                self::AGGREGATE_TYPE_WEIGHTED_AVG,
+                self::AGGREGATE_TYPE_BOOL_OR,
+                self::AGGREGATE_TYPE_BOOL_AND,
             ]),
         );
     }

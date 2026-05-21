@@ -301,6 +301,148 @@ final class AggregateRegistry
     }
 
     /**
+     * For each inclusive WeightedAvg declaration on $class, returns the
+     * companion column names ({sum_wx, sum_w}) used at delta-time to
+     * derive the display value. Exclusive weighted averages are
+     * maintained via the chain-recompute path and don't need this
+     * helper.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return array<string, array{sum_wx: string, sum_w: string}>
+     */
+    public static function weightedAvgCompanionsFor(string $class): array
+    {
+        $definitions = self::for($class);
+        $bySource = self::indexBySource($definitions);
+
+        $result = [];
+
+        foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+            if ($definition->function !== AggregateFunction::WeightedAvg) {
+                continue;
+            }
+            if (! $definition->inclusive) {
+                continue;
+            }
+            if ($definition->source === null) {
+                continue;
+            }
+            if ($definition->weight === null) {
+                continue;
+            }
+
+            $sumWxColumn = null;
+            $sumWColumn = null;
+
+            foreach ($bySource[$definition->source] ?? [] as $companion) {
+                if ($companion->function !== AggregateFunction::Sum) {
+                    continue;
+                }
+                if (! self::filtersMatch($companion->filter, $definition->filter)) {
+                    continue;
+                }
+                if ($companion->inclusive !== $definition->inclusive) {
+                    continue;
+                }
+                if ($companion->sourceTransform === CompanionSourceTransform::TimesWeight
+                    && $sumWxColumn === null) {
+                    $sumWxColumn = $companion->column;
+                }
+            }
+
+            foreach ($bySource[$definition->weight] ?? [] as $companion) {
+                if ($companion->function !== AggregateFunction::Sum) {
+                    continue;
+                }
+                if (! self::filtersMatch($companion->filter, $definition->filter)) {
+                    continue;
+                }
+                if ($companion->inclusive !== $definition->inclusive) {
+                    continue;
+                }
+                if ($companion->sourceTransform === CompanionSourceTransform::Identity
+                    && $sumWColumn === null) {
+                    $sumWColumn = $companion->column;
+                }
+            }
+
+            if ($sumWxColumn !== null && $sumWColumn !== null) {
+                $result[$definition->column] = ['sum_wx' => $sumWxColumn, 'sum_w' => $sumWColumn];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * For each inclusive BoolOr / BoolAnd declaration on $class,
+     * returns the companion column names ({sum, count}) plus the
+     * function so the delta-time SET clause can pick the right
+     * `Sum > 0` / `Sum = Count` formula.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return array<string, array{sum: string, count: string, function: AggregateFunction}>
+     */
+    public static function boolCompanionsFor(string $class): array
+    {
+        $definitions = self::for($class);
+        $bySource = self::indexBySource($definitions);
+
+        $result = [];
+
+        foreach ($definitions as $definition) {
+            if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+            if ($definition->function !== AggregateFunction::BoolOr
+                && $definition->function !== AggregateFunction::BoolAnd) {
+                continue;
+            }
+            if (! $definition->inclusive) {
+                continue;
+            }
+            if ($definition->source === null) {
+                continue;
+            }
+
+            $sumColumn = null;
+            $countColumn = null;
+
+            foreach ($bySource[$definition->source] ?? [] as $companion) {
+                if (! self::filtersMatch($companion->filter, $definition->filter)) {
+                    continue;
+                }
+                if ($companion->inclusive !== $definition->inclusive) {
+                    continue;
+                }
+                if ($companion->function === AggregateFunction::Sum
+                    && $companion->sourceTransform === CompanionSourceTransform::AsInt
+                    && $sumColumn === null) {
+                    $sumColumn = $companion->column;
+                }
+                if ($companion->function === AggregateFunction::Count
+                    && $companion->sourceTransform === CompanionSourceTransform::Identity
+                    && $countColumn === null) {
+                    $countColumn = $companion->column;
+                }
+            }
+
+            if ($sumColumn !== null && $countColumn !== null) {
+                $result[$definition->column] = [
+                    'sum' => $sumColumn,
+                    'count' => $countColumn,
+                    'function' => $definition->function,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * Return the candidate companion column matching the canonical
      * naming convention `<displayColumn><suffix>` — used by
      * {@see varianceCompanionsFor()} to pick the companion that was
@@ -503,33 +645,48 @@ final class AggregateRegistry
                     ));
                 }
 
-                $source = $definition->source;
-                $companionsForSource = $bySource[$source] ?? [];
-                // Only candidates whose filter AND inclusivity match
-                // the parent count as valid companions. A different
-                // filter would silently feed the parent filtered data;
-                // a different inclusivity would feed it a different
-                // row set (descendants vs. descendants-plus-self).
-                $companionsForSource = array_values(array_filter(
-                    $companionsForSource,
-                    static fn (AggregateDefinition $candidate): bool => self::filtersMatch(
-                        $candidate->filter,
-                        $definition->filter,
-                    ) && $candidate->inclusive === $definition->inclusive,
-                ));
-
                 foreach ($companionSet as $spec) {
-                    if (self::hasCompanion($companionsForSource, $spec)) {
-                        continue;
+                    $companionSource = self::resolveCompanionSource($spec, $definition);
+
+                    // Transforms other than Identity emit a derived
+                    // expression in the SUM (e.g. `source * source` for
+                    // variance, `weight * value` for weightedAvg,
+                    // `CASE WHEN bool THEN 1 ELSE 0 END` for
+                    // boolOr/boolAnd). A user-declared plain `Sum` on
+                    // the same column means something different —
+                    // never adopt it. Always create an internal
+                    // companion.
+                    $allowAdoption = $spec->sourceTransform === CompanionSourceTransform::Identity;
+
+                    if ($allowAdoption) {
+                        $companionsForSource = $bySource[$companionSource] ?? [];
+                        // Only candidates whose filter AND inclusivity
+                        // match the parent count as valid companions.
+                        // A different filter would silently feed the
+                        // parent filtered data; a different inclusivity
+                        // would feed it a different row set.
+                        $companionsForSource = array_values(array_filter(
+                            $companionsForSource,
+                            static fn (AggregateDefinition $candidate): bool => self::filtersMatch(
+                                $candidate->filter,
+                                $definition->filter,
+                            ) && $candidate->inclusive === $definition->inclusive
+                                && $candidate->sourceTransform === CompanionSourceTransform::Identity,
+                        ));
+
+                        if (self::hasCompanion($companionsForSource, $spec)) {
+                            continue;
+                        }
                     }
 
                     $extras[] = new AggregateDefinition(
                         column: $spec->columnFor($definition->column),
                         function: $spec->function,
-                        source: $source,
+                        source: $companionSource,
                         inclusive: $definition->inclusive,
                         internal: true,
                         filter: $definition->filter,
+                        weight: $spec->sourceTransform->requiresWeight() ? $definition->weight : null,
                         sourceTransform: $spec->sourceTransform,
                     );
                 }
@@ -571,6 +728,31 @@ final class AggregateRegistry
         }
 
         return array_merge($definitions, $extras);
+    }
+
+    /**
+     * Resolves a {@see CompanionSpec}'s effective source column on a
+     * parent aggregate. The companion takes the parent's primary
+     * source by default; weighted average's `Sum(weight)` companion
+     * uses {@see CompanionSourceOrigin::ParentWeight} to draw from
+     * the parent's weight column instead.
+     */
+    private static function resolveCompanionSource(CompanionSpec $spec, AggregateDefinition $parent): string
+    {
+        return match ($spec->sourceOrigin) {
+            CompanionSourceOrigin::ParentSource => $parent->source ?? throw new AggregateConfigurationException(sprintf(
+                'AggregateDefinition for column "%s": %s requires a source column for its %s companion.',
+                $parent->column,
+                strtoupper($parent->function->value),
+                $spec->function->value,
+            )),
+            CompanionSourceOrigin::ParentWeight => $parent->weight ?? throw new AggregateConfigurationException(sprintf(
+                'AggregateDefinition for column "%s": %s declared a companion drawing from the weight column, '
+                .'but no weight column was set on the parent definition.',
+                $parent->column,
+                strtoupper($parent->function->value),
+            )),
+        };
     }
 
     /**
