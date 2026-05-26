@@ -501,6 +501,10 @@ final class AggregateSqlEmitter
         $p = number_format($def->percentilePoint, 10, '.', '');
         $srcRef = $qualifier.$source;
         $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
+        // Exclude NULL source rows from the windowed set so ROW_NUMBER /
+        // COUNT positions match PG PERCENTILE_CONT semantics (ordered-set
+        // aggregates skip NULL inputs).
+        $filterClause .= " AND ({$srcRef} IS NOT NULL)";
 
         $innerSelect =
             "SELECT {$srcRef} AS _src, "
