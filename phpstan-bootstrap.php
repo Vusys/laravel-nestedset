@@ -9,4 +9,4 @@ use Illuminate\Database\Schema\Blueprint;
 Blueprint::macro('nestedSet', function (string|array $scope = [], string|array $cover = [], string|Closure $parentIdType = 'bigint'): void {});
 Blueprint::macro('dropNestedSet', function (string|array $scope = [], string|array $cover = []): void {});
 Blueprint::macro('nestedSetAggregate', function (string $column, string $type = 'sum_count'): void {});
-Blueprint::macro('dropNestedSetAggregate', function (string $column): void {});
+Blueprint::macro('dropNestedSetAggregate', function (string $column, string $type = 'sum_count'): void {});

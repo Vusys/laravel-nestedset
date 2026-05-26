@@ -220,6 +220,70 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse(Schema::hasColumn($this->table, 'tickets_total'));
     }
 
+    public function test_nested_set_aggregate_avg_type_also_allocates_companion_columns(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('tickets_avg', type: 'avg');
+        });
+
+        $byName = $this->columnsByName();
+
+        $this->assertArrayHasKey('tickets_avg', $byName);
+        $this->assertArrayHasKey('tickets_avg__sum', $byName);
+        $this->assertArrayHasKey('tickets_avg__count', $byName);
+
+        // Display column is nullable decimal.
+        $this->assertTrue($byName['tickets_avg']['nullable']);
+
+        // Companion columns are sum_count-shaped: non-null default 0.
+        $this->assertFalse($byName['tickets_avg__sum']['nullable']);
+        $this->assertFalse($byName['tickets_avg__count']['nullable']);
+        $this->assertDefaultIsZero($byName['tickets_avg__sum']['default']);
+        $this->assertDefaultIsZero($byName['tickets_avg__count']['default']);
+    }
+
+    public function test_drop_nested_set_aggregate_avg_type_also_drops_companion_columns(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSetAggregate('tickets_avg', type: 'avg');
+        });
+
+        $this->assertTrue(Schema::hasColumn($this->table, 'tickets_avg'));
+        $this->assertTrue(Schema::hasColumn($this->table, 'tickets_avg__sum'));
+        $this->assertTrue(Schema::hasColumn($this->table, 'tickets_avg__count'));
+
+        Schema::table($this->table, function (Blueprint $table): void {
+            $table->dropNestedSetAggregate('tickets_avg', type: 'avg');
+        });
+
+        $this->assertFalse(Schema::hasColumn($this->table, 'tickets_avg'));
+        $this->assertFalse(Schema::hasColumn($this->table, 'tickets_avg__sum'));
+        $this->assertFalse(Schema::hasColumn($this->table, 'tickets_avg__count'));
+    }
+
+    public function test_companion_columns_for_returns_avg_companion_names(): void
+    {
+        $companions = NestedSetServiceProvider::companionColumnsFor('tickets_avg', 'avg');
+
+        $this->assertSame(['tickets_avg__sum', 'tickets_avg__count'], $companions);
+    }
+
+    public function test_companion_columns_for_returns_empty_list_for_non_avg_types(): void
+    {
+        $this->assertSame([], NestedSetServiceProvider::companionColumnsFor('tickets_total', 'sum_count'));
+        $this->assertSame([], NestedSetServiceProvider::companionColumnsFor('tickets_max', 'min_max'));
+    }
+
+    public function test_companion_columns_for_rejects_unknown_type(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('unknown type "bogus"');
+
+        NestedSetServiceProvider::companionColumnsFor('tickets', 'bogus');
+    }
+
     public function test_nested_set_aggregate_supports_every_function_family_on_one_table(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
