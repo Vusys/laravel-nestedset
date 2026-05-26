@@ -338,7 +338,9 @@ final class RecomputeMaintenance
                 AggregateFunction::BoolOr,
                 AggregateFunction::BoolAnd,
                 AggregateFunction::GeometricMean,
-                AggregateFunction::HarmonicMean => throw new AggregateConfigurationException(sprintf(
+                AggregateFunction::HarmonicMean,
+                AggregateFunction::Median,
+                AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
                     'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                     .'in DeltaMaintenance and should never reach this inner-expression builder.',
                     strtoupper($spec['function']->value),
@@ -379,7 +381,9 @@ final class RecomputeMaintenance
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
-            AggregateFunction::HarmonicMean => throw new AggregateConfigurationException(sprintf(
+            AggregateFunction::HarmonicMean,
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
                 'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                 .'in DeltaMaintenance and should never reach this inner-expression builder.',
                 strtoupper($spec['function']->value),

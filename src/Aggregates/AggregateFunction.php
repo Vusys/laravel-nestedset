@@ -38,6 +38,9 @@ enum AggregateFunction: string
     case StringAgg = 'string_agg';
     case JsonAgg = 'json_agg';
     case JsonObjectAgg = 'json_object_agg';
+    // M5: read-only quantile kinds — withFreshAggregates() only.
+    case Median = 'median';
+    case Percentile = 'percentile';
 
     /**
      * True for functions whose maintenance can be expressed as a single
@@ -53,7 +56,8 @@ enum AggregateFunction: string
             self::WeightedAvg, self::BoolOr, self::BoolAnd,
             self::GeometricMean, self::HarmonicMean,
             self::DistinctCount, self::StringAgg,
-            self::JsonAgg, self::JsonObjectAgg => false,
+            self::JsonAgg, self::JsonObjectAgg,
+            self::Median, self::Percentile => false,
         };
     }
 
@@ -70,7 +74,8 @@ enum AggregateFunction: string
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::WeightedAvg, self::BoolOr, self::BoolAnd,
             self::GeometricMean, self::HarmonicMean,
-            self::StringAgg, self::JsonAgg, self::JsonObjectAgg => true,
+            self::StringAgg, self::JsonAgg, self::JsonObjectAgg,
+            self::Median, self::Percentile => true,
         };
     }
 
@@ -131,7 +136,8 @@ enum AggregateFunction: string
             ],
             self::Sum, self::Count, self::Min, self::Max,
             self::DistinctCount, self::StringAgg,
-            self::JsonAgg, self::JsonObjectAgg => [],
+            self::JsonAgg, self::JsonObjectAgg,
+            self::Median, self::Percentile => [],
         };
     }
 }

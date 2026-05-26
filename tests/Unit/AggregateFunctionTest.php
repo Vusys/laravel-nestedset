@@ -9,9 +9,9 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_sixteen_cases(): void
+    public function test_has_exactly_eighteen_cases(): void
     {
-        $this->assertCount(16, AggregateFunction::cases());
+        $this->assertCount(18, AggregateFunction::cases());
     }
 
     public function test_each_case_is_backed_by_its_string_name(): void
@@ -32,6 +32,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('string_agg', AggregateFunction::StringAgg->value);
         $this->assertSame('json_agg', AggregateFunction::JsonAgg->value);
         $this->assertSame('json_object_agg', AggregateFunction::JsonObjectAgg->value);
+        $this->assertSame('median', AggregateFunction::Median->value);
+        $this->assertSame('percentile', AggregateFunction::Percentile->value);
     }
 
     public function test_sum_and_count_support_delta_maintenance(): void
@@ -47,6 +49,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertFalse(AggregateFunction::Max->supportsDelta());
         $this->assertFalse(AggregateFunction::Variance->supportsDelta());
         $this->assertFalse(AggregateFunction::Stddev->supportsDelta());
+        $this->assertFalse(AggregateFunction::Median->supportsDelta());
+        $this->assertFalse(AggregateFunction::Percentile->supportsDelta());
     }
 
     public function test_weighted_avg_bool_and_mean_kinds_do_not_support_delta(): void
@@ -116,6 +120,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertTrue(AggregateFunction::StringAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonAgg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::JsonObjectAgg->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::Median->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::Percentile->nullableOnEmpty());
     }
 
     public function test_avg_declares_sum_and_count_companions(): void
@@ -163,6 +169,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame([], AggregateFunction::Count->companionSet());
         $this->assertSame([], AggregateFunction::Min->companionSet());
         $this->assertSame([], AggregateFunction::Max->companionSet());
+        $this->assertSame([], AggregateFunction::Median->companionSet());
+        $this->assertSame([], AggregateFunction::Percentile->companionSet());
     }
 
     public function test_distinct_count_string_and_json_declare_no_companions(): void
@@ -171,6 +179,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame([], AggregateFunction::StringAgg->companionSet());
         $this->assertSame([], AggregateFunction::JsonAgg->companionSet());
         $this->assertSame([], AggregateFunction::JsonObjectAgg->companionSet());
+        $this->assertSame([], AggregateFunction::Median->companionSet());
+        $this->assertSame([], AggregateFunction::Percentile->companionSet());
     }
 
     public function test_variance_and_stddev_declare_sum_sumsq_count_companions(): void

@@ -85,6 +85,8 @@ final readonly class NestedSetAggregate
         public ?string $boolAnd = null,
         public ?string $geometricMean = null,
         public ?string $harmonicMean = null,
+        public ?string $median = null,
+        public ?string $percentile = null,
         public bool $allowNonPositive = false,
         public bool $exclusive = false,
         public ?array $filter = null,
@@ -111,6 +113,17 @@ final readonly class NestedSetAggregate
             throw new AggregateConfigurationException(
                 'NestedSetAggregate: `column` must not be empty.',
             );
+        }
+
+        if ($this->median !== null || $this->percentile !== null) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": median() and percentile() are recompute-only '
+                .'and cannot be stored as precalculated aggregate columns. '
+                .'Use withFreshAggregates() for on-demand quantile reads: '
+                .'->withFreshAggregates([\'%s\' => Aggregate::median(\'source\')]).',
+                $this->column,
+                $this->column,
+            ));
         }
 
         $declared = $this->declaredFunctions();
