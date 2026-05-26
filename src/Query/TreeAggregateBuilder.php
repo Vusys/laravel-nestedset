@@ -2205,10 +2205,11 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg => $sum / $count,
             AggregateFunction::Variance => self::computeVarianceFromCompanions($sum, $sumSq, $count, $definition->sample),
             AggregateFunction::Stddev => self::computeStddevFromCompanions($sum, $sumSq, $count, $definition->sample),
-            // chainFoldStep handles the non-companion-derived kinds,
-            // and WeightedAvg / BoolOr / BoolAnd have their own
-            // dedicated branches in the chain fold (their accumulators
-            // can't be reduced to the Sum/SumSq/Count triple here).
+            // chainFoldStep handles the non-companion-derived kinds, and
+            // WeightedAvg / BoolOr / BoolAnd / GeometricMean / HarmonicMean
+            // have their own dedicated branches in the chain fold (their
+            // accumulators can't be reduced to the Sum/SumSq/Count triple
+            // here).
             AggregateFunction::Sum,
             AggregateFunction::Count,
             AggregateFunction::Min,
@@ -2216,6 +2217,8 @@ final class TreeAggregateBuilder
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,

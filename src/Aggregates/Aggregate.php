@@ -253,19 +253,20 @@ final readonly class Aggregate
     public function allowNonPositive(): self
     {
         return new self(
-            $this->function,
-            $this->source,
-            $this->inclusive,
-            $this->filter,
-            $this->separator,
-            $this->limit,
-            $this->orderBy,
-            $this->distinct,
-            $this->allowNullKeys,
-            $this->keyColumn,
-            $this->valueColumn,
-            $this->sources,
-            $this->weight,
+            function: $this->function,
+            source: $this->source,
+            inclusive: $this->inclusive,
+            filter: $this->filter,
+            sample: $this->sample,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: $this->distinct,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
+            weight: $this->weight,
             allowNonPositive: true,
         );
     }

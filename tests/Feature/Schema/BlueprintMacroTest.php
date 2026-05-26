@@ -479,25 +479,25 @@ final class BlueprintMacroTest extends TestCase
         $this->assertArrayNotHasKey('value_hmean__count', $byName);
     }
 
-    public function test_companion_columns_with_types_returns_per_companion_storage_types(): void
+    public function test_companion_allocations_for_returns_per_companion_storage_types(): void
     {
-        $gmean = NestedSetServiceProvider::companionColumnsWithTypes('v_gmean', 'geometric_mean');
-        $hmean = NestedSetServiceProvider::companionColumnsWithTypes('v_hmean', 'harmonic_mean');
-        $avg = NestedSetServiceProvider::companionColumnsWithTypes('v_avg', 'avg');
+        $gmean = NestedSetServiceProvider::companionAllocationsFor('v_gmean', 'geometric_mean');
+        $hmean = NestedSetServiceProvider::companionAllocationsFor('v_hmean', 'harmonic_mean');
+        $avg = NestedSetServiceProvider::companionAllocationsFor('v_avg', 'avg');
 
         $this->assertSame([
-            ['v_gmean__sum_log', 'high_precision_sum'],
-            ['v_gmean__count', 'sum_count'],
+            ['column' => 'v_gmean__sum_log', 'type' => 'high_precision_sum'],
+            ['column' => 'v_gmean__count', 'type' => 'sum_count'],
         ], $gmean);
 
         $this->assertSame([
-            ['v_hmean__sum_recip', 'high_precision_sum'],
-            ['v_hmean__count', 'sum_count'],
+            ['column' => 'v_hmean__sum_recip', 'type' => 'high_precision_sum'],
+            ['column' => 'v_hmean__count', 'type' => 'sum_count'],
         ], $hmean);
 
         $this->assertSame([
-            ['v_avg__sum', 'sum_count'],
-            ['v_avg__count', 'sum_count'],
+            ['column' => 'v_avg__sum', 'type' => 'sum_count'],
+            ['column' => 'v_avg__count', 'type' => 'sum_count'],
         ], $avg);
     }
 
