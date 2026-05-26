@@ -9,9 +9,9 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_sixteen_cases(): void
+    public function test_has_exactly_eighteen_cases(): void
     {
-        $this->assertCount(16, AggregateFunction::cases());
+        $this->assertCount(18, AggregateFunction::cases());
     }
 
     public function test_each_case_is_backed_by_its_string_name(): void

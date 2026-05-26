@@ -2381,7 +2381,9 @@ final class TreeAggregateBuilder
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => throw new \LogicException(
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::Median,
+            AggregateFunction::Percentile => throw new \LogicException(
                 'deriveCompanionDisplay called with non-companion-derived function '.$definition->function->value,
             ),
         };
