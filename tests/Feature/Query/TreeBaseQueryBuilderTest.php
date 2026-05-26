@@ -70,7 +70,7 @@ final class TreeBaseQueryBuilderTest extends TestCase
         });
 
         $this->assertNotEmpty($captured, 'Expected runSelect() to dispatch a query.');
-        $last = $captured[array_key_last($captured)];
+        $last = $captured[count($captured) - 1];
         $lastSql = (string) $last['query'];
 
         $this->assertStringStartsWith(

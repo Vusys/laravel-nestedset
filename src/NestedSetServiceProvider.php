@@ -57,6 +57,10 @@ final class NestedSetServiceProvider extends ServiceProvider
 
     public const string AGGREGATE_TYPE_BOOL_AND = 'bool_and';
 
+    public const string AGGREGATE_TYPE_GEOMETRIC_MEAN = 'geometric_mean';
+
+    public const string AGGREGATE_TYPE_HARMONIC_MEAN = 'harmonic_mean';
+
     /**
      * Storage shape for the `Σ(weight·value)` / `Σ(weight)` companion
      * columns of {@see self::AGGREGATE_TYPE_WEIGHTED_AVG}. Decimal —
@@ -65,6 +69,16 @@ final class NestedSetServiceProvider extends ServiceProvider
      * with `invalid input syntax for type bigint`.
      */
     public const string AGGREGATE_TYPE_DECIMAL_SUM = 'decimal_sum';
+
+    /**
+     * High-precision decimal storage for geometric/harmonic mean
+     * companion sums (Σ LN(x) and Σ 1/x). Wider fractional precision
+     * than `decimal_sum` (10 vs 4 digits) because LN(x) and 1/x are
+     * irrational; 4 fractional digits accumulate visible rounding error
+     * across a deep subtree (e.g. EXP(Σ LN(2)) drifts past ±0.0001
+     * after only a handful of rows on MySQL/MariaDB/PG).
+     */
+    public const string AGGREGATE_TYPE_HIGH_PRECISION_SUM = 'high_precision_sum';
 
     #[\Override]
     public function register(): void
@@ -272,6 +286,16 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_HIGH_PRECISION_SUM) {
+            // Companion Σ LN(x) / Σ (1/x) for geometric and harmonic mean.
+            // 10 fractional digits vs the 4 of decimal_sum because these
+            // values are irrational; coarser precision causes visible drift
+            // in the EXP/reciprocal display formula on real decimal backends.
+            $table->decimal($column, 30, 10)->default(0);
+
+            return;
+        }
+
         if ($type === self::AGGREGATE_TYPE_BOOL_OR || $type === self::AGGREGATE_TYPE_BOOL_AND) {
             // BoolOr / BoolAnd — nullable boolean. Empty subtree reads
             // as NULL; non-empty reads as TRUE/FALSE. Laravel's
@@ -280,6 +304,17 @@ final class NestedSetServiceProvider extends ServiceProvider
             // accept TRUE / FALSE keywords from the maintenance SET
             // clauses.
             $table->boolean($column)->nullable();
+
+            return;
+        }
+
+        if ($type === self::AGGREGATE_TYPE_GEOMETRIC_MEAN
+            || $type === self::AGGREGATE_TYPE_HARMONIC_MEAN
+        ) {
+            // Geometric / harmonic mean display column — nullable decimal.
+            // NULL when no contributing row exists (no positive value for
+            // geometric, or the denominator is zero for harmonic).
+            $table->decimal($column, 12, 4)->nullable();
 
             return;
         }
@@ -329,27 +364,36 @@ final class NestedSetServiceProvider extends ServiceProvider
         return array_map(
             static fn (CompanionSpec $spec): array => [
                 'column' => $spec->columnFor($column),
-                'type' => match ($spec->sourceTransform) {
-                    // Variance / Stddev's squared-sum companion needs
-                    // a wider DECIMAL — see {@see self::AGGREGATE_TYPE_SUM_SQ}.
-                    CompanionSourceTransform::Square => self::AGGREGATE_TYPE_SUM_SQ,
-                    // WeightedAvg's `Σ(weight·value)` companion sums
-                    // products of decimal columns; needs DECIMAL storage
-                    // or PG rejects writes with `invalid input syntax
-                    // for type bigint`. Also covers the sibling
-                    // `Σ(weight)` companion below — its source is the
-                    // parent's weight column (decimal), so its sum is
-                    // decimal too.
-                    CompanionSourceTransform::TimesWeight => self::AGGREGATE_TYPE_DECIMAL_SUM,
-                    // The Identity-transformed companion of a WeightedAvg
-                    // parent is `Σ(weight)` — also needs decimal storage.
-                    // Distinguish by the parent's function via the spec's
-                    // sourceOrigin (ParentWeight only appears on WeightedAvg).
-                    CompanionSourceTransform::Identity => $spec->sourceOrigin === CompanionSourceOrigin::ParentWeight
-                        ? self::AGGREGATE_TYPE_DECIMAL_SUM
-                        : self::AGGREGATE_TYPE_SUM_COUNT,
-                    CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
-                },
+                // Count companions are always row tallies regardless of
+                // transform — keep them in the bigint sum_count shape.
+                'type' => $spec->function === AggregateFunction::Count
+                    ? self::AGGREGATE_TYPE_SUM_COUNT
+                    : match ($spec->sourceTransform) {
+                        // Variance / Stddev's squared-sum companion needs
+                        // a wider DECIMAL — see {@see self::AGGREGATE_TYPE_SUM_SQ}.
+                        CompanionSourceTransform::Square => self::AGGREGATE_TYPE_SUM_SQ,
+                        // WeightedAvg's `Σ(weight·value)` companion sums
+                        // products of decimal columns; needs DECIMAL storage
+                        // or PG rejects writes with `invalid input syntax
+                        // for type bigint`. Also covers the sibling
+                        // `Σ(weight)` companion below — its source is the
+                        // parent's weight column (decimal), so its sum is
+                        // decimal too.
+                        CompanionSourceTransform::TimesWeight => self::AGGREGATE_TYPE_DECIMAL_SUM,
+                        // The Identity-transformed companion of a WeightedAvg
+                        // parent is `Σ(weight)` — also needs decimal storage.
+                        // Distinguish by the parent's function via the spec's
+                        // sourceOrigin (ParentWeight only appears on WeightedAvg).
+                        CompanionSourceTransform::Identity => $spec->sourceOrigin === CompanionSourceOrigin::ParentWeight
+                            ? self::AGGREGATE_TYPE_DECIMAL_SUM
+                            : self::AGGREGATE_TYPE_SUM_COUNT,
+                        CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
+                        // GeometricMean's `Σ(LN(source))` and HarmonicMean's
+                        // `Σ(1/source)` hold irrational sums that need wider
+                        // DECIMAL(30,10) storage.
+                        CompanionSourceTransform::Ln,
+                        CompanionSourceTransform::Recip => self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
+                    },
             ],
             $function->companionSet(),
         );
@@ -371,8 +415,11 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_WEIGHTED_AVG => AggregateFunction::WeightedAvg,
             self::AGGREGATE_TYPE_BOOL_OR => AggregateFunction::BoolOr,
             self::AGGREGATE_TYPE_BOOL_AND => AggregateFunction::BoolAnd,
+            self::AGGREGATE_TYPE_GEOMETRIC_MEAN => AggregateFunction::GeometricMean,
+            self::AGGREGATE_TYPE_HARMONIC_MEAN => AggregateFunction::HarmonicMean,
             self::AGGREGATE_TYPE_SUM_COUNT,
             self::AGGREGATE_TYPE_DECIMAL_SUM,
+            self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
             self::AGGREGATE_TYPE_MIN_MAX,
             self::AGGREGATE_TYPE_SUM_SQ,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
@@ -400,12 +447,15 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_STDDEV,
                 self::AGGREGATE_TYPE_SUM_SQ,
                 self::AGGREGATE_TYPE_DECIMAL_SUM,
+                self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
                 self::AGGREGATE_TYPE_DISTINCT_COUNT,
                 self::AGGREGATE_TYPE_STRING_AGG,
                 self::AGGREGATE_TYPE_JSON,
                 self::AGGREGATE_TYPE_WEIGHTED_AVG,
                 self::AGGREGATE_TYPE_BOOL_OR,
                 self::AGGREGATE_TYPE_BOOL_AND,
+                self::AGGREGATE_TYPE_GEOMETRIC_MEAN,
+                self::AGGREGATE_TYPE_HARMONIC_MEAN,
             ]),
         );
     }

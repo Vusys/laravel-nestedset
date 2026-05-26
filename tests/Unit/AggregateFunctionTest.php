@@ -9,9 +9,9 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_fourteen_cases(): void
+    public function test_has_exactly_sixteen_cases(): void
     {
-        $this->assertCount(14, AggregateFunction::cases());
+        $this->assertCount(16, AggregateFunction::cases());
     }
 
     public function test_each_case_is_backed_by_its_string_name(): void
@@ -26,6 +26,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('weighted_avg', AggregateFunction::WeightedAvg->value);
         $this->assertSame('bool_or', AggregateFunction::BoolOr->value);
         $this->assertSame('bool_and', AggregateFunction::BoolAnd->value);
+        $this->assertSame('geometric_mean', AggregateFunction::GeometricMean->value);
+        $this->assertSame('harmonic_mean', AggregateFunction::HarmonicMean->value);
         $this->assertSame('distinct_count', AggregateFunction::DistinctCount->value);
         $this->assertSame('string_agg', AggregateFunction::StringAgg->value);
         $this->assertSame('json_agg', AggregateFunction::JsonAgg->value);
@@ -47,18 +49,22 @@ final class AggregateFunctionTest extends TestCase
         $this->assertFalse(AggregateFunction::Stddev->supportsDelta());
     }
 
-    public function test_weighted_avg_and_bool_kinds_do_not_support_delta(): void
+    public function test_weighted_avg_bool_and_mean_kinds_do_not_support_delta(): void
     {
         $this->assertFalse(AggregateFunction::WeightedAvg->supportsDelta());
         $this->assertFalse(AggregateFunction::BoolOr->supportsDelta());
         $this->assertFalse(AggregateFunction::BoolAnd->supportsDelta());
+        $this->assertFalse(AggregateFunction::GeometricMean->supportsDelta());
+        $this->assertFalse(AggregateFunction::HarmonicMean->supportsDelta());
     }
 
-    public function test_weighted_avg_and_bool_kinds_are_nullable_on_empty(): void
+    public function test_weighted_avg_bool_and_mean_kinds_are_nullable_on_empty(): void
     {
         $this->assertTrue(AggregateFunction::WeightedAvg->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::BoolOr->nullableOnEmpty());
         $this->assertTrue(AggregateFunction::BoolAnd->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::GeometricMean->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::HarmonicMean->nullableOnEmpty());
     }
 
     public function test_weighted_avg_declares_sum_wx_and_sum_w_companions(): void
@@ -127,6 +133,28 @@ final class AggregateFunctionTest extends TestCase
             ['sum' => '__sum', 'count' => '__count'],
             $suffixesByFunction,
         );
+    }
+
+    public function test_geometric_mean_declares_sum_log_and_count_companions(): void
+    {
+        $companions = AggregateFunction::GeometricMean->companionSet();
+
+        $this->assertCount(2, $companions);
+        $this->assertSame('__sum_log', $companions[0]->suffix);
+        $this->assertSame(AggregateFunction::Sum, $companions[0]->function);
+        $this->assertSame('__count', $companions[1]->suffix);
+        $this->assertSame(AggregateFunction::Count, $companions[1]->function);
+    }
+
+    public function test_harmonic_mean_declares_sum_recip_and_count_companions(): void
+    {
+        $companions = AggregateFunction::HarmonicMean->companionSet();
+
+        $this->assertCount(2, $companions);
+        $this->assertSame('__sum_recip', $companions[0]->suffix);
+        $this->assertSame(AggregateFunction::Sum, $companions[0]->function);
+        $this->assertSame('__count', $companions[1]->suffix);
+        $this->assertSame(AggregateFunction::Count, $companions[1]->function);
     }
 
     public function test_sum_count_min_max_declare_no_companions(): void

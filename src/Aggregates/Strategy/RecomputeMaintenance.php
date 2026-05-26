@@ -309,10 +309,13 @@ final class RecomputeMaintenance
                     // — wrap in a CASE that returns 1 / NULL to match
                     // COUNT(*)-semantics-with-filter as well as
                     // COUNT(col)-with-filter (NULL source already produces
-                    // NULL via the CASE branch).
+                    // NULL via the CASE branch). Use $sourceExpression so
+                    // non-Identity Count companions (Ln for GeometricMean,
+                    // Recip for HarmonicMean) only count rows whose transform
+                    // produces a non-NULL contribution.
                     'COUNT(CASE WHEN %s THEN %s ELSE NULL END)',
                     $pred,
-                    $spec['source'] === '' ? '1' : $sourceRef,
+                    $spec['source'] === '' ? '1' : $sourceExpression,
                 ),
                 AggregateFunction::Avg => sprintf(
                     'AVG(CASE WHEN %s THEN %s ELSE NULL END)',
@@ -333,7 +336,9 @@ final class RecomputeMaintenance
                 AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: true),
                 AggregateFunction::WeightedAvg,
                 AggregateFunction::BoolOr,
-                AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+                AggregateFunction::BoolAnd,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean => throw new AggregateConfigurationException(sprintf(
                     'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                     .'in DeltaMaintenance and should never reach this inner-expression builder.',
                     strtoupper($spec['function']->value),
@@ -354,7 +359,7 @@ final class RecomputeMaintenance
             AggregateFunction::Sum => "COALESCE(SUM({$sourceExpression}), 0)",
             AggregateFunction::Count => $spec['source'] === ''
                 ? 'COUNT(*)'
-                : "COUNT({$sourceRef})",
+                : "COUNT({$sourceExpression})",
             AggregateFunction::Avg => "AVG({$sourceRef})",
             AggregateFunction::Min => "MIN({$sourceRef})",
             AggregateFunction::Max => "MAX({$sourceRef})",
@@ -372,7 +377,9 @@ final class RecomputeMaintenance
             ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => throw new AggregateConfigurationException(sprintf(
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => throw new AggregateConfigurationException(sprintf(
                 'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                 .'in DeltaMaintenance and should never reach this inner-expression builder.',
                 strtoupper($spec['function']->value),

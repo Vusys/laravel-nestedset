@@ -677,7 +677,9 @@ final class TreeAggregateBuilder
             ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $qualifier),
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $qualifier),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -746,7 +748,9 @@ final class TreeAggregateBuilder
             AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: true),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $qualifier, $pred),
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $qualifier, $pred),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -863,7 +867,9 @@ final class TreeAggregateBuilder
             AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: true),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFilter),
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFilter),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -1052,7 +1058,9 @@ final class TreeAggregateBuilder
             AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: true),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => DerivedAggregateFragments::build($definition, $innerAlias.'.', $rawSql),
+            AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerAlias.'.', $rawSql),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -1181,6 +1189,29 @@ final class TreeAggregateBuilder
     }
 
     /**
+     * Leaf-row inline for GeometricMean. A single positive value's
+     * geometric mean is itself; non-positive returns NULL (no positive
+     * contributors in the singleton subtree).
+     */
+    private static function leafInlineGeometricMean(AggregateDefinition $definition, string $tableQualifier): string
+    {
+        $sourceRef = $tableQualifier.self::requireSource($definition);
+
+        return "CASE WHEN {$sourceRef} > 0 THEN {$sourceRef} ELSE NULL END";
+    }
+
+    /**
+     * Leaf-row inline for HarmonicMean. A single non-zero value's
+     * harmonic mean is itself; zero returns NULL.
+     */
+    private static function leafInlineHarmonicMean(AggregateDefinition $definition, string $tableQualifier): string
+    {
+        $sourceRef = $tableQualifier.self::requireSource($definition);
+
+        return "CASE WHEN {$sourceRef} <> 0 THEN {$sourceRef} ELSE NULL END";
+    }
+
+    /**
      * Render the inner expression that the outer `SUM(...)` aggregates
      * over for $definition, applying any companion
      * {@see CompanionSourceTransform} (e.g. the `weight * value`
@@ -1249,6 +1280,8 @@ final class TreeAggregateBuilder
                 AggregateFunction::WeightedAvg,
                 AggregateFunction::BoolOr,
                 AggregateFunction::BoolAnd,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
                 AggregateFunction::JsonObjectAgg => 'NULL',
@@ -1295,6 +1328,8 @@ final class TreeAggregateBuilder
                 AggregateFunction::WeightedAvg => self::leafInlineWeightedAvg($definition, $tableQualifier),
                 AggregateFunction::BoolOr,
                 AggregateFunction::BoolAnd => self::leafInlineBool($definition, $tableQualifier),
+                AggregateFunction::GeometricMean => self::leafInlineGeometricMean($definition, $tableQualifier),
+                AggregateFunction::HarmonicMean => self::leafInlineHarmonicMean($definition, $tableQualifier),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -1327,6 +1362,8 @@ final class TreeAggregateBuilder
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => 'NULL',
@@ -1391,6 +1428,18 @@ final class TreeAggregateBuilder
                 'CASE WHEN %s THEN %s ELSE NULL END',
                 $pred,
                 self::leafInlineBool($definition, $tableQualifier),
+            ),
+            AggregateFunction::GeometricMean => sprintf(
+                'CASE WHEN (%s) AND %s > 0 THEN %s ELSE NULL END',
+                $pred,
+                $tableQualifier.self::requireSource($definition),
+                $tableQualifier.self::requireSource($definition),
+            ),
+            AggregateFunction::HarmonicMean => sprintf(
+                'CASE WHEN (%s) AND %s <> 0 THEN %s ELSE NULL END',
+                $pred,
+                $tableQualifier.self::requireSource($definition),
+                $tableQualifier.self::requireSource($definition),
             ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
@@ -1970,10 +2019,10 @@ final class TreeAggregateBuilder
             //   AVG / Variance / Stddev: $prevSum + $prevSumSq + $prevCount
             //     (display value is a ratio or quadratic combination of
             //     these three companions — see {@see deriveCompanionDisplay()}).
-            //   WeightedAvg: $prevSumWx + $prevSumW
-            //     (SUM(weight·value) / SUM(weight)).
-            //   BoolOr / BoolAnd: $prevBoolSum + $prevBoolCount
-            //     (Sum(asInt) + Count(non-null)).
+            //   WeightedAvg: $prevSumWx + $prevSumW (SUM(weight·value) / SUM(weight)).
+            //   BoolOr / BoolAnd: $prevBoolSum + $prevBoolCount (Sum(asInt) + Count(non-null)).
+            //   GeometricMean: $prevSumLog + $prevCountPos (SUM(LN(source)) + COUNT(positive)).
+            //   HarmonicMean: $prevSumRecip + $prevCountNonNull (SUM(1/source) + COUNT(non-zero non-null)).
             $prevSum = 0.0;
             $prevSumSq = 0.0;
             $prevCount = 0;
@@ -1981,6 +2030,10 @@ final class TreeAggregateBuilder
             $prevSumW = 0.0;
             $prevBoolSum = 0;
             $prevBoolCount = 0;
+            $prevSumLog = 0.0;
+            $prevCountPos = 0;
+            $prevSumRecip = 0.0;
+            $prevCountNonNull = 0;
 
             foreach ($rows as $row) {
                 $id = $row[$idCol] ?? null;
@@ -1999,6 +2052,10 @@ final class TreeAggregateBuilder
                 $currentSumW = $prevSumW;
                 $currentBoolSum = $prevBoolSum;
                 $currentBoolCount = $prevBoolCount;
+                $currentSumLog = $prevSumLog;
+                $currentCountPos = $prevCountPos;
+                $currentSumRecip = $prevSumRecip;
+                $currentCountNonNull = $prevCountNonNull;
 
                 // Combine source with previous-row's inclusive to get
                 // current row's inclusive.
@@ -2029,6 +2086,30 @@ final class TreeAggregateBuilder
                     $currentBoolCount = $prevBoolCount + $boolCountDelta;
                     $currentInclusive = self::boolFoldOutput($definition->function, $currentBoolSum, $currentBoolCount);
                     $previousInclusive = self::boolFoldOutput($definition->function, $prevBoolSum, $prevBoolCount);
+                } elseif ($definition->function === AggregateFunction::GeometricMean) {
+                    $numericSource = is_numeric($sourceValue) ? (float) $sourceValue : null;
+                    if ($numericSource !== null && $numericSource > 0) {
+                        $currentSumLog = $prevSumLog + log($numericSource);
+                        $currentCountPos = $prevCountPos + 1;
+                    }
+                    $currentInclusive = $currentCountPos > 0 ? exp($currentSumLog / $currentCountPos) : null;
+                    $previousInclusive = $prevCountPos > 0 ? exp($prevSumLog / $prevCountPos) : null;
+                } elseif ($definition->function === AggregateFunction::HarmonicMean) {
+                    $numericSource = is_numeric($sourceValue) ? (float) $sourceValue : null;
+                    if ($numericSource !== null && $numericSource !== 0.0) {
+                        // Zero-valued rows skip the reciprocal — they must
+                        // also skip the count, or the n / Σ(1/x) formula
+                        // uses too large an N and the harmonic mean comes
+                        // out too small.
+                        $currentCountNonNull = $prevCountNonNull + 1;
+                        $currentSumRecip = $prevSumRecip + (1.0 / $numericSource);
+                    }
+                    $currentInclusive = ($currentCountNonNull > 0 && $currentSumRecip !== 0.0)
+                        ? $currentCountNonNull / $currentSumRecip
+                        : null;
+                    $previousInclusive = ($prevCountNonNull > 0 && $prevSumRecip !== 0.0)
+                        ? $prevCountNonNull / $prevSumRecip
+                        : null;
                 } else {
                     // Apply the companion's source transform (Identity
                     // for everything but the SumSq companion of
@@ -2074,6 +2155,12 @@ final class TreeAggregateBuilder
                 ) {
                     $prevBoolSum = $currentBoolSum;
                     $prevBoolCount = $currentBoolCount;
+                } elseif ($definition->function === AggregateFunction::GeometricMean) {
+                    $prevSumLog = $currentSumLog;
+                    $prevCountPos = $currentCountPos;
+                } elseif ($definition->function === AggregateFunction::HarmonicMean) {
+                    $prevSumRecip = $currentSumRecip;
+                    $prevCountNonNull = $currentCountNonNull;
                 } else {
                     // Only the int|float|null chain-fold kinds reuse
                     // $prevInclusive as the next iteration's
@@ -2120,10 +2207,11 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg => $sum / $count,
             AggregateFunction::Variance => self::computeVarianceFromCompanions($sum, $sumSq, $count, $definition->sample),
             AggregateFunction::Stddev => self::computeStddevFromCompanions($sum, $sumSq, $count, $definition->sample),
-            // chainFoldStep handles the non-companion-derived kinds,
-            // and WeightedAvg / BoolOr / BoolAnd have their own
-            // dedicated branches in the chain fold (their accumulators
-            // can't be reduced to the Sum/SumSq/Count triple here).
+            // chainFoldStep handles the non-companion-derived kinds, and
+            // WeightedAvg / BoolOr / BoolAnd / GeometricMean / HarmonicMean
+            // have their own dedicated branches in the chain fold (their
+            // accumulators can't be reduced to the Sum/SumSq/Count triple
+            // here).
             AggregateFunction::Sum,
             AggregateFunction::Count,
             AggregateFunction::Min,
@@ -2131,6 +2219,8 @@ final class TreeAggregateBuilder
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -2189,6 +2279,8 @@ final class TreeAggregateBuilder
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
+            AggregateFunction::GeometricMean,
+            AggregateFunction::HarmonicMean,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => null,
@@ -2252,12 +2344,14 @@ final class TreeAggregateBuilder
             case AggregateFunction::WeightedAvg:
             case AggregateFunction::BoolOr:
             case AggregateFunction::BoolAnd:
-                // Derived-from-companions kinds — AVG, Variance,
-                // Stddev, WeightedAvg, BoolOr, BoolAnd — are handled
-                // inline by the caller because each needs two or more
-                // parallel accumulators (sum + count, sum + sumsq +
-                // count, sum-of-products + sum-of-weights) that a
-                // single int|float fold can't carry.
+            case AggregateFunction::GeometricMean:
+            case AggregateFunction::HarmonicMean:
+                // Derived-from-companions kinds — AVG, Variance, Stddev,
+                // WeightedAvg, BoolOr, BoolAnd, GeometricMean, HarmonicMean
+                // — are handled inline by the caller because each needs
+                // two or more parallel accumulators (sum + count, sum +
+                // sumsq + count, sum-of-products + sum-of-weights, etc.)
+                // that a single int|float fold can't carry.
                 throw new \LogicException(sprintf(
                     '%s must be handled inline in the chain fold.',
                     strtoupper($definition->function->value),

@@ -51,6 +51,7 @@ final readonly class Aggregate
         public ?string $valueColumn = null,
         public array $sources = [],
         public ?string $weight = null,
+        public bool $allowNonPositive = false,
     ) {}
 
     /**
@@ -192,6 +193,82 @@ final readonly class Aggregate
         }
 
         return new self(AggregateFunction::BoolAnd, $source, true);
+    }
+
+    /**
+     * Geometric mean — `EXP(Σ LN(source) / n)` over the subtree.
+     * Stored as a derived value: the registry auto-promotes companion
+     * `__sum_log` (`Sum(LN(source))`) and `__count` definitions. NULL
+     * when the subtree is empty or all contributing source values are
+     * non-positive.
+     *
+     * Source values ≤ 0 are silently excluded from the computation on
+     * both the SQL side (LN returns NULL for ≤ 0; SUM skips NULLs) and
+     * the PHP delta-capture side. By default a save whose source column
+     * is ≤ 0 throws {@see AggregateSourceConstraintViolationException};
+     * call {@see allowNonPositive()} to opt into silent-skip instead.
+     */
+    public static function geometricMean(string $source): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::geometricMean(): source column must not be empty.',
+            );
+        }
+
+        return new self(AggregateFunction::GeometricMean, $source, true);
+    }
+
+    /**
+     * Harmonic mean — `n / Σ(1 / source)` over the subtree.
+     * Stored as a derived value: the registry auto-promotes companion
+     * `__sum_recip` (`Sum(1 / source)`) and `__count` definitions.
+     * NULL when the subtree is empty or the total reciprocal sum is zero.
+     *
+     * Zero source values are excluded from the computation (SQL uses
+     * `NULLIF(source, 0)`; PHP returns 0 for the contribution). By
+     * default a save whose source column is 0 throws
+     * {@see AggregateSourceConstraintViolationException}; call
+     * {@see allowNonPositive()} to opt into silent-skip instead.
+     */
+    public static function harmonicMean(string $source): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::harmonicMean(): source column must not be empty.',
+            );
+        }
+
+        return new self(AggregateFunction::HarmonicMean, $source, true);
+    }
+
+    /**
+     * Opt into silent-skip semantics for source values that violate the
+     * positivity / non-zero constraint of geometric and harmonic mean
+     * aggregates. By default a save that writes a non-positive (geomMean)
+     * or zero (harmMean) source value throws; calling this modifier on
+     * the aggregate declaration suppresses the throw and lets those rows
+     * contribute nothing to the stored aggregate instead.
+     */
+    public function allowNonPositive(): self
+    {
+        return new self(
+            function: $this->function,
+            source: $this->source,
+            inclusive: $this->inclusive,
+            filter: $this->filter,
+            sample: $this->sample,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: $this->distinct,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
+            weight: $this->weight,
+            allowNonPositive: true,
+        );
     }
 
     /**
@@ -424,6 +501,7 @@ final readonly class Aggregate
             valueColumn: $this->valueColumn,
             sources: $this->sources,
             weight: $this->weight,
+            allowNonPositive: $this->allowNonPositive,
         );
     }
 
@@ -501,6 +579,7 @@ final readonly class Aggregate
             valueColumn: $this->valueColumn,
             sources: $this->sources,
             weight: $this->weight,
+            allowNonPositive: $this->allowNonPositive,
         );
     }
 
@@ -567,6 +646,7 @@ final readonly class Aggregate
             valueColumn: $this->valueColumn,
             sources: $this->sources,
             weight: $this->weight,
+            allowNonPositive: $this->allowNonPositive,
         );
     }
 
