@@ -41,6 +41,7 @@ final readonly class Aggregate
         public ?string $source,
         public bool $inclusive,
         public ?FilterPredicate $filter = null,
+        public bool $sample = false,
         public string $separator = ', ',
         public ?int $limit = null,
         public ?string $orderBy = null,
@@ -90,6 +91,31 @@ final readonly class Aggregate
     }
 
     /**
+     * VARIANCE(source) over the subtree. The registry auto-promotes
+     * three companions over the same source — Sum, Sum-of-squares, and
+     * Count — and the user-facing column is computed from those via
+     * the textbook `E[X²] − E[X]²` form on every mutation.
+     *
+     * `$sample = true` switches to the sample variance (n − 1
+     * denominator); the default `$sample = false` is the population
+     * variance (n denominator).
+     */
+    public static function variance(string $source, bool $sample = false): self
+    {
+        return new self(AggregateFunction::Variance, $source, true, sample: $sample);
+    }
+
+    /**
+     * STDDEV(source) over the subtree. Stored as `SQRT(variance)` of the
+     * companion-derived variance. Sample / population semantics mirror
+     * {@see variance()}.
+     */
+    public static function stddev(string $source, bool $sample = false): self
+    {
+        return new self(AggregateFunction::Stddev, $source, true, sample: $sample);
+    }
+
+    /**
      * COUNT(DISTINCT source) over the subtree — cardinality of values
      * in the named column across descendants (and self when inclusive).
      * Always recompute-only: a removed value might or might not still
@@ -131,13 +157,12 @@ final readonly class Aggregate
         }
 
         return new self(
-            AggregateFunction::StringAgg,
-            $source,
-            true,
-            null,
-            $separator,
-            $limit,
-            $orderBy ?? $source,
+            function: AggregateFunction::StringAgg,
+            source: $source,
+            inclusive: true,
+            separator: $separator,
+            limit: $limit,
+            orderBy: $orderBy ?? $source,
         );
     }
 
@@ -174,26 +199,22 @@ final readonly class Aggregate
             }
 
             return new self(
-                AggregateFunction::JsonAgg,
-                $source,
-                true,
-                null,
-                ', ',
-                $limit,
-                $orderBy ?? $source,
+                function: AggregateFunction::JsonAgg,
+                source: $source,
+                inclusive: true,
+                limit: $limit,
+                orderBy: $orderBy ?? $source,
             );
         }
 
         $sources = self::normaliseJsonAggSource($source);
 
         return new self(
-            AggregateFunction::JsonAgg,
-            null,
-            true,
-            null,
-            ', ',
-            $limit,
-            $orderBy,
+            function: AggregateFunction::JsonAgg,
+            source: null,
+            inclusive: true,
+            limit: $limit,
+            orderBy: $orderBy,
             sources: $sources,
         );
     }
@@ -233,17 +254,14 @@ final readonly class Aggregate
         }
 
         return new self(
-            AggregateFunction::JsonObjectAgg,
-            null,
-            true,
-            null,
-            ', ',
-            $limit,
-            $orderBy ?? $key,
-            false,
-            $allowNullKeys,
-            $key,
-            $value,
+            function: AggregateFunction::JsonObjectAgg,
+            source: null,
+            inclusive: true,
+            limit: $limit,
+            orderBy: $orderBy ?? $key,
+            allowNullKeys: $allowNullKeys,
+            keyColumn: $key,
+            valueColumn: $value,
         );
     }
 
@@ -273,18 +291,19 @@ final readonly class Aggregate
         }
 
         return new self(
-            $this->function,
-            $this->source,
-            $this->inclusive,
-            $this->filter,
-            $this->separator,
-            $this->limit,
-            $this->orderBy,
-            true,
-            $this->allowNullKeys,
-            $this->keyColumn,
-            $this->valueColumn,
-            $this->sources,
+            function: $this->function,
+            source: $this->source,
+            inclusive: $this->inclusive,
+            filter: $this->filter,
+            sample: $this->sample,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: true,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
         );
     }
 
@@ -311,18 +330,19 @@ final readonly class Aggregate
     private function withInclusive(bool $inclusive): self
     {
         return new self(
-            $this->function,
-            $this->source,
-            $inclusive,
-            $this->filter,
-            $this->separator,
-            $this->limit,
-            $this->orderBy,
-            $this->distinct,
-            $this->allowNullKeys,
-            $this->keyColumn,
-            $this->valueColumn,
-            $this->sources,
+            function: $this->function,
+            source: $this->source,
+            inclusive: $inclusive,
+            filter: $this->filter,
+            sample: $this->sample,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: $this->distinct,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
         );
     }
 
@@ -386,18 +406,19 @@ final readonly class Aggregate
     private function withFilter(FilterPredicate $filter): self
     {
         return new self(
-            $this->function,
-            $this->source,
-            $this->inclusive,
-            $filter,
-            $this->separator,
-            $this->limit,
-            $this->orderBy,
-            $this->distinct,
-            $this->allowNullKeys,
-            $this->keyColumn,
-            $this->valueColumn,
-            $this->sources,
+            function: $this->function,
+            source: $this->source,
+            inclusive: $this->inclusive,
+            filter: $filter,
+            sample: $this->sample,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: $this->distinct,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
         );
     }
 
@@ -454,6 +475,7 @@ final readonly class Aggregate
             source: $this->source,
             inclusive: $this->inclusive,
             filter: $this->filter,
+            sample: $this->sample,
             separator: $this->separator,
             limit: $this->limit,
             orderBy: $this->orderBy,

@@ -61,6 +61,41 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('tickets', $definition->source);
     }
 
+    public function test_variance_declaration_produces_a_variance_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'tickets_var', variance: 'tickets'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::Variance, $definition->function);
+        $this->assertSame('tickets', $definition->source);
+        $this->assertFalse($definition->sample, 'default is population variance');
+    }
+
+    public function test_stddev_declaration_with_sample_flag(): void
+    {
+        $definition = (new NestedSetAggregate(
+            column: 'tickets_std_samp',
+            stddev: 'tickets',
+            sample: true,
+        ))->toDefinition();
+
+        $this->assertSame(AggregateFunction::Stddev, $definition->function);
+        $this->assertSame('tickets', $definition->source);
+        $this->assertTrue($definition->sample);
+    }
+
+    public function test_sample_flag_is_rejected_on_non_variance_kinds(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('`sample: true` is only valid on variance/stddev');
+
+        (new NestedSetAggregate(
+            column: 'tickets_avg',
+            avg: 'tickets',
+            sample: true,
+        ))->toDefinition();
+    }
+
     public function test_exclusive_flag_propagates_to_definition(): void
     {
         $definition = (new NestedSetAggregate(

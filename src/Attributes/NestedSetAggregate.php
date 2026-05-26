@@ -23,9 +23,9 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *     #[NestedSetAggregate(column: 'tickets_max',   max: 'tickets')]
  *     class Area extends Model implements HasNestedSet { use NodeTrait; }
  *
- * Exactly one of `sum | count | avg | min | max | distinctCount |
- * stringAgg | jsonAgg | jsonObjectAgg` must be provided per attribute
- * instance; passing zero or more than one throws
+ * Exactly one of `sum | count | avg | min | max | variance | stddev |
+ * distinctCount | stringAgg | jsonAgg | jsonObjectAgg` must be provided
+ * per attribute instance; passing zero or more than one throws
  * {@see AggregateConfigurationException} when the registry resolves
  * declarations. `count: true` declares COUNT(*); for the
  * non-null-skipping COUNT(column) variant use the method-override form
@@ -56,7 +56,8 @@ final readonly class NestedSetAggregate
      * a `key` and `value` column name. `distinct: true` switches
      * `stringAgg` to its DISTINCT variant. `limit`, `orderBy`,
      * `separator`, `allowNullKeys` map onto the corresponding
-     * {@see Aggregate} factory args.
+     * {@see Aggregate} factory args. `sample: true` switches
+     * `variance` / `stddev` to the sample (`n − 1`) denominator.
      *
      * @param  array<string,mixed>|null  $filter
      * @param  list<string>  $filterRawWatches
@@ -71,6 +72,9 @@ final readonly class NestedSetAggregate
         public ?string $avg = null,
         public ?string $min = null,
         public ?string $max = null,
+        public ?string $variance = null,
+        public ?string $stddev = null,
+        public bool $sample = false,
         public ?string $distinctCount = null,
         public ?string $stringAgg = null,
         public string|array|null $jsonAgg = null,
@@ -107,7 +111,7 @@ final readonly class NestedSetAggregate
         if ($declared === []) {
             throw new AggregateConfigurationException(sprintf(
                 'NestedSetAggregate for column "%s": no aggregate function declared. '
-                .'Provide exactly one of sum, count, avg, min, max, distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
+                .'Provide exactly one of sum, count, avg, min, max, variance, stddev, distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
                 $this->column,
             ));
         }
@@ -122,6 +126,16 @@ final readonly class NestedSetAggregate
         }
 
         $function = array_key_first($declared);
+
+        // `sample` only carries meaning for variance/stddev. Reject it
+        // on other functions at registry-build time so a stray named
+        // argument doesn't silently mean nothing.
+        if ($this->sample && $function !== 'variance' && $function !== 'stddev') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": `sample: true` is only valid on variance/stddev declarations.',
+                $this->column,
+            ));
+        }
 
         return $this->buildDefinition($function);
     }
@@ -148,6 +162,12 @@ final readonly class NestedSetAggregate
         if ($this->max !== null) {
             $declared['max'] = $this->max;
         }
+        if ($this->variance !== null) {
+            $declared['variance'] = $this->variance;
+        }
+        if ($this->stddev !== null) {
+            $declared['stddev'] = $this->stddev;
+        }
         if ($this->distinctCount !== null) {
             $declared['distinctCount'] = $this->distinctCount;
         }
@@ -172,6 +192,8 @@ final readonly class NestedSetAggregate
             'avg' => $this->simpleDefinition(AggregateFunction::Avg, $this->avg),
             'min' => $this->simpleDefinition(AggregateFunction::Min, $this->min),
             'max' => $this->simpleDefinition(AggregateFunction::Max, $this->max),
+            'variance' => $this->varianceDefinition(AggregateFunction::Variance, $this->variance),
+            'stddev' => $this->varianceDefinition(AggregateFunction::Stddev, $this->stddev),
             'distinctCount' => $this->distinctCountDefinition(),
             'stringAgg' => $this->stringAggDefinition(),
             'jsonAgg' => $this->jsonAggDefinition(),
@@ -190,6 +212,18 @@ final readonly class NestedSetAggregate
             source: $source,
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
+        );
+    }
+
+    private function varianceDefinition(AggregateFunction $function, ?string $source): AggregateDefinition
+    {
+        return new AggregateDefinition(
+            column: $this->column,
+            function: $function,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            sample: $this->sample,
         );
     }
 

@@ -48,6 +48,7 @@ Every node carries its own subtree's rollup — `Computers` independently report
 - [Filtered Aggregates](filtered.html) — equality, not-null, and raw SQL filters
 - [Collection Aggregates](text-and-json.html) — distinctCount, stringAgg, jsonAgg, jsonObjectAgg
 - [Listener Aggregates](listeners.html) — PHP-computed contributions
+- [Variance & Stddev](maths.html) — statistical roll-ups, both population and sample
 - [Recipes](recipes.html) — common shapes
 - [Maintenance](maintenance.html) — what runs when, plus integrity tooling
 - [Drift & Limitations](drift.html) — when stored values can lag and how to mitigate

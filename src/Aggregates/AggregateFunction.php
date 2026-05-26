@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates;
 
 /**
- * Aggregate functions the package can maintain as precalculated columns.
- *
- * The first five — SUM/COUNT/AVG/MIN/MAX — are the SQL-standard numeric
- * roll-ups. The remaining four (DistinctCount / StringAgg / JsonAgg /
- * JsonObjectAgg) are collection-aggregate kinds (recompute-only) added by the
- * "more aggregate kinds" design: they all go through recompute on every
- * mutation, never the delta fast-path.
+ * Aggregate functions the package supports for precalculated columns.
  *
  * Backed by string so values appear human-readable in error messages,
  * logs, and debug dumps.
+ *
+ * Families:
+ *  - *delta-maintainable*: Sum, Count.
+ *  - *derived-from-companions*: Avg, Variance, Stddev — each declares a
+ *    {@see CompanionSpec} set that the registry auto-promotes into
+ *    delta-maintainable internal columns; the user-facing column is
+ *    written by a SQL formula over the companions.
+ *  - *recompute-only*: Min, Max, DistinctCount, StringAgg, JsonAgg,
+ *    JsonObjectAgg — no companions; each mutation re-reads the subtree.
  */
 enum AggregateFunction: string
 {
@@ -23,6 +26,8 @@ enum AggregateFunction: string
     case Avg = 'avg';
     case Min = 'min';
     case Max = 'max';
+    case Variance = 'variance';
+    case Stddev = 'stddev';
     case DistinctCount = 'distinct_count';
     case StringAgg = 'string_agg';
     case JsonAgg = 'json_agg';
@@ -38,7 +43,7 @@ enum AggregateFunction: string
     {
         return match ($this) {
             self::Sum, self::Count => true,
-            self::Avg, self::Min, self::Max,
+            self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg => false,
         };
@@ -54,7 +59,7 @@ enum AggregateFunction: string
     {
         return match ($this) {
             self::Sum, self::Count, self::DistinctCount => false,
-            self::Avg, self::Min, self::Max,
+            self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg => true,
         };
     }
@@ -62,12 +67,15 @@ enum AggregateFunction: string
     /**
      * Declares the delta-maintainable companion columns this function
      * needs in order to be maintainable. `Avg` is promoted to a
-     * `Sum + Count` companion pair; future maths aggregates declare
-     * their own sets here (e.g. variance → `Sum`, `SumSq`, `Count`).
+     * `Sum + Count` companion pair; `Variance` and `Stddev` add a
+     * `Sum(source * source)` "sum of squares" companion on top, so the
+     * textbook `E[X²] − E[X]²` form is available without re-reading the
+     * subtree on every mutation.
      *
      * Functions that are themselves delta-maintainable (`Sum`,
      * `Count`) or that route through full subtree recompute (`Min`,
-     * `Max`) declare no companions.
+     * `Max`, DistinctCount, StringAgg, JsonAgg, JsonObjectAgg) declare
+     * no companions.
      *
      * @return list<CompanionSpec>
      */
@@ -76,6 +84,11 @@ enum AggregateFunction: string
         return match ($this) {
             self::Avg => [
                 new CompanionSpec('__sum', self::Sum),
+                new CompanionSpec('__count', self::Count),
+            ],
+            self::Variance, self::Stddev => [
+                new CompanionSpec('__sum', self::Sum),
+                new CompanionSpec('__sum_sq', self::Sum, CompanionSourceTransform::Square),
                 new CompanionSpec('__count', self::Count),
             ],
             self::Sum, self::Count, self::Min, self::Max,

@@ -38,6 +38,8 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public bool $inclusive,
         public bool $internal = false,
         public ?FilterPredicate $filter = null,
+        public bool $sample = false,
+        public CompanionSourceTransform $sourceTransform = CompanionSourceTransform::Identity,
         public string $separator = ', ',
         public ?int $limit = null,
         public ?string $orderBy = null,
