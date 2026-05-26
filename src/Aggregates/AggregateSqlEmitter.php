@@ -523,6 +523,61 @@ final class AggregateSqlEmitter
     }
 
     /**
+     * MariaDB Median / Percentile shape. MariaDB has no LATERAL and walls
+     * off derived tables from the outer query's column scope, so the
+     * window-function shape used on MySQL / SQLite (see
+     * {@see emitQuantileWindowSubquery()}) is rejected with `Unknown
+     * column 'x.lft' in 'WHERE'`. This emitter uses flat correlated
+     * scalar subqueries — JSON_ARRAYAGG to materialise the sorted set,
+     * JSON_VALUE to pick the two interpolation points — wrapped in a
+     * bare `SELECT` that the caller turns into a scalar subquery.
+     *
+     * `$innerFromClause` and `$qualifier` have the same semantics as
+     * {@see emitQuantileWindowSubquery()}; `$filterSql` is optionally
+     * AND-ed into the inner WHERE alongside the NULL-source exclusion
+     * that matches PG `PERCENTILE_CONT` semantics (JSON_ARRAYAGG would
+     * otherwise emit `null` entries that pollute the ordering).
+     *
+     * The same correlated subquery shape is inlined four times for the
+     * count (coefficients + two indices) and twice for the array (one
+     * per interpolation point). MariaDB does not CSE these, so each
+     * fires once per outer row — acceptable for a fresh-read-only
+     * aggregate, documented here so future passes don't "optimise" it
+     * back into a derived table that wouldn't survive the LATERAL gap.
+     */
+    public static function emitQuantileJsonExpression(
+        AggregateDefinition $def,
+        string $innerFromClause,
+        string $qualifier = 'd.',
+        ?string $filterSql = null,
+    ): string {
+        $source = self::requireSource($def);
+        $p = number_format($def->percentilePoint, 10, '.', '');
+        $srcRef = $qualifier.$source;
+        $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
+        $notNullClause = " AND {$srcRef} IS NOT NULL";
+
+        $cnt = "(SELECT JSON_LENGTH(JSON_ARRAYAGG({$srcRef})) {$innerFromClause}{$notNullClause}{$filterClause})";
+        $arr = "(SELECT JSON_ARRAYAGG({$srcRef} ORDER BY {$srcRef}) {$innerFromClause}{$notNullClause}{$filterClause})";
+
+        $pos = "{$p} * ({$cnt} - 1)";
+        $valAt = static fn (string $idx): string => sprintf(
+            "CAST(JSON_VALUE(%s, CONCAT('$[', %s, ']')) AS DECIMAL(30, 10))",
+            $arr,
+            $idx,
+        );
+
+        // Equivalent to (1 - frac) * v_low + frac * v_high with
+        // frac = pos - FLOOR(pos), expanded so MariaDB sees pos in
+        // the same arithmetic form each side.
+        $formula =
+            "(1.0 - {$pos} + FLOOR({$pos})) * ".$valAt("FLOOR({$pos})")
+            ." + ({$pos} - FLOOR({$pos})) * ".$valAt("CEIL({$pos})");
+
+        return "SELECT {$formula}";
+    }
+
+    /**
      * For collection aggregates a NULL-source row produces "no contribution":
      * COUNT(DISTINCT NULL) = 0, STRING_AGG skips, JSON_AGG would normally
      * include null — but FILTER handles that on PG; on other backends we

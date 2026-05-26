@@ -705,6 +705,10 @@ final class TreeAggregateBuilder
 
         $innerFromClause = "FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
+        if (self::isMariaDb($connection)) {
+            return AggregateSqlEmitter::emitQuantileJsonExpression($definition, $innerFromClause, 'd.', $filterSql);
+        }
+
         return AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, 'd.', $filterSql);
     }
 
