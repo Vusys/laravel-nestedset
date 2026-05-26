@@ -81,6 +81,8 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame(['__sum', '__count'], [$andSet[0]->suffix, $andSet[1]->suffix]);
         $this->assertSame(AggregateFunction::Sum, $orSet[0]->function);
         $this->assertSame(AggregateFunction::Count, $orSet[1]->function);
+        $this->assertSame(AggregateFunction::Sum, $andSet[0]->function);
+        $this->assertSame(AggregateFunction::Count, $andSet[1]->function);
     }
 
     public function test_distinct_count_and_string_and_json_kinds_do_not_support_delta(): void
