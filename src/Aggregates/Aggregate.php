@@ -50,6 +50,7 @@ final readonly class Aggregate
         public ?string $keyColumn = null,
         public ?string $valueColumn = null,
         public array $sources = [],
+        public ?string $weight = null,
     ) {}
 
     /**
@@ -113,6 +114,84 @@ final readonly class Aggregate
     public static function stddev(string $source, bool $sample = false): self
     {
         return new self(AggregateFunction::Stddev, $source, true, sample: $sample);
+    }
+
+    /**
+     * Weighted average — `Σ(weight · value) / Σ(weight)` over the
+     * subtree. Stored as a derived value: the registry auto-promotes
+     * two companion sums (`__sum_wx` = `Sum(weight · value)`,
+     * `__sum_w` = `Sum(weight)`) and writes the display column from
+     * those on every mutation. NULL when the subtree's total weight
+     * is zero (matches the SQL convention for `0 / 0`).
+     *
+     * Both `$value` and `$weight` must be plain attribute names on the
+     * model — no expressions or computed values, since the delta path
+     * needs to read them directly. Rows where either column is NULL
+     * contribute nothing to either companion.
+     */
+    public static function weightedAvg(string $value, string $weight): self
+    {
+        if ($value === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::weightedAvg(): value column must not be empty.',
+            );
+        }
+
+        if ($weight === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::weightedAvg(): weight column must not be empty.',
+            );
+        }
+
+        if ($value === $weight) {
+            throw new AggregateConfigurationException(
+                'Aggregate::weightedAvg(): value and weight columns must differ — '
+                .'a column weighted by itself is just `Avg(column²) / Avg(column)`, '
+                .'which simplifies to `Avg(column)` only when the column is constant.',
+            );
+        }
+
+        return new self(AggregateFunction::WeightedAvg, $value, true, weight: $weight);
+    }
+
+    /**
+     * Boolean OR rollup — does ANY descendant (and self when inclusive)
+     * have a truthy value in `$source`? Stored as a boolean: TRUE when
+     * at least one contributing row is truthy, FALSE when none are,
+     * NULL when the subtree contributes no rows.
+     *
+     * Maintained by an auto-promoted `Sum(source AS INT)` + `Count`
+     * companion pair on every mutation, so a "did any descendant
+     * change to true / false?" check is a single delta UPDATE rather
+     * than a full subtree recompute.
+     */
+    public static function boolOr(string $source): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::boolOr(): source column must not be empty.',
+            );
+        }
+
+        return new self(AggregateFunction::BoolOr, $source, true);
+    }
+
+    /**
+     * Boolean AND rollup — do ALL descendants (and self when
+     * inclusive) have a truthy value in `$source`? TRUE when every
+     * contributing row is truthy, FALSE when at least one is falsy,
+     * NULL when the subtree contributes no rows. Same companion set
+     * and same delta path as {@see boolOr()}.
+     */
+    public static function boolAnd(string $source): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::boolAnd(): source column must not be empty.',
+            );
+        }
+
+        return new self(AggregateFunction::BoolAnd, $source, true);
     }
 
     /**
@@ -304,6 +383,7 @@ final readonly class Aggregate
             keyColumn: $this->keyColumn,
             valueColumn: $this->valueColumn,
             sources: $this->sources,
+            weight: $this->weight,
         );
     }
 
@@ -343,6 +423,7 @@ final readonly class Aggregate
             keyColumn: $this->keyColumn,
             valueColumn: $this->valueColumn,
             sources: $this->sources,
+            weight: $this->weight,
         );
     }
 
@@ -419,6 +500,7 @@ final readonly class Aggregate
             keyColumn: $this->keyColumn,
             valueColumn: $this->valueColumn,
             sources: $this->sources,
+            weight: $this->weight,
         );
     }
 
@@ -484,6 +566,7 @@ final readonly class Aggregate
             keyColumn: $this->keyColumn,
             valueColumn: $this->valueColumn,
             sources: $this->sources,
+            weight: $this->weight,
         );
     }
 

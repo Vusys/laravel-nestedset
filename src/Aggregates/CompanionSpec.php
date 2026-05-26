@@ -27,10 +27,18 @@ namespace Vusys\NestedSet\Aggregates;
  */
 final readonly class CompanionSpec
 {
+    /**
+     * @param  CompanionSourceOrigin  $sourceOrigin  Which column on the parent aggregate's
+     *                                               declaration this companion draws its source
+     *                                               from. Defaults to the parent's primary source
+     *                                               column; weighted average's `Sum(weight)`
+     *                                               companion overrides to {@see CompanionSourceOrigin::ParentWeight}.
+     */
     public function __construct(
         public string $suffix,
         public AggregateFunction $function,
         public CompanionSourceTransform $sourceTransform = CompanionSourceTransform::Identity,
+        public CompanionSourceOrigin $sourceOrigin = CompanionSourceOrigin::ParentSource,
     ) {}
 
     /**

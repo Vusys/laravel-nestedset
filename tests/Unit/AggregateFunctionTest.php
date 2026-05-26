@@ -9,9 +9,9 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_eleven_cases(): void
+    public function test_has_exactly_fourteen_cases(): void
     {
-        $this->assertCount(11, AggregateFunction::cases());
+        $this->assertCount(14, AggregateFunction::cases());
     }
 
     public function test_each_case_is_backed_by_its_string_name(): void
@@ -23,6 +23,9 @@ final class AggregateFunctionTest extends TestCase
         $this->assertSame('max', AggregateFunction::Max->value);
         $this->assertSame('variance', AggregateFunction::Variance->value);
         $this->assertSame('stddev', AggregateFunction::Stddev->value);
+        $this->assertSame('weighted_avg', AggregateFunction::WeightedAvg->value);
+        $this->assertSame('bool_or', AggregateFunction::BoolOr->value);
+        $this->assertSame('bool_and', AggregateFunction::BoolAnd->value);
         $this->assertSame('distinct_count', AggregateFunction::DistinctCount->value);
         $this->assertSame('string_agg', AggregateFunction::StringAgg->value);
         $this->assertSame('json_agg', AggregateFunction::JsonAgg->value);
@@ -42,6 +45,44 @@ final class AggregateFunctionTest extends TestCase
         $this->assertFalse(AggregateFunction::Max->supportsDelta());
         $this->assertFalse(AggregateFunction::Variance->supportsDelta());
         $this->assertFalse(AggregateFunction::Stddev->supportsDelta());
+    }
+
+    public function test_weighted_avg_and_bool_kinds_do_not_support_delta(): void
+    {
+        $this->assertFalse(AggregateFunction::WeightedAvg->supportsDelta());
+        $this->assertFalse(AggregateFunction::BoolOr->supportsDelta());
+        $this->assertFalse(AggregateFunction::BoolAnd->supportsDelta());
+    }
+
+    public function test_weighted_avg_and_bool_kinds_are_nullable_on_empty(): void
+    {
+        $this->assertTrue(AggregateFunction::WeightedAvg->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::BoolOr->nullableOnEmpty());
+        $this->assertTrue(AggregateFunction::BoolAnd->nullableOnEmpty());
+    }
+
+    public function test_weighted_avg_declares_sum_wx_and_sum_w_companions(): void
+    {
+        $companions = AggregateFunction::WeightedAvg->companionSet();
+
+        $this->assertCount(2, $companions);
+        $this->assertSame('__sum_wx', $companions[0]->suffix);
+        $this->assertSame(AggregateFunction::Sum, $companions[0]->function);
+        $this->assertSame('__sum_w', $companions[1]->suffix);
+        $this->assertSame(AggregateFunction::Sum, $companions[1]->function);
+    }
+
+    public function test_bool_or_and_bool_and_share_the_same_companion_shape(): void
+    {
+        $orSet = AggregateFunction::BoolOr->companionSet();
+        $andSet = AggregateFunction::BoolAnd->companionSet();
+
+        $this->assertSame(['__sum', '__count'], [$orSet[0]->suffix, $orSet[1]->suffix]);
+        $this->assertSame(['__sum', '__count'], [$andSet[0]->suffix, $andSet[1]->suffix]);
+        $this->assertSame(AggregateFunction::Sum, $orSet[0]->function);
+        $this->assertSame(AggregateFunction::Count, $orSet[1]->function);
+        $this->assertSame(AggregateFunction::Sum, $andSet[0]->function);
+        $this->assertSame(AggregateFunction::Count, $andSet[1]->function);
     }
 
     public function test_distinct_count_and_string_and_json_kinds_do_not_support_delta(): void
