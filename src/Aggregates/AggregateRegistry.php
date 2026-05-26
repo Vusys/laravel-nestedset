@@ -686,8 +686,8 @@ final class AggregateRegistry
                         inclusive: $definition->inclusive,
                         internal: true,
                         filter: $definition->filter,
-                        weight: $spec->sourceTransform->requiresWeight() ? $definition->weight : null,
                         sourceTransform: $spec->sourceTransform,
+                        weight: $spec->sourceTransform->requiresWeight() ? $definition->weight : null,
                     );
                 }
 
