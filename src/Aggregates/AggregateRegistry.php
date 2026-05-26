@@ -535,7 +535,7 @@ final class AggregateRegistry
                     $sumCompanionColumn = $companion->column;
                 }
                 if ($companion->function === AggregateFunction::Count
-                    && $companion->sourceTransform === CompanionSourceTransform::Identity
+                    && $companion->sourceTransform === $companionTransform
                     && str_starts_with($companion->column, $definition->column.'__')
                     && $countColumn === null) {
                     $countColumn = $companion->column;

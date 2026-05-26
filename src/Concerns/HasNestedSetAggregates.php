@@ -14,6 +14,7 @@ use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
@@ -285,13 +286,16 @@ trait HasNestedSetAggregates
      */
     public function captureAggregateDeltas(): void
     {
+        // Constraint check runs for both inserts (exists=false) and
+        // updates (exists=true) so it fires before the row is persisted.
+        // Validate even when maintenance is deferred — otherwise
+        // withDeferredAggregateMaintenance() would let geom/harm-mean
+        // source-domain violations land in the database silently.
+        $this->validateAggregateSourceConstraints();
+
         if (self::$deferredDepth > 0) {
             return;
         }
-
-        // Constraint check runs for both inserts (exists=false) and
-        // updates (exists=true) so it fires before the row is persisted.
-        $this->validateAggregateSourceConstraints();
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
@@ -397,9 +401,22 @@ trait HasNestedSetAggregates
             if ($definition->function === AggregateFunction::Count) {
                 if ($source === null) {
                     $delta = ($newPred ? 1 : 0) - ($oldPred ? 1 : 0);
-                } else {
+                } elseif ($definition->sourceTransform === CompanionSourceTransform::Identity) {
                     $newContrib = ($newPred && ($this->getAttribute($source) !== null)) ? 1 : 0;
                     $oldContrib = ($oldPred && ($this->getOriginal($source) !== null)) ? 1 : 0;
+                    $delta = $newContrib - $oldContrib;
+                } else {
+                    // Non-Identity transform on a Count companion (today:
+                    // Ln for GeometricMean, Recip for HarmonicMean) — count
+                    // only rows whose transformed value would land in the
+                    // sibling Sum companion. applyPhp returns 0 for rows
+                    // the transform skips (LN of ≤ 0, 1/0), so equating
+                    // against zero is the right "did this row contribute"
+                    // test.
+                    $newTransformed = $definition->sourceTransform->applyPhp($this->getAttribute($source));
+                    $oldTransformed = $definition->sourceTransform->applyPhp($this->getOriginal($source));
+                    $newContrib = ($newPred && $newTransformed != 0) ? 1 : 0;
+                    $oldContrib = ($oldPred && $oldTransformed != 0) ? 1 : 0;
                     $delta = $newContrib - $oldContrib;
                 }
 

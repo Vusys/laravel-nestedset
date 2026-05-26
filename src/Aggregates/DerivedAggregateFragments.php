@@ -173,10 +173,13 @@ final class DerivedAggregateFragments
     {
         if ($filterSql !== null) {
             $recipExpr = "CASE WHEN ({$filterSql}) AND {$sourceRef} <> 0 THEN (1.0 / {$sourceRef}) ELSE NULL END";
-            $countExpr = "COUNT(CASE WHEN ({$filterSql}) THEN 1 ELSE NULL END)";
+            // Gate the count on the same predicate as the numerator —
+            // zero-valued rows contribute NULL to recipExpr, so they
+            // must also be excluded from the denominator.
+            $countExpr = "COUNT(CASE WHEN ({$filterSql}) AND {$sourceRef} <> 0 THEN 1 ELSE NULL END)";
         } else {
             $recipExpr = "(1.0 / NULLIF({$sourceRef}, 0))";
-            $countExpr = "COUNT({$sourceRef})";
+            $countExpr = "COUNT(NULLIF({$sourceRef}, 0))";
         }
 
         return "NULLIF({$countExpr}, 0) / NULLIF(SUM({$recipExpr}), 0)";

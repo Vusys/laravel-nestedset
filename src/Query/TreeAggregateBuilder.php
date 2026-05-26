@@ -2096,11 +2096,13 @@ final class TreeAggregateBuilder
                     $previousInclusive = $prevCountPos > 0 ? exp($prevSumLog / $prevCountPos) : null;
                 } elseif ($definition->function === AggregateFunction::HarmonicMean) {
                     $numericSource = is_numeric($sourceValue) ? (float) $sourceValue : null;
-                    if ($numericSource !== null) {
+                    if ($numericSource !== null && $numericSource !== 0.0) {
+                        // Zero-valued rows skip the reciprocal — they must
+                        // also skip the count, or the n / Σ(1/x) formula
+                        // uses too large an N and the harmonic mean comes
+                        // out too small.
                         $currentCountNonNull = $prevCountNonNull + 1;
-                        if ($numericSource !== 0.0) {
-                            $currentSumRecip = $prevSumRecip + (1.0 / $numericSource);
-                        }
+                        $currentSumRecip = $prevSumRecip + (1.0 / $numericSource);
                     }
                     $currentInclusive = ($currentCountNonNull > 0 && $currentSumRecip !== 0.0)
                         ? $currentCountNonNull / $currentSumRecip

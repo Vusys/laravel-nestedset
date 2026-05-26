@@ -364,33 +364,36 @@ final class NestedSetServiceProvider extends ServiceProvider
         return array_map(
             static fn (CompanionSpec $spec): array => [
                 'column' => $spec->columnFor($column),
-                'type' => match ($spec->sourceTransform) {
-                    // Variance / Stddev's squared-sum companion needs
-                    // a wider DECIMAL — see {@see self::AGGREGATE_TYPE_SUM_SQ}.
-                    CompanionSourceTransform::Square => self::AGGREGATE_TYPE_SUM_SQ,
-                    // WeightedAvg's `Σ(weight·value)` companion sums
-                    // products of decimal columns; needs DECIMAL storage
-                    // or PG rejects writes with `invalid input syntax
-                    // for type bigint`. Also covers the sibling
-                    // `Σ(weight)` companion below — its source is the
-                    // parent's weight column (decimal), so its sum is
-                    // decimal too.
-                    CompanionSourceTransform::TimesWeight => self::AGGREGATE_TYPE_DECIMAL_SUM,
-                    // The Identity-transformed companion of a WeightedAvg
-                    // parent is `Σ(weight)` — also needs decimal storage.
-                    // Distinguish by the parent's function via the spec's
-                    // sourceOrigin (ParentWeight only appears on WeightedAvg).
-                    CompanionSourceTransform::Identity => $spec->sourceOrigin === CompanionSourceOrigin::ParentWeight
-                        ? self::AGGREGATE_TYPE_DECIMAL_SUM
-                        : self::AGGREGATE_TYPE_SUM_COUNT,
-                    CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
-                    // GeometricMean's `Σ(LN(source))` and HarmonicMean's
-                    // `Σ(1/source)` hold irrational sums that need wider
-                    // DECIMAL(30,10) storage; the count companion (Identity
-                    // transform above) keeps the sum_count layout.
-                    CompanionSourceTransform::Ln,
-                    CompanionSourceTransform::Recip => self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
-                },
+                // Count companions are always row tallies regardless of
+                // transform — keep them in the bigint sum_count shape.
+                'type' => $spec->function === AggregateFunction::Count
+                    ? self::AGGREGATE_TYPE_SUM_COUNT
+                    : match ($spec->sourceTransform) {
+                        // Variance / Stddev's squared-sum companion needs
+                        // a wider DECIMAL — see {@see self::AGGREGATE_TYPE_SUM_SQ}.
+                        CompanionSourceTransform::Square => self::AGGREGATE_TYPE_SUM_SQ,
+                        // WeightedAvg's `Σ(weight·value)` companion sums
+                        // products of decimal columns; needs DECIMAL storage
+                        // or PG rejects writes with `invalid input syntax
+                        // for type bigint`. Also covers the sibling
+                        // `Σ(weight)` companion below — its source is the
+                        // parent's weight column (decimal), so its sum is
+                        // decimal too.
+                        CompanionSourceTransform::TimesWeight => self::AGGREGATE_TYPE_DECIMAL_SUM,
+                        // The Identity-transformed companion of a WeightedAvg
+                        // parent is `Σ(weight)` — also needs decimal storage.
+                        // Distinguish by the parent's function via the spec's
+                        // sourceOrigin (ParentWeight only appears on WeightedAvg).
+                        CompanionSourceTransform::Identity => $spec->sourceOrigin === CompanionSourceOrigin::ParentWeight
+                            ? self::AGGREGATE_TYPE_DECIMAL_SUM
+                            : self::AGGREGATE_TYPE_SUM_COUNT,
+                        CompanionSourceTransform::AsInt => self::AGGREGATE_TYPE_SUM_COUNT,
+                        // GeometricMean's `Σ(LN(source))` and HarmonicMean's
+                        // `Σ(1/source)` hold irrational sums that need wider
+                        // DECIMAL(30,10) storage.
+                        CompanionSourceTransform::Ln,
+                        CompanionSourceTransform::Recip => self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
+                    },
             ],
             $function->companionSet(),
         );

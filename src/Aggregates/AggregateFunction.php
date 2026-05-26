@@ -116,11 +116,18 @@ enum AggregateFunction: string
             ],
             self::GeometricMean => [
                 new CompanionSpec('__sum_log', self::Sum, CompanionSourceTransform::Ln),
-                new CompanionSpec('__count', self::Count),
+                // Count companion also carries the Ln transform so it
+                // counts only positive rows — matches the sum's domain so
+                // the EXP(sum_log / count) formula uses the right N when
+                // allowNonPositive() lets non-positive rows reach storage.
+                new CompanionSpec('__count', self::Count, CompanionSourceTransform::Ln),
             ],
             self::HarmonicMean => [
                 new CompanionSpec('__sum_recip', self::Sum, CompanionSourceTransform::Recip),
-                new CompanionSpec('__count', self::Count),
+                // Count companion also carries the Recip transform so it
+                // counts only non-zero rows — matches the sum's domain so
+                // the count / sum_recip formula uses the right N.
+                new CompanionSpec('__count', self::Count, CompanionSourceTransform::Recip),
             ],
             self::Sum, self::Count, self::Min, self::Max,
             self::DistinctCount, self::StringAgg,

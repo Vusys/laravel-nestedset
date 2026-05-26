@@ -19,13 +19,13 @@ use Vusys\NestedSet\NodeTrait;
  *
  * @property int $id
  * @property string $name
- * @property float|null $value
+ * @property string|null $value
  * @property int $lft
  * @property int $rgt
  * @property int $depth
  * @property int|null $parent_id
- * @property float|null $value_gmean
- * @property float|null $value_hmean
+ * @property string|null $value_gmean
+ * @property string|null $value_hmean
  * @property-read Collection<int, MeanArea> $children
  * @property-read MeanArea|null $parent
  */
