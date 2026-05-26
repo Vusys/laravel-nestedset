@@ -497,6 +497,16 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
+            // Variance / Stddev have no listener-side implementation.
+            // Reject early — the update path's final else-branch would
+            // otherwise misroute these into the Min recompute path.
+            if ($op === AggregateFunction::Variance || $op === AggregateFunction::Stddev) {
+                throw new \LogicException(
+                    'Variance / Stddev are not supported for listener aggregates. '
+                    .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
+                );
+            }
+
             // AVG listener defs maintain themselves through their
             // auto-promoted Sum + Count companions (separate
             // ListenerAggregateDefinition entries the registry
@@ -917,6 +927,19 @@ trait HasNestedSetAggregates
             }
 
             $op = $definition->operation;
+
+            // Variance / Stddev have no listener-side implementation
+            // (the SQL path derives them from companion sums; the
+            // listener path would need n-pass accumulation we don't
+            // model). Fail loudly at the create entry point so a
+            // misconfigured listener does not fall through to the
+            // Min/Max branch below.
+            if ($op === AggregateFunction::Variance || $op === AggregateFunction::Stddev) {
+                throw new \LogicException(
+                    'Variance / Stddev are not supported for listener aggregates. '
+                    .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
+                );
+            }
 
             // AVG listener: maintained by auto-promoted Sum + Count
             // companions, which iterate this loop as separate
