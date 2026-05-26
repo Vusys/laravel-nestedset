@@ -115,7 +115,8 @@ final readonly class NestedSetAggregate
         if ($declared === []) {
             throw new AggregateConfigurationException(sprintf(
                 'NestedSetAggregate for column "%s": no aggregate function declared. '
-                .'Provide exactly one of sum, count, avg, min, max, variance, stddev, distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
+                .'Provide exactly one of sum, count, avg, min, max, variance, stddev, '
+                .'weightedAvg, boolOr, boolAnd, distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
                 $this->column,
             ));
         }

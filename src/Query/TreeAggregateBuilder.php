@@ -2040,9 +2040,16 @@ final class TreeAggregateBuilder
                     // transformed companion folds the wrong value and
                     // fixAggregates() would overwrite the correct
                     // stored companion with the wrong value.
-                    $foldValue = is_numeric($sourceValue)
-                        ? $definition->sourceTransform->applyPhp((float) $sourceValue)
-                        : $sourceValue;
+                    $weightValue = $definition->sourceTransform->requiresWeight()
+                        && $definition->weight !== null && $definition->weight !== ''
+                        ? ($row[$definition->weight] ?? null)
+                        : null;
+                    $foldValue = $definition->sourceTransform === CompanionSourceTransform::Identity
+                        ? $sourceValue
+                        : $definition->sourceTransform->applyPhp(
+                            $sourceValue,
+                            is_numeric($weightValue) ? (float) $weightValue : null,
+                        );
                     $currentInclusive = self::chainFoldStep($definition, $foldValue, $prevInclusive);
                     $previousInclusive = $prevInclusive;
                 }
@@ -2113,11 +2120,17 @@ final class TreeAggregateBuilder
             AggregateFunction::Avg => $sum / $count,
             AggregateFunction::Variance => self::computeVarianceFromCompanions($sum, $sumSq, $count, $definition->sample),
             AggregateFunction::Stddev => self::computeStddevFromCompanions($sum, $sumSq, $count, $definition->sample),
-            // chainFoldStep handles the non-companion-derived kinds.
+            // chainFoldStep handles the non-companion-derived kinds,
+            // and WeightedAvg / BoolOr / BoolAnd have their own
+            // dedicated branches in the chain fold (their accumulators
+            // can't be reduced to the Sum/SumSq/Count triple here).
             AggregateFunction::Sum,
             AggregateFunction::Count,
             AggregateFunction::Min,
             AggregateFunction::Max,
+            AggregateFunction::WeightedAvg,
+            AggregateFunction::BoolOr,
+            AggregateFunction::BoolAnd,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,

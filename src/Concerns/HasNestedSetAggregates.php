@@ -306,10 +306,7 @@ trait HasNestedSetAggregates
             // per-function subtree-contribution composition; recompute
             // is uniform across functions.
             if (! $definition->inclusive) {
-                $watchCols = array_unique(array_merge(
-                    $definition->source !== null ? [$definition->source] : [],
-                    $definition->filter?->watchColumns() ?? [],
-                ));
+                $watchCols = self::triggerColumnsFor($definition);
                 if ($watchCols !== [] && $this->isDirty($watchCols)) {
                     $this->capturedChainRecomputes[$definition->column] = $definition;
                 }
@@ -322,10 +319,7 @@ trait HasNestedSetAggregates
             // instead — kicked off in applyAggregateDeltas() alongside
             // the other captured maintenance work.
             if ($definition->filter?->getKind() === FilterPredicateKind::Raw) {
-                $watchCols = array_unique(array_merge(
-                    $definition->source !== null ? [$definition->source] : [],
-                    $definition->filter->watchColumns(),
-                ));
+                $watchCols = self::triggerColumnsFor($definition);
                 if ($watchCols !== [] && $this->isDirty($watchCols)) {
                     $this->capturedChainRecomputes[$definition->column] = $definition;
                 }
@@ -352,14 +346,7 @@ trait HasNestedSetAggregates
             // column too. Without the weight trigger, a row whose value
             // is unchanged but whose weight changed would miss the
             // delta capture and leave `Σ(w · x)` stale.
-            $watchCols = $definition->filter?->watchColumns() ?? [];
-            $triggerCols = array_unique(array_merge(
-                $definition->source !== null ? [$definition->source] : [],
-                $definition->sourceTransform->requiresWeight() && $definition->weight !== null
-                    ? [$definition->weight]
-                    : [],
-                $watchCols,
-            ));
+            $triggerCols = self::triggerColumnsFor($definition);
             // Skip if nothing relevant is dirty.
             if ($triggerCols === []) {
                 continue;
@@ -779,6 +766,27 @@ trait HasNestedSetAggregates
     }
 
     /**
+     * Columns whose dirty state should trigger aggregate maintenance
+     * for $definition. Includes the source column, the filter's watch
+     * columns, and (when the source transform consumes a weight) the
+     * weight column too — without the weight trigger, a row whose
+     * value is unchanged but whose weight changed would skip the
+     * delta capture and leave `Σ(w · x)` stale.
+     *
+     * @return list<string>
+     */
+    private static function triggerColumnsFor(AggregateDefinition $definition): array
+    {
+        return array_values(array_unique(array_merge(
+            $definition->source !== null ? [$definition->source] : [],
+            $definition->sourceTransform->requiresWeight() && $definition->weight !== null
+                ? [$definition->weight]
+                : [],
+            $definition->filter?->watchColumns() ?? [],
+        )));
+    }
+
+    /**
      * @return 'always'|'auto'|'never'
      */
     private static function aggregateLockingMode(): string
@@ -1093,8 +1101,11 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                $value = self::numeric($this->getAttribute($definition->column));
-                if ($value !== 0) {
+                // Preserve numeric type — Sum companions of WeightedAvg
+                // hold decimal sums; numeric() would int-truncate them
+                // and the subtracted delta would lose the fraction.
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                if ($value != 0) {
                     $deltas[$definition->column] = -$value;
                 }
 
@@ -1426,8 +1437,10 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                $value = self::numeric($this->getAttribute($definition->column));
-                if ($value !== 0) {
+                // Preserve numeric type — see captureSubtreeContribution()
+                // for why decimal WeightedAvg companions need this.
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                if ($value != 0) {
                     $sumCount[$definition->column] = $value;
                 }
 
@@ -1658,8 +1671,10 @@ trait HasNestedSetAggregates
 
             if ($definition->function === AggregateFunction::Sum
                 || $definition->function === AggregateFunction::Count) {
-                $value = self::numeric($this->getAttribute($definition->column));
-                if ($value !== 0) {
+                // Preserve numeric type — decimal Sum companions of
+                // WeightedAvg would lose their fraction under numeric().
+                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
 

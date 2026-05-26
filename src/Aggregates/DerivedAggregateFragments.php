@@ -116,7 +116,11 @@ final class DerivedAggregateFragments
 
         if ($filterSql !== null) {
             $sumExpr = "SUM(CASE WHEN {$filterSql} THEN {$asInt} ELSE 0 END)";
-            $countExpr = "COUNT(CASE WHEN {$filterSql} THEN 1 ELSE NULL END)";
+            // Also gate on source non-null so the filtered count matches
+            // the unfiltered `COUNT($sourceRef)` semantics — rows whose
+            // boolean source is NULL should not contribute to the count,
+            // regardless of the filter outcome.
+            $countExpr = "COUNT(CASE WHEN {$filterSql} AND {$sourceRef} IS NOT NULL THEN 1 ELSE NULL END)";
         } else {
             $sumExpr = "SUM({$asInt})";
             $countExpr = sprintf('COUNT(%s)', $sourceRef);

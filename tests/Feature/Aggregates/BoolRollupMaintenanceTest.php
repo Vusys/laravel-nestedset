@@ -147,7 +147,7 @@ final class BoolRollupMaintenanceTest extends TestCase
             $previous = $node;
         }
 
-        $errors = FlagArea::countErrors();
+        $errors = FlagArea::aggregateErrors();
         $this->assertSame(0, array_sum($errors), 'aggregateErrors() flagged drift on a clean chain: '.json_encode($errors));
     }
 }
