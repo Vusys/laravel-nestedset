@@ -36,7 +36,7 @@ $table->nestedSetAggregate('price_variance', type: 'variance');
 $table->nestedSetAggregate('price_stddev',   type: 'stddev');
 ```
 
-`type: 'variance'` and `type: 'stddev'` are identical in storage shape — both produce a nullable decimal display column and three signed `bigint` companions. The macro picks the type name purely so migrations stay self-documenting.
+`type: 'variance'` and `type: 'stddev'` are identical in storage shape — both produce a nullable decimal display column and three internal companions: `__sum` and `__count` as signed `bigint`, and `__sum_sq` as `decimal(38, 0)` (the sum-of-squares grows quadratically with subtree size and needs the wider range). The macro picks the type name purely so migrations stay self-documenting.
 
 If you want the variance and the stddev over the same source, declare both as separate `nestedSetAggregate(...)` calls. Each declaration owns its own companion triple — there's no implicit sharing across declarations.
 
