@@ -181,11 +181,17 @@ final class NestedSetServiceProvider extends ServiceProvider
             // AVG / VARIANCE / STDDEV — nullable decimal. Null indicates
             // "no rows contributed" (empty subtree under exclusive
             // semantics, or after every descendant has been deleted).
-            // The wider 18,6 shape on the maths kinds accommodates the
-            // higher arithmetic range of sum-of-squares-derived
-            // intermediates without losing the four post-decimal digits
-            // most domain values (prices, ratings, durations) expect.
-            $precision = $type === self::AGGREGATE_TYPE_AVG ? 12 : 18;
+            // Variance and stddev share the much wider 30,6 shape:
+            // variance scales as the square of source magnitudes, so a
+            // sensor column around 10^6 yields ~10^12 variance, and
+            // a currency column around 10^9 yields ~10^18. The 18,6
+            // shape used previously overflowed on those workloads;
+            // 30,6 leaves 24 integer digits — enough for the SumSq
+            // companion's DECIMAL(38, 0) range to be carried through
+            // the derived display value. Stddev = sqrt(variance) fits
+            // easily inside the same shape; matching variance keeps
+            // both columns at one ALTER cost.
+            $precision = $type === self::AGGREGATE_TYPE_AVG ? 12 : 30;
             $scale = $type === self::AGGREGATE_TYPE_AVG ? 4 : 6;
             $table->decimal($column, $precision, $scale)->nullable();
 
