@@ -159,7 +159,7 @@ final class ChainFoldAccumulator
 
         return match ($this->definition->function) {
             AggregateFunction::Avg => $this->sum / $this->count,
-            AggregateFunction::Variance => self::computeVariance($this->sum, $this->sumSq, $this->count, $this->definition->sample),
+            AggregateFunction::Variance => $this->computeVariance($this->sum, $this->sumSq, $this->count, $this->definition->sample),
             AggregateFunction::Stddev => $this->computeStddev($this->sum, $this->sumSq, $this->count, $this->definition->sample),
             default => throw new \LogicException(
                 'deriveCompanionDisplay called with non-companion-derived function '.$this->definition->function->value,
@@ -318,7 +318,7 @@ final class ChainFoldAccumulator
         }
     }
 
-    private static function computeVariance(float $sum, float $sumSq, int $count, bool $sample): ?float
+    private function computeVariance(float $sum, float $sumSq, int $count, bool $sample): ?float
     {
         if ($sample && $count < 2) {
             return null;
@@ -334,7 +334,7 @@ final class ChainFoldAccumulator
 
     private function computeStddev(float $sum, float $sumSq, int $count, bool $sample): ?float
     {
-        $variance = self::computeVariance($sum, $sumSq, $count, $sample);
+        $variance = $this->computeVariance($sum, $sumSq, $count, $sample);
         if ($variance === null) {
             return null;
         }

@@ -157,17 +157,22 @@ final class AggregateRegistry
                 // Inclusivity must match too — an inclusive AVG that
                 // silently adopts an exclusive Sum (or vice versa)
                 // reads a different row set than its count companion
-                // and produces drift the user can't see.
+                // and produces drift the user can't see. Identity
+                // transform is required too, otherwise a WeightedAvg's
+                // TimesWeight companion (same source, same Sum function)
+                // could be silently adopted as the AVG's numerator.
                 $companions = $bySource[$definition->source] ?? [];
                 $sumColumn = self::findFirstCompanion(
                     $companions,
                     $definition,
-                    static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum,
+                    static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                        && $c->sourceTransform === CompanionSourceTransform::Identity,
                 )?->column;
                 $countColumn = self::findFirstCompanion(
                     $companions,
                     $definition,
-                    static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Count,
+                    static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Count
+                        && $c->sourceTransform === CompanionSourceTransform::Identity,
                 )?->column;
 
                 if ($sumColumn !== null && $countColumn !== null) {
@@ -332,11 +337,17 @@ final class AggregateRegistry
                 continue;
             }
 
+            // Weight column must match too — two WeightedAvg declarations
+            // over the same source with different weight columns each
+            // produce their own TimesWeight Sum companion, and adopting
+            // the wrong one would silently feed the AVG-of-products the
+            // wrong weights.
             $sumWxColumn = self::findFirstCompanion(
                 $bySource[$definition->source] ?? [],
                 $definition,
                 static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
-                    && $c->sourceTransform === CompanionSourceTransform::TimesWeight,
+                    && $c->sourceTransform === CompanionSourceTransform::TimesWeight
+                    && $c->weight === $definition->weight,
             )?->column;
             $sumWColumn = self::findFirstCompanion(
                 $bySource[$definition->weight] ?? [],
