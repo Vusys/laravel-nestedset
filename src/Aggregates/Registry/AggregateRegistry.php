@@ -154,28 +154,26 @@ final class AggregateRegistry
                     continue;
                 }
 
+                // Inclusivity must match too — an inclusive AVG that
+                // silently adopts an exclusive Sum (or vice versa)
+                // reads a different row set than its count companion
+                // and produces drift the user can't see. Identity
+                // transform is required too, otherwise a WeightedAvg's
+                // TimesWeight companion (same source, same Sum function)
+                // could be silently adopted as the AVG's numerator.
                 $companions = $bySource[$definition->source] ?? [];
-                $sumColumn = null;
-                $countColumn = null;
-
-                foreach ($companions as $companion) {
-                    if (! self::filtersMatch($companion->filter, $definition->filter)) {
-                        continue;
-                    }
-                    // Inclusivity must match too — an inclusive AVG that
-                    // silently adopts an exclusive Sum (or vice versa)
-                    // reads a different row set than its count companion
-                    // and produces drift the user can't see.
-                    if ($companion->inclusive !== $definition->inclusive) {
-                        continue;
-                    }
-                    if ($companion->function === AggregateFunction::Sum && $sumColumn === null) {
-                        $sumColumn = $companion->column;
-                    }
-                    if ($companion->function === AggregateFunction::Count && $countColumn === null) {
-                        $countColumn = $companion->column;
-                    }
-                }
+                $sumColumn = self::findFirstCompanion(
+                    $companions,
+                    $definition,
+                    static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                        && $c->sourceTransform === CompanionSourceTransform::Identity,
+                )?->column;
+                $countColumn = self::findFirstCompanion(
+                    $companions,
+                    $definition,
+                    static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Count
+                        && $c->sourceTransform === CompanionSourceTransform::Identity,
+                )?->column;
 
                 if ($sumColumn !== null && $countColumn !== null) {
                     $result[$definition->column] = ['sum' => $sumColumn, 'count' => $countColumn];
@@ -272,29 +270,24 @@ final class AggregateRegistry
             // Stddev's companion requirement with a hand-declared
             // Sum / Count that happens to compute the same value.
             // Order-sensitive: takes the first compatible match.
-            foreach ($candidates as $candidate) {
-                if (! self::filtersMatch($candidate->filter, $definition->filter)) {
-                    continue;
-                }
-                if ($candidate->inclusive !== $definition->inclusive) {
-                    continue;
-                }
-                if ($candidate->function === AggregateFunction::Sum
-                    && $candidate->sourceTransform === CompanionSourceTransform::Identity
-                    && $sumColumn === null) {
-                    $sumColumn = $candidate->column;
-                }
-                if ($candidate->function === AggregateFunction::Sum
-                    && $candidate->sourceTransform === CompanionSourceTransform::Square
-                    && $sumSqColumn === null) {
-                    $sumSqColumn = $candidate->column;
-                }
-                if ($candidate->function === AggregateFunction::Count
-                    && $candidate->sourceTransform === CompanionSourceTransform::Identity
-                    && $countColumn === null) {
-                    $countColumn = $candidate->column;
-                }
-            }
+            $sumColumn ??= self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                    && $c->sourceTransform === CompanionSourceTransform::Identity,
+            )?->column;
+            $sumSqColumn ??= self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                    && $c->sourceTransform === CompanionSourceTransform::Square,
+            )?->column;
+            $countColumn ??= self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Count
+                    && $c->sourceTransform === CompanionSourceTransform::Identity,
+            )?->column;
 
             if ($sumColumn !== null && $sumSqColumn !== null && $countColumn !== null) {
                 $result[$definition->column] = [
@@ -344,40 +337,24 @@ final class AggregateRegistry
                 continue;
             }
 
-            $sumWxColumn = null;
-            $sumWColumn = null;
-
-            foreach ($bySource[$definition->source] ?? [] as $companion) {
-                if ($companion->function !== AggregateFunction::Sum) {
-                    continue;
-                }
-                if (! self::filtersMatch($companion->filter, $definition->filter)) {
-                    continue;
-                }
-                if ($companion->inclusive !== $definition->inclusive) {
-                    continue;
-                }
-                if ($companion->sourceTransform === CompanionSourceTransform::TimesWeight
-                    && $sumWxColumn === null) {
-                    $sumWxColumn = $companion->column;
-                }
-            }
-
-            foreach ($bySource[$definition->weight] ?? [] as $companion) {
-                if ($companion->function !== AggregateFunction::Sum) {
-                    continue;
-                }
-                if (! self::filtersMatch($companion->filter, $definition->filter)) {
-                    continue;
-                }
-                if ($companion->inclusive !== $definition->inclusive) {
-                    continue;
-                }
-                if ($companion->sourceTransform === CompanionSourceTransform::Identity
-                    && $sumWColumn === null) {
-                    $sumWColumn = $companion->column;
-                }
-            }
+            // Weight column must match too — two WeightedAvg declarations
+            // over the same source with different weight columns each
+            // produce their own TimesWeight Sum companion, and adopting
+            // the wrong one would silently feed the AVG-of-products the
+            // wrong weights.
+            $sumWxColumn = self::findFirstCompanion(
+                $bySource[$definition->source] ?? [],
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                    && $c->sourceTransform === CompanionSourceTransform::TimesWeight
+                    && $c->weight === $definition->weight,
+            )?->column;
+            $sumWColumn = self::findFirstCompanion(
+                $bySource[$definition->weight] ?? [],
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                    && $c->sourceTransform === CompanionSourceTransform::Identity,
+            )?->column;
 
             if ($sumWxColumn !== null && $sumWColumn !== null) {
                 $result[$definition->column] = ['sum_wx' => $sumWxColumn, 'sum_w' => $sumWColumn];
@@ -418,27 +395,19 @@ final class AggregateRegistry
                 continue;
             }
 
-            $sumColumn = null;
-            $countColumn = null;
-
-            foreach ($bySource[$definition->source] ?? [] as $companion) {
-                if (! self::filtersMatch($companion->filter, $definition->filter)) {
-                    continue;
-                }
-                if ($companion->inclusive !== $definition->inclusive) {
-                    continue;
-                }
-                if ($companion->function === AggregateFunction::Sum
-                    && $companion->sourceTransform === CompanionSourceTransform::AsInt
-                    && $sumColumn === null) {
-                    $sumColumn = $companion->column;
-                }
-                if ($companion->function === AggregateFunction::Count
-                    && $companion->sourceTransform === CompanionSourceTransform::Identity
-                    && $countColumn === null) {
-                    $countColumn = $companion->column;
-                }
-            }
+            $candidates = $bySource[$definition->source] ?? [];
+            $sumColumn = self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                    && $c->sourceTransform === CompanionSourceTransform::AsInt,
+            )?->column;
+            $countColumn = self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Count
+                    && $c->sourceTransform === CompanionSourceTransform::Identity,
+            )?->column;
 
             if ($sumColumn !== null && $countColumn !== null) {
                 $result[$definition->column] = [
@@ -470,24 +439,48 @@ final class AggregateRegistry
     ): ?string {
         $expected = $parent->column.$suffix;
 
+        return self::findFirstCompanion(
+            $candidates,
+            $parent,
+            static fn (AggregateDefinition $c): bool => $c->column === $expected
+                && $c->function === $function
+                && $c->sourceTransform === $transform,
+        )?->column;
+    }
+
+    /**
+     * Scan $candidates for the first definition that (a) shares
+     * $parent's filter + inclusivity (the universal companion-validity
+     * rule — companions reading a different row set than the parent
+     * would silently produce drift) and (b) satisfies $extra (the
+     * caller's role-specific predicate, e.g. "Sum with Identity
+     * transform"). Returns the matched definition or null.
+     *
+     * Folds the inner foreach shared by every `*CompanionsFor()`
+     * helper so the methods stay focused on what makes them different
+     * (which functions are parents, which roles they need filled,
+     * what shape the result takes).
+     *
+     * @param  list<AggregateDefinition>  $candidates
+     * @param  callable(AggregateDefinition): bool  $extra
+     */
+    private static function findFirstCompanion(
+        array $candidates,
+        AggregateDefinition $parent,
+        callable $extra,
+    ): ?AggregateDefinition {
         foreach ($candidates as $candidate) {
-            if ($candidate->column !== $expected) {
-                continue;
-            }
-            if ($candidate->function !== $function) {
-                continue;
-            }
-            if ($candidate->sourceTransform !== $transform) {
-                continue;
-            }
             if ($candidate->inclusive !== $parent->inclusive) {
                 continue;
             }
             if (! self::filtersMatch($candidate->filter, $parent->filter)) {
                 continue;
             }
+            if (! $extra($candidate)) {
+                continue;
+            }
 
-            return $candidate->column;
+            return $candidate;
         }
 
         return null;
@@ -528,29 +521,26 @@ final class AggregateRegistry
                 ? CompanionSourceTransform::Ln
                 : CompanionSourceTransform::Recip;
 
-            $sumCompanionColumn = null;
-            $countColumn = null;
-
-            foreach ($bySource[$definition->source] ?? [] as $companion) {
-                if (! self::filtersMatch($companion->filter, $definition->filter)) {
-                    continue;
-                }
-                if ($companion->inclusive !== $definition->inclusive) {
-                    continue;
-                }
-                if ($companion->function === AggregateFunction::Sum
-                    && $companion->sourceTransform === $companionTransform
-                    && str_starts_with($companion->column, $definition->column.'__')
-                    && $sumCompanionColumn === null) {
-                    $sumCompanionColumn = $companion->column;
-                }
-                if ($companion->function === AggregateFunction::Count
-                    && $companion->sourceTransform === $companionTransform
-                    && str_starts_with($companion->column, $definition->column.'__')
-                    && $countColumn === null) {
-                    $countColumn = $companion->column;
-                }
-            }
+            // The `<displayCol>__` prefix anchors companions to *this*
+            // mean — two Geometric/HarmonicMeans over the same source
+            // each get their own auto-promoted pair, so loose matching
+            // would silently bind one display column to another's.
+            $candidates = $bySource[$definition->source] ?? [];
+            $columnPrefix = $definition->column.'__';
+            $sumCompanionColumn = self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Sum
+                    && $c->sourceTransform === $companionTransform
+                    && str_starts_with($c->column, $columnPrefix),
+            )?->column;
+            $countColumn = self::findFirstCompanion(
+                $candidates,
+                $definition,
+                static fn (AggregateDefinition $c): bool => $c->function === AggregateFunction::Count
+                    && $c->sourceTransform === $companionTransform
+                    && str_starts_with($c->column, $columnPrefix),
+            )?->column;
 
             if ($sumCompanionColumn !== null && $countColumn !== null) {
                 $result[$definition->column] = [

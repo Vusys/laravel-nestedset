@@ -71,13 +71,7 @@ trait HasTreeRelations
      */
     private static function makeAncestorsRelation(Model&HasNestedSet $node): AncestorsRelation
     {
-        $builder = $node->newQuery();
-
-        if (! $builder instanceof TreeQueryBuilder) {
-            throw new \LogicException('NodeTrait requires newEloquentBuilder to return TreeQueryBuilder.');
-        }
-
-        return new AncestorsRelation($builder, $node);
+        return new AncestorsRelation(self::requireTreeBuilder($node), $node);
     }
 
     /**
@@ -85,12 +79,27 @@ trait HasTreeRelations
      */
     private static function makeDescendantsRelation(Model&HasNestedSet $node): DescendantsRelation
     {
+        return new DescendantsRelation(self::requireTreeBuilder($node), $node);
+    }
+
+    /**
+     * Fresh query builder for $node, narrowed to {@see TreeQueryBuilder}.
+     * NodeTrait wires `newEloquentBuilder` to return one — anything
+     * else is a misconfigured fixture and signals a real bug, so the
+     * cast failure is converted to a LogicException at the call site
+     * instead of leaking past as a TypeError on the relation
+     * constructor.
+     *
+     * @return TreeQueryBuilder<Model&HasNestedSet>
+     */
+    private static function requireTreeBuilder(Model&HasNestedSet $node): TreeQueryBuilder
+    {
         $builder = $node->newQuery();
 
         if (! $builder instanceof TreeQueryBuilder) {
             throw new \LogicException('NodeTrait requires newEloquentBuilder to return TreeQueryBuilder.');
         }
 
-        return new DescendantsRelation($builder, $node);
+        return $builder;
     }
 }
