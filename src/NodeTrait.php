@@ -20,7 +20,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
-use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -372,7 +372,7 @@ trait NodeTrait
     /**
      * Returns the package's custom base query builder so SQL-execution
      * hooks (e.g. the MariaDB `SET STATEMENT optimizer_switch=…` prefix
-     * used by {@see TreeAggregateBuilder::applyMariaDbDerivedFreshSelects()})
+     * used by {@see FreshAggregateProjector::applyMariaDbDerivedFreshSelects()})
      * have somewhere to live. Falls back to the parent builder's
      * connection/grammar/processor wiring otherwise — identical to
      * Eloquent's default except for the concrete class.

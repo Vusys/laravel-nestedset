@@ -242,7 +242,7 @@ final class ExclusiveAggregateTest extends TestCase
     // ----------------------------------------------------------------
     // Ad-hoc exclusive aggregate via the Aggregate::sum(...)->exclusive()
     // factory in withFreshAggregates() — exercises the fluent exclusive()
-    // modifier path through TreeAggregateBuilder.
+    // modifier path through FreshAggregateProjector.
     // ----------------------------------------------------------------
 
     public function test_adhoc_exclusive_aggregate_in_with_fresh_aggregates(): void

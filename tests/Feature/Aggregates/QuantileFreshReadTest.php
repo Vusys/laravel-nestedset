@@ -9,7 +9,7 @@ use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
-use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -179,7 +179,7 @@ final class QuantileFreshReadTest extends TestCase
     }
 
     // ----------------------------------------------------------------
-    // TreeAggregateBuilder::scalar() — single-node read
+    // FreshAggregateProjector::scalar() — single-node read
     // ----------------------------------------------------------------
 
     public function test_scalar_median_at_root(): void
@@ -187,7 +187,7 @@ final class QuantileFreshReadTest extends TestCase
         $root = Area::query()->findOrFail(1);
         $def = Aggregate::median('tickets')->into('m');
 
-        $value = TreeAggregateBuilder::scalar($root, $def);
+        $value = FreshAggregateProjector::scalar($root, $def);
 
         $this->assertEqualsWithDelta(50.0, $this->asFloat($value), 0.0001);
     }
@@ -197,7 +197,7 @@ final class QuantileFreshReadTest extends TestCase
         $b = Area::query()->findOrFail(4);
         $def = Aggregate::median('tickets')->into('m');
 
-        $value = TreeAggregateBuilder::scalar($b, $def);
+        $value = FreshAggregateProjector::scalar($b, $def);
 
         $this->assertEqualsWithDelta(25.0, $this->asFloat($value), 0.0001);
     }
@@ -207,7 +207,7 @@ final class QuantileFreshReadTest extends TestCase
         $b = Area::query()->findOrFail(4);
         $def = Aggregate::median('tickets')->exclusive()->into('m');
 
-        $value = TreeAggregateBuilder::scalar($b, $def);
+        $value = FreshAggregateProjector::scalar($b, $def);
 
         $this->assertNull($value);
     }
@@ -217,7 +217,7 @@ final class QuantileFreshReadTest extends TestCase
         $root = Area::query()->findOrFail(1);
         $def = Aggregate::percentile('tickets', 0.25)->into('p');
 
-        $value = TreeAggregateBuilder::scalar($root, $def);
+        $value = FreshAggregateProjector::scalar($root, $def);
 
         $this->assertEqualsWithDelta(43.75, $this->asFloat($value), 0.001);
     }

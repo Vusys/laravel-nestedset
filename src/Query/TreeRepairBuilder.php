@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 use Vusys\NestedSet\TreeFixResult;
 
 /**
@@ -266,7 +267,8 @@ final readonly class TreeRepairBuilder
      * 10K rows = 10K round-trips, multi-second wall-clock on every
      * backend. With chunkSize=500 a 10K rebuild becomes ~20 UPDATEs.
      *
-     * Same pattern Phase Q applied to TreeAggregateBuilder; the only
+     * Same pattern the aggregate-repair path uses (see
+     * {@see AggregateDiffer}); the only
      * difference is the columns being CASE-d.
      *
      * @param  array<int|string, array{lft: int, rgt: int, depth: int}>  $positions

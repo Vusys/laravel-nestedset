@@ -19,7 +19,7 @@ use Vusys\NestedSet\NodeTrait;
  *  - NodeTrait::deleted guard against double-decrement on
  *    forceDelete-after-soft-delete
  *  - replicate() clearing the custom column on the clone
- *  - TreeAggregateBuilder bulk fresh-aggregate paths excluding
+ *  - FreshAggregateProjector bulk fresh-aggregate paths excluding
  *    trashed descendants from withFreshAggregates()
  *
  * @property int $id

@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Query\Builder as BaseBuilder;
+use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 
 /**
  * Custom base query builder so we can hook the SQL right before it is
  * executed. Today the only consumer is the MariaDB fresh-aggregate read
- * path — see {@see TreeAggregateBuilder::applyMariaDbDerivedFreshSelects()}
+ * path — see {@see FreshAggregateProjector::applyMariaDbDerivedFreshSelects()}
  * — but the override is intentionally narrow (a single boolean flag) so
  * future planner-coaxing tricks can hang off it without growing into a
  * second hierarchy.

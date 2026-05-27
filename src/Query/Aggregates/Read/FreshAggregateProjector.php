@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Query;
+namespace Vusys\NestedSet\Query\Aggregates\Read;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
@@ -18,7 +18,10 @@ use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
-use Vusys\NestedSet\Query\Aggregates\Read\AggregateSqlFragments;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
+use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
+use Vusys\NestedSet\Query\TreeExpression;
+use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -31,10 +34,11 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  *  - {@see scalar()} — runs a single-row subquery for one node's value,
  *    used by `$model->freshAggregate('col')`.
  *
- * Phase B: read paths only. Maintenance writes land in later phases via
- * different methods on this class.
+ * Read paths only. SQL fragment construction lives in
+ * {@see AggregateSqlFragments}; maintenance writes live in
+ * {@see AggregateDiffer}.
  */
-final class TreeAggregateBuilder
+final class FreshAggregateProjector
 {
     /**
      * Adds one correlated-subquery SELECT per requested aggregate to
@@ -268,9 +272,9 @@ final class TreeAggregateBuilder
 
             // Leaf fast-path: exclude leaves from the materialised derived
             // entirely — the outer SELECT picks an inline value for them
-            // via {@see wrapLeafFastPath()}. On a wideShallow shape this
-            // cuts the inner aggregation's input from N to 1 (only the
-            // root has descendants).
+            // via {@see AggregateSqlFragments::wrapLeafFastPath()}. On a
+            // wideShallow shape this cuts the inner aggregation's input
+            // from N to 1 (only the root has descendants).
             $innerSql = 'SELECT '.implode(', ', $aggSelects)
                 ." FROM {$outer['from']}"
                 ." INNER JOIN {$table} d ON {$boundsClause}{$scopeClause}{$softClause}"
@@ -388,7 +392,7 @@ final class TreeAggregateBuilder
             //
             // For leaves the outer SELECT picks an inline value computed
             // from the source column directly — see
-            // {@see leafInlineExpression()}.
+            // {@see AggregateSqlFragments}.
             $lateralExpr = new TreeExpression("LATERAL ({$innerSql}) as {$lateralAlias}");
             $onClause = "{$table}.{$rgtCol} > {$table}.{$lftCol} + 1";
             $query->leftJoin($lateralExpr, static function ($join) use ($onClause): void {

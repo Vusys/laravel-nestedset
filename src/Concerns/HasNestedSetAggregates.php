@@ -40,7 +40,7 @@ use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
-use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -179,7 +179,7 @@ trait HasNestedSetAggregates
         $definition = $this->resolveDefinitionByColumn($column);
 
         if ($definition instanceof AggregateDefinition) {
-            return TreeAggregateBuilder::scalar($this, $definition, $withTrashed);
+            return FreshAggregateProjector::scalar($this, $definition, $withTrashed);
         }
 
         if ($definition instanceof ListenerAggregateDefinition) {

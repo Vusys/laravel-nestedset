@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 use Vusys\NestedSet\Tests\Fixtures\Models\TextJsonArea;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -26,7 +27,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * Every step asserts:
  *   - the tree is structurally intact;
  *   - `aggregatesAreBroken()` is false (stored vs freshly-computed
- *     drift, normalised via {@see TreeAggregateBuilder::aggregateValuesEqual()}).
+ *     drift, normalised via {@see AggregateValueComparator::aggregateValuesEqual()}).
  */
 #[Group('fuzzer')]
 final class CollectionAggregatesFuzzerTest extends TestCase

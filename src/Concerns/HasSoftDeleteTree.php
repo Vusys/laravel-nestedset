@@ -15,7 +15,7 @@ use Vusys\NestedSet\Events\SoftDelete\SubtreeRestored;
 use Vusys\NestedSet\Events\SoftDelete\SubtreeRestoring;
 use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleted;
 use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleting;
-use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -277,7 +277,7 @@ trait HasSoftDeleteTree
     /**
      * Resolves the model's soft-delete column. Returns null for models
      * that don't use SoftDeletes. Matches the reflection pattern used in
-     * {@see TreeAggregateBuilder::softDeletedColumnFor()}
+     * {@see FreshAggregateProjector::softDeletedColumnFor()}
      * and {@see HasNestedSetAggregates::softDeleteColumn()}
      * — reflection avoids a PHPStan complaint on non-soft-delete fixtures.
      */

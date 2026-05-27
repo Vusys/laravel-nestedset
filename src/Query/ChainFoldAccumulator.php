@@ -7,10 +7,11 @@ namespace Vusys\NestedSet\Query;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 
 /**
  * Per-definition accumulator for the chain-fold fast path used by
- * {@see TreeAggregateBuilder::selectStoredAndComputedViaChainFold()}.
+ * {@see AggregateDiffer::selectStoredAndComputedViaChainFold()}.
  *
  * One instance per definition. The outer chain walk feeds each row's
  * (source, optional weight) values through {@see self::apply()}, which
