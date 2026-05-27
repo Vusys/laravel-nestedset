@@ -31,7 +31,7 @@ final class MovementTest extends TestCase
         ]);
     }
 
-    public function test_move_leaf_into_different_parent(): void
+    public function test_append_to_node_updates_parent_id_depth_and_bounds_in_one_atomic_save(): void
     {
         $ab = Category::query()->findOrFail(4);
         $b = Category::query()->findOrFail(5);
@@ -47,7 +47,7 @@ final class MovementTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_move_subtree_into_another_subtree(): void
+    public function test_subtree_move_carries_every_descendant_with_depth_shifted_relative_to_new_parent(): void
     {
         $a = Category::query()->findOrFail(2);
         $b = Category::query()->findOrFail(5);
@@ -72,7 +72,7 @@ final class MovementTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_make_root_extracts_node_from_existing_tree(): void
+    public function test_save_as_root_clears_parent_id_and_resets_depth_to_zero(): void
     {
         $a = Category::query()->findOrFail(2);
 
@@ -84,7 +84,7 @@ final class MovementTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_up_swaps_with_previous_sibling(): void
+    public function test_up_places_node_before_its_previous_sibling_via_lft_swap(): void
     {
         $b = Category::query()->findOrFail(5);
         $a = Category::query()->findOrFail(2);
@@ -99,13 +99,13 @@ final class MovementTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_up_returns_false_when_no_previous_sibling(): void
+    public function test_up_returns_false_on_first_child_with_no_previous_sibling_to_swap_with(): void
     {
         $a = Category::query()->findOrFail(2);
         $this->assertFalse($a->up());
     }
 
-    public function test_down_swaps_with_next_sibling(): void
+    public function test_down_places_node_after_its_next_sibling_via_lft_swap(): void
     {
         $a = Category::query()->findOrFail(2);
 
@@ -118,7 +118,7 @@ final class MovementTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_has_moved_set_after_mutation(): void
+    public function test_has_moved_flag_is_true_immediately_after_a_structural_save(): void
     {
         $ab = Category::query()->findOrFail(4);
         $b = Category::query()->findOrFail(5);

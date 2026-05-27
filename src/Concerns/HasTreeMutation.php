@@ -543,7 +543,13 @@ trait HasTreeMutation
 
     private function actAppendTo(Model&HasNestedSet $parent): void
     {
-        $parentBounds = $this->freshBoundsOf($parent);
+        // FOR UPDATE on the parent row serialises concurrent appenders
+        // against the same parent — without it, two callers read the
+        // same parent.rgt and both insert at that slot. The lock is
+        // held for the rest of the enclosing transaction (auto-on by
+        // default), so the gap-shift UPDATE that follows runs while
+        // the next appender is still blocked on the same SELECT.
+        $parentBounds = $this->freshBoundsOf($parent, lockForUpdate: true);
         $position = $parentBounds->rgt;
         $newDepth = $parentBounds->depth + 1;
         $newParentId = $this->keyOf($parent);
@@ -553,7 +559,7 @@ trait HasTreeMutation
 
     private function actPrependTo(Model&HasNestedSet $parent): void
     {
-        $parentBounds = $this->freshBoundsOf($parent);
+        $parentBounds = $this->freshBoundsOf($parent, lockForUpdate: true);
         $position = $parentBounds->lft + 1;
         $newDepth = $parentBounds->depth + 1;
         $newParentId = $this->keyOf($parent);
@@ -567,7 +573,7 @@ trait HasTreeMutation
             throw new LogicException('Cannot position node as a sibling of itself.');
         }
 
-        $bounds = $this->freshBoundsOf($sibling);
+        $bounds = $this->freshBoundsOf($sibling, lockForUpdate: true);
         $insertAt = $position === Position::Before ? $bounds->lft : $bounds->rgt + 1;
         $newDepth = $bounds->depth;
         $newParentId = $sibling->getParentId();
@@ -808,11 +814,11 @@ trait HasTreeMutation
      * in-memory snapshot — between the user constructing a parent reference
      * and our save() running, other nodes might have shifted the parent.
      */
-    private function freshBoundsOf(Model&HasNestedSet $other): NodeBounds
+    private function freshBoundsOf(Model&HasNestedSet $other, bool $lockForUpdate = false): NodeBounds
     {
         $mutator = $this->newTreeMutator();
 
-        return $mutator->getNodeData($this->keyOf($other));
+        return $mutator->getNodeData($this->keyOf($other), $lockForUpdate);
     }
 
     /**

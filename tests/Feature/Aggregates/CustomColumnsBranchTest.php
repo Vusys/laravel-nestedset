@@ -4,21 +4,36 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
+use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Tests\Fixtures\Models\CustomColumnsBranch;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
- * Smoke test for models that rename `lft` / `rgt` / `depth` /
- * `parent_id` via the trait's `getLftName` etc. overrides. Walks the
- * mutation surface end-to-end and asserts the aggregate columns stay
- * consistent — any SQL builder that hardcoded the default column
- * names will fail here.
+ * Models that rename `lft` / `rgt` / `depth` / `parent_id` via the
+ * trait's `getLftName()` etc. overrides must work end-to-end on
+ * structural mutations AND aggregate maintenance. Any builder that
+ * hardcoded the default column names would surface here.
+ *
+ * Each test owns one mutation kind so a regression points at the
+ * specific code path that broke (a previous incarnation of this file
+ * ran every mutation in one ~80-line test, which made diagnostic
+ * output ambiguous).
+ *
+ * Tree shape used by `seedTree()`:
+ *
+ *   root (tickets=0, active=1)
+ *   ├── A  (tickets=10, active=1)
+ *   │   └── A1 (tickets=5, active=1)
+ *   ├── B  (tickets=20, active=1)
+ *   └── C  (tickets=30, active=0)
  */
 final class CustomColumnsBranchTest extends TestCase
 {
-    public function test_full_mutation_lifecycle_keeps_aggregates_consistent(): void
+    /**
+     * @return array{root: CustomColumnsBranch, a: CustomColumnsBranch, b: CustomColumnsBranch, c: CustomColumnsBranch, a1: CustomColumnsBranch}
+     */
+    private function seedTree(): array
     {
-        // Plant a small tree.
         $root = new CustomColumnsBranch(['name' => 'root', 'tickets' => 0, 'active' => 1]);
         $root->saveAsRoot();
         $root = $root->refresh();
@@ -35,26 +50,43 @@ final class CustomColumnsBranchTest extends TestCase
         $a1 = new CustomColumnsBranch(['name' => 'A1', 'tickets' => 5, 'active' => 1]);
         $a1->appendToNode($a->refresh())->save();
 
-        $root->refresh();
+        return [
+            'root' => $root->refresh(),
+            'a' => $a->refresh(),
+            'b' => $b->refresh(),
+            'c' => $c->refresh(),
+            'a1' => $a1->refresh(),
+        ];
+    }
 
-        // Baseline assertions: A + B + C + A1 in descendants, sum = 65.
-        $this->assertSame(65, $root->descendants_total);
+    public function test_initial_seed_aggregates_populate_correctly_on_renamed_columns(): void
+    {
+        $tree = $this->seedTree();
+        $root = $tree['root'];
+
+        // SUM/COUNT/MAX rolling up through the renamed bounds columns —
+        // any builder ignoring getLftName/getRgtName would compute
+        // wrong descendant sets here.
+        $this->assertSame(65, $root->descendants_total, 'A + B + C + A1 = 65');
         $this->assertSame(4, $root->descendants_count);
         $this->assertSame(30, $root->descendants_max);
         $this->assertSame(65, $root->tickets_total);
         $this->assertSame(35, $root->active_tickets_total, 'A(10) + B(20) + A1(5); C inactive');
 
-        // Read every node back and verify structural columns landed in
-        // the renamed slots — i.e. the model's getLftName /
-        // getRgtName / getDepthName / getParentIdName overrides took
-        // effect end-to-end.
-        $a->refresh();
+        // Renamed structural columns landed in the right slots.
+        $a = $tree['a'];
         $this->assertGreaterThan(0, $a->tree_lft);
         $this->assertGreaterThan($a->tree_lft, $a->tree_rgt);
         $this->assertSame(1, $a->tree_depth);
         $this->assertSame((int) $root->id, $a->tree_parent_id);
+    }
 
-        // Mutate a source column → delta path.
+    public function test_source_update_propagates_through_delta_path_on_renamed_columns(): void
+    {
+        $tree = $this->seedTree();
+        $root = $tree['root'];
+
+        // B.tickets 20 → 100. Delta path: ancestors gain 80.
         $b = CustomColumnsBranch::query()->where('name', 'B')->firstOrFail();
         $b->tickets = 100;
         $b->save();
@@ -62,6 +94,12 @@ final class CustomColumnsBranchTest extends TestCase
         $root->refresh();
         $this->assertSame(145, $root->tickets_total, '0 + 10 + 100 + 30 + 5');
         $this->assertSame(115, $root->active_tickets_total, '10 + 100 + 5');
+    }
+
+    public function test_intra_tree_move_relocates_subtree_aggregates_on_renamed_columns(): void
+    {
+        $tree = $this->seedTree();
+        $root = $tree['root'];
 
         // Move A1 from under A to under C.
         $a1 = CustomColumnsBranch::query()->where('name', 'A1')->firstOrFail();
@@ -72,23 +110,27 @@ final class CustomColumnsBranchTest extends TestCase
         $a = CustomColumnsBranch::query()->where('name', 'A')->firstOrFail();
         $c = CustomColumnsBranch::query()->where('name', 'C')->firstOrFail();
 
-        $this->assertSame(145, $root->tickets_total, 'root sum unchanged by intra-tree move');
+        $this->assertSame(65, $root->tickets_total, 'root sum unchanged by intra-tree move');
         $this->assertSame(10, $a->tickets_total, 'A no longer has A1');
         $this->assertSame(35, $c->tickets_total, 'C now contains A1 (30 + 5)');
+    }
 
-        // Force-delete a leaf and verify the chain settles.
+    public function test_force_delete_at_leaf_settles_ancestor_chain_on_renamed_columns(): void
+    {
+        $tree = $this->seedTree();
+        $root = $tree['root'];
+
+        // Force-delete A1 (active leaf). Drop 5 from ancestor sums.
         $a1 = CustomColumnsBranch::query()->where('name', 'A1')->firstOrFail();
         $a1->forceDelete();
 
         $root->refresh();
-        $this->assertSame(140, $root->tickets_total);
+        $this->assertSame(60, $root->tickets_total, '65 - 5 = 60');
         $this->assertSame(3, $root->descendants_count);
-        $this->assertSame(110, $root->active_tickets_total, 'A1 was active; dropped 5');
+        $this->assertSame(30, $root->active_tickets_total, 'A1 was active; dropped 5');
 
-        // Aggregate drift detection over the renamed table.
+        // No drift surfaced by either tree- or aggregate-integrity check.
         $this->assertFalse(CustomColumnsBranch::aggregatesAreBroken());
-
-        // Tree integrity check on the renamed columns.
         $this->assertFalse(CustomColumnsBranch::isBroken());
     }
 
@@ -106,7 +148,7 @@ final class CustomColumnsBranchTest extends TestCase
         $b->appendToNode($root->refresh())->save();
 
         // Corrupt the stored aggregate values directly to simulate drift.
-        \DB::table('custom_column_branches')->where('name', 'root')->update([
+        DB::table('custom_column_branches')->where('name', 'root')->update([
             'tickets_total' => 9999,
             'descendants_count' => 42,
             'descendants_total' => 9999,

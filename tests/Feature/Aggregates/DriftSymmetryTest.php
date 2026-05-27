@@ -253,11 +253,18 @@ final class DriftSymmetryTest extends TestCase
 
         ($mutate)((int) $root->id);
 
-        // 1. Detection — column must report nonzero drift OR the
-        //    fix must write rows (some companion drifts manifest only
+        // 1. Detection — at least one user-facing column reports drift.
+        //    (Per-column may vary: some companion drifts manifest only
         //    in the AVG display column, but the visible-drift report
-        //    is by user-facing column only).
+        //    is by user-facing column only. So we assert on the
+        //    aggregate total here and check the per-column self-
+        //    consistency at the end of the test.)
         $errors = Monster::aggregateErrors();
+        $this->assertGreaterThan(
+            0,
+            array_sum($errors),
+            'aggregateErrors() should have surfaced at least one drifted column',
+        );
 
         // 2. Fix writes at least one row.
         $fix = Monster::fixAggregates();

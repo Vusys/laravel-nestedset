@@ -37,6 +37,27 @@ final class CorruptionRecoveryTest extends TestCase
         ]);
     }
 
+    /**
+     * Snapshot lft/rgt/depth keyed by id as plain int arrays so test
+     * assertions can use `===` without wrestling with DB-driver-specific
+     * row object types.
+     *
+     * @return array<int, array{lft: int, rgt: int, depth: int}>
+     */
+    private function snapshotBounds(): array
+    {
+        $snapshot = [];
+        foreach (DB::table('categories')->orderBy('id')->get(['id', 'lft', 'rgt', 'depth']) as $row) {
+            $snapshot[(int) $row->id] = [
+                'lft' => (int) $row->lft,
+                'rgt' => (int) $row->rgt,
+                'depth' => (int) $row->depth,
+            ];
+        }
+
+        return $snapshot;
+    }
+
     // ----------------------------------------------------------------
     // §3.1  invalid_bounds — lft >= rgt
     // ----------------------------------------------------------------
@@ -159,41 +180,85 @@ final class CorruptionRecoveryTest extends TestCase
     {
         $this->seedValidCategoryTree();
 
+        $boundsBefore = $this->snapshotBounds();
+
         // Real-world cause: a raw UPDATE that set the root's parent to its
-        // own descendant. Root → A → Root is now a cycle.
+        // own descendant. Root → A → Root is now a cycle, and every other
+        // row's chain (3, 4 → 2 → 1 → 2; 5 → 1 → 2) hits the cycle too,
+        // so no row is reachable from a null-parent root anymore.
         DB::table('categories')->where('id', 1)->update(['parent_id' => 2]);
 
         Category::fixTree();
 
-        // Rows 1 and 2 are now in a cycle — neither has parent_id IS NULL,
-        // and they're not reachable from any null-parent root, so the
-        // rebuild walks past them. Their lft/rgt stay stale, and the
-        // remaining nodes (3, 4, 5) are also unreachable (their chain
-        // hits the cycle), so the whole table ends up untouched.
-        $rebuilt = Category::query()->orderBy('id')->get();
+        $boundsAfter = $this->snapshotBounds();
 
-        // Detection: the rebuilt walk did not produce a valid forest. We
-        // surface this by recomputing countErrors — invalid_bounds /
-        // duplicates may or may not show, but the orphan-style "rows not
-        // visited from any root" condition does.
-        //
-        // CORRUPTION.md §7 provides recursive-CTE SQL to find cycle
-        // members directly; here we just assert that fixTree did NOT
-        // restore the invariants.
-        $this->assertGreaterThan(
-            0,
-            (int) $rebuilt->where('id', 1)->first()?->lft,
-            'lft was not zeroed — rows in cycle keep their stale bounds',
+        // Invariant 1: the rebuild walked nothing — fixTree() only descends
+        // from null-parent roots, and the cycle leaves zero such roots,
+        // so every row in the table keeps its pre-fix bounds verbatim.
+        foreach ([1, 2, 3, 4, 5] as $id) {
+            $this->assertSame(
+                $boundsBefore[$id]['lft'],
+                $boundsAfter[$id]['lft'],
+                "row #{$id} lft mutated by fixTree even though rebuild had no root to walk from",
+            );
+            $this->assertSame(
+                $boundsBefore[$id]['rgt'],
+                $boundsAfter[$id]['rgt'],
+                "row #{$id} rgt mutated by fixTree even though rebuild had no root to walk from",
+            );
+            $this->assertSame(
+                $boundsBefore[$id]['depth'],
+                $boundsAfter[$id]['depth'],
+                "row #{$id} depth mutated by fixTree even though rebuild had no root to walk from",
+            );
+        }
+
+        // Invariant 2: the cycle is real — following parent_id from row 1
+        // returns to row 1 in ≤ 2 hops. Direct verification of the actual
+        // corruption (rather than its consequences).
+        $row1ParentRaw = DB::table('categories')->where('id', 1)->value('parent_id');
+        $this->assertTrue(is_numeric($row1ParentRaw), 'row 1 parent_id is not numeric');
+        $row1ParentId = (int) $row1ParentRaw;
+
+        $row2ParentRaw = DB::table('categories')->where('id', $row1ParentId)->value('parent_id');
+        $this->assertTrue(is_numeric($row2ParentRaw), "row {$row1ParentId} parent_id is not numeric");
+        $row2ParentId = (int) $row2ParentRaw;
+
+        $this->assertSame(
+            1,
+            $row2ParentId,
+            'sanity: 1 → 2 → 1 should form a 2-cycle',
         );
 
-        // The package's `getDescendants` from row 1 would loop forever if
-        // we followed parent_id, but the SQL-only descendant query (using
-        // lft/rgt) still terminates — it just returns nonsense relative
-        // to the current parent_id graph. The point of this test is to
-        // confirm the package does not silently "succeed" on a cyclic
-        // graph: it leaves the cycle in place. countErrors() reflects
-        // that by still reporting issues.
-        $this->addToAssertionCount(1);
+        // Invariant 3: detection gap — countErrors() does NOT surface this
+        // cycle. invalid_bounds stays clean (the original bounds were
+        // valid before corruption and weren't touched), duplicates stay
+        // clean, and orphans stays at 0 because parent_id=2 IS a real
+        // row. Operators must use CORRUPTION.md §7's recursive-CTE query
+        // to detect cycles directly. Pinning this gap as a known
+        // limitation — if the package later adds cycle detection, this
+        // assertion will fail loudly and remind us to update the doc.
+        $errors = Category::countErrors();
+        $this->assertSame(
+            0,
+            $errors['orphans'],
+            'cycles do not register as orphans — parent_id points at an existing row',
+        );
+        $this->assertSame(
+            0,
+            $errors['invalid_bounds'],
+            'cycles leave bounds untouched, so invalid_bounds stays clean',
+        );
+        $this->assertSame(
+            0,
+            $errors['duplicate_lft'],
+            'cycles do not produce duplicate lft values',
+        );
+        $this->assertSame(
+            0,
+            $errors['duplicate_rgt'],
+            'cycles do not produce duplicate rgt values',
+        );
     }
 
     // ----------------------------------------------------------------

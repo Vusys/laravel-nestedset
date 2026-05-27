@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\AggregateRegistry;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
+use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -261,12 +262,16 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // Soft-delete + restore
     // ----------------------------------------------------------------
 
-    public function test_soft_delete_decrements_then_restore_re_adds(): void
+    public function test_aggregate_on_delete_and_on_restore_handlers_are_inverses_when_called_directly(): void
     {
-        // Area doesn't use SoftDeletes — using Category-equivalent flow
-        // here means switching fixtures. For Phase G we test the
-        // restore handler logic indirectly: simulate the delete+restore
-        // cycle by hand-decrementing then calling applyAggregateOnRestore.
+        // Handler-level test: invoke applyAggregateOnDelete() /
+        // applyAggregateOnRestore() directly on Area (which does NOT
+        // use SoftDeletes) to pin that the two handlers compose to
+        // identity on the ancestor chain — independent of the
+        // Eloquent soft-delete lifecycle that calls them in practice.
+        //
+        // See the companion test below for the full Eloquent
+        // soft-delete + restore lifecycle exercised through SoftBranch.
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
 
@@ -275,26 +280,61 @@ final class StructuralMutationMaintenanceTest extends TestCase
 
         $rootBefore = $this->asInt($root->refresh()->tickets_total);
 
-        // Hand-simulate "soft-deleted A": its row stays, but the
-        // ancestor chain dropped A's contribution. Use Phase D's logic
-        // directly via $a->applyAggregateOnDelete().
         $a->refresh();
         $a->applyAggregateOnDelete();
 
         $this->assertSame(
             $rootBefore - 50,
             $this->asInt($root->refresh()->tickets_total),
-            'ancestor lost A on simulated soft-delete',
+            'ancestor lost A on direct applyAggregateOnDelete call',
         );
 
-        // Now restore.
         $a->applyAggregateOnRestore();
 
         $this->assertSame(
             $rootBefore,
             $this->asInt($root->refresh()->tickets_total),
-            'ancestor regained A on restore',
+            'ancestor regained A on direct applyAggregateOnRestore call',
         );
+    }
+
+    public function test_eloquent_soft_delete_then_restore_keeps_ancestor_aggregates_consistent(): void
+    {
+        // Full lifecycle through Eloquent's soft-delete events on a
+        // model that actually uses SoftDeletes (SoftBranch). This
+        // exercises the wired-up onDelete / onRestore observers, not
+        // just the handlers in isolation.
+        $root = new SoftBranch(['name' => 'Root', 'tickets' => 0, 'active' => 1]);
+        $root->saveAsRoot();
+
+        $a = new SoftBranch(['name' => 'A', 'tickets' => 30, 'active' => 1]);
+        $a->appendToNode($root->refresh())->save();
+
+        $b = new SoftBranch(['name' => 'B', 'tickets' => 70, 'active' => 1]);
+        $b->appendToNode($root->refresh())->save();
+
+        $rootBefore = $this->asInt($root->refresh()->tickets_total);
+        $this->assertSame(100, $rootBefore, 'baseline sum 30 + 70');
+
+        // Eloquent soft-delete fires the onDelete handler under the hood.
+        $a->refresh()->delete();
+
+        $this->assertSame(
+            70,
+            $this->asInt($root->refresh()->tickets_total),
+            'root lost A on soft-delete via the real Eloquent lifecycle',
+        );
+
+        // Eloquent restore fires the onRestore handler.
+        SoftBranch::withTrashed()->findOrFail($a->id)->restore();
+
+        $this->assertSame(
+            100,
+            $this->asInt($root->refresh()->tickets_total),
+            'root regained A on restore via the real Eloquent lifecycle',
+        );
+
+        $this->assertFalse(SoftBranch::aggregatesAreBroken(), 'aggregate state must be clean after delete+restore round trip');
     }
 
     // ----------------------------------------------------------------

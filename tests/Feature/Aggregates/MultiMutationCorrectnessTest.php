@@ -52,7 +52,7 @@ final class MultiMutationCorrectnessTest extends TestCase
     // Scripted scenarios — realistic, hand-curated multi-step flows
     // ================================================================
 
-    public function test_area_realistic_15_step_scenario(): void
+    public function test_interleaved_inserts_updates_moves_and_deletes_keep_sum_count_avg_min_max_in_sync(): void
     {
         // Seed: 5-node tree.
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
@@ -153,7 +153,7 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertAreaInvariants('15: delete interior A2');
     }
 
-    public function test_branch_multistep_with_raw_filter(): void
+    public function test_raw_filter_aggregates_stay_consistent_across_inserts_source_updates_and_predicate_flips(): void
     {
         // Branch: inclusive SUM + exclusive SUM/COUNT/MAX + raw-filter SUM.
         // Builds and mutates a 7-node tree with mixed active flags.
@@ -235,7 +235,7 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertBranchInvariants('10: delete interior A');
     }
 
-    public function test_monster_listener_multistep_with_softdelete(): void
+    public function test_listener_aggregates_stay_consistent_through_inserts_updates_soft_deletes_and_restores(): void
     {
         // Monster: Sum (weighted_power, fire_count), Min (weakest_level),
         // Avg (weighted_avg). Includes the listener-AVG promotion path.
@@ -329,7 +329,7 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertMonsterInvariants('13: A back under Root');
     }
 
-    public function test_typed_area_multistep_filter_flips(): void
+    public function test_typed_filtered_aggregates_stay_consistent_when_source_values_flip_in_and_out_of_filter_predicates(): void
     {
         $root = new TypedArea(['name' => 'Root', 'tickets' => 10, 'type' => 'fire']);
         $root->saveAsRoot();
@@ -389,7 +389,7 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertTypedAreaInvariants('8: append C (fire)');
     }
 
-    public function test_deferred_maintenance_mixed_operations(): void
+    public function test_deferred_maintenance_closure_keeps_aggregates_correct_after_mixed_inserts_updates_and_deletes(): void
     {
         // Build a small tree first.
         $root = new Area(['name' => 'Root', 'tickets' => 0]);

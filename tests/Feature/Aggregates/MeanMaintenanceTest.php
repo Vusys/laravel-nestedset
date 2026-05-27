@@ -285,4 +285,156 @@ final class MeanMaintenanceTest extends TestCase
         $root = new MeanArea(['name' => 'Root', 'value' => 0.0]);
         $root->saveAsRoot();
     }
+
+    // ── Structural moves ──────────────────────────────────────────────
+    //
+    // Means are maintained via the additive companion path: every move
+    // re-routes the log-sum / recip-sum contribution of the moved
+    // subtree from the old ancestor chain to the new one. These tests
+    // mirror StructuralMutationMaintenanceTest's coverage for SUM/AVG,
+    // adapted to the multiplicative semantics of the means.
+
+    public function test_geometric_mean_subtracts_when_moving_descendant_to_a_different_parent_subtree(): void
+    {
+        // Build two siblings under one root:
+        //   Root(2)
+        //   ├── A(8)
+        //   └── B(32)
+        // Root inclusive subtree {2, 8, 32} → geom mean = 8.
+        $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
+        $root->saveAsRoot();
+
+        $a = new MeanArea(['name' => 'A', 'value' => 8.0]);
+        $a->appendToNode($root)->save();
+
+        $b = new MeanArea(['name' => 'B', 'value' => 32.0]);
+        $b->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $this->assertEqualsWithDelta(8.0, $this->asFloat($root->value_gmean), 0.0001);
+
+        // Move B underneath A — the {2, 8, 32} multiset across the
+        // whole tree is unchanged, so Root's inclusive geom mean stays 8.
+        // A's inclusive subtree gains {32}: from {8} to {8, 32} →
+        // geom mean = sqrt(256) = 16.
+        $b->refresh()->moveTo($a->refresh());
+        $b->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        $this->assertEqualsWithDelta(8.0, $this->asFloat($root->value_gmean), 0.0001, 'root mean unchanged when moving within own subtree');
+        $this->assertEqualsWithDelta(16.0, $this->asFloat($a->value_gmean), 0.0001, 'A picks up B as a new descendant');
+    }
+
+    public function test_geometric_mean_subtracts_from_old_ancestor_chain_on_make_root(): void
+    {
+        // Root(2) → A(8) → A1(32). Root inclusive {2, 8, 32} → 8.
+        $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
+        $root->saveAsRoot();
+
+        $a = new MeanArea(['name' => 'A', 'value' => 8.0]);
+        $a->appendToNode($root)->save();
+
+        $a1 = new MeanArea(['name' => 'A1', 'value' => 32.0]);
+        $a1->appendToNode($a->refresh())->save();
+
+        $root->refresh();
+        $this->assertEqualsWithDelta(8.0, $this->asFloat($root->value_gmean), 0.0001);
+
+        // Promote A (carrying A1) to its own tree. Old root inclusive
+        // collapses to {2} → geom mean = 2. New A tree inclusive is
+        // {8, 32} → geom mean = 16.
+        $a->refresh()->makeRoot()->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        $this->assertEqualsWithDelta(2.0, $this->asFloat($root->value_gmean), 0.0001, 'old root keeps only its own value');
+        $this->assertEqualsWithDelta(16.0, $this->asFloat($a->value_gmean), 0.0001, 'new root sees its own subtree {8, 32}');
+    }
+
+    public function test_harmonic_mean_subtracts_when_moving_descendant_to_a_different_parent_subtree(): void
+    {
+        // Build two siblings under one root:
+        //   Root(2)
+        //   ├── A(3)
+        //   └── B(6)
+        // Root inclusive {2, 3, 6} → HM = 3 / (1/2 + 1/3 + 1/6) = 3.
+        $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
+        $root->saveAsRoot();
+
+        $a = new MeanArea(['name' => 'A', 'value' => 3.0]);
+        $a->appendToNode($root)->save();
+
+        $b = new MeanArea(['name' => 'B', 'value' => 6.0]);
+        $b->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $this->assertEqualsWithDelta(3.0, $this->asFloat($root->value_hmean), 0.0001);
+
+        // Move B underneath A. Root multiset unchanged → HM = 3 still.
+        // A inclusive becomes {3, 6} → HM = 2 / (1/3 + 1/6) = 2 / (1/2) = 4.
+        $b->refresh()->moveTo($a->refresh());
+        $b->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        $this->assertEqualsWithDelta(3.0, $this->asFloat($root->value_hmean), 0.0001);
+        $this->assertEqualsWithDelta(4.0, $this->asFloat($a->value_hmean), 0.0001);
+    }
+
+    public function test_harmonic_mean_subtracts_from_old_ancestor_chain_on_make_root(): void
+    {
+        // Root(2) → A(3) → A1(6). Root inclusive {2, 3, 6} → HM = 3.
+        $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
+        $root->saveAsRoot();
+
+        $a = new MeanArea(['name' => 'A', 'value' => 3.0]);
+        $a->appendToNode($root)->save();
+
+        $a1 = new MeanArea(['name' => 'A1', 'value' => 6.0]);
+        $a1->appendToNode($a->refresh())->save();
+
+        $root->refresh();
+        $this->assertEqualsWithDelta(3.0, $this->asFloat($root->value_hmean), 0.0001);
+
+        // Promote A. Old root collapses to {2} → HM = 2. New A tree
+        // {3, 6} → HM = 2 / (1/3 + 1/6) = 4.
+        $a->refresh()->makeRoot()->save();
+
+        $root->refresh();
+        $a->refresh();
+
+        $this->assertEqualsWithDelta(2.0, $this->asFloat($root->value_hmean), 0.0001);
+        $this->assertEqualsWithDelta(4.0, $this->asFloat($a->value_hmean), 0.0001);
+    }
+
+    public function test_means_unchanged_when_reordering_siblings_under_same_parent(): void
+    {
+        // Reordering siblings under the same parent leaves every
+        // ancestor's inclusive subtree set unchanged — both means
+        // should be no-ops on the structural side.
+        $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
+        $root->saveAsRoot();
+
+        $a = new MeanArea(['name' => 'A', 'value' => 4.0]);
+        $a->appendToNode($root)->save();
+
+        $b = new MeanArea(['name' => 'B', 'value' => 8.0]);
+        $b->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $gmBefore = $this->asFloat($root->value_gmean);
+        $hmBefore = $this->asFloat($root->value_hmean);
+
+        // Swap A and B by moving A after B.
+        $a->refresh()->moveAfter($b->refresh());
+        $a->save();
+
+        $root->refresh();
+        $this->assertEqualsWithDelta($gmBefore, $this->asFloat($root->value_gmean), 0.0001, 'geometric mean unchanged by sibling reorder');
+        $this->assertEqualsWithDelta($hmBefore, $this->asFloat($root->value_hmean), 0.0001, 'harmonic mean unchanged by sibling reorder');
+    }
 }
