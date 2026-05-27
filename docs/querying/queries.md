@@ -28,14 +28,18 @@ $electronics = Category::firstWhere('name', 'Electronics');
 
 Category::query()
     ->whereDescendantOf($electronics->getBounds())
+    ->defaultOrder()
     ->pluck('name');
 // → ['Computers', 'Laptops', 'Desktops', 'Phones', 'Android']
 
 Category::query()
     ->whereDescendantOrSelf($electronics->getBounds())
+    ->defaultOrder()
     ->pluck('name');
 // → ['Electronics', 'Computers', 'Laptops', 'Desktops', 'Phones', 'Android']
 ```
+
+`defaultOrder()` orders by `lft`, which produces the depth-first traversal shown in every comment below. Without it, the database is free to return rows in any order — the predicate alone doesn't promise pre-order.
 
 `whereAncestorOf` walks upward — every node strictly *above* the bounds. Useful for breadcrumbs.
 
@@ -60,17 +64,17 @@ Category::query()
 ## Roots, leaves, ordering
 
 ```php
-Category::query()->whereIsRoot()->pluck('name');
+Category::query()->whereIsRoot()->defaultOrder()->pluck('name');
 // → ['Electronics', 'Books']
 
-Category::query()->whereIsLeaf()->pluck('name');
+Category::query()->whereIsLeaf()->defaultOrder()->pluck('name');
 // → ['Laptops', 'Desktops', 'Android', 'Fiction', 'Non-fiction']
 
 // leaves() is a one-word alias for whereIsLeaf().
-Category::query()->leaves()->pluck('name');
+Category::query()->leaves()->defaultOrder()->pluck('name');
 
 // withoutRoot() excludes roots — the inverse of whereIsRoot().
-Category::query()->withoutRoot()->pluck('name');
+Category::query()->withoutRoot()->defaultOrder()->pluck('name');
 // → ['Computers', 'Laptops', 'Desktops', 'Phones', 'Android', 'Fiction', 'Non-fiction']
 
 // One-shot first-root lookup — sugar for whereIsRoot()->first():

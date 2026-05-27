@@ -93,16 +93,20 @@ Declare a listener AVG with `AggregateFunction::Avg` and the package auto-promot
 class Monster extends Model implements HasNestedSet { use NodeTrait; }
 ```
 
-The companion columns are conventionally suffixed `__sum` and `__count` on the AVG column name. You declare them in the migration alongside the display column:
+The companion columns are conventionally suffixed `__sum` and `__count` on the AVG column name. You declare them in the migration alongside the display column. **The `__sum` companion's storage type must accept the same value range your listener returns** — `nestedSetAggregate()` defaults to a `bigint`, which silently truncates float contributions. Match the migration to the listener:
 
 ```php
 // Display column — nullable, fractional. Use decimal for fixed-precision
 // or float for an approximate type. Cast on the model accordingly.
 $table->decimal('weighted_avg', 14, 4)->nullable();
 
-// Internal companions — integer (or decimal, if your listener returns floats).
-$table->nestedSetAggregate('weighted_avg__sum');
-$table->nestedSetAggregate('weighted_avg__count');
+// Integer-returning listener → bigint companion is fine:
+$table->nestedSetAggregate('weighted_avg__sum');     // bigint, default 0
+$table->nestedSetAggregate('weighted_avg__count');   // bigint, default 0
+
+// Float-returning listener → declare __sum as decimal manually:
+$table->decimal('weighted_avg__sum', 20, 4)->default(0);   // wider than display — the sum can exceed any single contribution
+$table->nestedSetAggregate('weighted_avg__count');         // count is always integral
 ```
 
 Cast all three on the model:
@@ -110,14 +114,14 @@ Cast all three on the model:
 ```php
 protected $casts = [
     'weighted_avg'        => 'float',     // or 'decimal:4'
-    'weighted_avg__sum'   => 'integer',
+    'weighted_avg__sum'   => 'float',     // match the listener's return type ('integer' if integer-returning)
     'weighted_avg__count' => 'integer',
 ];
 ```
 
 The companions are tagged internal — `getAggregateDefinitions()` filters them out, so they don't appear in user-facing introspection. The listener's `contribution()` runs once per node per save and produces both Sum and Count contributions in one call (Count adds `1` when `contribution()` returns non-null, `0` when it returns `null`).
 
-The companion column names must follow the `__sum` / `__count` convention — the auto-promotion always derives them from the display column name, so renaming them isn't supported.
+The companion column names must follow the `__sum` / `__count` convention — the **listener-AVG** auto-promotion always derives them from the display column name, so renaming them isn't supported on this path. (SQL-AVG declarations *can* adopt user-named SUM / COUNT columns with a matching filter — see [Declaring → How AVG is computed](declaring.html#how-avg-is-computed). The two paths differ here because the listener carries the contribution per node, leaving no source-column identity for the registry to match an existing companion against.)
 
 ## Exclusive listener aggregates
 

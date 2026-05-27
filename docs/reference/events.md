@@ -242,6 +242,8 @@ Within a single Eloquent lifecycle hook (`saving` → `created` → `saved` or t
 
 - For an existing-node move: `SubtreeMoving` → structural SQL → `NodeMoved` → `SubtreeMoved` → (`NodePromotedToRoot` when applicable).
 - For a soft delete: anchor's Eloquent `deleted` → `SubtreeSoftDeleting` → cascade UPDATE → `SubtreeSoftDeleted` → aggregate maintenance → `NodeAggregatesRecomputed`.
+- For a restore: anchor's Eloquent `restoring` → `SoftDeleteMarkerCaptured` (the package buffers the `deleted_at` value before Eloquent clears it) → anchor's Eloquent `restored` → `SubtreeRestoring` → cascade UPDATE (nulls `deleted_at` on every descendant whose stamp matches the marker) → `SubtreeRestored` → aggregate maintenance → `NodeAggregatesRecomputed`.
+- For a force delete on an interior node: anchor's Eloquent `deleting` → `SubtreeForceDeleting` → cascade DELETE → `SubtreeForceDeleted` → anchor's row delete → aggregate maintenance → `NodeAggregatesRecomputed`.
 - For a bulk insert: `BulkInsertTreeStarting` → `BulkInsertTreePlanned` → (N × `creating` / `saving` / `created` / `saved` / `BulkInsertNodeSaved`) → closing `fixAggregates` (which emits `FixAggregatesCompleted` and `DeferredAggregateMaintenanceCompleted`) → `BulkInsertTreeSaved` → `BulkInsertTreeCompleted`.
 
 The package does NOT guarantee ordering *between* the package's events and your own model observers — Eloquent runs observers in registration order. If you need a specific ordering, register your observers explicitly via `Model::observe()` after the package's service provider has booted.

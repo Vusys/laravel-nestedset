@@ -107,7 +107,10 @@ $tablets->moveAfter($audio);     // wraps insertAfterNode($audio)
 
 ## up / down — reorder among siblings
 
-`up()` swaps with the previous sibling; `down()` swaps with the next. Both return `true` if a swap happened, `false` if there was no neighbour to swap with.
+`up()` swaps with the previous sibling; `down()` swaps with the next. Both return the wrapped `->save()` result:
+
+- `true` — the swap ran and the save succeeded.
+- `false` — either there was no neighbour to swap with, **or** the swap ran but the underlying `->save()` returned `false` (a `saving` observer returned `false`, a connection-level error, etc.). Don't treat `false` as "definitely a no-op"; check `wasChanged()` or `prevSibling()` / `nextSibling()` afterwards if you need to distinguish the two.
 
 > **Tree corruption can mask "no neighbour" as a false return.** Both methods look up the sibling via `lft / rgt`, so on a tree with gap corruption (e.g. a leaf hard-delete that mis-shifted bounds) the sibling query may return `null` even though a logical sibling exists. The methods can't distinguish "genuinely no neighbour" from "tree is broken". Pair persistent unexpected `false` returns with `isBroken()` / `countErrors()` to rule out structural corruption before assuming the row really is at an edge.
 

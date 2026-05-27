@@ -23,6 +23,15 @@ MenuItem::isBroken($anyNodeFromThatMenu);   // OK — scoped to that menu
 MenuItem::fixTree($anchor);                 // repair one menu's tree
 ```
 
+**Anchored repair also works on unscoped models** — passing an anchor scopes the rebuild to that anchor's subtree rather than the whole table. Useful when you know one branch is broken and don't want to walk every root:
+
+```php
+Category::fixTree($electronics);   // rebuild Electronics + descendants only
+Category::fixTree();               // rebuild every row in the table
+```
+
+Same `parent_id`-as-source-of-truth contract on both paths — the anchored rebuild reuses the same walk; it just starts from the anchor's children instead of from every root.
+
 ## What gets corrupted, what's auto-fixable, and how to avoid it
 
 The package treats **`parent_id` as the source of truth**. `fixTree()` rebuilds `lft`/`rgt`/`depth` from a `parent_id` walk, so as long as `parent_id` describes the tree you actually want, every other column is recoverable.
