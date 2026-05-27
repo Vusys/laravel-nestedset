@@ -38,6 +38,7 @@ use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -2640,7 +2641,7 @@ trait HasNestedSetAggregates
             ? NestedSetScopeResolver::valuesFor($anchor)
             : [];
 
-        $treeBuilderErrors = TreeAggregateBuilder::aggregateErrors(
+        $treeBuilderErrors = AggregateDiffer::aggregateErrors(
             connection: $instance->getConnection(),
             table: $instance->getTable(),
             lftCol: $instance->getLftName(),
@@ -2730,7 +2731,7 @@ trait HasNestedSetAggregates
             : [];
 
         $startNs = hrtime(true);
-        $sqlResult = TreeAggregateBuilder::fixAggregates(
+        $sqlResult = AggregateDiffer::fixAggregates(
             connection: $instance->getConnection(),
             table: $instance->getTable(),
             lftCol: $instance->getLftName(),
@@ -2939,7 +2940,7 @@ trait HasNestedSetAggregates
             $query->get()->all(),
         ));
 
-        $result = TreeAggregateBuilder::fixAggregates(
+        $result = AggregateDiffer::fixAggregates(
             connection: $instance->getConnection(),
             table: $instance->getTable(),
             lftCol: $instance->getLftName(),
@@ -3198,7 +3199,7 @@ trait HasNestedSetAggregates
             ? NestedSetScopeResolver::valuesFor($anchor)
             : [];
 
-        $sqlResult = TreeAggregateBuilder::fixAggregates(
+        $sqlResult = AggregateDiffer::fixAggregates(
             connection: $instance->getConnection(),
             table: $instance->getTable(),
             lftCol: $instance->getLftName(),
