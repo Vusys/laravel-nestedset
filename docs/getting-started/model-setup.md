@@ -101,11 +101,15 @@ The trait throws two categories of typed exception. **Programmer-error exception
 - **`Vusys\NestedSet\Exceptions\ScopeViolationException`** — a write
   crossed scope boundaries on a `#[NestedSetScope]` model
   (`appendToNode($parentInDifferentScope)`), or a scoped model called
-  `fixTree` / `fixAggregates` / `aggregateErrors` without the
-  required `?HasNestedSet $anchor` argument (or `bulkInsertTree`
-  without its `?HasNestedSet $appendTo` second argument, which plays
-  the same role on that method). The anchor rule prevents accidental
-  full-table walks across millions of rows in many trees. See
+  one of the methods that requires a scoping argument without it:
+  - `fixTree`, `fixAggregates`, `aggregateErrors` — each requires a
+    `?HasNestedSet $anchor` argument.
+  - `bulkInsertTree` — requires a `?HasNestedSet $appendTo` second
+    argument. `$appendTo` plays the same anchor role on this method
+    (the inserted rows land under that node and inherit its scope).
+
+  The anchor rule prevents accidental full-table walks across millions
+  of rows in many trees. See
   [Scoped Trees](../querying/scoped-trees.html).
 - **`Vusys\NestedSet\Exceptions\AggregateConfigurationException`** —
   thrown at registry build time when a `#[NestedSetAggregate]`
