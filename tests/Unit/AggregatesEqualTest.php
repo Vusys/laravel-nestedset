@@ -6,10 +6,10 @@ namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 
 /**
- * Pins the tolerance shape of `TreeAggregateBuilder::aggregatesEqual`.
+ * Pins the tolerance shape of `AggregateValueComparator::aggregatesEqual`.
  * Both sides arrive as int / float / decimal-string / null depending
  * on backend; the comparator must:
  *
@@ -27,25 +27,25 @@ final class AggregatesEqualTest extends TestCase
 {
     public function test_null_equals_null(): void
     {
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(null, null));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(null, null));
     }
 
     public function test_null_differs_from_zero(): void
     {
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(null, 0));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(0, null));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(null, 0));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(0, null));
     }
 
     public function test_exact_int_equality(): void
     {
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(42, 42));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(42, 42));
     }
 
     public function test_int_and_decimal_string_with_same_value(): void
     {
         // Postgres returns DECIMAL columns as strings; the comparator
         // must not flag them as drift.
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(42, '42.0000'));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(42, '42.0000'));
     }
 
     public function test_avg_rounding_at_typical_magnitude_is_tolerated(): void
@@ -53,7 +53,7 @@ final class AggregatesEqualTest extends TestCase
         // 175 / 3 = 58.333... — stored as 58.3333 by the SQL layer
         // and re-computed as 58.33333333333333 in PHP. Should compare
         // equal.
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(58.3333, 175 / 3));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(58.3333, 175 / 3));
     }
 
     public function test_relative_tolerance_handles_float_noise_at_large_magnitudes(): void
@@ -64,7 +64,7 @@ final class AggregatesEqualTest extends TestCase
         $stored = 1_000_000_000.0;
         $computed = 1_000_000_000.0 + 1e-3; // 1e-12 relative
 
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual($stored, $computed));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual($stored, $computed));
     }
 
     public function test_genuine_drift_at_large_magnitudes_is_caught(): void
@@ -73,7 +73,7 @@ final class AggregatesEqualTest extends TestCase
         // tolerances (5e-1 absolute, 5e-10 relative is borderline).
         // Use a clearly-drifted value that's well over both
         // thresholds.
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(1_000_000_000, 1_000_001_000));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(1_000_000_000, 1_000_001_000));
     }
 
     public function test_small_distinct_avg_values_are_not_collapsed(): void
@@ -81,22 +81,22 @@ final class AggregatesEqualTest extends TestCase
         // The old absolute-1e-4 form swallowed the difference here.
         // Source values in the 1e-3 scale (e.g. AVG over per-mille
         // shares) should still detect drift.
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(0.001, 0.002));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(0.001, 0.002));
     }
 
     public function test_zero_is_equal_to_zero_for_all_representations(): void
     {
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(0, 0));
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(0, 0.0));
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual('0', 0));
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual('0.0000', 0));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(0, 0));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(0, 0.0));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual('0', 0));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual('0.0000', 0));
     }
 
     public function test_negative_values_compare_correctly(): void
     {
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(-42, -42));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(-42, 42));
-        $this->assertTrue(TreeAggregateBuilder::aggregatesEqual(-58.3333, -175 / 3));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(-42, -42));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(-42, 42));
+        $this->assertTrue(AggregateValueComparator::aggregatesEqual(-58.3333, -175 / 3));
     }
 
     /**
@@ -106,7 +106,7 @@ final class AggregatesEqualTest extends TestCase
     #[DataProvider('absoluteToleranceBoundaryCases')]
     public function test_absolute_tolerance_boundary(int|float|string|null $a, int|float|string|null $b, bool $expectedEqual, string $why): void
     {
-        $this->assertSame($expectedEqual, TreeAggregateBuilder::aggregatesEqual($a, $b), $why);
+        $this->assertSame($expectedEqual, AggregateValueComparator::aggregatesEqual($a, $b), $why);
     }
 
     /**
@@ -147,7 +147,7 @@ final class AggregatesEqualTest extends TestCase
     #[DataProvider('relativeToleranceBoundaryCases')]
     public function test_relative_tolerance_boundary(int|float|string|null $a, int|float|string|null $b, bool $expectedEqual, string $why): void
     {
-        $this->assertSame($expectedEqual, TreeAggregateBuilder::aggregatesEqual($a, $b), $why);
+        $this->assertSame($expectedEqual, AggregateValueComparator::aggregatesEqual($a, $b), $why);
     }
 
     /**
@@ -191,9 +191,9 @@ final class AggregatesEqualTest extends TestCase
         // PHP's IEEE-754 NaN is not equal to itself; the comparator
         // must propagate that — never silently match a corrupted NaN
         // against a fresh recompute.
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(NAN, NAN));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(NAN, 0));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(NAN, 1e9));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(NAN, NAN));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(NAN, 0));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(NAN, 1e9));
     }
 
     public function test_infinity_stored_value_is_flagged_as_drift_against_finite_recompute(): void
@@ -201,14 +201,14 @@ final class AggregatesEqualTest extends TestCase
         // A row hand-corrupted to +Inf must register as drift against
         // any finite fresh value, so aggregateErrors surfaces the
         // damage and fixAggregates overwrites it.
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(INF, 1e9));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(-INF, 1e9));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(INF, -INF));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(INF, 1e9));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(-INF, 1e9));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(INF, -INF));
 
         // Inf vs Inf: subtraction is NaN, which never falls inside either
         // tolerance branch — also reports drift. Same for -Inf vs -Inf,
         // so the contract holds symmetrically across signs.
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(INF, INF));
-        $this->assertFalse(TreeAggregateBuilder::aggregatesEqual(-INF, -INF));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(INF, INF));
+        $this->assertFalse(AggregateValueComparator::aggregatesEqual(-INF, -INF));
     }
 }

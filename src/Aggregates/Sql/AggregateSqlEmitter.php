@@ -11,14 +11,14 @@ use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
-use Vusys\NestedSet\Query\TreeAggregateBuilder;
+use Vusys\NestedSet\Query\Aggregates\Read\AggregateSqlFragments;
 
 /**
  * Per-driver SQL fragment factory for the collection-aggregate kinds:
  * `DistinctCount`, `StringAgg`, `JsonAgg`, `JsonObjectAgg`.
  *
  * Centralises the backend dispatch so the various aggregate-expression
- * sites in {@see TreeAggregateBuilder} and
+ * sites in {@see AggregateSqlFragments} and
  * {@see RecomputeMaintenance}
  * share one implementation. The existing five numeric kinds keep their
  * inline match — they emit identical SQL on every backend and don't

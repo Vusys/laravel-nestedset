@@ -19,9 +19,8 @@ use Vusys\NestedSet\Tests\TestCase;
  *  - TreeRepairBuilder (`countErrors` orphan join, `rebuildTree` /
  *    `rebuildSubtree`, the bulk `UPDATE ... CASE id WHEN ... END`
  *    writeback).
- *  - TreeAggregateBuilder (`fixAggregates`, `aggregateErrors`,
- *    chain-fold fast-path, grouped-aggregate query, bulk recompute
- *    writeback).
+ *  - AggregateDiffer (`fixAggregates`, `aggregateErrors`, chain-fold
+ *    fast-path, grouped-aggregate query, bulk recompute writeback).
  *  - RecomputeMaintenance (`writeRecomputedValues`).
  *  - HasNestedSetAggregates (listener chain recompute, fix listener
  *    aggregates, chunked anchor lookup — covered indirectly through

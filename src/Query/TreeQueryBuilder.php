@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Columns;
 use Vusys\NestedSet\NodeBounds;
+use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 
 /**
  * @template TModel of Model
@@ -195,7 +196,7 @@ class TreeQueryBuilder extends Builder
     /**
      * Adds correlated-subquery SELECT columns that return freshly-
      * computed aggregate values alongside any stored ones. See
-     * {@see TreeAggregateBuilder::applyFreshSelects()} for accepted
+     * {@see FreshAggregateProjector::applyFreshSelects()} for accepted
      * `$columns` shapes.
      *
      * Passing `null` or omitting the argument selects every user-facing
@@ -230,7 +231,7 @@ class TreeQueryBuilder extends Builder
      */
     public function withFreshAggregates(?array $columns = null): static
     {
-        TreeAggregateBuilder::applyFreshSelects($this, $columns);
+        FreshAggregateProjector::applyFreshSelects($this, $columns);
 
         return $this;
     }

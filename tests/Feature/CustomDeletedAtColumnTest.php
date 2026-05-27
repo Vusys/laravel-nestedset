@@ -22,7 +22,7 @@ use Vusys\NestedSet\Tests\TestCase;
  *    aggregates on `forceDelete()` of an already-soft-deleted row.
  *  - HasNestedSetAggregates::replicate() clearing the soft-delete
  *    column on the clone.
- *  - TreeAggregateBuilder bulk fresh-aggregate paths
+ *  - FreshAggregateProjector bulk fresh-aggregate paths
  *    (withFreshAggregates) filtering trashed descendants.
  */
 final class CustomDeletedAtColumnTest extends TestCase

@@ -164,7 +164,7 @@ final class RawFilterAggregateTest extends TestCase
     // ----------------------------------------------------------------
     // Per-function raw-filter coverage
     //
-    // `TreeAggregateBuilder::inlineRawFilterExpression()` is a match
+    // `AggregateSqlFragments::inlineRawFilterExpression()` is a match
     // expression with one arm per SQL aggregate function (Sum / Count
     // / Avg / Min / Max). The Sum arm is exercised by the tests above;
     // these three tests pin the Count / Min / Max arms by reading
