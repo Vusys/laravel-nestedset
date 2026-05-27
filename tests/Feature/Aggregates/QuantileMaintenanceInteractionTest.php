@@ -25,6 +25,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class QuantileMaintenanceInteractionTest extends TestCase
 {
+    private Area $root;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -46,6 +48,8 @@ final class QuantileMaintenanceInteractionTest extends TestCase
 
         $b = new Area(['name' => 'B', 'tickets' => 25]);
         $b->appendToNode($root->refresh())->save();
+
+        $this->root = $root->refresh();
     }
 
     public function test_declaring_median_via_nested_set_aggregate_throws_with_pointer_to_fresh_read(): void
@@ -88,7 +92,7 @@ final class QuantileMaintenanceInteractionTest extends TestCase
 
         $rootMedianBefore = Area::query()
             ->withFreshAggregates(['subtree_median' => Aggregate::median('tickets')])
-            ->where('id', 1)
+            ->where('id', $this->root->id)
             ->firstOrFail()
             ->getAttribute('subtree_median');
 
@@ -108,7 +112,7 @@ final class QuantileMaintenanceInteractionTest extends TestCase
         // query path is untouched.
         $rootMedianAfter = Area::query()
             ->withFreshAggregates(['subtree_median' => Aggregate::median('tickets')])
-            ->where('id', 1)
+            ->where('id', $this->root->id)
             ->firstOrFail()
             ->getAttribute('subtree_median');
 
@@ -127,7 +131,7 @@ final class QuantileMaintenanceInteractionTest extends TestCase
                 'subtree_median' => Aggregate::median('tickets'),
                 'subtree_p25' => Aggregate::percentile('tickets', 0.25),
             ])
-            ->where('id', 1)
+            ->where('id', $this->root->id)
             ->firstOrFail();
 
         $this->assertSame(225, (int) $root->tickets_total, 'stored SUM column unchanged');

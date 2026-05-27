@@ -157,7 +157,12 @@ trait ConcurrencyHarness
 
         $message = strtolower($e->getMessage());
 
+        // MariaDB error code 1020 ("Record has changed since last
+        // read") fires under contended UPDATEs in REPEATABLE READ —
+        // a snapshot conflict, not a deadlock proper, but the
+        // recovery is identical (re-read, re-issue).
         return str_contains($message, 'deadlock')
-            || str_contains($message, 'lock wait timeout');
+            || str_contains($message, 'lock wait timeout')
+            || str_contains($message, 'record has changed since last read');
     }
 }

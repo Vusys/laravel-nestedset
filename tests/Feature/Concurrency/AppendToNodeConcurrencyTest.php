@@ -65,7 +65,7 @@ final class AppendToNodeConcurrencyTest extends TestCase
         // same slot.
         $rows = Category::query()
             ->orderBy('lft')
-            ->get(['lft', 'rgt'])
+            ->get(['id', 'lft', 'rgt', 'parent_id'])
             ->all();
 
         $lfts = array_map(static fn (Category $r): int => $r->lft, $rows);

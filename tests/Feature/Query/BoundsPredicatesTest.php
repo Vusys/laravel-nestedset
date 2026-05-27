@@ -50,6 +50,21 @@ final class BoundsPredicatesTest extends TestCase
         $this->assertSame(['A', 'AA', 'AB'], $names);
     }
 
+    public function test_where_is_before_excludes_node_whose_rgt_equals_bounds_lft(): void
+    {
+        // Synthetic bounds whose lft (8) matches A.rgt (7) + 1 — wait,
+        // A.rgt=7, B.lft=8 — so picking lft=7 would match A.rgt=7
+        // exactly. The strict `<` predicate must exclude A.
+        $bounds = new NodeBounds(lft: 7, rgt: 100, depth: 0);
+
+        $names = Category::query()->whereIsBefore($bounds)->orderBy('lft')->pluck('name')->all();
+
+        // A.rgt=7 must NOT appear (rgt < 7 required, not rgt <= 7).
+        // AA.rgt=4 and AB.rgt=6 still qualify.
+        $this->assertSame(['AA', 'AB'], $names);
+        $this->assertNotContains('A', $names, 'whereIsBefore must use strict < (A.rgt == bounds.lft must be excluded)');
+    }
+
     public function test_where_is_after_returns_nodes_whose_lft_is_greater_than_bounds_rgt(): void
     {
         // Bounds = A (lft=2, rgt=7). "After A" = nodes whose lft > 7.
@@ -59,5 +74,19 @@ final class BoundsPredicatesTest extends TestCase
 
         // Only B (lft=8) qualifies.
         $this->assertSame(['B'], $names);
+    }
+
+    public function test_where_is_after_excludes_node_whose_lft_equals_bounds_rgt(): void
+    {
+        // Synthetic bounds whose rgt (8) matches B.lft (8) — the strict
+        // `>` predicate must exclude B.
+        $bounds = new NodeBounds(lft: 0, rgt: 8, depth: 0);
+
+        $names = Category::query()->whereIsAfter($bounds)->orderBy('lft')->pluck('name')->all();
+
+        // B.lft=8 must NOT appear (lft > 8 required, not lft >= 8).
+        // No other node has lft > 8 in this tree, so the result is empty.
+        $this->assertSame([], $names);
+        $this->assertNotContains('B', $names, 'whereIsAfter must use strict > (B.lft == bounds.rgt must be excluded)');
     }
 }
