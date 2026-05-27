@@ -18,6 +18,15 @@ Category::query()->withFreshAggregates([
 ])->get();
 ```
 
+`freshAggregate()` takes an optional second argument that matches the rowset of a `withTrashed()` outer query:
+
+```php
+$category->freshAggregate('articles_total');                       // excludes soft-deleted descendants
+$category->freshAggregate('articles_total', withTrashed: true);    // includes them
+```
+
+Use `withTrashed: true` when you're auditing against a `Category::withTrashed()->...` query — without it, the stored column (which excludes trashed rows) and the fresh recompute (which also excludes them) would still agree even if a trashed row's source value had drifted from its in-tree contribution. Most audits don't need this; reach for it only when soft-deleted rows are part of the audited surface.
+
 > [!WARNING]
 > Treat `withFreshAggregates()` (and its no-arg form especially) as a **read-only snapshot**. The fresh value overlays the stored attribute under the same name, so the model's dirty tracking accepts it as the new baseline. Saving a model hydrated through this method will compute aggregate deltas against the fresh value rather than the stored one — silently persisting any drift that existed in the brief window between the read and the write. See [Ad-hoc aliases are in-memory only](#ad-hoc-aliases-are-in-memory-only) below and [Drift & Limitations](drift.html) for the safe side-by-side pattern.
 

@@ -49,6 +49,9 @@ Every node carries its own subtree's rollup — `Computers` independently report
 - [Collection Aggregates](text-and-json.html) — distinctCount, stringAgg, jsonAgg, jsonObjectAgg
 - [Listener Aggregates](listeners.html) — PHP-computed contributions
 - [Variance & Stddev](maths.html) — statistical roll-ups, both population and sample
+- [Weighted Average & Boolean Rollups](weighted-avg-and-booleans.html) — `weightedAvg(value, weight)`, `boolOr`, `boolAnd`
+- [Geometric & Harmonic Mean](means.html) — `geometricMean` / `harmonicMean` with the positivity / non-zero constraint
+- [Median, Percentile & Quantiles](quantiles.html) — fresh-read-only quantiles via `withFreshAggregates()`
 - [Bitwise Aggregates](bitwise.html) — bitOr / bitAnd / bitXor over integer source columns
 - [Recipes](recipes.html) — common shapes
 - [Maintenance](maintenance.html) — what runs when, plus integrity tooling
