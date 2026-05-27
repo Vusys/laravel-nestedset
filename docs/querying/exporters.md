@@ -156,7 +156,8 @@ Category::toAsciiTreeForest();
 Category::toJsonTreeForest();
 ```
 
-When there are multiple roots, `toJsonTreeForest()` returns a list of roots rather than a single dict.
+> [!WARNING]
+> `toJsonTreeForest()` returns a **single root dict when exactly one root exists, and a list of root dicts when there's more than one** — the shape depends on the data. Callers that pass the result straight to a frontend that expects a stable contract will break the first time a second root appears. Normalise with `array_values((array) $result)` if you want a list always, or assert `count($roots) === 1` upstream. The instance `toJsonTree()` always returns a single dict (one node, one tree); the shape problem only applies to the forest variant.
 
 ## Scoped (multi-tree) models
 

@@ -15,6 +15,5 @@ This package is a modern reimplementation — not a fork. Key differences:
 | Depth column | Computed subquery | **Stored, maintained on mutation** |
 | Scoping API | Method-based | Attribute (`#[NestedSetScope]`) + method |
 | Scoped `fixTree()` | Walks whole table | **Refuses without anchor** |
-| Position constants | `int` | `enum Position` |
 | Bounds | Untyped tuple | `readonly class NodeBounds` |
 | Repair result | `int` | `readonly class TreeFixResult` |

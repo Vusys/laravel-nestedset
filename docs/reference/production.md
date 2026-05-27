@@ -46,6 +46,15 @@ No-op on MySQL/PostgreSQL/SQLite — the `SET STATEMENT` prefix is
 MariaDB-specific syntax. Only reach for it if profiling shows the
 fresh-aggregate path running unexpectedly slow on MariaDB.
 
+> [!NOTE]
+> The flag is consulted inside `Builder::runSelect()` only — i.e. it
+> takes effect on `->get()` / `->first()` / `->cursor()` / `->paginate()`.
+> Aggregate calls that bypass `runSelect()` (`->count()`, `->sum()`,
+> `->exists()`) and DML calls (`->update()`, `->delete()`) don't carry
+> the prefix. In practice this matches the use case — the fresh-aggregate
+> overhead is on the row-returning paths — but worth knowing if you
+> profile a `->count()` and wonder why the optimisation didn't show up.
+
 ## Telemetry
 
 The package fires typed events on Laravel's event bus around every
