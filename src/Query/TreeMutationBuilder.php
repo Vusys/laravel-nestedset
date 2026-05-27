@@ -181,14 +181,32 @@ final readonly class TreeMutationBuilder
     // ----------------------------------------------------------------
 
     /**
+     * @param  bool  $lockForUpdate  When true and the backend supports
+     *                               row locking, the SELECT acquires a
+     *                               FOR UPDATE lock that serialises
+     *                               concurrent readers of the same row.
+     *                               Required for the parent/sibling read
+     *                               in appendToNode / prependToNode /
+     *                               insertBefore / insertAfter — without
+     *                               it, two concurrent appenders read the
+     *                               same parent.rgt and insert at the
+     *                               same slot, producing duplicate-lft
+     *                               corruption. SQLite is single-writer
+     *                               so the flag is a no-op there.
+     *
      * @return array{lft: int, rgt: int, depth: int, parent_id: int|string|null}
      */
-    public function getPlainNodeData(int|string $id): array
+    public function getPlainNodeData(int|string $id, bool $lockForUpdate = false): array
     {
-        $row = $this->connection->table($this->table)
+        $query = $this->connection->table($this->table)
             ->select([$this->lft, $this->rgt, $this->parentId, $this->depth])
-            ->where($this->idCol, $id)
-            ->first();
+            ->where($this->idCol, $id);
+
+        if ($lockForUpdate && $this->connection->getDriverName() !== 'sqlite') {
+            $query->lockForUpdate();
+        }
+
+        $row = $query->first();
 
         if ($row === null) {
             throw new RuntimeException("Node {$id} not found.");
@@ -207,9 +225,9 @@ final readonly class TreeMutationBuilder
         ];
     }
 
-    public function getNodeData(int|string $id): NodeBounds
+    public function getNodeData(int|string $id, bool $lockForUpdate = false): NodeBounds
     {
-        $data = $this->getPlainNodeData($id);
+        $data = $this->getPlainNodeData($id, $lockForUpdate);
 
         return new NodeBounds(
             lft: $data['lft'],

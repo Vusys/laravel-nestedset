@@ -16,8 +16,9 @@ use Vusys\NestedSet\Tests\TestCase;
  *
  * Companion to `MakeRootConcurrencyTest`. Where that file races
  * roots against the max-rgt lock, this one races children against a
- * single parent's gap-shift lock — the contention point most
- * applications actually hit at scale.
+ * single parent's gap-shift — both rely on the FOR UPDATE lock that
+ * `actAppendTo` / `actPrependTo` / `actSibling` acquire on the
+ * target row before reading its bounds.
  *
  * Skipped on SQLite (no row locking; in-memory DB doesn't cross fork).
  * Skipped when `pcntl_fork` is unavailable. Runs end-to-end on the CI
