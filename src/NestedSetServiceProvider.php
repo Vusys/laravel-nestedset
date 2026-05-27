@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet;
 
 use Closure;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
@@ -12,6 +14,7 @@ use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\CompanionSourceOrigin;
 use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\CompanionSpec;
+use Vusys\NestedSet\Aggregates\SqliteBitwiseAggregates;
 
 final class NestedSetServiceProvider extends ServiceProvider
 {
@@ -44,6 +47,8 @@ final class NestedSetServiceProvider extends ServiceProvider
      * reusing the standard sum/count shape.
      */
     public const string AGGREGATE_TYPE_SUM_SQ = 'sum_sq';
+
+    public const string AGGREGATE_TYPE_BITWISE = 'bitwise';
 
     public const string AGGREGATE_TYPE_DISTINCT_COUNT = 'distinct_count';
 
@@ -91,6 +96,23 @@ final class NestedSetServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/nestedset.php' => config_path('nestedset.php'),
         ], 'nestedset-config');
+
+        // SQLite has no native BIT_OR / BIT_AND / BIT_XOR aggregates;
+        // register them as UDAs on every fresh connection so the same
+        // native-aggregate SQL the package emits on MySQL / MariaDB /
+        // PostgreSQL also runs there. Idempotent per-PDO.
+        //
+        // Listener fires for connections established after the package
+        // boots. {@see SqliteBitwiseAggregates::ensureInstalled()} is
+        // also called defensively at every bitwise-SQL emission site
+        // so connections established before boot still get covered.
+        $dispatcher = $this->app->make(Dispatcher::class);
+        $dispatcher->listen(
+            ConnectionEstablished::class,
+            static function (ConnectionEstablished $event): void {
+                SqliteBitwiseAggregates::ensureInstalled($event->connection);
+            },
+        );
 
         // Laravel rebinds macro closure scope to Blueprint, so self:: would resolve
         // to Blueprint. Capture the resolver as a static closure to preserve config access.
@@ -232,6 +254,16 @@ final class NestedSetServiceProvider extends ServiceProvider
             // MIN / MAX — nullable signed big int. Signed because the
             // source column may legitimately hold negative values, and
             // empty subtrees yield NULL rather than 0.
+            $table->bigInteger($column)->nullable();
+
+            return;
+        }
+
+        if ($type === self::AGGREGATE_TYPE_BITWISE) {
+            // BIT_OR / BIT_AND / BIT_XOR — nullable signed big int.
+            // Bit-width matches MySQL/MariaDB/PG native bitwise
+            // aggregates; nullable so an empty subtree reads as NULL
+            // (distinguishable from "every row had zero bits set").
             $table->bigInteger($column)->nullable();
 
             return;
@@ -422,6 +454,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
             self::AGGREGATE_TYPE_MIN_MAX,
             self::AGGREGATE_TYPE_SUM_SQ,
+            self::AGGREGATE_TYPE_BITWISE,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
             self::AGGREGATE_TYPE_STRING_AGG,
             self::AGGREGATE_TYPE_JSON => null,
@@ -448,6 +481,7 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_SUM_SQ,
                 self::AGGREGATE_TYPE_DECIMAL_SUM,
                 self::AGGREGATE_TYPE_HIGH_PRECISION_SUM,
+                self::AGGREGATE_TYPE_BITWISE,
                 self::AGGREGATE_TYPE_DISTINCT_COUNT,
                 self::AGGREGATE_TYPE_STRING_AGG,
                 self::AGGREGATE_TYPE_JSON,

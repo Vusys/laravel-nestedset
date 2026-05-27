@@ -7,18 +7,34 @@ namespace Vusys\NestedSet\Aggregates;
 /**
  * Aggregate functions the package supports for precalculated columns.
  *
+ * Numeric rollups (`Sum`, `Count`, `Avg`, `Min`, `Max`); statistical rollups
+ * (`Variance`, `Stddev`, `WeightedAvg`, `GeometricMean`, `HarmonicMean`);
+ * boolean rollups (`BoolOr`, `BoolAnd`); bitwise rollups (`BitOr`, `BitAnd`,
+ * `BitXor`); collection-aggregate kinds (`DistinctCount`, `StringAgg`,
+ * `JsonAgg`, `JsonObjectAgg`); and fresh-read-only quantile kinds (`Median`,
+ * `Percentile`).
+ *
+ * `BitXor` is unusual in being delta-maintainable on both insert and
+ * delete — XOR is self-inverse, so removing a row is the same operation
+ * as adding it. `BitOr` is delta-maintainable on insert only (monotone-
+ * add — deletes can lose a bit that no other row held); `BitAnd` is
+ * recompute-only. The collection-aggregate kinds are all recompute-only.
+ *
  * Backed by string so values appear human-readable in error messages,
  * logs, and debug dumps.
  *
  * Families:
- *  - *delta-maintainable*: Sum, Count.
+ *  - *delta-maintainable*: Sum, Count, BitXor.
  *  - *derived-from-companions*: Avg, Variance, Stddev, WeightedAvg,
  *    BoolOr, BoolAnd, GeometricMean, HarmonicMean — each declares a
  *    {@see CompanionSpec} set that the registry auto-promotes into
  *    delta-maintainable internal columns; the user-facing column is
  *    written by a SQL formula over the companions on every mutation.
- *  - *recompute-only*: Min, Max, DistinctCount, StringAgg, JsonAgg,
- *    JsonObjectAgg — no companions; each mutation re-reads the subtree.
+ *  - *recompute-only*: Min, Max, BitOr, BitAnd, DistinctCount, StringAgg,
+ *    JsonAgg, JsonObjectAgg — no companions; each mutation re-reads the
+ *    subtree.
+ *  - *fresh-read-only*: Median, Percentile — no companions, no maintenance;
+ *    only available via `withFreshAggregates()`.
  */
 enum AggregateFunction: string
 {
@@ -34,6 +50,9 @@ enum AggregateFunction: string
     case BoolAnd = 'bool_and';
     case GeometricMean = 'geometric_mean';
     case HarmonicMean = 'harmonic_mean';
+    case BitOr = 'bit_or';
+    case BitAnd = 'bit_and';
+    case BitXor = 'bit_xor';
     case DistinctCount = 'distinct_count';
     case StringAgg = 'string_agg';
     case JsonAgg = 'json_agg';
@@ -44,17 +63,23 @@ enum AggregateFunction: string
 
     /**
      * True for functions whose maintenance can be expressed as a single
-     * delta `UPDATE col = col + Δ` on each ancestor row. The remaining
-     * functions need a subtree recompute on at least some mutation paths
-     * (see {@see Aggregate} class docblock).
+     * delta `UPDATE col = col {op} Δ` on each ancestor row. The
+     * remaining functions need a subtree recompute on at least some
+     * mutation paths (see {@see Aggregate} class docblock).
+     *
+     * `BitXor` is delta-maintainable end-to-end via `col ^= Δ`. `BitOr`
+     * reports false here because its delete path needs a recompute —
+     * the insert-side `col |= new` is handled out-of-band by the
+     * capture pipeline.
      */
     public function supportsDelta(): bool
     {
         return match ($this) {
-            self::Sum, self::Count => true,
+            self::Sum, self::Count, self::BitXor => true,
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::WeightedAvg, self::BoolOr, self::BoolAnd,
             self::GeometricMean, self::HarmonicMean,
+            self::BitOr, self::BitAnd,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg,
             self::Median, self::Percentile => false,
@@ -64,8 +89,12 @@ enum AggregateFunction: string
     /**
      * True for functions whose canonical "empty subtree" answer is NULL
      * rather than zero. Aggregate columns of these functions are stored
-     * nullable; SUM, COUNT and DistinctCount default to 0 and stay
+     * nullable; SUM, COUNT, and DistinctCount default to 0 and stay
      * non-null.
+     *
+     * Bitwise rollups default to NULL on empty so callers can
+     * distinguish "no descendants" from "every descendant has zero
+     * bits set" — same convention as `BIT_OR` on PostgreSQL / MariaDB.
      */
     public function nullableOnEmpty(): bool
     {
@@ -74,6 +103,7 @@ enum AggregateFunction: string
             self::Avg, self::Min, self::Max, self::Variance, self::Stddev,
             self::WeightedAvg, self::BoolOr, self::BoolAnd,
             self::GeometricMean, self::HarmonicMean,
+            self::BitOr, self::BitAnd, self::BitXor,
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg,
             self::Median, self::Percentile => true,
         };
@@ -93,9 +123,9 @@ enum AggregateFunction: string
      * recomputing the subtree.
      *
      * Functions that are themselves delta-maintainable (`Sum`,
-     * `Count`) or that route through full subtree recompute (`Min`,
-     * `Max`, DistinctCount, StringAgg, JsonAgg, JsonObjectAgg) declare
-     * no companions.
+     * `Count`, `BitXor`) or that route through full subtree recompute
+     * (`Min`, `Max`, `BitOr`, `BitAnd`, DistinctCount, StringAgg,
+     * JsonAgg, JsonObjectAgg) declare no companions.
      *
      * @return list<CompanionSpec>
      */
@@ -135,6 +165,7 @@ enum AggregateFunction: string
                 new CompanionSpec('__count', self::Count, CompanionSourceTransform::Recip),
             ],
             self::Sum, self::Count, self::Min, self::Max,
+            self::BitOr, self::BitAnd, self::BitXor,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg,
             self::Median, self::Percentile => [],

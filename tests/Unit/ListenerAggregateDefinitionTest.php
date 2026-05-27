@@ -111,4 +111,16 @@ final class ListenerAggregateDefinitionTest extends TestCase
 
         $definition->makeListener();
     }
+
+    public function test_rejects_bitwise_operations(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('cannot use a bitwise operation');
+
+        new ListenerAggregateDefinition(
+            column: 'features_or',
+            listenerClass: WeightedPowerListener::class,
+            operation: AggregateFunction::BitOr,
+        );
+    }
 }

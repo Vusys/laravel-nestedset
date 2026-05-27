@@ -12,6 +12,7 @@ use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\FilterPredicate;
 use Vusys\NestedSet\Aggregates\FilterPredicateKind;
 use Vusys\NestedSet\Aggregates\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeBounds;
@@ -69,6 +70,22 @@ final class RecomputeMaintenance
     ): int {
         if ($columns === []) {
             return 0;
+        }
+
+        // Bitwise rollups rely on BIT_OR / BIT_AND / BIT_XOR aggregate
+        // functions. SQLite has no natives; install the UDAs lazily so
+        // recomputes triggered before the ConnectionEstablished
+        // listener fires still resolve them.
+        foreach ($columns as $column) {
+            if (in_array($column['function'], [
+                AggregateFunction::BitOr,
+                AggregateFunction::BitAnd,
+                AggregateFunction::BitXor,
+            ], true)) {
+                SqliteBitwiseAggregates::ensureInstalled($connection);
+
+                break;
+            }
         }
 
         $candidates = self::candidatesForRecompute(
@@ -334,6 +351,14 @@ final class RecomputeMaintenance
                 ),
                 AggregateFunction::Variance => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: false),
                 AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: true),
+                AggregateFunction::BitOr,
+                AggregateFunction::BitAnd,
+                AggregateFunction::BitXor => sprintf(
+                    '%s(CASE WHEN %s THEN %s ELSE NULL END)',
+                    self::bitwiseFunctionName($spec['function']),
+                    $pred,
+                    $sourceRef,
+                ),
                 AggregateFunction::WeightedAvg,
                 AggregateFunction::BoolOr,
                 AggregateFunction::BoolAnd,
@@ -377,6 +402,13 @@ final class RecomputeMaintenance
                 countExpr: "COUNT({$sourceRef})",
                 sample: $sample,
             ),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => sprintf(
+                '%s(%s)',
+                self::bitwiseFunctionName($spec['function']),
+                $sourceRef,
+            ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -395,6 +427,18 @@ final class RecomputeMaintenance
                 $connection,
                 self::requireDefinitionFromSpec($spec),
                 'inner_a.',
+            ),
+        };
+    }
+
+    private static function bitwiseFunctionName(AggregateFunction $function): string
+    {
+        return match ($function) {
+            AggregateFunction::BitOr => 'BIT_OR',
+            AggregateFunction::BitAnd => 'BIT_AND',
+            AggregateFunction::BitXor => 'BIT_XOR',
+            default => throw new AggregateConfigurationException(
+                'bitwiseFunctionName(): not a bitwise aggregate function: '.$function->value,
             ),
         };
     }

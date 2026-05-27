@@ -100,6 +100,24 @@ final class AggregateTest extends TestCase
         $this->assertTrue($definition->sample);
     }
 
+    public function test_bit_or_factory_captures_source(): void
+    {
+        $this->assertSame('feature_bits', Aggregate::bitOr('feature_bits')->source);
+        $this->assertSame(AggregateFunction::BitOr, Aggregate::bitOr('feature_bits')->function);
+    }
+
+    public function test_bit_and_factory_captures_source(): void
+    {
+        $this->assertSame('feature_bits', Aggregate::bitAnd('feature_bits')->source);
+        $this->assertSame(AggregateFunction::BitAnd, Aggregate::bitAnd('feature_bits')->function);
+    }
+
+    public function test_bit_xor_factory_captures_source(): void
+    {
+        $this->assertSame('feature_bits', Aggregate::bitXor('feature_bits')->source);
+        $this->assertSame(AggregateFunction::BitXor, Aggregate::bitXor('feature_bits')->function);
+    }
+
     public function test_inclusive_is_the_default(): void
     {
         $this->assertTrue(Aggregate::sum('tickets')->inclusive);
@@ -107,6 +125,9 @@ final class AggregateTest extends TestCase
         $this->assertTrue(Aggregate::avg('tickets')->inclusive);
         $this->assertTrue(Aggregate::min('tickets')->inclusive);
         $this->assertTrue(Aggregate::max('tickets')->inclusive);
+        $this->assertTrue(Aggregate::bitOr('feature_bits')->inclusive);
+        $this->assertTrue(Aggregate::bitAnd('feature_bits')->inclusive);
+        $this->assertTrue(Aggregate::bitXor('feature_bits')->inclusive);
     }
 
     public function test_exclusive_modifier_flips_the_inclusive_flag(): void

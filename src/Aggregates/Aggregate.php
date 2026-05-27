@@ -361,6 +361,37 @@ final readonly class Aggregate
     }
 
     /**
+     * Bitwise-OR of source over the subtree. Delta-maintainable on
+     * insert (`parent |= new`); deletes route through chain recompute
+     * because removing a row may unset a bit no other row was holding.
+     */
+    public static function bitOr(string $source): self
+    {
+        return new self(AggregateFunction::BitOr, $source, true);
+    }
+
+    /**
+     * Bitwise-AND of source over the subtree. Every mutation that
+     * touches the source column routes through chain recompute — both
+     * inserts and deletes can change which bits survive the AND fold.
+     */
+    public static function bitAnd(string $source): self
+    {
+        return new self(AggregateFunction::BitAnd, $source, true);
+    }
+
+    /**
+     * Bitwise-XOR of source over the subtree. The only non-Sum-family
+     * aggregate with a delta path on both insert *and* delete — XOR is
+     * self-inverse, so `parent ^= row` works in either direction.
+     * Useful as a cheap subtree fingerprint that ignores row order.
+     */
+    public static function bitXor(string $source): self
+    {
+        return new self(AggregateFunction::BitXor, $source, true);
+    }
+
+    /**
      * COUNT(DISTINCT source) over the subtree — cardinality of values
      * in the named column across descendants (and self when inclusive).
      * Always recompute-only: a removed value might or might not still

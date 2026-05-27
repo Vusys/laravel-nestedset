@@ -36,7 +36,16 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
         public AggregateFunction $operation,
         public bool $inclusive = true,
         public bool $internal = false,
-    ) {}
+    ) {
+        if (in_array($this->operation, [AggregateFunction::BitOr, AggregateFunction::BitAnd, AggregateFunction::BitXor], true)) {
+            throw new AggregateConfigurationException(sprintf(
+                'Listener aggregate "%s" cannot use a bitwise operation (%s). '
+                .'Bitwise rollups are SQL-only — declare via #[NestedSetAggregate(bitOr: ...)] or Aggregate::bitOr(...) on a source column.',
+                $column,
+                $operation->value,
+            ));
+        }
+    }
 
     public function getColumn(): string
     {

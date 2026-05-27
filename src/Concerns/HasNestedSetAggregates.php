@@ -108,6 +108,17 @@ trait HasNestedSetAggregates
     private array $capturedListenerRecomputes = [];
 
     /**
+     * Bitwise BitOr / BitXor deltas captured in `saving` / `created` /
+     * `deleted`. Each entry encodes the value to fold in (XOR for
+     * BitXor — self-inverse; OR for BitOr — monotone-add on insert).
+     * BitAnd never appears here; it always routes through chain
+     * recompute.
+     *
+     * @var array<string, array{function: AggregateFunction, value: int|float}>
+     */
+    private array $capturedBitwise = [];
+
+    /**
      * Aggregate definitions that need an ancestor-chain recompute on
      * the next applyAggregateDeltas() pass. Covers two cases the
      * delta path can't (or doesn't) handle:
@@ -238,6 +249,11 @@ trait HasNestedSetAggregates
                 'Variance / Stddev are not supported for listener aggregates. '
                 .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
             ),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => throw new \LogicException(
+                'Bitwise listener aggregates are not supported — ListenerAggregateDefinition rejects them at construction.',
+            ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -304,6 +320,7 @@ trait HasNestedSetAggregates
         $this->capturedRecomputes = [];
         $this->capturedListenerRecomputes = [];
         $this->capturedChainRecomputes = [];
+        $this->capturedBitwise = [];
 
         if (! $this->exists) {
             return;
@@ -501,6 +518,42 @@ trait HasNestedSetAggregates
                         ];
                     }
                 }
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::BitXor && $source !== null) {
+                // BitXor is self-inverse — `parent ^= old` undoes the
+                // old contribution; `parent ^= new` adds the new one.
+                // Combined: `parent ^= (oldContrib ^ newContrib)` where
+                // each contrib is the source value when the row passes
+                // the filter, else 0 (the identity for XOR).
+                $newSource = self::numeric($this->getAttribute($source));
+                $oldSource = self::numeric($this->getOriginal($source));
+                $newContrib = $newPred ? $newSource : 0;
+                $oldContrib = $oldPred ? $oldSource : 0;
+                $xorDelta = $oldContrib ^ $newContrib;
+
+                if ($xorDelta !== 0) {
+                    $this->capturedBitwise[$definition->column] = [
+                        'function' => AggregateFunction::BitXor,
+                        'value' => $xorDelta,
+                    ];
+                }
+
+                continue;
+            }
+
+            if (in_array($definition->function, [AggregateFunction::BitOr, AggregateFunction::BitAnd], true)
+                && $source !== null
+            ) {
+                // BitOr: source change can drop a bit no other row holds
+                // (`parent |= new` would not unset it). BitAnd: every
+                // change can promote or demote the AND fold. Route both
+                // through chain recompute on any dirty source.
+                $this->capturedChainRecomputes[$definition->column] = $definition;
+
+                continue;
             }
         }
 
@@ -701,14 +754,16 @@ trait HasNestedSetAggregates
         $recomputes = $this->capturedRecomputes;
         $listenerRecomputes = $this->capturedListenerRecomputes;
         $chainRecomputes = $this->capturedChainRecomputes;
+        $bitwise = $this->capturedBitwise;
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
         $this->capturedRecomputes = [];
         $this->capturedListenerRecomputes = [];
         $this->capturedChainRecomputes = [];
+        $this->capturedBitwise = [];
 
-        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $bitwise === []) {
             return;
         }
 
@@ -731,6 +786,7 @@ trait HasNestedSetAggregates
             scope: $scope,
             avgs: AggregateRegistry::avgCompanionsFor(static::class),
             extremes: $extremes,
+            bitwise: $bitwise,
             softDeletedColumn: $this->softDeleteColumn(),
             variances: AggregateRegistry::varianceCompanionsFor(static::class),
             weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
@@ -871,7 +927,10 @@ trait HasNestedSetAggregates
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => true,
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => true,
             default => false,
         };
     }
@@ -967,6 +1026,8 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $extremes = [];
+        /** @var array<string, array{function: AggregateFunction, value: int}> $bitwise */
+        $bitwise = [];
         /** @var array<string, AggregateDefinition> $chainRecomputes */
         $chainRecomputes = [];
 
@@ -1050,6 +1111,31 @@ trait HasNestedSetAggregates
                     'function' => $definition->function,
                     'value' => $value,
                 ];
+
+                continue;
+            }
+
+            if (($definition->function === AggregateFunction::BitOr
+                || $definition->function === AggregateFunction::BitXor)
+                && $definition->source !== null
+            ) {
+                if ($definition->filter instanceof FilterPredicate
+                    && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
+                    continue;
+                }
+                $value = self::numeric($this->getAttribute($definition->source));
+                $bitwise[$definition->column] = [
+                    'function' => $definition->function,
+                    'value' => $value,
+                ];
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::BitAnd && $definition->source !== null) {
+                // BitAnd: inserting a row with any bit cleared narrows
+                // the AND fold; can't be expressed as a single delta.
+                $chainRecomputes[$definition->column] = $definition;
             }
         }
 
@@ -1111,13 +1197,13 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $exclusiveListenerDefs === []) {
+        if ($deltas === [] && $extremes === [] && $bitwise === [] && $chainRecomputes === [] && $exclusiveListenerDefs === []) {
             return;
         }
 
         $scope = NestedSetScopeResolver::valuesFor($this);
 
-        if ($deltas !== [] || $extremes !== []) {
+        if ($deltas !== [] || $extremes !== [] || $bitwise !== []) {
             DeltaMaintenance::apply(
                 connection: $this->getConnection(),
                 table: $this->getTable(),
@@ -1129,6 +1215,7 @@ trait HasNestedSetAggregates
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
                 extremes: $extremes,
+                bitwise: $bitwise,
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
@@ -1176,6 +1263,8 @@ trait HasNestedSetAggregates
 
         $deltas = [];
         $minMaxRecomputes = [];
+        /** @var array<string, array{function: AggregateFunction, value: int}> $bitwise */
+        $bitwise = [];
         /** @var array<string, AggregateDefinition> $chainRecomputes */
         $chainRecomputes = [];
 
@@ -1240,6 +1329,37 @@ trait HasNestedSetAggregates
                     'filterValue' => $stored,
                     'filter' => $definition->filter,
                 ];
+
+                continue;
+            }
+
+            if ($definition->function === AggregateFunction::BitXor && $definition->source !== null) {
+                // BitXor self-inverse: XOR-ing the deleted subtree's
+                // rolled-up value out of each ancestor undoes its
+                // contribution exactly. Use the stored display column
+                // — it already holds the inclusive subtree XOR.
+                $stored = $this->getAttribute($definition->column);
+                if ($stored !== null) {
+                    $value = self::numeric($stored);
+                    if ($value !== 0) {
+                        $bitwise[$definition->column] = [
+                            'function' => AggregateFunction::BitXor,
+                            'value' => $value,
+                        ];
+                    }
+                }
+
+                continue;
+            }
+
+            if (($definition->function === AggregateFunction::BitOr
+                || $definition->function === AggregateFunction::BitAnd)
+                && $definition->source !== null
+            ) {
+                // BitOr: removing a row can clear a bit no one else
+                // holds. BitAnd: removing a row can raise the AND
+                // fold. Both route through chain recompute.
+                $chainRecomputes[$definition->column] = $definition;
             }
         }
 
@@ -1283,7 +1403,7 @@ trait HasNestedSetAggregates
 
         $scope = NestedSetScopeResolver::valuesFor($this);
 
-        if ($deltas !== []) {
+        if ($deltas !== [] || $bitwise !== []) {
             DeltaMaintenance::apply(
                 connection: $this->getConnection(),
                 table: $this->getTable(),
@@ -1294,6 +1414,7 @@ trait HasNestedSetAggregates
                 includeSelf: false,
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor(static::class),
+                bitwise: $bitwise,
                 softDeletedColumn: $this->softDeleteColumn(),
                 variances: AggregateRegistry::varianceCompanionsFor(static::class),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor(static::class),
@@ -1415,10 +1536,11 @@ trait HasNestedSetAggregates
             if (! $def instanceof AggregateDefinition) {
                 continue;
             }
-            // Exclusive defs (any function/filter) and inclusive defs
-            // with a raw filter both ride the chain-recompute path on
-            // the old chain. The moving subtree is logically excluded
-            // via excludeBounds since the structural SQL hasn't run.
+            // Exclusive defs (any function/filter), inclusive defs with
+            // a raw filter, and bitwise rollups all ride the
+            // chain-recompute path on the old chain. The moving
+            // subtree is logically excluded via excludeBounds since
+            // the structural SQL hasn't run.
             $isRawFilter = $def->filter instanceof FilterPredicate
                 && $def->filter->getKind() === FilterPredicateKind::Raw;
             if (! $def->inclusive || $isRawFilter || self::requiresChainRecompute($def->function)) {
@@ -1808,6 +1930,18 @@ trait HasNestedSetAggregates
                     'function' => $definition->function,
                     'value' => $value,
                 ];
+
+                continue;
+            }
+
+            if (in_array($definition->function, [AggregateFunction::BitOr, AggregateFunction::BitAnd, AggregateFunction::BitXor], true)
+                && $definition->source !== null
+            ) {
+                // Restore via chain recompute for all three bitwise
+                // kinds. BitXor could ride the delta path, but the
+                // non-soft-delete restore is rare enough that the
+                // uniform path is the right trade-off.
+                $chainRecomputes[$definition->column] = $definition;
             }
         }
 
@@ -1840,7 +1974,9 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above.
+            // Min / Max — only remaining ops after Sum/Count/Avg above
+            // for SQL listeners. (Bitwise listener aggregates are
+            // rejected at ListenerAggregateDefinition construction.)
             $value = self::numericPreserveType($this->getAttribute($definition->column));
             $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
@@ -2337,6 +2473,11 @@ trait HasNestedSetAggregates
             AggregateFunction::Variance, AggregateFunction::Stddev => throw new \LogicException(
                 'Variance / Stddev are not supported for listener aggregates. '
                 .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
+            ),
+            AggregateFunction::BitOr,
+            AggregateFunction::BitAnd,
+            AggregateFunction::BitXor => throw new \LogicException(
+                'Bitwise listener aggregates are not supported — ListenerAggregateDefinition rejects them at construction.',
             ),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,

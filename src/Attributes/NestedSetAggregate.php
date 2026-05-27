@@ -24,8 +24,10 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *     class Area extends Model implements HasNestedSet { use NodeTrait; }
  *
  * Exactly one of `sum | count | avg | min | max | variance | stddev |
- * distinctCount | stringAgg | jsonAgg | jsonObjectAgg` must be provided
- * per attribute instance; passing zero or more than one throws
+ * weightedAvg | boolOr | boolAnd | geometricMean | harmonicMean |
+ * bitOr | bitAnd | bitXor | distinctCount | stringAgg | jsonAgg |
+ * jsonObjectAgg` must be provided per attribute instance; passing zero
+ * or more than one throws
  * {@see AggregateConfigurationException} when the registry resolves
  * declarations. `count: true` declares COUNT(*); for the
  * non-null-skipping COUNT(column) variant use the method-override form
@@ -75,6 +77,9 @@ final readonly class NestedSetAggregate
         public ?string $variance = null,
         public ?string $stddev = null,
         public bool $sample = false,
+        public ?string $bitOr = null,
+        public ?string $bitAnd = null,
+        public ?string $bitXor = null,
         public ?string $distinctCount = null,
         public ?string $stringAgg = null,
         public string|array|null $jsonAgg = null,
@@ -133,6 +138,7 @@ final readonly class NestedSetAggregate
                 'NestedSetAggregate for column "%s": no aggregate function declared. '
                 .'Provide exactly one of sum, count, avg, min, max, variance, stddev, '
                 .'weightedAvg, boolOr, boolAnd, geometricMean, harmonicMean, '
+                .'bitOr, bitAnd, bitXor, '
                 .'distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
                 $this->column,
             ));
@@ -190,6 +196,15 @@ final readonly class NestedSetAggregate
         if ($this->stddev !== null) {
             $declared['stddev'] = $this->stddev;
         }
+        if ($this->bitOr !== null) {
+            $declared['bitOr'] = $this->bitOr;
+        }
+        if ($this->bitAnd !== null) {
+            $declared['bitAnd'] = $this->bitAnd;
+        }
+        if ($this->bitXor !== null) {
+            $declared['bitXor'] = $this->bitXor;
+        }
         if ($this->distinctCount !== null) {
             $declared['distinctCount'] = $this->distinctCount;
         }
@@ -231,6 +246,9 @@ final readonly class NestedSetAggregate
             'max' => $this->simpleDefinition(AggregateFunction::Max, $this->max),
             'variance' => $this->varianceDefinition(AggregateFunction::Variance, $this->variance),
             'stddev' => $this->varianceDefinition(AggregateFunction::Stddev, $this->stddev),
+            'bitOr' => $this->simpleDefinition(AggregateFunction::BitOr, $this->bitOr),
+            'bitAnd' => $this->simpleDefinition(AggregateFunction::BitAnd, $this->bitAnd),
+            'bitXor' => $this->simpleDefinition(AggregateFunction::BitXor, $this->bitXor),
             'distinctCount' => $this->distinctCountDefinition(),
             'stringAgg' => $this->stringAggDefinition(),
             'jsonAgg' => $this->jsonAggDefinition(),

@@ -96,6 +96,33 @@ final class NestedSetAggregateTest extends TestCase
         ))->toDefinition();
     }
 
+    public function test_bit_or_declaration_produces_a_bit_or_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'features_or', bitOr: 'feature_bits'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::BitOr, $definition->function);
+        $this->assertSame('feature_bits', $definition->source);
+    }
+
+    public function test_bit_and_declaration_produces_a_bit_and_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'features_and', bitAnd: 'feature_bits'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::BitAnd, $definition->function);
+        $this->assertSame('feature_bits', $definition->source);
+    }
+
+    public function test_bit_xor_declaration_produces_a_bit_xor_definition(): void
+    {
+        $definition = (new NestedSetAggregate(column: 'features_xor', bitXor: 'feature_bits'))
+            ->toDefinition();
+
+        $this->assertSame(AggregateFunction::BitXor, $definition->function);
+        $this->assertSame('feature_bits', $definition->source);
+    }
+
     public function test_exclusive_flag_propagates_to_definition(): void
     {
         $definition = (new NestedSetAggregate(
