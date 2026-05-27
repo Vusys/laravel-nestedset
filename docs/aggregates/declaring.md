@@ -41,6 +41,10 @@ For integer source columns packing independent yes/no bits — feature flags, ca
 
 `Aggregate::weightedAvg(value, weight)`, `Aggregate::boolOr(source)`, and `Aggregate::boolAnd(source)` are delta-maintainable but derived from companion sums — `weightedAvg` rides on `Σ(weight · value)` and `Σ(weight)`; the boolean rollups share a single `Sum(source AS INT)` + `Count` pair. See [Weighted Average & Boolean Rollups](weighted-avg-and-booleans.html) for the API, migration shape, and the per-backend storage caveats.
 
+`Aggregate::geometricMean(source)` and `Aggregate::harmonicMean(source)` are companion-derived too — `geometricMean` rides on `Σ LN(source)` + `Count`; `harmonicMean` on `Σ 1/source` + `Count`. Both have a domain restriction (geometric needs strictly positive values; harmonic needs non-zero) and throw `AggregateSourceConstraintViolationException` by default. See [Geometric & Harmonic Mean](means.html) for the constraint behaviour, the `allowNonPositive()` opt-out, and the wider-precision companion storage shape.
+
+`Aggregate::median(source)` and `Aggregate::percentile(source, $p)` (plus the `percentiles([...])` / `quartiles()` bundlers) are **fresh-read-only** — they cannot be stored as columns and only work through `withFreshAggregates([...])`. See [Quantiles](quantiles.html).
+
 The existing `min` / `max` factories also work on text columns and produce lexicographic min/max — useful for "first alphabetical descendant tag" and similar queries.
 
 ## Introspection
