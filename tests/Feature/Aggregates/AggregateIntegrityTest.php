@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;

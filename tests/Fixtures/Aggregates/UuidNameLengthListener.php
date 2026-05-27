@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+use Vusys\NestedSet\Contracts\TreeAggregateListener;
 
 /**
  * Returns the byte length of a UuidTag's `name`. Summed up the

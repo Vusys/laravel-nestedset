@@ -11,10 +11,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\CompanionSourceOrigin;
-use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
-use Vusys\NestedSet\Aggregates\CompanionSpec;
-use Vusys\NestedSet\Aggregates\SqliteBitwiseAggregates;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceOrigin;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
+use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 
 final class NestedSetServiceProvider extends ServiceProvider
 {

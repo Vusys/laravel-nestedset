@@ -8,7 +8,7 @@ use Illuminate\Database\Query\Expression;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class AggregateTest extends TestCase

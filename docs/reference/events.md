@@ -107,7 +107,7 @@ Useful for security / audit signals: cross-scope writes on multi-tenant trees ar
 ### Bulk-index a freshly imported subtree
 
 ```php
-use Vusys\NestedSet\Events\BulkInsertTreeSaved;
+use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeSaved;
 
 Event::listen(BulkInsertTreeSaved::class, function (BulkInsertTreeSaved $e): void {
     if ($e->modelClass !== Category::class) {
@@ -125,8 +125,8 @@ Event::listen(BulkInsertTreeSaved::class, function (BulkInsertTreeSaved $e): voi
 The per-row Eloquent `deleted` event never fires for cascaded descendants — listen for the cascade event instead.
 
 ```php
-use Vusys\NestedSet\Events\SubtreeSoftDeleted;
-use Vusys\NestedSet\Events\SubtreeForceDeleted;
+use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleted;
+use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleted;
 
 Event::listen(SubtreeSoftDeleted::class, function (SubtreeSoftDeleted $e): void {
     foreach ($e->descendantIds as $id) {
@@ -147,7 +147,7 @@ Event::listen(SubtreeForceDeleted::class, function (SubtreeForceDeleted $e): voi
 When an interior node moves, its descendants' ancestor chains have all changed. `SubtreeMoved` gives you the full list in one signal.
 
 ```php
-use Vusys\NestedSet\Events\SubtreeMoved;
+use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 
 Event::listen(SubtreeMoved::class, function (SubtreeMoved $e): void {
     Cache::forget("breadcrumbs:{$e->anchor->getKey()}");
@@ -160,7 +160,7 @@ Event::listen(SubtreeMoved::class, function (SubtreeMoved $e): void {
 ### Audit log for cross-tenant scope violations
 
 ```php
-use Vusys\NestedSet\Events\ScopeViolationDetected;
+use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 
 Event::listen(ScopeViolationDetected::class, function (ScopeViolationDetected $e): void {
     Log::channel('audit')->warning('nestedset scope violation', [
@@ -175,7 +175,7 @@ Event::listen(ScopeViolationDetected::class, function (ScopeViolationDetected $e
 ### Streaming progress for chunked repairs
 
 ```php
-use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
+use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 
 Event::listen(FixAggregatesChunkCompleted::class, function (FixAggregatesChunkCompleted $e): void {
     Log::info("nestedset chunk {$e->chunkIndex}: {$e->rowsUpdated} rows in {$e->durationMs}ms");
@@ -185,7 +185,7 @@ Event::listen(FixAggregatesChunkCompleted::class, function (FixAggregatesChunkCo
 ### Sentry for hook failures
 
 ```php
-use Vusys\NestedSet\Events\AggregateMaintenanceFailed;
+use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 
 Event::listen(AggregateMaintenanceFailed::class, function (AggregateMaintenanceFailed $e): void {
     Sentry::captureException($e->exception, [
@@ -200,7 +200,7 @@ Event::listen(AggregateMaintenanceFailed::class, function (AggregateMaintenanceF
 ### Datadog histogram for repair latency
 
 ```php
-use Vusys\NestedSet\Events\FixAggregatesCompleted;
+use Vusys\NestedSet\Events\Aggregates\FixAggregatesCompleted;
 
 Event::listen(FixAggregatesCompleted::class, function (FixAggregatesCompleted $e): void {
     Datadog::histogram('nestedset.fix_aggregates.duration_ms', $e->durationMs, [
@@ -224,7 +224,7 @@ The pattern is:
 
 ```php
 use App\Jobs\IndexNodesJob;
-use Vusys\NestedSet\Events\BulkInsertTreeSaved;
+use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeSaved;
 
 Event::listen(BulkInsertTreeSaved::class, function (BulkInsertTreeSaved $e): void {
     // Capture queue-safe fields synchronously.

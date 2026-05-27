@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use LogicException;
-use Vusys\NestedSet\Events\NodeMoved;
+use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;

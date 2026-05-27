@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\CompanionSpec;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
 
 final class CompanionSpecTest extends TestCase
 {

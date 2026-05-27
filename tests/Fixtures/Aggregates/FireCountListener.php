@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+use Vusys\NestedSet\Contracts\TreeAggregateListener;
 
 /**
  * Returns 1 when a node's type is 'fire', 0 otherwise.

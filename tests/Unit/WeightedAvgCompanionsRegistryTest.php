@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
-use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
-use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\WeightedArea;
 use Vusys\NestedSet\Tests\TestCase;
 

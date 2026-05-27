@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
+use Vusys\NestedSet\Aggregates\Sql\VarianceSqlFragments;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\TreeExpression;
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\Event;
-use Vusys\NestedSet\Events\BulkInsertTreeCompleted;
-use Vusys\NestedSet\Events\NodeMoved;
+use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeCompleted;
+use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
 
