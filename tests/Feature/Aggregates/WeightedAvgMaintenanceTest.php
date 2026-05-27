@@ -165,4 +165,122 @@ final class WeightedAvgMaintenanceTest extends TestCase
         // Σ(w·x) = 10 + 60 = 70, Σ(w) = 3 → 70 / 3 ≈ 23.3333.
         $this->assertEqualsWithDelta(70 / 3, $this->asFloat($root->value_wavg), 0.0001);
     }
+
+    // ── Edge cases on the weight axis ─────────────────────────────────
+
+    public function test_updating_a_descendants_weight_to_zero_removes_its_contribution(): void
+    {
+        // Root(10, w=1) + A(50, w=4). Pre: Σ(w·x) = 10 + 200 = 210,
+        // Σ(w) = 5, wavg = 42.
+        $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 1]);
+        $root->saveAsRoot();
+
+        $a = new WeightedArea(['name' => 'A', 'value' => 50, 'weight' => 4]);
+        $a->appendToNode($root)->save();
+
+        $root->refresh();
+        $this->assertEqualsWithDelta(42.0, $this->asFloat($root->value_wavg), 0.0001);
+
+        // Drop A's weight to zero. Σ(w·x) collapses to 10, Σ(w) to 1
+        // → wavg = 10. A still has a row in the tree, but contributes
+        // nothing to the weighted average.
+        $a->refresh()->update(['weight' => 0]);
+        $root->refresh();
+
+        $this->assertEqualsWithDelta(10.0, $this->asFloat($root->value_wavg), 0.0001);
+    }
+
+    public function test_negative_weight_is_accepted_and_subtracts_from_running_sums(): void
+    {
+        // The package doesn't constrain weight sign — Σ(w·x) and Σ(w)
+        // are linear, so negative weights just subtract their
+        // contribution. (Mathematically degenerate when Σ(w) → 0, but
+        // valid until then.) Pin the behaviour so future signedness
+        // guards land deliberately, not by accident.
+        $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 4]);
+        $root->saveAsRoot();
+
+        $a = new WeightedArea(['name' => 'A', 'value' => 20, 'weight' => -1]);
+        $a->appendToNode($root)->save();
+
+        // Σ(w·x) = 40 + (-20) = 20, Σ(w) = 4 + (-1) = 3 → wavg ≈ 6.6667.
+        $root->refresh();
+        $this->assertEqualsWithDelta(20 / 3, $this->asFloat($root->value_wavg), 0.0001);
+    }
+
+    public function test_subtree_with_total_weight_zero_yields_null_display(): void
+    {
+        // Mixed positive + negative weights that sum to exactly zero
+        // → SQL `Σ(w·x) / 0 = NULL`. Pin that the package surfaces NULL
+        // rather than dividing by zero or returning a stale value.
+        $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 3]);
+        $root->saveAsRoot();
+
+        $a = new WeightedArea(['name' => 'A', 'value' => 50, 'weight' => -3]);
+        $a->appendToNode($root)->save();
+
+        $root->refresh();
+        $this->assertNull($root->value_wavg, 'zero total weight must yield NULL, not the last-good value');
+    }
+
+    public function test_deleting_every_weight_carrying_descendant_keeps_root_self_weight(): void
+    {
+        // Build Root(10, w=1) + A(50, w=2) + B(20, w=3). Then delete
+        // A and B in succession. After both deletes, only the root
+        // carries weight → wavg should equal the root's own value.
+        $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 1]);
+        $root->saveAsRoot();
+
+        $a = new WeightedArea(['name' => 'A', 'value' => 50, 'weight' => 2]);
+        $a->appendToNode($root)->save();
+
+        $b = new WeightedArea(['name' => 'B', 'value' => 20, 'weight' => 3]);
+        $b->appendToNode($root->refresh())->save();
+
+        $a->refresh()->delete();
+        $b->refresh()->delete();
+        $root->refresh();
+
+        $this->assertEqualsWithDelta(10.0, $this->asFloat($root->value_wavg), 0.0001);
+    }
+
+    public function test_cross_parent_move_subtracts_from_old_chain_and_adds_to_new(): void
+    {
+        //   Root(0, w=0)            ← contributes nothing of its own
+        //   ├── A(10, w=1)          ← A is its own subtree
+        //   │   └── A1(40, w=3)     ← single weighted descendant under A
+        //   └── B(100, w=2)         ← B is its own subtree
+        // A inclusive Σ(w·x) = 10 + 120 = 130, Σ(w) = 4 → wavg = 32.5.
+        // B inclusive Σ(w·x) = 200, Σ(w) = 2 → wavg = 100.
+        $root = new WeightedArea(['name' => 'Root', 'value' => 0, 'weight' => 0]);
+        $root->saveAsRoot();
+
+        $a = new WeightedArea(['name' => 'A', 'value' => 10, 'weight' => 1]);
+        $a->appendToNode($root)->save();
+
+        $a1 = new WeightedArea(['name' => 'A1', 'value' => 40, 'weight' => 3]);
+        $a1->appendToNode($a->refresh())->save();
+
+        $b = new WeightedArea(['name' => 'B', 'value' => 100, 'weight' => 2]);
+        $b->appendToNode($root->refresh())->save();
+
+        $a->refresh();
+        $b->refresh();
+        $this->assertEqualsWithDelta(32.5, $this->asFloat($a->value_wavg), 0.0001);
+        $this->assertEqualsWithDelta(100.0, $this->asFloat($b->value_wavg), 0.0001);
+
+        // Move A1 from A → B.
+        $a1->refresh()->moveTo($b->refresh());
+        $a1->save();
+
+        $a->refresh();
+        $b->refresh();
+
+        // A now {10, w=1} alone → wavg = 10.
+        $this->assertEqualsWithDelta(10.0, $this->asFloat($a->value_wavg), 0.0001);
+
+        // B now {100, w=2; 40, w=3} → Σ(w·x) = 200 + 120 = 320,
+        // Σ(w) = 5 → wavg = 64.
+        $this->assertEqualsWithDelta(64.0, $this->asFloat($b->value_wavg), 0.0001);
+    }
 }

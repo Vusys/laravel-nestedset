@@ -320,6 +320,79 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         );
     }
 
+    public function test_bulk_insert_tree_inside_outer_deferred_defers_to_outer_frame(): void
+    {
+        // bulkInsertTree wraps its own work in withDeferredAggregateMaintenance
+        // internally. When the user nests it inside their own outer
+        // deferred block, the inner frame must be a no-op — the closing
+        // fixAggregates fires only at the outer exit. Observable signal:
+        // mid-closure (after bulkInsertTree returns), the root's stored
+        // tickets_total should still be 0 (pre-closure value) because
+        // no per-row maintenance ran and the inner-frame fixAggregates
+        // was skipped.
+        $root = new Area(['name' => 'r', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        $totalAfterBulkInsideOuter = null;
+        Area::withDeferredAggregateMaintenance(function () use ($root, &$totalAfterBulkInsideOuter): void {
+            Area::bulkInsertTree([
+                ['name' => 'a', 'tickets' => 3, 'children' => [
+                    ['name' => 'a1', 'tickets' => 5],
+                    ['name' => 'a2', 'tickets' => 7],
+                ]],
+                ['name' => 'b', 'tickets' => 11],
+            ], appendTo: $root);
+
+            $rawTotal = DB::table('areas')
+                ->where('id', $root->id)
+                ->value('tickets_total');
+            $totalAfterBulkInsideOuter = is_numeric($rawTotal) ? (int) $rawTotal : -1;
+        });
+
+        // bulkInsertTree's internal fixAggregates was skipped (outer
+        // counter non-zero on entry to its inner frame); only the
+        // outer-frame fixAggregates wrote the final total. So at the
+        // post-bulk observation point, the stored total is still the
+        // pre-closure value.
+        $this->assertSame(
+            0,
+            $totalAfterBulkInsideOuter,
+            'inner bulkInsertTree fixAggregates fired despite outer defer — re-entrant counter is leaking',
+        );
+
+        // Outer exit ran one fixAggregates that captured every inserted
+        // row's tickets contribution: 3 + 5 + 7 + 11 = 26.
+        $this->assertSame(
+            26,
+            (int) $root->refresh()->tickets_total,
+            'post-closure totals all bulkInsertTree contributions',
+        );
+        $this->assertFalse(Area::aggregatesAreBroken(), 'final state is clean');
+    }
+
+    public function test_bulk_insert_tree_outside_outer_deferred_repairs_eagerly(): void
+    {
+        // Inverse of the test above — when bulkInsertTree is called
+        // OUTSIDE any outer defer, its own internal defer is the
+        // outermost frame, so fixAggregates fires immediately at the
+        // bulkInsertTree exit. Pinning the symmetry confirms the
+        // re-entrant counter behaviour isn't just "always skip".
+        $root = new Area(['name' => 'r', 'tickets' => 0]);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        Area::bulkInsertTree([
+            ['name' => 'a', 'tickets' => 4, 'children' => [
+                ['name' => 'a1', 'tickets' => 6],
+            ]],
+        ], appendTo: $root);
+
+        // Immediately after bulkInsertTree returns: aggregates are
+        // already current (no outer defer was holding them back).
+        $this->assertSame(10, (int) $root->refresh()->tickets_total);
+    }
+
     /**
      * Factory for a closure that throws RuntimeException after a side
      * effect. Returning the closure from a method declared

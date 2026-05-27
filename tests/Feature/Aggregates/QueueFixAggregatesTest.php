@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
@@ -289,5 +290,91 @@ final class QueueFixAggregatesTest extends TestCase
         // And the repair still happened (the test's premise depends on
         // the job doing the work it would do on the non-chunked path).
         $this->assertGreaterThan(0, $result->totalRowsUpdated);
+    }
+
+    // ----------------------------------------------------------------
+    // Real-queue serialization round-trip
+    //
+    // The DB / Redis queue drivers serialize the job to a string before
+    // handing it to a worker. `Queue::fake()` skips that step entirely,
+    // so the rest of this file doesn't pin that anchors survive the
+    // round-trip. These tests use `serialize()` / `unserialize()`
+    // directly — same encoding the drivers use under the hood — to
+    // confirm scalar carries through and the deserialised job still
+    // runs end-to-end.
+    // ----------------------------------------------------------------
+
+    public function test_job_round_trips_through_php_serialization_with_anchor_id(): void
+    {
+        $root = new Area(['name' => 'r', 'tickets' => 7]);
+        $root->saveAsRoot();
+        $root->refresh();
+
+        $original = new FixAggregatesJob(
+            modelClass: Area::class,
+            anchorId: (int) $root->id,
+            chunkSize: 100,
+            cursorAfterId: 42,
+            chunkIndex: 3,
+        );
+
+        /** @var FixAggregatesJob $revived */
+        $revived = unserialize(serialize($original));
+
+        $this->assertSame($original->modelClass, $revived->modelClass);
+        $this->assertSame($original->anchorId, $revived->anchorId);
+        $this->assertSame($original->chunkSize, $revived->chunkSize);
+        $this->assertSame($original->cursorAfterId, $revived->cursorAfterId);
+        $this->assertSame($original->chunkIndex, $revived->chunkIndex);
+
+        // End-to-end: the deserialised job runs against the real DB
+        // without issue — the constructor-readonly state survived
+        // serialization with no extra wiring (no models to re-hydrate,
+        // since the anchor is carried as an id and re-queried by handle).
+        $result = $revived->handle();
+        $this->assertInstanceOf(AggregateFixResult::class, $result);
+    }
+
+    public function test_job_round_trips_through_php_serialization_without_anchor(): void
+    {
+        $original = new FixAggregatesJob(modelClass: Area::class);
+
+        /** @var FixAggregatesJob $revived */
+        $revived = unserialize(serialize($original));
+
+        $this->assertSame(Area::class, $revived->modelClass);
+        $this->assertNull($revived->anchorId);
+        $this->assertNull($revived->chunkSize);
+        $this->assertSame(0, $revived->chunkIndex);
+    }
+
+    // ----------------------------------------------------------------
+    // Failure-mode contract
+    //
+    // FixAggregatesJob doesn't override Laravel's `failed()` hook —
+    // any thrown exception bubbles to the queue runtime, which then
+    // calls the application-level `Queue::failing()` listeners or the
+    // package's AggregateMaintenanceFailed wrapper installed by the
+    // caller. These tests pin that handle() doesn't swallow exceptions
+    // (which would silently skip the failure path) and that the typical
+    // failure modes surface the expected exception class.
+    // ----------------------------------------------------------------
+
+    public function test_handle_exception_is_propagated_for_queue_runtime_to_record(): void
+    {
+        // Anchor id that doesn't exist → handle() throws RuntimeException
+        // unchanged. The job has no try/catch, so the queue runtime
+        // observes the throw and routes the job to `failed_jobs` (DB
+        // driver) or invokes the configured failed listeners. Without
+        // this propagation, FixAggregatesJob failures would be invisible.
+        $job = new FixAggregatesJob(modelClass: Area::class, anchorId: 999_999);
+
+        try {
+            $job->handle();
+            $this->fail('handle() should have thrown — silent failure would skip Laravel\'s failed-job path');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('not found on', $e->getMessage());
+            $this->assertStringContainsString(Area::class, $e->getMessage());
+        }
     }
 }
