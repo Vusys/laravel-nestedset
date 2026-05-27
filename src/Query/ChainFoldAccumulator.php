@@ -27,7 +27,7 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
  */
 final class ChainFoldAccumulator
 {
-    private const COMPANION_DERIVED = [
+    private const array COMPANION_DERIVED = [
         AggregateFunction::Avg,
         AggregateFunction::Variance,
         AggregateFunction::Stddev,
@@ -59,7 +59,7 @@ final class ChainFoldAccumulator
 
     public function __construct(private readonly AggregateDefinition $definition)
     {
-        $this->stepInclusive = self::stepEmpty($definition);
+        $this->stepInclusive = $this->stepEmpty($definition);
     }
 
     /**
@@ -99,7 +99,7 @@ final class ChainFoldAccumulator
         if ($function === AggregateFunction::BoolOr || $function === AggregateFunction::BoolAnd) {
             $previous = $this->boolDisplay();
 
-            $this->boolSum += self::asBoolInt($sourceValue);
+            $this->boolSum += $this->asBoolInt($sourceValue);
             $this->boolCount += $sourceValue !== null ? 1 : 0;
 
             return ['previous' => $previous, 'current' => $this->boolDisplay()];
@@ -146,7 +146,7 @@ final class ChainFoldAccumulator
             : $this->definition->sourceTransform->applyPhp($sourceValue, $weightForTransform);
 
         $previous = $this->stepInclusive;
-        $this->stepInclusive = self::stepCombine($this->definition, $foldValue, $previous);
+        $this->stepInclusive = $this->stepCombine($this->definition, $foldValue, $previous);
 
         return ['previous' => $previous, 'current' => $this->stepInclusive];
     }
@@ -160,7 +160,7 @@ final class ChainFoldAccumulator
         return match ($this->definition->function) {
             AggregateFunction::Avg => $this->sum / $this->count,
             AggregateFunction::Variance => self::computeVariance($this->sum, $this->sumSq, $this->count, $this->definition->sample),
-            AggregateFunction::Stddev => self::computeStddev($this->sum, $this->sumSq, $this->count, $this->definition->sample),
+            AggregateFunction::Stddev => $this->computeStddev($this->sum, $this->sumSq, $this->count, $this->definition->sample),
             default => throw new \LogicException(
                 'deriveCompanionDisplay called with non-companion-derived function '.$this->definition->function->value,
             ),
@@ -200,7 +200,7 @@ final class ChainFoldAccumulator
      * the inclusive aggregate of an empty subtree (i.e. what an
      * exclusive aggregate reports on a leaf).
      */
-    private static function stepEmpty(AggregateDefinition $definition): ?int
+    private function stepEmpty(AggregateDefinition $definition): ?int
     {
         return match ($definition->function) {
             AggregateFunction::Sum,
@@ -215,7 +215,7 @@ final class ChainFoldAccumulator
      * (already-transformed) source value and the previous inclusive,
      * returns the current inclusive.
      */
-    private static function stepCombine(
+    private function stepCombine(
         AggregateDefinition $definition,
         mixed $sourceValue,
         int|float|null $previousInclusive,
@@ -226,7 +226,7 @@ final class ChainFoldAccumulator
                 $prev = $previousInclusive ?? 0;
                 $sum = $sourceNumeric + (float) $prev;
 
-                return self::isWhole($sum) ? (int) $sum : $sum;
+                return $this->isWhole($sum) ? (int) $sum : $sum;
 
             case AggregateFunction::Count:
                 $contribution = $definition->source === null
@@ -241,11 +241,11 @@ final class ChainFoldAccumulator
                 }
                 $sourceNumeric = (float) $sourceValue;
                 if ($previousInclusive === null) {
-                    return self::isWhole($sourceNumeric) ? (int) $sourceNumeric : $sourceNumeric;
+                    return $this->isWhole($sourceNumeric) ? (int) $sourceNumeric : $sourceNumeric;
                 }
                 $minValue = min($sourceNumeric, (float) $previousInclusive);
 
-                return self::isWhole($minValue) ? (int) $minValue : $minValue;
+                return $this->isWhole($minValue) ? (int) $minValue : $minValue;
 
             case AggregateFunction::Max:
                 if (! is_numeric($sourceValue)) {
@@ -253,11 +253,11 @@ final class ChainFoldAccumulator
                 }
                 $sourceNumeric = (float) $sourceValue;
                 if ($previousInclusive === null) {
-                    return self::isWhole($sourceNumeric) ? (int) $sourceNumeric : $sourceNumeric;
+                    return $this->isWhole($sourceNumeric) ? (int) $sourceNumeric : $sourceNumeric;
                 }
                 $maxValue = max($sourceNumeric, (float) $previousInclusive);
 
-                return self::isWhole($maxValue) ? (int) $maxValue : $maxValue;
+                return $this->isWhole($maxValue) ? (int) $maxValue : $maxValue;
 
             case AggregateFunction::BitOr:
                 if (! is_numeric($sourceValue)) {
@@ -332,7 +332,7 @@ final class ChainFoldAccumulator
         return $numerator / $denominator;
     }
 
-    private static function computeStddev(float $sum, float $sumSq, int $count, bool $sample): ?float
+    private function computeStddev(float $sum, float $sumSq, int $count, bool $sample): ?float
     {
         $variance = self::computeVariance($sum, $sumSq, $count, $sample);
         if ($variance === null) {
@@ -351,7 +351,7 @@ final class ChainFoldAccumulator
      * companion would store. Mirrors the SQL fragment
      * `CASE WHEN c THEN 1 ELSE 0 END`.
      */
-    private static function asBoolInt(mixed $value): int
+    private function asBoolInt(mixed $value): int
     {
         if ($value === null) {
             return 0;
@@ -384,7 +384,7 @@ final class ChainFoldAccumulator
      * fold return integer-valued results as `int` to match the SQL
      * path (where SUM/MIN/MAX over an integer column come back as int).
      */
-    private static function isWhole(float $value): bool
+    private function isWhole(float $value): bool
     {
         return $value === floor($value) && abs($value) < PHP_INT_MAX;
     }
