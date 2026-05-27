@@ -193,7 +193,6 @@ final readonly class TreeMutationBuilder
      *                               same slot, producing duplicate-lft
      *                               corruption. SQLite is single-writer
      *                               so the flag is a no-op there.
-     *
      * @return array{lft: int, rgt: int, depth: int, parent_id: int|string|null}
      */
     public function getPlainNodeData(int|string $id, bool $lockForUpdate = false): array
