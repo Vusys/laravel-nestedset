@@ -33,10 +33,10 @@ Model-carrying events that include descendant ids (`SubtreeSoftDeleted`, `Subtre
 | `BulkInsertTreeStarting` | top of the call, before plan walk | `modelClass`, `appendTo`, raw `$tree` |
 | `BulkInsertTreePlanned` | after the DFS plan walk, before the transaction | `modelClass`, `appendTo`, flat `$plan` with relative bounds |
 | `BulkInsertNodeSaved` | once per row inside the save loop | `modelClass`, `node`, `planIndex`, `totalNodes`, `parent` |
-| `BulkInsertTreeSaved` | after every row is saved, before the closing `fixAggregates` | `modelClass`, `anchorId`, `appendTo`, `list<Model&HasNestedSet>` |
-| `BulkInsertTreeCompleted` | after the closing repair pass | `modelClass`, `anchorId`, `rowsInserted`, `durationMs`, `nodeIds` |
+| `BulkInsertTreeSaved` | after every row is saved AND the closing `fixAggregates` has run | `modelClass`, `anchorId`, `appendTo`, `list<Model&HasNestedSet>` |
+| `BulkInsertTreeCompleted` | immediately after `BulkInsertTreeSaved`, with id summary for queued work | `modelClass`, `anchorId`, `rowsInserted`, `durationMs`, `nodeIds` |
 
-`BulkInsertTreeSaved` is the headline event for in-process indexing — you get every saved model in one go, in DFS pre-order. Stored aggregate columns on those models may not yet reflect the rolled-up totals; if you need final aggregates, listen for `BulkInsertTreeCompleted` and re-query, or refresh the models you care about.
+`BulkInsertTreeSaved` is the headline event for in-process indexing — you get every saved model in one go, in DFS pre-order. Stored aggregate columns *in the database* are fully rolled up by the time this fires, but the in-memory `$nodes` array was captured during the save loop before the repair pass ran, so the model instances carry their pre-roll-up aggregate values. Call `->fresh()` on a node (or re-query by `$nodeIds` from `BulkInsertTreeCompleted`) to read the final values.
 
 ### Cascade events (soft-delete / restore / force-delete)
 
@@ -59,6 +59,8 @@ When the package cascades soft-delete, restore, or hard-delete through a subtree
 | Event | Fires when | Payload |
 |---|---|---|
 | `NodeMoved` | structural mutation of an existing node (one event per move; `up()`/`down()` fire two — one per participant) | `nodeId`, `fromBounds`, `toBounds`, `operation`, `durationMs` |
+
+`NodeMoved.operation` is one of `'appendTo'`, `'prependTo'`, `'sibling'`, `'root'`, or `'sibling-displaced'`. The first four mirror `PendingOperation::$action` — the participant the caller actually asked to move. `'sibling-displaced'` identifies the *other* participant in an `up()`/`down()` swap: the sibling that was shifted to make room. `switch ($e->operation)` consumers must include a case for `'sibling-displaced'` (or a default branch), or every `up()`/`down()` will silently miss half its events.
 | `SubtreeMoving` | before the structural SQL for an existing-node mutation | `anchor`, `fromBounds`, `operation` |
 | `SubtreeMoved` | after the structural SQL completes | `anchor`, `fromBounds`, `toBounds`, `operation`, `descendantIds`, `durationMs` |
 | `NodesSwapped` | `up()` / `down()` sibling swap completes | both participants + before/after bounds + `direction` |
@@ -240,6 +242,6 @@ Within a single Eloquent lifecycle hook (`saving` → `created` → `saved` or t
 
 - For an existing-node move: `SubtreeMoving` → structural SQL → `NodeMoved` → `SubtreeMoved` → (`NodePromotedToRoot` when applicable).
 - For a soft delete: anchor's Eloquent `deleted` → `SubtreeSoftDeleting` → cascade UPDATE → `SubtreeSoftDeleted` → aggregate maintenance → `NodeAggregatesRecomputed`.
-- For a bulk insert: `BulkInsertTreeStarting` → `BulkInsertTreePlanned` → (N × `creating` / `saving` / `created` / `saved` / `BulkInsertNodeSaved`) → `BulkInsertTreeSaved` → closing `fixAggregates` → `BulkInsertTreeCompleted`.
+- For a bulk insert: `BulkInsertTreeStarting` → `BulkInsertTreePlanned` → (N × `creating` / `saving` / `created` / `saved` / `BulkInsertNodeSaved`) → closing `fixAggregates` (which emits `FixAggregatesCompleted` and `DeferredAggregateMaintenanceCompleted`) → `BulkInsertTreeSaved` → `BulkInsertTreeCompleted`.
 
 The package does NOT guarantee ordering *between* the package's events and your own model observers — Eloquent runs observers in registration order. If you need a specific ordering, register your observers explicitly via `Model::observe()` after the package's service provider has booted.

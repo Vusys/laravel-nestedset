@@ -19,8 +19,9 @@ $child->isDescendantOf($root);       // true
 $child->parent;                      // $root  (Eloquent relation, eager-loadable)
 $child->ancestors()->get();          // collection containing $root
 
+$root->refresh();                    // re-read parent bounds after the append
 $root->descendants()->get();         // collection containing $child
-$root->refresh()->getSubtreeSize();  // 2  (self + descendants)
+$root->getSubtreeSize();             // 4  (slot count: rgt - lft + 1 = 2 × node count)
 ```
 
 Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX roll-ups are maintained automatically as the tree changes:
@@ -46,11 +47,11 @@ $electronics->refresh()->products_total;   // 23  — rolled up from descendants
 $phones->update(['products' => 20]);
 $electronics->refresh()->products_total;   // 30  — ancestors updated in the same write
 
-$phones->appendToNode($gadgets)->save();   // move the Phones subtree to a different root
+$phones->moveTo($gadgets)->save();         // move the Phones subtree to a different root
 $electronics->refresh()->products_total;   // 10  — old ancestors shrink
 $gadgets->refresh()->products_total;       // 20  — new ancestors grow
 
-Category::query()->withFreshAggregates()->get();   // ad-hoc correlated recomputation
+Category::query()->withFreshAggregates()->get();   // ad-hoc correlated recomputation (read-only — see Aggregates → Drift)
 ```
 
 ## Why nested set?

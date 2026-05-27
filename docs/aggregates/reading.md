@@ -18,6 +18,9 @@ Category::query()->withFreshAggregates([
 ])->get();
 ```
 
+> [!WARNING]
+> Treat `withFreshAggregates()` (and its no-arg form especially) as a **read-only snapshot**. The fresh value overlays the stored attribute under the same name, so the model's dirty tracking accepts it as the new baseline. Saving a model hydrated through this method will compute aggregate deltas against the fresh value rather than the stored one — silently persisting any drift that existed in the brief window between the read and the write. See [Ad-hoc aliases are in-memory only](#ad-hoc-aliases-are-in-memory-only) below and [Drift & Limitations](drift.html) for the safe side-by-side pattern.
+
 ## When to reach for `freshAggregate()`
 
 | Situation | Use |
