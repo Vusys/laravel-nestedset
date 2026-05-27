@@ -168,9 +168,9 @@ final class FilteredDeltaMaintenanceTest extends TestCase
      * value at NULL — not 0.
      *
      * The pre-fix bug: `collectMoveSubtreeContribution` ran
-     * `self::numeric($node->getAttribute('water_max'))` on the moving
-     * node. When the moving node's `water_max` was NULL (no matching
-     * descendants in the moved subtree), `numeric()` returned 0,
+     * `Numeric::asIntOrZero($node->getAttribute('water_max'))` on the
+     * moving node. When the moving node's `water_max` was NULL (no
+     * matching descendants in the moved subtree), `asIntOrZero()` returned 0,
      * propagated as a fake candidate extreme into the new chain's
      * cheap-delta MAX, which then overwrote the destination's NULL
      * with 0. Caught by the multi-mutation random walk's seed=1

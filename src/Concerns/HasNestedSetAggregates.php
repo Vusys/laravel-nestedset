@@ -15,6 +15,7 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
@@ -281,8 +282,8 @@ trait HasNestedSetAggregates
      */
     public function isPlacedInTree(): bool
     {
-        $lft = self::numeric($this->getAttribute($this->getLftName()));
-        $rgt = self::numeric($this->getAttribute($this->getRgtName()));
+        $lft = Numeric::asIntOrZero($this->getAttribute($this->getLftName()));
+        $rgt = Numeric::asIntOrZero($this->getAttribute($this->getRgtName()));
 
         return $lft > 0 && $rgt > $lft;
     }
@@ -399,13 +400,13 @@ trait HasNestedSetAggregates
                 $newSource = $definition->sourceTransform->applyPhp(
                     $this->getAttribute($source),
                     $definition->weight !== null
-                        ? self::nullableNumeric($this->getAttribute($definition->weight))
+                        ? Numeric::asNumericOrNull($this->getAttribute($definition->weight))
                         : null,
                 );
                 $oldSource = $definition->sourceTransform->applyPhp(
                     $this->getOriginal($source),
                     $definition->weight !== null
-                        ? self::nullableNumeric($this->getOriginal($definition->weight))
+                        ? Numeric::asNumericOrNull($this->getOriginal($definition->weight))
                         : null,
                 );
                 $delta = ($newPred ? $newSource : 0) - ($oldPred ? $oldSource : 0);
@@ -447,8 +448,8 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Max && $source !== null) {
-                $newSource = self::numeric($this->getAttribute($source));
-                $oldSource = self::numeric($this->getOriginal($source));
+                $newSource = Numeric::asIntOrZero($this->getAttribute($source));
+                $oldSource = Numeric::asIntOrZero($this->getOriginal($source));
 
                 if ($newPred && ! $oldPred) {
                     // Entered filter — can only extend the max.
@@ -485,8 +486,8 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Min && $source !== null) {
-                $newSource = self::numeric($this->getAttribute($source));
-                $oldSource = self::numeric($this->getOriginal($source));
+                $newSource = Numeric::asIntOrZero($this->getAttribute($source));
+                $oldSource = Numeric::asIntOrZero($this->getOriginal($source));
 
                 if ($newPred && ! $oldPred) {
                     // Entered filter — can only extend the min.
@@ -528,8 +529,8 @@ trait HasNestedSetAggregates
                 // Combined: `parent ^= (oldContrib ^ newContrib)` where
                 // each contrib is the source value when the row passes
                 // the filter, else 0 (the identity for XOR).
-                $newSource = self::numeric($this->getAttribute($source));
-                $oldSource = self::numeric($this->getOriginal($source));
+                $newSource = Numeric::asIntOrZero($this->getAttribute($source));
+                $oldSource = Numeric::asIntOrZero($this->getOriginal($source));
                 $newContrib = $newPred ? $newSource : 0;
                 $oldContrib = $oldPred ? $oldSource : 0;
                 $xorDelta = $oldContrib ^ $newContrib;
@@ -606,11 +607,11 @@ trait HasNestedSetAggregates
             $oldSnapshot = new static;
             $oldSnapshot->setRawAttributes($this->getOriginal(), true);
             $oldContrib = $listener->contribution($oldSnapshot);
-            $oldVal = self::listenerContributionValue($oldContrib);
+            $oldVal = Numeric::contributionOrZero($oldContrib);
 
             // New contribution: current attributes
             $newContrib = $listener->contribution($this);
-            $newVal = self::listenerContributionValue($newContrib);
+            $newVal = Numeric::contributionOrZero($newContrib);
 
             if ($op === AggregateFunction::Sum) {
                 $delta = $newVal - $oldVal;
@@ -1074,7 +1075,7 @@ trait HasNestedSetAggregates
                 $value = $definition->sourceTransform->applyPhp(
                     $this->getAttribute($definition->source),
                     $definition->weight !== null
-                        ? self::nullableNumeric($this->getAttribute($definition->weight))
+                        ? Numeric::asNumericOrNull($this->getAttribute($definition->weight))
                         : null,
                 );
                 if ($value !== 0) {
@@ -1106,7 +1107,7 @@ trait HasNestedSetAggregates
                     && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
                     continue;
                 }
-                $value = self::numeric($this->getAttribute($definition->source));
+                $value = Numeric::asIntOrZero($this->getAttribute($definition->source));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
@@ -1123,7 +1124,7 @@ trait HasNestedSetAggregates
                     && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
                     continue;
                 }
-                $value = self::numeric($this->getAttribute($definition->source));
+                $value = Numeric::asIntOrZero($this->getAttribute($definition->source));
                 $bitwise[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
@@ -1180,7 +1181,7 @@ trait HasNestedSetAggregates
 
             $listener = $definition->makeListener();
             $contrib = $listener->contribution($this);
-            $value = self::listenerContributionValue($contrib);
+            $value = Numeric::contributionOrZero($contrib);
 
             if ($op === AggregateFunction::Sum) {
                 if ($value != 0) {
@@ -1306,7 +1307,7 @@ trait HasNestedSetAggregates
                 // GeometricMean / HarmonicMean hold decimal sums (sum_wx,
                 // sum_log, sum_recip) that numeric() would truncate to 0
                 // or int-cast away the fractional part.
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $deltas[$definition->column] = -$value;
                 }
@@ -1322,7 +1323,7 @@ trait HasNestedSetAggregates
                 // matches this node's stored extremum. Other ancestors held
                 // their MIN/MAX from somewhere else; the deletion can't have
                 // affected them.
-                $stored = self::numeric($this->getAttribute($definition->column));
+                $stored = Numeric::asIntOrZero($this->getAttribute($definition->column));
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
@@ -1340,7 +1341,7 @@ trait HasNestedSetAggregates
                 // — it already holds the inclusive subtree XOR.
                 $stored = $this->getAttribute($definition->column);
                 if ($stored !== null) {
-                    $value = self::numeric($stored);
+                    $value = Numeric::asIntOrZero($stored);
                     if ($value !== 0) {
                         $bitwise[$definition->column] = [
                             'function' => AggregateFunction::BitXor,
@@ -1389,7 +1390,7 @@ trait HasNestedSetAggregates
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 // Stored column holds the inclusive subtree total — same as SQL path.
                 // Use type-preserving read: a float-listener column may be DECIMAL.
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $deltas[$definition->column] = -$value;
                 }
@@ -1678,7 +1679,7 @@ trait HasNestedSetAggregates
                 // Preserve numeric type — see captureSubtreeContribution()
                 // for why decimal WeightedAvg / GeometricMean / HarmonicMean
                 // companions need this.
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $sumCount[$definition->column] = $value;
                 }
@@ -1698,7 +1699,7 @@ trait HasNestedSetAggregates
                 if ($rawStored === null) {
                     continue;
                 }
-                $stored = self::numeric($rawStored);
+                $stored = Numeric::asIntOrZero($rawStored);
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
@@ -1731,7 +1732,7 @@ trait HasNestedSetAggregates
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
                 // Stored column holds the inclusive subtree total.
                 // Type-preserving read: listener columns may be DECIMAL.
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $sumCount[$definition->column] = $value;
                 }
@@ -1749,7 +1750,7 @@ trait HasNestedSetAggregates
             if ($rawStored === null) {
                 continue;
             }
-            $stored = self::numericPreserveType($rawStored);
+            $stored = Numeric::asNumericOrZero($rawStored);
             $minMaxRecomputes[$definition->column] = [
                 'function' => $op,
                 'source' => $definition->column,   // sentinel — not used by listener recompute
@@ -1913,7 +1914,7 @@ trait HasNestedSetAggregates
                 // Preserve numeric type — decimal Sum companions of
                 // WeightedAvg / GeometricMean / HarmonicMean would lose
                 // their fraction under numeric().
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
@@ -1925,7 +1926,7 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $value = self::numeric($this->getAttribute($definition->column));
+                $value = Numeric::asIntOrZero($this->getAttribute($definition->column));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
@@ -1966,7 +1967,7 @@ trait HasNestedSetAggregates
             }
 
             if ($op === AggregateFunction::Sum || $op === AggregateFunction::Count) {
-                $value = self::numericPreserveType($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
@@ -1977,7 +1978,7 @@ trait HasNestedSetAggregates
             // Min / Max — only remaining ops after Sum/Count/Avg above
             // for SQL listeners. (Bitwise listener aggregates are
             // rejected at ListenerAggregateDefinition construction.)
-            $value = self::numericPreserveType($this->getAttribute($definition->column));
+            $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
             $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
 
@@ -2139,8 +2140,8 @@ trait HasNestedSetAggregates
         $topLft = PHP_INT_MAX;
         $topRgt = PHP_INT_MIN;
         foreach ($ancestors as $ancestor) {
-            $aLft = self::numeric($ancestor->getAttribute($lftCol));
-            $aRgt = self::numeric($ancestor->getAttribute($rgtCol));
+            $aLft = Numeric::asIntOrZero($ancestor->getAttribute($lftCol));
+            $aRgt = Numeric::asIntOrZero($ancestor->getAttribute($rgtCol));
             if ($aLft < $topLft) {
                 $topLft = $aLft;
             }
@@ -2181,8 +2182,8 @@ trait HasNestedSetAggregates
             }
             $nodeBounds[] = [
                 'key' => $key,
-                'lft' => self::numeric($node->getAttribute($lftCol)),
-                'rgt' => self::numeric($node->getAttribute($rgtCol)),
+                'lft' => Numeric::asIntOrZero($node->getAttribute($lftCol)),
+                'rgt' => Numeric::asIntOrZero($node->getAttribute($rgtCol)),
             ];
             foreach ($listeners as $column => $listener) {
                 $contribCache[$column][$key] = $listener->contribution($node);
@@ -2193,8 +2194,8 @@ trait HasNestedSetAggregates
         $eRgt = $excludeBounds instanceof NodeBounds ? $excludeBounds->rgt : null;
 
         foreach ($ancestors as $ancestor) {
-            $aLft = self::numeric($ancestor->getAttribute($lftCol));
-            $aRgt = self::numeric($ancestor->getAttribute($rgtCol));
+            $aLft = Numeric::asIntOrZero($ancestor->getAttribute($lftCol));
+            $aRgt = Numeric::asIntOrZero($ancestor->getAttribute($rgtCol));
 
             $updates = [];
 
@@ -2443,8 +2444,8 @@ trait HasNestedSetAggregates
 
             $meta[] = [
                 'key' => $key,
-                'lft' => self::numeric($node->getAttribute($lftCol)),
-                'rgt' => self::numeric($node->getAttribute($rgtCol)),
+                'lft' => Numeric::asIntOrZero($node->getAttribute($lftCol)),
+                'rgt' => Numeric::asIntOrZero($node->getAttribute($rgtCol)),
                 'contribs' => $contribs,
                 'stored' => $stored,
             ];
@@ -2608,93 +2609,6 @@ trait HasNestedSetAggregates
         }
 
         return $errors;
-    }
-
-    /**
-     * Narrows a value that we expect to be numeric (the model's casts
-     * usually guarantee this) to int, returning 0 for null. Mirrors
-     * {@see NodeTrait::intAttr()} but tolerant of
-     * null so unset/never-saved attributes default to zero rather than
-     * throwing.
-     */
-    private static function numeric(mixed $value): int
-    {
-        if ($value === null) {
-            return 0;
-        }
-        if (is_int($value)) {
-            return $value;
-        }
-        if (is_numeric($value)) {
-            return (int) $value;
-        }
-
-        return 0;
-    }
-
-    /**
-     * Type-preserving narrowing for listener contributions. The contract
-     * advertises `int|float|null`; truncating floats to int here would
-     * silently corrupt weighted-sum listeners (e.g. `base_power * 0.5`).
-     * Returns 0 (int) for null so a "no contribution" listener doesn't
-     * shift downstream arithmetic.
-     */
-    private static function listenerContributionValue(int|float|null $value): int|float
-    {
-        return $value ?? 0;
-    }
-
-    /**
-     * Null-preserving variant of {@see numeric()}. Returns null when
-     * the value is missing or non-numeric so the weighted-average
-     * delta path can distinguish "no weight recorded" (no
-     * contribution) from "weight = 0" (also no contribution but
-     * arithmetically explicit). Companion source-transform
-     * helpers consume this to decide whether to participate in a
-     * delta.
-     */
-    private static function nullableNumeric(mixed $value): int|float|null
-    {
-        if ($value === null) {
-            return null;
-        }
-        if (is_int($value) || is_float($value)) {
-            return $value;
-        }
-        if (! is_numeric($value)) {
-            return null;
-        }
-
-        return $value + 0;
-    }
-
-    /**
-     * Number-preserving narrowing for stored aggregate column reads.
-     * Listener columns may be declared `decimal` / `float`, in which case
-     * `getAttribute()` returns a string (decimal cast) or float; an int
-     * cast would lose the fractional part for the same reason
-     * {@see self::listenerContributionValue()} preserves it on the input
-     * side. Returns 0 (int) for null/non-numeric input.
-     */
-    private static function numericPreserveType(mixed $value): int|float
-    {
-        if ($value === null) {
-            return 0;
-        }
-        if (is_int($value) || is_float($value)) {
-            return $value;
-        }
-        if (! is_numeric($value)) {
-            return 0;
-        }
-
-        // String-cast decimals: keep them as float only when they have a
-        // fractional part. "10" → 10 (int), "10.5" → 10.5 (float).
-        $string = $value;
-
-        return str_contains($string, '.') || str_contains($string, 'e') || str_contains($string, 'E')
-            ? (float) $value
-            : (int) $value;
     }
 
     // ----------------------------------------------------------------
