@@ -38,6 +38,7 @@ use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -2350,7 +2351,7 @@ trait HasNestedSetAggregates
                 $computed = self::applyListenerOperation($def, $innerContribs);
                 $stored = $outer['stored'][$def->column] ?? null;
 
-                if (! TreeAggregateBuilder::aggregatesEqual($stored, $computed)) {
+                if (! AggregateValueComparator::aggregatesEqual($stored, $computed)) {
                     $toUpdate[$outerKey] ??= ['id' => $outerKey, 'updates' => []];
                     $toUpdate[$outerKey]['updates'][$def->column] = $computed;
                     if (! $def->isInternal()) {
@@ -2602,7 +2603,7 @@ trait HasNestedSetAggregates
                 $computed = self::applyListenerOperation($def, $innerContribs);
                 $stored = $outer['stored'][$def->column] ?? null;
 
-                if (! TreeAggregateBuilder::aggregatesEqual($stored, $computed)) {
+                if (! AggregateValueComparator::aggregatesEqual($stored, $computed)) {
                     $errors[$def->column] = ($errors[$def->column] ?? 0) + 1;
                 }
             }
