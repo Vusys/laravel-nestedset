@@ -9,7 +9,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\SQLiteConnection;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
-use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 
 /**
  * Snapshot tests for the per-driver SQL emitter. The connection is a

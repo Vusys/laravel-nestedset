@@ -11,7 +11,7 @@ class Category extends Model implements HasNestedSet
 {
     use NodeTrait;
 
-    /** @return list<\Vusys\NestedSet\Aggregates\AggregateDefinition> */
+    /** @return list<\Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition> */
     protected function nestedSetAggregates(): array
     {
         return [

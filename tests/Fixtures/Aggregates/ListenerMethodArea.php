@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\ListenerAggregate;
-use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
 

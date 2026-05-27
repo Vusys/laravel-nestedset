@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
-use Vusys\NestedSet\Events\FixAggregatesChunkCompleted;
+use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;

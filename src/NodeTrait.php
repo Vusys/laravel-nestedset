@@ -17,7 +17,7 @@ use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Concerns\HasTreeRelations;
 use Vusys\NestedSet\Concerns\HasTreeRepair;
 use Vusys\NestedSet\Contracts\HasNestedSet;
-use Vusys\NestedSet\Events\AggregateMaintenanceFailed;
+use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;

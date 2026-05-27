@@ -6,8 +6,8 @@ namespace Vusys\NestedSet\Attributes;
 
 use Attribute;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
-use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
+use Vusys\NestedSet\Contracts\TreeAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Exceptions\AggregateSourceConstraintViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\MeanArea;
 use Vusys\NestedSet\Tests\TestCase;

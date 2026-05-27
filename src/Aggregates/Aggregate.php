@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates;
 
 use Illuminate\Contracts\Database\Query\Expression;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 

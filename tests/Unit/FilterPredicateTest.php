@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Vusys\NestedSet\Aggregates\FilterPredicate;
-use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class FilterPredicateTest extends TestCase

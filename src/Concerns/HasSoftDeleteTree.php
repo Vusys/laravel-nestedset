@@ -10,11 +10,11 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\EventDispatcher;
-use Vusys\NestedSet\Events\SoftDeleteMarkerCaptured;
-use Vusys\NestedSet\Events\SubtreeRestored;
-use Vusys\NestedSet\Events\SubtreeRestoring;
-use Vusys\NestedSet\Events\SubtreeSoftDeleted;
-use Vusys\NestedSet\Events\SubtreeSoftDeleting;
+use Vusys\NestedSet\Events\SoftDelete\SoftDeleteMarkerCaptured;
+use Vusys\NestedSet\Events\SoftDelete\SubtreeRestored;
+use Vusys\NestedSet\Events\SoftDelete\SubtreeRestoring;
+use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleted;
+use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleting;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 

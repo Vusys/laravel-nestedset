@@ -6,8 +6,8 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\Aggregate;
-use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
+use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;

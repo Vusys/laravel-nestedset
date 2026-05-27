@@ -6,8 +6,8 @@ namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\ListenerAggregate;
-use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;

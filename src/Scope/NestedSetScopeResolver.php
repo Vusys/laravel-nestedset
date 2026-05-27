@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use ReflectionClass;
 use Vusys\NestedSet\Attributes\NestedSetScope;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 use Vusys\NestedSet\Events\EventDispatcher;
-use Vusys\NestedSet\Events\ScopeViolationDetected;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 
 /**

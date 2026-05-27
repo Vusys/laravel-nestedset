@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Vusys\NestedSet\Aggregates\AggregateDefinition;
-use Vusys\NestedSet\Aggregates\AggregateDefinitionContract;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
 
 final class AggregateDefinitionContractTest extends TestCase
 {

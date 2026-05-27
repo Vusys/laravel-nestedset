@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 
 final class AggregateDefinitionTest extends TestCase
 {

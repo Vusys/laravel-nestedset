@@ -8,7 +8,7 @@ use Attribute;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 

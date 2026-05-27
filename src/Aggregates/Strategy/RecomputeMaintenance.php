@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
-use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\AggregateSqlEmitter;
-use Vusys\NestedSet\Aggregates\CompanionSourceTransform;
-use Vusys\NestedSet\Aggregates\FilterPredicate;
-use Vusys\NestedSet\Aggregates\FilterPredicateKind;
-use Vusys\NestedSet\Aggregates\FilterValueQuoter;
-use Vusys\NestedSet\Aggregates\SqliteBitwiseAggregates;
-use Vusys\NestedSet\Aggregates\VarianceSqlFragments;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
+use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
+use Vusys\NestedSet\Aggregates\Sql\VarianceSqlFragments;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeBounds;
 

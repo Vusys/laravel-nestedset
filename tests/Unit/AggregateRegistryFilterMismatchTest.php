@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithCompanionsArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithMatchingEqualityFilterArea;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\AvgWithMatchingNotNullFilterArea;

@@ -8,7 +8,7 @@ use Attribute;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\ListenerAggregateDefinition;
+use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;

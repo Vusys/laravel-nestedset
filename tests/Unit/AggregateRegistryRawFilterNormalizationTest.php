@@ -6,8 +6,8 @@ namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
-use Vusys\NestedSet\Aggregates\FilterPredicate;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 
 /**
  * Raw-SQL filter predicates are compared by string equality when the

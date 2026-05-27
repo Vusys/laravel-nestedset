@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
 use Vusys\NestedSet\Aggregates\Aggregate;
-use Vusys\NestedSet\Aggregates\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Query\TreeAggregateBuilder;

@@ -6,9 +6,9 @@ namespace Vusys\NestedSet\Attributes;
 
 use Attribute;
 use Vusys\NestedSet\Aggregates\Aggregate;
-use Vusys\NestedSet\Aggregates\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
-use Vusys\NestedSet\Aggregates\FilterPredicate;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**

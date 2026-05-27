@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+use Vusys\NestedSet\Contracts\TreeAggregateListener;
 
 /**
  * Float-returning listener: (base_power * level) / 2.

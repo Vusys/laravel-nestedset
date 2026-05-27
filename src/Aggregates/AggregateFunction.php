@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates;
 
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceOrigin;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
+
 /**
  * Aggregate functions the package supports for precalculated columns.
  *

@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Unit;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Connection;
 use PHPUnit\Framework\TestCase;
-use Vusys\NestedSet\Aggregates\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**

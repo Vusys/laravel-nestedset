@@ -4,7 +4,7 @@ When a contribution requires PHP logic that can't be expressed as a SQL column r
 
 ```php
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Aggregates\TreeAggregateListener;
+use Vusys\NestedSet\Contracts\TreeAggregateListener;
 
 class WeightedPowerListener implements TreeAggregateListener
 {
@@ -72,7 +72,7 @@ The aggregate machinery doesn't care which Blueprint helper produced the column 
 ```php
 use Vusys\NestedSet\Aggregates\ListenerAggregate;
 
-/** @return list<\Vusys\NestedSet\Aggregates\ListenerAggregateDefinition> */
+/** @return list<\Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition> */
 protected function nestedSetListenerAggregates(): array
 {
     return [
