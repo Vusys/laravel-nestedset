@@ -31,7 +31,7 @@ final class QueryCountTest extends TestCase
         return $count;
     }
 
-    public function test_save_as_root_runs_two_queries(): void
+    public function test_save_as_root_runs_three_queries(): void
     {
         $node = new Category(['name' => 'Root']);
 

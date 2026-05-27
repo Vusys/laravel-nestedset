@@ -10,8 +10,10 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 
 /**
  * Fires once inside {@see HasBulkInsert::bulkInsertTree()} after
- * every row has been saved and the transaction has committed, but
- * **before** the closing `fixAggregates($anchor)` pass runs.
+ * every row has been saved, the transaction has committed, AND the
+ * closing `fixAggregates($anchor)` pass has run — so stored aggregate
+ * columns in the database are fully rolled up by the time listeners
+ * see this event.
  *
  * Carries the full list of saved models — id-populated, bounds set,
  * scope columns copied. The two main use cases this is built for:
@@ -22,12 +24,12 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
  *  - decoration / cache priming where you want every saved node
  *    in one logical batch instead of N independent callbacks.
  *
- * Stored aggregate columns on the saved models may NOT yet reflect
- * the rolled-up totals at this point — the closing fixAggregates
- * pass runs immediately after. If you need final aggregates, listen
- * for the matching {@see BulkInsertTreeCompleted} instead and
- * refresh the models you care about, or listen for both events and
- * combine.
+ * Important: the in-memory `$nodes` array was captured during the
+ * per-row save loop, *before* `fixAggregates` ran. Aggregate columns
+ * on those instances reflect their pre-roll-up state, not the final
+ * DB values. Call `->fresh()` on a node (or re-query) to read the
+ * rolled-up totals, or listen for {@see BulkInsertTreeCompleted}
+ * which fires immediately after with `$nodeIds` for re-querying.
  *
  * Not queue-safe — carries live model instances.
  */

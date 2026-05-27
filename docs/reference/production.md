@@ -58,8 +58,9 @@ invalidation, audit logs, Datadog / Sentry wirings).
 
 Quick links:
 
-- **Telemetry events** (scalar payloads, safe for `ShouldQueue`): `FixTreeCompleted`, `FixAggregatesCompleted`, `FixAggregatesChunkCompleted`, `FixAggregatesJobDispatched`, `DeferredAggregateMaintenanceCompleted`, `DeferredMaintenanceStarting`, `TreeIntegrityChecked`, `AggregateDriftDetected`, `NodeAggregatesRecomputed`, `NodeMoved`, `ScopeViolationDetected`, `AggregateMaintenanceFailed`, `BulkInsertTreeCompleted`.
+- **Telemetry events** (scalar payloads, safe for `ShouldQueue`): `FixTreeCompleted`, `FixAggregatesCompleted`, `FixAggregatesChunkCompleted`, `FixAggregatesJobDispatched`, `DeferredAggregateMaintenanceCompleted`, `DeferredMaintenanceStarting`, `TreeIntegrityChecked`, `AggregateDriftDetected`, `NodeAggregatesRecomputed`, `NodeMoved`, `ScopeViolationDetected`, `BulkInsertTreeCompleted`.
 - **Model-carrying events** (live Eloquent instances, not queue-safe by default): `BulkInsertTreeStarting`, `BulkInsertTreePlanned`, `BulkInsertNodeSaved`, `BulkInsertTreeSaved`, every `Subtree*` event, `NodesSwapped`, `NodePromotedToRoot`, `SoftDeleteMarkerCaptured`.
+- **Exception-carrying** (not queue-safe — `Throwable` won't serialise across most drivers): `AggregateMaintenanceFailed`. Capture `$e->stage` / `$e->modelClass` synchronously and forward those if you want a queued listener.
 
 Set `nestedset.events_enabled => false` to short-circuit every firing
 site. Default is `true`.

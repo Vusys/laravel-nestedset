@@ -29,7 +29,13 @@ final readonly class NodeMoved
         public int|string $nodeId,
         public NodeBounds $fromBounds,
         public NodeBounds $toBounds,
-        /** One of 'appendTo', 'prependTo', 'sibling', 'root' — matches PendingOperation::$action. */
+        /**
+         * One of 'appendTo', 'prependTo', 'sibling', 'root' (matches
+         * PendingOperation::$action), or 'sibling-displaced' for the
+         * second participant in an `up()`/`down()` swap — switch
+         * consumers MUST handle 'sibling-displaced' or fall through
+         * to a default branch.
+         */
         public string $operation,
         public float $durationMs,
     ) {}

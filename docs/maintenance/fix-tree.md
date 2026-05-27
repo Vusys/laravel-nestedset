@@ -11,6 +11,9 @@ Category::fixTree();                        // rebuilds lft/rgt/depth from paren
 // → TreeFixResult { nodesUpdated: 15, errors: [...counts after repair...] }
 ```
 
+> [!NOTE]
+> `nodesUpdated` is the **total size of the rebuilt set** (every row the repair walked in scope), not the number of rows that received a different `lft`/`rgt`/`depth`. Even on a clean tree it equals the row count. Don't use it as a "how much drift was there" signal — use the post-repair `errors` map, or compare `countErrors()` before and after. The field name predates the distinction and is preserved for backwards compatibility; expect a rename before 1.0.
+
 On a scoped model, an anchor node is required so the repair stays inside one tree (this prevents accidental full-table walks on multi-million-row forests):
 
 ```php

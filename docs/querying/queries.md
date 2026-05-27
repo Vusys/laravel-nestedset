@@ -136,4 +136,7 @@ Category::query()
     ->get();
 ```
 
+> [!WARNING]
+> The no-argument form overlays freshly-computed values on top of the stored attributes under the same name. The model's dirty tracking treats those values as the canonical stored values — so a subsequent `save()` on a node hydrated this way will emit aggregate deltas computed against the *fresh* baseline, not the actual stored one. If a brief drift window existed, that drift gets silently persisted. Treat `withFreshAggregates()` as a **read-only snapshot**: don't save models you've hydrated through it. For side-by-side comparison, pass an aliased aggregate — see [Reading Aggregates](../aggregates/reading.html) and [Drift & Limitations](../aggregates/drift.html).
+
 See [Reading Aggregates](../aggregates/reading.html) for the full contract and [Production Notes](../reference/production.html#routing-fresh-aggregate-reads-to-a-read-replica) for routing these reads to a read replica.
