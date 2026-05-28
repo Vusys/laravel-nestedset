@@ -491,4 +491,19 @@ final class CorruptionRecoveryTest extends TestCase
         // as the full-table case above.
         $this->assertSame($depth - 1, (int) $leaf->depth);
     }
+
+    // ----------------------------------------------------------------
+    // Edge: the detector must be graceful on an empty tree (no rows).
+    // ----------------------------------------------------------------
+
+    public function test_count_errors_on_empty_table_returns_zero(): void
+    {
+        $errors = Category::countErrors();
+
+        foreach ($errors as $count) {
+            $this->assertSame(0, $count);
+        }
+
+        $this->assertFalse(Category::isBroken());
+    }
 }
