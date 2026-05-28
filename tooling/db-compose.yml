@@ -1,0 +1,52 @@
+# Local database backends for cross-backend coverage / debugging.
+# Mirrors the service config CI uses in .github/workflows/tests.yml
+# (mariadb on 3307 to avoid clashing with mysql on 3306).
+#
+# Usage:
+#   docker compose -f tooling/db-compose.yml up -d --wait
+#   DB_CONNECTION=mysql   DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=testing DB_USERNAME=root     DB_PASSWORD=password XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-clover=build/coverage/clover-mysql.xml
+#   DB_CONNECTION=mariadb DB_HOST=127.0.0.1 DB_PORT=3307 DB_DATABASE=testing DB_USERNAME=root     DB_PASSWORD=password XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-clover=build/coverage/clover-mariadb.xml
+#   DB_CONNECTION=pgsql   DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=testing DB_USERNAME=postgres DB_PASSWORD=password XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-clover=build/coverage/clover-pgsql.xml
+#   php tooling/merge-coverage.php build/coverage/clover-*.xml
+#
+# Then tear down with:
+#   docker compose -f tooling/db-compose.yml down -v
+#
+# Needs pdo_mysql + pdo_pgsql in the local PHP CLI (php -m | grep pdo).
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: testing
+    ports: ["3306:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-ppassword"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  mariadb:
+    image: mariadb:lts
+    environment:
+      MARIADB_ROOT_PASSWORD: password
+      MARIADB_DATABASE: testing
+    ports: ["3307:3306"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  pgsql:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: testing
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d testing"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
