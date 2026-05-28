@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Unit\Aggregates;
+namespace Vusys\NestedSet\Tests\Unit\Aggregates\Sql;
 
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Connection;

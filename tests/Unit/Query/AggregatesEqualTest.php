@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Unit;
+namespace Vusys\NestedSet\Tests\Unit\Query;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;

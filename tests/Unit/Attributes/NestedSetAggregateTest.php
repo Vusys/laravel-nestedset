@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Unit;
+namespace Vusys\NestedSet\Tests\Unit\Attributes;
 
 use Attribute;
 use PHPUnit\Framework\TestCase;

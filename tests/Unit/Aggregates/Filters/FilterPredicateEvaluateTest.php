@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Unit;
+namespace Vusys\NestedSet\Tests\Unit\Aggregates\Filters;
 
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Unit;
+namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
 use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\TestCase;

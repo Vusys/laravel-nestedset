@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Unit;
+namespace Vusys\NestedSet\Tests\Unit\Events;
 
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Tests\TestCase;
