@@ -276,6 +276,18 @@ final class TreeExportersTest extends TestCase
         $this->assertSame('ELECTRONICS', $json['label']);
     }
 
+    public function test_json_label_closure_stringifies_numeric_return_values(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+        $root = $root->refresh();
+
+        // A numeric label (int or float — both in the closure's declared
+        // return type) is normalised to its string form.
+        $this->assertSame('42', $root->toJsonTree(new JsonOptions(label: static fn (): int => 42))['label']);
+        $this->assertSame('3.5', $root->toJsonTree(new JsonOptions(label: static fn (): float => 3.5))['label']);
+    }
+
     public function test_subtree_export_omits_siblings_of_root(): void
     {
         $root = new Category(['name' => 'Root']);

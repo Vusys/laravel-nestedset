@@ -4,105 +4,78 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\NodeBounds;
 
 final class NodeBoundsTest extends TestCase
 {
-    public function test_height_is_rgt_minus_lft_plus_one(): void
+    #[DataProvider('heightCases')]
+    public function test_height_is_rgt_minus_lft_plus_one(NodeBounds $node, int $expected): void
     {
-        $this->assertSame(6, (new NodeBounds(lft: 3, rgt: 8, depth: 1))->height());
+        $this->assertSame($expected, $node->height());
     }
 
-    public function test_leaf_node_has_height_of_two(): void
+    /**
+     * @return iterable<string, array{0: NodeBounds, 1: int}>
+     */
+    public static function heightCases(): iterable
     {
-        $this->assertSame(2, (new NodeBounds(lft: 3, rgt: 4, depth: 1))->height());
+        yield 'interior node spans its subtree' => [new NodeBounds(lft: 3, rgt: 8, depth: 1), 6];
+        yield 'leaf node has height of two' => [new NodeBounds(lft: 3, rgt: 4, depth: 1), 2];
     }
 
-    public function test_contains_a_direct_child(): void
+    #[DataProvider('containmentCases')]
+    public function test_contains_uses_strict_bounds_containment(NodeBounds $outer, NodeBounds $inner, bool $expected): void
     {
-        $parent = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-        $child = new NodeBounds(lft: 2, rgt: 3, depth: 1);
-
-        $this->assertTrue($parent->contains($child));
+        $this->assertSame($expected, $outer->contains($inner));
     }
 
-    public function test_contains_a_deep_descendant(): void
+    /**
+     * @return iterable<string, array{0: NodeBounds, 1: NodeBounds, 2: bool}>
+     */
+    public static function containmentCases(): iterable
     {
-        $root = new NodeBounds(lft: 1, rgt: 20, depth: 0);
-        $grandchild = new NodeBounds(lft: 8, rgt: 11, depth: 2);
+        $root = new NodeBounds(lft: 1, rgt: 10, depth: 0);
 
-        $this->assertTrue($root->contains($grandchild));
+        yield 'contains a direct child' => [$root, new NodeBounds(lft: 2, rgt: 3, depth: 1), true];
+        yield 'contains a deep descendant' => [
+            new NodeBounds(lft: 1, rgt: 20, depth: 0),
+            new NodeBounds(lft: 8, rgt: 11, depth: 2),
+            true,
+        ];
+        yield 'does not contain itself' => [$root, $root, false];
+        yield 'does not contain a node with equal lft' => [$root, new NodeBounds(lft: 1, rgt: 5, depth: 1), false];
+        yield 'does not contain a node with equal rgt' => [$root, new NodeBounds(lft: 5, rgt: 10, depth: 1), false];
+        yield 'does not contain a sibling' => [$root, new NodeBounds(lft: 11, rgt: 14, depth: 1), false];
+        yield 'child does not contain its parent' => [new NodeBounds(lft: 2, rgt: 5, depth: 1), $root, false];
+        yield 'a leaf contains nothing' => [
+            new NodeBounds(lft: 3, rgt: 4, depth: 2),
+            new NodeBounds(lft: 5, rgt: 6, depth: 2),
+            false,
+        ];
     }
 
-    public function test_does_not_contain_self(): void
+    #[DataProvider('depthDeltaCases')]
+    public function test_depth_delta_is_the_signed_depth_difference(NodeBounds $node, NodeBounds $other, int $expected): void
     {
-        $node = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-
-        $this->assertFalse($node->contains($node));
+        $this->assertSame($expected, $node->depthDelta($other));
     }
 
-    public function test_does_not_contain_node_with_equal_lft(): void
+    /**
+     * @return iterable<string, array{0: NodeBounds, 1: NodeBounds, 2: int}>
+     */
+    public static function depthDeltaCases(): iterable
     {
-        $outer = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-        $inner = new NodeBounds(lft: 1, rgt: 5, depth: 1);
+        $shallow = new NodeBounds(lft: 1, rgt: 10, depth: 0);
+        $deep = new NodeBounds(lft: 2, rgt: 5, depth: 2);
 
-        $this->assertFalse($outer->contains($inner));
-    }
-
-    public function test_does_not_contain_node_with_equal_rgt(): void
-    {
-        $outer = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-        $inner = new NodeBounds(lft: 5, rgt: 10, depth: 1);
-
-        $this->assertFalse($outer->contains($inner));
-    }
-
-    public function test_does_not_contain_sibling(): void
-    {
-        $parent = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-        $sibling = new NodeBounds(lft: 11, rgt: 14, depth: 1);
-
-        $this->assertFalse($parent->contains($sibling));
-    }
-
-    public function test_does_not_contain_parent(): void
-    {
-        $parent = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-        $child = new NodeBounds(lft: 2, rgt: 5, depth: 1);
-
-        $this->assertFalse($child->contains($parent));
-    }
-
-    public function test_leaf_contains_nothing(): void
-    {
-        $leaf = new NodeBounds(lft: 3, rgt: 4, depth: 2);
-        $other = new NodeBounds(lft: 5, rgt: 6, depth: 2);
-
-        $this->assertFalse($leaf->contains($other));
-    }
-
-    public function test_depth_delta_is_positive_when_other_is_deeper(): void
-    {
-        $parent = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-        $child = new NodeBounds(lft: 2, rgt: 5, depth: 2);
-
-        $this->assertSame(2, $parent->depthDelta($child));
-    }
-
-    public function test_depth_delta_is_negative_when_other_is_shallower(): void
-    {
-        $child = new NodeBounds(lft: 2, rgt: 5, depth: 2);
-        $parent = new NodeBounds(lft: 1, rgt: 10, depth: 0);
-
-        $this->assertSame(-2, $child->depthDelta($parent));
-    }
-
-    public function test_depth_delta_is_zero_for_same_depth(): void
-    {
-        $a = new NodeBounds(lft: 1, rgt: 4, depth: 1);
-        $b = new NodeBounds(lft: 5, rgt: 8, depth: 1);
-
-        $this->assertSame(0, $a->depthDelta($b));
+        yield 'positive when other is deeper' => [$shallow, $deep, 2];
+        yield 'negative when other is shallower' => [$deep, $shallow, -2];
+        yield 'zero for same depth' => [
+            new NodeBounds(lft: 1, rgt: 4, depth: 1),
+            new NodeBounds(lft: 5, rgt: 8, depth: 1),
+            0,
+        ];
     }
 }

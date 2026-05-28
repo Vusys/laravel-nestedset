@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Attributes;
 
 use Attribute;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
@@ -290,5 +292,80 @@ final class NestedSetAggregateTest extends TestCase
         ))->toDefinition();
 
         $this->assertNull($definition->filter);
+    }
+
+    /**
+     * The attribute's per-function `*Definition()` builders validate
+     * their source/value/weight arguments independently of the
+     * {@see Aggregate} factory path. An empty
+     * (but non-null) argument still routes to the function's builder via
+     * declaredFunctions(), so each builder must reject it.
+     */
+    #[DataProvider('invalidDeclarations')]
+    public function test_to_definition_rejects_invalid_declaration(NestedSetAggregate $attribute, string $messageFragment): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage($messageFragment);
+
+        $attribute->toDefinition();
+    }
+
+    /**
+     * @return iterable<string, array{0: NestedSetAggregate, 1: string}>
+     */
+    public static function invalidDeclarations(): iterable
+    {
+        yield 'weightedAvg empty value' => [
+            new NestedSetAggregate(column: 'c', weightedAvg: '', weight: 'w'),
+            'weightedAvg requires a non-empty value column',
+        ];
+        yield 'weightedAvg empty weight' => [
+            new NestedSetAggregate(column: 'c', weightedAvg: 'v', weight: ''),
+            'requires a non-empty `weight` column',
+        ];
+        yield 'weightedAvg value equals weight' => [
+            new NestedSetAggregate(column: 'c', weightedAvg: 'v', weight: 'v'),
+            'value and weight must differ',
+        ];
+        yield 'boolOr empty source' => [
+            new NestedSetAggregate(column: 'c', boolOr: ''),
+            'bool_or requires a non-empty column name',
+        ];
+        yield 'boolAnd empty source' => [
+            new NestedSetAggregate(column: 'c', boolAnd: ''),
+            'bool_and requires a non-empty column name',
+        ];
+        yield 'geometricMean empty source' => [
+            new NestedSetAggregate(column: 'c', geometricMean: ''),
+            'geometric_mean requires a non-empty column name',
+        ];
+        yield 'harmonicMean empty source' => [
+            new NestedSetAggregate(column: 'c', harmonicMean: ''),
+            'harmonic_mean requires a non-empty column name',
+        ];
+        yield 'distinctCount empty source' => [
+            new NestedSetAggregate(column: 'c', distinctCount: ''),
+            'distinctCount requires a non-empty column name',
+        ];
+        yield 'stringAgg empty source' => [
+            new NestedSetAggregate(column: 'c', stringAgg: ''),
+            'stringAgg requires a non-empty column name',
+        ];
+        yield 'jsonAgg empty string source' => [
+            new NestedSetAggregate(column: 'c', jsonAgg: ''),
+            'jsonAgg source column must not be empty',
+        ];
+        yield 'jsonObjectAgg empty value' => [
+            new NestedSetAggregate(column: 'c', jsonObjectAgg: ['key' => 'k', 'value' => '']),
+            'jsonObjectAgg key and value must be non-empty',
+        ];
+        yield 'jsonObjectAgg negative limit' => [
+            new NestedSetAggregate(column: 'c', jsonObjectAgg: ['key' => 'k', 'value' => 'v'], limit: -1),
+            'limit must be >= 0',
+        ];
+        yield 'jsonAgg assoc with empty column' => [
+            new NestedSetAggregate(column: 'c', jsonAgg: ['id' => '']),
+            'jsonAgg source columns must be non-empty',
+        ];
     }
 }
