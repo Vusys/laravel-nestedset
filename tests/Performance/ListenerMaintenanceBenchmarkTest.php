@@ -122,7 +122,7 @@ final class ListenerMaintenanceBenchmarkTest extends PerformanceTestCase
 
     public function test_fix_aggregates_listener_columns(): void
     {
-        // fixListenerAggregatesPhp is O(N²) by design (per-node scan
+        // ListenerMaintenance::fixListenerAggregatesPhp is O(N²) by design (per-node scan
         // of the full in-scope set). Smaller scales than the SQL
         // fixAggregates bench so this doesn't dominate the CI runtime
         // for typical perf runs.

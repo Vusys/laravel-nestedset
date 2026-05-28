@@ -288,7 +288,7 @@ final class UuidPrimaryKeyTest extends TestCase
 
     public function test_chunked_listener_repair_walks_uuid_outer_ids(): void
     {
-        // Pins the previous bug where `fixListenerAggregatesPhp` cast
+        // Pins the previous bug where `ListenerMaintenance::fixListenerAggregatesPhp` cast
         // each outer node's key to int before its in_array membership
         // check against the chunk's outer-ids list — every UUID key
         // collapsed to 0 and listener rows were skipped.

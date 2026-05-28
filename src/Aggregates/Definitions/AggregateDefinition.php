@@ -80,4 +80,25 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
     {
         return $this->internal;
     }
+
+    /**
+     * Columns whose dirty state should trigger aggregate maintenance for
+     * this definition. Includes the source column, the filter's watch
+     * columns, and (when the source transform consumes a weight) the
+     * weight column too — without the weight trigger, a row whose value
+     * is unchanged but whose weight changed would skip the delta capture
+     * and leave `Σ(w · x)` stale.
+     *
+     * @return list<string>
+     */
+    public function triggerColumns(): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->source !== null ? [$this->source] : [],
+            $this->sourceTransform->requiresWeight() && $this->weight !== null
+                ? [$this->weight]
+                : [],
+            $this->filter?->watchColumns() ?? [],
+        )));
+    }
 }
