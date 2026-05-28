@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Scoping;
 
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 use Stringable;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -44,13 +44,13 @@ final class ScopeResolverTest extends TestCase
     public function test_same_scope_compares_datetime_scopes_by_instant(): void
     {
         $a = new ScopedArea(['name' => 'a', 'amount' => 0]);
-        $a->setAttribute('tenant_id', Carbon::parse('2020-01-01 12:00:00'));
+        $a->setAttribute('tenant_id', Date::parse('2020-01-01 12:00:00'));
 
         $sameInstant = new ScopedArea(['name' => 'b', 'amount' => 0]);
-        $sameInstant->setAttribute('tenant_id', Carbon::parse('2020-01-01 12:00:00'));
+        $sameInstant->setAttribute('tenant_id', Date::parse('2020-01-01 12:00:00'));
 
         $differentInstant = new ScopedArea(['name' => 'c', 'amount' => 0]);
-        $differentInstant->setAttribute('tenant_id', Carbon::parse('2020-01-02 12:00:00'));
+        $differentInstant->setAttribute('tenant_id', Date::parse('2020-01-02 12:00:00'));
 
         $this->assertTrue(NestedSetScopeResolver::sameScope($a, $sameInstant));
         $this->assertFalse(NestedSetScopeResolver::sameScope($a, $differentInstant));

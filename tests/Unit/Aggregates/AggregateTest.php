@@ -44,7 +44,7 @@ final class AggregateTest extends TestCase
     public static function factoryCases(): iterable
     {
         yield 'sum' => [fn (): Aggregate => Aggregate::sum('tickets'), AggregateFunction::Sum, 'tickets', null];
-        yield 'count(*)' => [fn (): Aggregate => Aggregate::count(), AggregateFunction::Count, null, null];
+        yield 'count(*)' => [Aggregate::count(...), AggregateFunction::Count, null, null];
         yield 'count(column)' => [fn (): Aggregate => Aggregate::count('tickets'), AggregateFunction::Count, 'tickets', null];
         yield 'avg' => [fn (): Aggregate => Aggregate::avg('tickets'), AggregateFunction::Avg, 'tickets', null];
         yield 'min' => [fn (): Aggregate => Aggregate::min('tickets'), AggregateFunction::Min, 'tickets', null];

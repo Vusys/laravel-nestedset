@@ -301,7 +301,6 @@ final class AggregateSqlFragmentsTest extends TestCase
         AggregateSqlFragments::aggregateExpression(
             Aggregate::sum('x')->filter(['type' => 'fire'])->into('col'),
             'd.',
-            null,
         );
     }
 
@@ -313,7 +312,6 @@ final class AggregateSqlFragmentsTest extends TestCase
         AggregateSqlFragments::aggregateExpression(
             Aggregate::distinctCount('owner_id')->into('col'),
             'd.',
-            null,
         );
     }
 
@@ -782,8 +780,6 @@ final class AggregateSqlFragmentsTest extends TestCase
             'lft',
             'rgt',
             'JOIN_EXPR',
-            null,
-            null,
         );
     }
 
