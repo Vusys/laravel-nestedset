@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
+use Closure;
+use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
+use Illuminate\Database\Grammar;
 use Illuminate\Database\Query\Expression;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -13,54 +17,94 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class AggregateTest extends TestCase
 {
-    public function test_sum_factory_captures_source_and_function(): void
-    {
-        $aggregate = Aggregate::sum('tickets');
+    /**
+     * Every scalar factory captures its function and source column (and,
+     * for weighted average, its weight column), and starts inclusive.
+     *
+     * @param  Closure(): Aggregate  $factory
+     */
+    #[DataProvider('factoryCases')]
+    public function test_factory_captures_function_source_and_weight(
+        Closure $factory,
+        AggregateFunction $expectedFunction,
+        ?string $expectedSource,
+        ?string $expectedWeight,
+    ): void {
+        $aggregate = $factory();
 
-        $this->assertSame(AggregateFunction::Sum, $aggregate->function);
-        $this->assertSame('tickets', $aggregate->source);
+        $this->assertSame($expectedFunction, $aggregate->function);
+        $this->assertSame($expectedSource, $aggregate->source);
+        $this->assertSame($expectedWeight, $aggregate->weight);
+        $this->assertTrue($aggregate->inclusive, 'every factory starts inclusive');
     }
 
-    public function test_count_with_no_argument_uses_null_source(): void
+    /**
+     * @return iterable<string, array{0: Closure(): Aggregate, 1: AggregateFunction, 2: ?string, 3: ?string}>
+     */
+    public static function factoryCases(): iterable
     {
-        $aggregate = Aggregate::count();
-
-        $this->assertSame(AggregateFunction::Count, $aggregate->function);
-        $this->assertNull($aggregate->source);
+        yield 'sum' => [fn (): Aggregate => Aggregate::sum('tickets'), AggregateFunction::Sum, 'tickets', null];
+        yield 'count(*)' => [fn (): Aggregate => Aggregate::count(), AggregateFunction::Count, null, null];
+        yield 'count(column)' => [fn (): Aggregate => Aggregate::count('tickets'), AggregateFunction::Count, 'tickets', null];
+        yield 'avg' => [fn (): Aggregate => Aggregate::avg('tickets'), AggregateFunction::Avg, 'tickets', null];
+        yield 'min' => [fn (): Aggregate => Aggregate::min('tickets'), AggregateFunction::Min, 'tickets', null];
+        yield 'max' => [fn (): Aggregate => Aggregate::max('tickets'), AggregateFunction::Max, 'tickets', null];
+        yield 'variance' => [fn (): Aggregate => Aggregate::variance('tickets'), AggregateFunction::Variance, 'tickets', null];
+        yield 'stddev' => [fn (): Aggregate => Aggregate::stddev('tickets'), AggregateFunction::Stddev, 'tickets', null];
+        yield 'bit_or' => [fn (): Aggregate => Aggregate::bitOr('feature_bits'), AggregateFunction::BitOr, 'feature_bits', null];
+        yield 'bit_and' => [fn (): Aggregate => Aggregate::bitAnd('feature_bits'), AggregateFunction::BitAnd, 'feature_bits', null];
+        yield 'bit_xor' => [fn (): Aggregate => Aggregate::bitXor('feature_bits'), AggregateFunction::BitXor, 'feature_bits', null];
+        yield 'bool_or' => [fn (): Aggregate => Aggregate::boolOr('flag'), AggregateFunction::BoolOr, 'flag', null];
+        yield 'bool_and' => [fn (): Aggregate => Aggregate::boolAnd('flag'), AggregateFunction::BoolAnd, 'flag', null];
+        yield 'geometric_mean' => [fn (): Aggregate => Aggregate::geometricMean('rate'), AggregateFunction::GeometricMean, 'rate', null];
+        yield 'harmonic_mean' => [fn (): Aggregate => Aggregate::harmonicMean('rate'), AggregateFunction::HarmonicMean, 'rate', null];
+        yield 'median' => [fn (): Aggregate => Aggregate::median('price'), AggregateFunction::Median, 'price', null];
+        yield 'percentile' => [fn (): Aggregate => Aggregate::percentile('price', 0.9), AggregateFunction::Percentile, 'price', null];
+        yield 'weighted_avg' => [fn (): Aggregate => Aggregate::weightedAvg('score', 'weight'), AggregateFunction::WeightedAvg, 'score', 'weight'];
     }
 
-    public function test_count_with_column_captures_it_as_source(): void
+    /**
+     * Each factory rejects malformed configuration with a descriptive
+     * {@see AggregateConfigurationException} rather than constructing a
+     * silently-broken declaration.
+     *
+     * @param  Closure(): mixed  $call
+     */
+    #[DataProvider('factoryValidationCases')]
+    public function test_factory_rejects_invalid_configuration(Closure $call, string $expectedMessageFragment): void
     {
-        $aggregate = Aggregate::count('tickets');
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage($expectedMessageFragment);
 
-        $this->assertSame(AggregateFunction::Count, $aggregate->function);
-        $this->assertSame('tickets', $aggregate->source);
+        $call();
     }
 
-    public function test_avg_factory_captures_source(): void
+    /**
+     * @return iterable<string, array{0: Closure(): mixed, 1: string}>
+     */
+    public static function factoryValidationCases(): iterable
     {
-        $this->assertSame('tickets', Aggregate::avg('tickets')->source);
-        $this->assertSame(AggregateFunction::Avg, Aggregate::avg('tickets')->function);
-    }
-
-    public function test_min_factory_captures_source(): void
-    {
-        $this->assertSame('tickets', Aggregate::min('tickets')->source);
-        $this->assertSame(AggregateFunction::Min, Aggregate::min('tickets')->function);
-    }
-
-    public function test_max_factory_captures_source(): void
-    {
-        $this->assertSame('tickets', Aggregate::max('tickets')->source);
-        $this->assertSame(AggregateFunction::Max, Aggregate::max('tickets')->function);
+        yield 'weighted_avg empty value' => [fn (): Aggregate => Aggregate::weightedAvg('', 'w'), 'value column must not be empty'];
+        yield 'weighted_avg empty weight' => [fn (): Aggregate => Aggregate::weightedAvg('x', ''), 'weight column must not be empty'];
+        yield 'weighted_avg identical columns' => [fn (): Aggregate => Aggregate::weightedAvg('x', 'x'), 'value and weight columns must differ'];
+        yield 'bool_or empty source' => [fn (): Aggregate => Aggregate::boolOr(''), 'source column must not be empty'];
+        yield 'bool_and empty source' => [fn (): Aggregate => Aggregate::boolAnd(''), 'source column must not be empty'];
+        yield 'geometric_mean empty source' => [fn (): Aggregate => Aggregate::geometricMean(''), 'source column must not be empty'];
+        yield 'harmonic_mean empty source' => [fn (): Aggregate => Aggregate::harmonicMean(''), 'source column must not be empty'];
+        yield 'median empty source' => [fn (): Aggregate => Aggregate::median(''), 'source column must not be empty'];
+        yield 'percentile empty source' => [fn (): Aggregate => Aggregate::percentile('', 0.5), 'source column must not be empty'];
+        yield 'percentile point below range' => [fn (): Aggregate => Aggregate::percentile('x', -0.1), 'percentile point must be in [0.0, 1.0]'];
+        yield 'percentile point above range' => [fn (): Aggregate => Aggregate::percentile('x', 1.5), 'percentile point must be in [0.0, 1.0]'];
+        yield 'json_agg empty source' => [fn (): Aggregate => Aggregate::jsonAgg(''), 'source column must not be empty'];
+        yield 'json_agg negative limit' => [fn (): Aggregate => Aggregate::jsonAgg('x', limit: -1), 'limit must be >= 0'];
+        yield 'json_object_agg empty value' => [fn (): Aggregate => Aggregate::jsonObjectAgg('k', ''), 'value column must not be empty'];
+        yield 'json_object_agg negative limit' => [fn (): Aggregate => Aggregate::jsonObjectAgg('k', 'v', limit: -1), 'limit must be >= 0'];
     }
 
     public function test_variance_factory_defaults_to_population(): void
     {
         $aggregate = Aggregate::variance('tickets');
 
-        $this->assertSame(AggregateFunction::Variance, $aggregate->function);
-        $this->assertSame('tickets', $aggregate->source);
         $this->assertFalse($aggregate->sample, 'variance() default is population variance');
     }
 
@@ -71,11 +115,7 @@ final class AggregateTest extends TestCase
 
     public function test_stddev_factory_defaults_to_population(): void
     {
-        $aggregate = Aggregate::stddev('tickets');
-
-        $this->assertSame(AggregateFunction::Stddev, $aggregate->function);
-        $this->assertSame('tickets', $aggregate->source);
-        $this->assertFalse($aggregate->sample);
+        $this->assertFalse(Aggregate::stddev('tickets')->sample);
     }
 
     public function test_stddev_factory_with_sample_flag(): void
@@ -100,34 +140,16 @@ final class AggregateTest extends TestCase
         $this->assertTrue($definition->sample);
     }
 
-    public function test_bit_or_factory_captures_source(): void
+    public function test_allow_non_positive_sets_the_flag_and_preserves_the_rest(): void
     {
-        $this->assertSame('feature_bits', Aggregate::bitOr('feature_bits')->source);
-        $this->assertSame(AggregateFunction::BitOr, Aggregate::bitOr('feature_bits')->function);
-    }
+        $base = Aggregate::geometricMean('rate')->exclusive();
+        $relaxed = $base->allowNonPositive();
 
-    public function test_bit_and_factory_captures_source(): void
-    {
-        $this->assertSame('feature_bits', Aggregate::bitAnd('feature_bits')->source);
-        $this->assertSame(AggregateFunction::BitAnd, Aggregate::bitAnd('feature_bits')->function);
-    }
-
-    public function test_bit_xor_factory_captures_source(): void
-    {
-        $this->assertSame('feature_bits', Aggregate::bitXor('feature_bits')->source);
-        $this->assertSame(AggregateFunction::BitXor, Aggregate::bitXor('feature_bits')->function);
-    }
-
-    public function test_inclusive_is_the_default(): void
-    {
-        $this->assertTrue(Aggregate::sum('tickets')->inclusive);
-        $this->assertTrue(Aggregate::count()->inclusive);
-        $this->assertTrue(Aggregate::avg('tickets')->inclusive);
-        $this->assertTrue(Aggregate::min('tickets')->inclusive);
-        $this->assertTrue(Aggregate::max('tickets')->inclusive);
-        $this->assertTrue(Aggregate::bitOr('feature_bits')->inclusive);
-        $this->assertTrue(Aggregate::bitAnd('feature_bits')->inclusive);
-        $this->assertTrue(Aggregate::bitXor('feature_bits')->inclusive);
+        $this->assertFalse($base->allowNonPositive, 'modifier returns a new instance, leaving the original alone');
+        $this->assertTrue($relaxed->allowNonPositive);
+        $this->assertSame(AggregateFunction::GeometricMean, $relaxed->function);
+        $this->assertSame('rate', $relaxed->source);
+        $this->assertFalse($relaxed->inclusive, 'allowNonPositive() preserves the exclusive flag');
     }
 
     public function test_exclusive_modifier_flips_the_inclusive_flag(): void
@@ -226,6 +248,28 @@ final class AggregateTest extends TestCase
         $this->assertSame(FilterPredicateKind::Raw, $aggregate->filter->getKind());
         $this->assertSame('status = 1', $aggregate->filter->getRawSql());
         $this->assertSame(['status'], $aggregate->filter->watchColumns());
+    }
+
+    public function test_filter_raw_rejects_an_expression_without_a_scalar_value(): void
+    {
+        // expressionToString() reads the Expression's underlying `value`
+        // via reflection. A malformed Expression whose value is non-scalar
+        // must be rejected rather than coerced into a broken SQL string.
+        $weird = new class implements ExpressionContract
+        {
+            /** @var list<int> */
+            public array $value = [1, 2, 3];
+
+            public function getValue(Grammar $grammar): string
+            {
+                return '';
+            }
+        };
+
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('did not expose a readable scalar');
+
+        Aggregate::sum('tickets')->filterRaw($weird, ['status']);
     }
 
     public function test_filter_modifier_returns_new_instance(): void

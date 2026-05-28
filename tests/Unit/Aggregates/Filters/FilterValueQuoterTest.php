@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Aggregates\Filters;
 
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Connection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
@@ -29,53 +30,30 @@ final class FilterValueQuoterTest extends TestCase
         $this->connection = $capsule->getConnection();
     }
 
-    public function test_null_quotes_as_sql_null_literal(): void
+    #[DataProvider('scalarCases')]
+    public function test_quotes_scalar_value_to_sql_literal(mixed $value, string $expected): void
     {
-        $this->assertSame('NULL', FilterValueQuoter::quote($this->connection, null));
+        $this->assertSame($expected, FilterValueQuoter::quote($this->connection, $value));
     }
 
-    public function test_bool_true_renders_as_sql_true_literal(): void
+    /**
+     * @return iterable<string, array{0: mixed, 1: string}>
+     */
+    public static function scalarCases(): iterable
     {
+        yield 'null is the SQL NULL literal' => [null, 'NULL'];
         // TRUE/FALSE is the only portable inline boolean — PostgreSQL
         // rejects `boolean_col = 1` against a real BOOLEAN column.
-        $this->assertSame('TRUE', FilterValueQuoter::quote($this->connection, true));
-    }
-
-    public function test_bool_false_renders_as_sql_false_literal(): void
-    {
-        $this->assertSame('FALSE', FilterValueQuoter::quote($this->connection, false));
-    }
-
-    public function test_positive_int_is_stringified_without_quotes(): void
-    {
-        $this->assertSame('42', FilterValueQuoter::quote($this->connection, 42));
-    }
-
-    public function test_negative_int_keeps_sign(): void
-    {
-        $this->assertSame('-7', FilterValueQuoter::quote($this->connection, -7));
-    }
-
-    public function test_zero_int_renders_as_zero(): void
-    {
+        yield 'bool true renders as TRUE' => [true, 'TRUE'];
+        yield 'bool false renders as FALSE' => [false, 'FALSE'];
+        yield 'positive int is unquoted' => [42, '42'];
+        yield 'negative int keeps its sign' => [-7, '-7'];
         // Distinct from bool false (which renders as FALSE).
-        $this->assertSame('0', FilterValueQuoter::quote($this->connection, 0));
-    }
-
-    public function test_float_is_stringified(): void
-    {
-        $this->assertSame('3.14', FilterValueQuoter::quote($this->connection, 3.14));
-    }
-
-    public function test_plain_string_is_quoted(): void
-    {
-        $this->assertSame("'hello'", FilterValueQuoter::quote($this->connection, 'hello'));
-    }
-
-    public function test_string_with_single_quote_is_escaped(): void
-    {
+        yield 'zero int renders as 0' => [0, '0'];
+        yield 'float is stringified' => [3.14, '3.14'];
+        yield 'plain string is quoted' => ['hello', "'hello'"];
         // SQLite's escape (also the SQL standard): double the quote.
-        $this->assertSame("'O''Reilly'", FilterValueQuoter::quote($this->connection, "O'Reilly"));
+        yield 'single quote is escaped by doubling' => ["O'Reilly", "'O''Reilly'"];
     }
 
     public function test_string_with_backslash_is_passed_to_pdo_quote(): void
@@ -92,19 +70,21 @@ final class FilterValueQuoterTest extends TestCase
         $this->assertStringEndsWith("'", $quoted);
     }
 
-    public function test_array_value_throws(): void
+    #[DataProvider('nonScalarCases')]
+    public function test_non_scalar_value_throws(mixed $value, string $expectedMessageFragment): void
     {
         $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('must be scalar; got array');
+        $this->expectExceptionMessage($expectedMessageFragment);
 
-        FilterValueQuoter::quote($this->connection, ['nope']);
+        FilterValueQuoter::quote($this->connection, $value);
     }
 
-    public function test_object_value_throws(): void
+    /**
+     * @return iterable<string, array{0: mixed, 1: string}>
+     */
+    public static function nonScalarCases(): iterable
     {
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('must be scalar; got stdClass');
-
-        FilterValueQuoter::quote($this->connection, new \stdClass);
+        yield 'array' => [['nope'], 'must be scalar; got array'];
+        yield 'object' => [new \stdClass, 'must be scalar; got stdClass'];
     }
 }

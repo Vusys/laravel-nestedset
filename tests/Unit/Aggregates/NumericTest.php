@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Numeric;
 
@@ -25,113 +26,77 @@ use Vusys\NestedSet\Aggregates\Numeric;
  */
 final class NumericTest extends TestCase
 {
-    public function test_as_int_or_zero_returns_zero_for_null(): void
+    #[DataProvider('asIntOrZeroCases')]
+    public function test_as_int_or_zero(mixed $input, int $expected): void
     {
-        $this->assertSame(0, Numeric::asIntOrZero(null));
+        $this->assertSame($expected, Numeric::asIntOrZero($input));
     }
 
-    public function test_as_int_or_zero_returns_zero_for_non_numeric(): void
+    /**
+     * @return iterable<string, array{0: mixed, 1: int}>
+     */
+    public static function asIntOrZeroCases(): iterable
     {
-        $this->assertSame(0, Numeric::asIntOrZero('abc'));
+        yield 'null becomes zero' => [null, 0];
+        yield 'non-numeric string becomes zero' => ['abc', 0];
+        yield 'int passes through' => [5, 5];
+        yield 'float truncates toward zero' => [5.9, 5];
+        yield 'numeric string casts to int' => ['10', 10];
     }
 
-    public function test_as_int_or_zero_passes_through_int(): void
+    #[DataProvider('asNumericOrNullCases')]
+    public function test_as_numeric_or_null(mixed $input, int|float|null $expected): void
     {
-        $this->assertSame(5, Numeric::asIntOrZero(5));
+        $this->assertSame($expected, Numeric::asNumericOrNull($input));
     }
 
-    public function test_as_int_or_zero_truncates_float(): void
+    /**
+     * @return iterable<string, array{0: mixed, 1: int|float|null}>
+     */
+    public static function asNumericOrNullCases(): iterable
     {
-        $this->assertSame(5, Numeric::asIntOrZero(5.9));
+        yield 'null stays null' => [null, null];
+        yield 'non-numeric string becomes null' => ['abc', null];
+        yield 'native int is preserved' => [5, 5];
+        yield 'native float is preserved' => [5.5, 5.5];
+        yield 'integer string decodes to int' => ['10', 10];
+        yield 'decimal string decodes to float' => ['10.5', 10.5];
+        yield 'exponent string decodes to float' => ['1e2', 100.0];
     }
 
-    public function test_as_int_or_zero_casts_numeric_string(): void
+    #[DataProvider('asNumericOrZeroCases')]
+    public function test_as_numeric_or_zero(mixed $input, int|float $expected): void
     {
-        $this->assertSame(10, Numeric::asIntOrZero('10'));
+        $this->assertSame($expected, Numeric::asNumericOrZero($input));
     }
 
-    public function test_as_numeric_or_null_returns_null_for_null(): void
+    /**
+     * @return iterable<string, array{0: mixed, 1: int|float}>
+     */
+    public static function asNumericOrZeroCases(): iterable
     {
-        $this->assertNull(Numeric::asNumericOrNull(null));
+        yield 'null becomes zero' => [null, 0];
+        yield 'non-numeric string becomes zero' => ['abc', 0];
+        yield 'native int is preserved' => [5, 5];
+        yield 'native float is preserved' => [5.5, 5.5];
+        yield 'integer string decodes to int' => ['10', 10];
+        yield 'decimal string decodes to float' => ['10.5', 10.5];
+        yield 'exponent string decodes to float' => ['1e2', 100.0];
     }
 
-    public function test_as_numeric_or_null_returns_null_for_non_numeric(): void
+    #[DataProvider('contributionOrZeroCases')]
+    public function test_contribution_or_zero(int|float|null $input, int|float $expected): void
     {
-        $this->assertNull(Numeric::asNumericOrNull('abc'));
+        $this->assertSame($expected, Numeric::contributionOrZero($input));
     }
 
-    public function test_as_numeric_or_null_preserves_native_int(): void
+    /**
+     * @return iterable<string, array{0: int|float|null, 1: int|float}>
+     */
+    public static function contributionOrZeroCases(): iterable
     {
-        $this->assertSame(5, Numeric::asNumericOrNull(5));
-    }
-
-    public function test_as_numeric_or_null_preserves_native_float(): void
-    {
-        $this->assertSame(5.5, Numeric::asNumericOrNull(5.5));
-    }
-
-    public function test_as_numeric_or_null_decodes_integer_string_to_int(): void
-    {
-        $this->assertSame(10, Numeric::asNumericOrNull('10'));
-    }
-
-    public function test_as_numeric_or_null_decodes_decimal_string_to_float(): void
-    {
-        $this->assertSame(10.5, Numeric::asNumericOrNull('10.5'));
-    }
-
-    public function test_as_numeric_or_null_decodes_exponent_string_to_float(): void
-    {
-        $this->assertSame(100.0, Numeric::asNumericOrNull('1e2'));
-    }
-
-    public function test_as_numeric_or_zero_returns_zero_for_null(): void
-    {
-        $this->assertSame(0, Numeric::asNumericOrZero(null));
-    }
-
-    public function test_as_numeric_or_zero_returns_zero_for_non_numeric(): void
-    {
-        $this->assertSame(0, Numeric::asNumericOrZero('abc'));
-    }
-
-    public function test_as_numeric_or_zero_preserves_native_int(): void
-    {
-        $this->assertSame(5, Numeric::asNumericOrZero(5));
-    }
-
-    public function test_as_numeric_or_zero_preserves_native_float(): void
-    {
-        $this->assertSame(5.5, Numeric::asNumericOrZero(5.5));
-    }
-
-    public function test_as_numeric_or_zero_decodes_integer_string_to_int(): void
-    {
-        $this->assertSame(10, Numeric::asNumericOrZero('10'));
-    }
-
-    public function test_as_numeric_or_zero_decodes_decimal_string_to_float(): void
-    {
-        $this->assertSame(10.5, Numeric::asNumericOrZero('10.5'));
-    }
-
-    public function test_as_numeric_or_zero_decodes_exponent_string_to_float(): void
-    {
-        $this->assertSame(100.0, Numeric::asNumericOrZero('1e2'));
-    }
-
-    public function test_contribution_or_zero_returns_zero_for_null(): void
-    {
-        $this->assertSame(0, Numeric::contributionOrZero(null));
-    }
-
-    public function test_contribution_or_zero_passes_through_int(): void
-    {
-        $this->assertSame(5, Numeric::contributionOrZero(5));
-    }
-
-    public function test_contribution_or_zero_passes_through_float(): void
-    {
-        $this->assertSame(5.5, Numeric::contributionOrZero(5.5));
+        yield 'null becomes zero' => [null, 0];
+        yield 'int passes through' => [5, 5];
+        yield 'float passes through' => [5.5, 5.5];
     }
 }

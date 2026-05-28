@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Sql;
 
+use Closure;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Connection;
 use Illuminate\Database\SQLiteConnection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
+use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 
 /**
@@ -40,316 +43,217 @@ final class AggregateSqlEmitterTest extends TestCase
         return new DriverFakedConnection($this->sqliteConnection, $driver);
     }
 
-    public function test_distinct_count_is_universal(): void
+    /**
+     * Subtree-aggregate SQL fragment per driver, with an optional
+     * pre-built filter predicate.
+     *
+     * @param  Closure(): AggregateDefinition  $makeDefinition
+     */
+    #[DataProvider('emitCases')]
+    public function test_emit(string $driver, Closure $makeDefinition, ?string $filterSql, string $expected): void
     {
-        $def = Aggregate::distinctCount('owner_id')->into('distinct_owners');
+        $sql = AggregateSqlEmitter::emit($this->fakeDriver($driver), $makeDefinition(), 'i.', $filterSql);
 
+        $this->assertSame($expected, $sql);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: Closure(): AggregateDefinition, 2: ?string, 3: string}>
+     */
+    public static function emitCases(): iterable
+    {
+        $distinctCount = static fn (): AggregateDefinition => Aggregate::distinctCount('owner_id')->into('distinct_owners');
+
+        // DISTINCT COUNT emits identically on every backend.
         foreach (['sqlite', 'mysql', 'mariadb', 'pgsql'] as $driver) {
-            $sql = AggregateSqlEmitter::emit($this->fakeDriver($driver), $def, 'i.');
-            $this->assertSame('COUNT(DISTINCT i.owner_id)', $sql, "driver={$driver}");
+            yield "distinct_count is universal on {$driver}" => [$driver, $distinctCount, null, 'COUNT(DISTINCT i.owner_id)'];
         }
-    }
 
-    public function test_distinct_count_with_filter_uses_case_when(): void
-    {
-        $def = Aggregate::distinctCount('owner_id')->into('distinct_owners');
-        $sql = AggregateSqlEmitter::emit($this->sqliteConnection, $def, 'i.', 'i.active = 1');
-
-        $this->assertSame(
+        yield 'distinct_count with filter uses CASE WHEN' => [
+            'sqlite', $distinctCount, 'i.active = 1',
             'COUNT(DISTINCT CASE WHEN i.active = 1 THEN i.owner_id ELSE NULL END)',
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_string_agg_casts_source_to_text_and_includes_order_by(): void
-    {
-        $def = Aggregate::stringAgg('name')->into('child_names');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'pg string_agg casts source to text and orders' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::stringAgg('name')->into('child_names'), null,
             "STRING_AGG(i.name::text, ', ' ORDER BY i.name)",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_mysql_string_agg_uses_separator_keyword(): void
-    {
-        $def = Aggregate::stringAgg('name', separator: '; ')->into('child_names');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('mysql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'mysql string_agg uses SEPARATOR keyword' => [
+            'mysql', static fn (): AggregateDefinition => Aggregate::stringAgg('name', separator: '; ')->into('child_names'), null,
             "GROUP_CONCAT(i.name ORDER BY i.name SEPARATOR '; ')",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_mariadb_string_agg_uses_separator_keyword(): void
-    {
-        $def = Aggregate::stringAgg('name')->into('child_names');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('mariadb'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'mariadb string_agg uses SEPARATOR keyword' => [
+            'mariadb', static fn (): AggregateDefinition => Aggregate::stringAgg('name')->into('child_names'), null,
             "GROUP_CONCAT(i.name ORDER BY i.name SEPARATOR ', ')",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_sqlite_string_agg_uses_two_argument_form(): void
-    {
-        $def = Aggregate::stringAgg('name', separator: '; ')->into('child_names');
-        $sql = AggregateSqlEmitter::emit($this->sqliteConnection, $def, 'i.');
-
-        $this->assertSame(
+        yield 'sqlite string_agg uses two-argument form' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::stringAgg('name', separator: '; ')->into('child_names'), null,
             "GROUP_CONCAT(i.name, '; ')",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_string_agg_distinct_casts_order_clause(): void
-    {
-        $def = Aggregate::stringAgg('tag')->distinct()->into('distinct_tags');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'pg string_agg distinct casts the order clause' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::stringAgg('tag')->distinct()->into('distinct_tags'), null,
             "STRING_AGG(DISTINCT i.tag::text, ', ' ORDER BY i.tag::text)",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_mysql_string_agg_distinct_includes_order_by(): void
-    {
-        $def = Aggregate::stringAgg('tag')->distinct()->into('distinct_tags');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('mysql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'mysql string_agg distinct includes ORDER BY' => [
+            'mysql', static fn (): AggregateDefinition => Aggregate::stringAgg('tag')->distinct()->into('distinct_tags'), null,
             "GROUP_CONCAT(DISTINCT i.tag ORDER BY i.tag SEPARATOR ', ')",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_sqlite_string_agg_distinct_loses_custom_separator(): void
-    {
         // Documented caveat: SQLite GROUP_CONCAT(DISTINCT ...) does not
-        // accept a separator argument. The emitter falls back to the
+        // accept a separator argument — the emitter falls back to the
         // default comma-space separator.
-        $def = Aggregate::stringAgg('tag', separator: ' | ')->distinct()->into('distinct_tags');
-        $sql = AggregateSqlEmitter::emit($this->sqliteConnection, $def, 'i.');
+        yield 'sqlite string_agg distinct loses the custom separator' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::stringAgg('tag', separator: ' | ')->distinct()->into('distinct_tags'), null,
+            'GROUP_CONCAT(DISTINCT i.tag)',
+        ];
 
-        $this->assertSame('GROUP_CONCAT(DISTINCT i.tag)', $sql);
-    }
+        yield 'pg json_agg scalar with ORDER BY' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonAgg('id')->into('descendant_ids'), null,
+            'JSON_AGG(i.id ORDER BY i.id)',
+        ];
 
-    public function test_pg_json_agg_scalar_with_order_by(): void
-    {
-        $def = Aggregate::jsonAgg('id')->into('descendant_ids');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
+        yield 'mysql json_agg scalar' => [
+            'mysql', static fn (): AggregateDefinition => Aggregate::jsonAgg('id')->into('descendant_ids'), null,
+            'JSON_ARRAYAGG(i.id)',
+        ];
 
-        $this->assertSame('JSON_AGG(i.id ORDER BY i.id)', $sql);
-    }
+        yield 'sqlite json_agg scalar' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::jsonAgg('id')->into('descendant_ids'), null,
+            'JSON_GROUP_ARRAY(i.id)',
+        ];
 
-    public function test_mysql_json_agg_scalar(): void
-    {
-        $def = Aggregate::jsonAgg('id')->into('descendant_ids');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('mysql'), $def, 'i.');
-
-        $this->assertSame('JSON_ARRAYAGG(i.id)', $sql);
-    }
-
-    public function test_sqlite_json_agg_scalar(): void
-    {
-        $def = Aggregate::jsonAgg('id')->into('descendant_ids');
-        $sql = AggregateSqlEmitter::emit($this->sqliteConnection, $def, 'i.');
-
-        $this->assertSame('JSON_GROUP_ARRAY(i.id)', $sql);
-    }
-
-    public function test_pg_json_agg_multi_column_uses_build_object(): void
-    {
-        $def = Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])
-            ->into('descendant_summary');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'pg json_agg multi-column uses BUILD_OBJECT' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])->into('descendant_summary'), null,
             "JSON_AGG(JSON_BUILD_OBJECT('id', i.id, 'label', i.name))",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_mysql_json_agg_multi_column_uses_json_object(): void
-    {
-        $def = Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])
-            ->into('descendant_summary');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('mysql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'mysql json_agg multi-column uses JSON_OBJECT' => [
+            'mysql', static fn (): AggregateDefinition => Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])->into('descendant_summary'), null,
             "JSON_ARRAYAGG(JSON_OBJECT('id', i.id, 'label', i.name))",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_json_object_agg_casts_key_to_text_and_filters_null_keys(): void
-    {
-        $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('slug_to_name');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'pg json_object_agg casts key to text and filters null keys' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('slug_to_name'), null,
             'JSON_OBJECT_AGG(i.slug::text, i.name ORDER BY i.slug) FILTER (WHERE i.slug IS NOT NULL)',
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_json_object_agg_allow_null_keys_omits_filter(): void
-    {
-        $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name', allowNullKeys: true)
-            ->into('slug_to_name');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('pgsql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'pg json_object_agg with allowNullKeys omits the filter' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name', allowNullKeys: true)->into('slug_to_name'), null,
             'JSON_OBJECT_AGG(i.slug::text, i.name ORDER BY i.slug)',
-            $sql,
-        );
-    }
+        ];
 
-    public function test_mysql_json_object_agg_emits_null_key_for_null_value(): void
-    {
-        $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('slug_to_name');
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver('mysql'), $def, 'i.');
-
-        $this->assertSame(
+        yield 'mysql json_object_agg guards null keys via CASE' => [
+            'mysql', static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('slug_to_name'), null,
             'JSON_OBJECTAGG(CASE WHEN i.slug IS NOT NULL THEN i.slug ELSE NULL END, i.name)',
-            $sql,
-        );
-    }
+        ];
 
-    public function test_sqlite_json_object_agg_uses_group_object_form(): void
-    {
-        $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('slug_to_name');
-        $sql = AggregateSqlEmitter::emit($this->sqliteConnection, $def, 'i.');
-
-        $this->assertSame(
+        yield 'sqlite json_object_agg uses GROUP_OBJECT form' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('slug_to_name'), null,
             'JSON_GROUP_OBJECT(CASE WHEN i.slug IS NOT NULL THEN i.slug ELSE NULL END, i.name)',
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_string_agg_filter_uses_case_when(): void
-    {
-        $def = Aggregate::stringAgg('name')->into('names');
-        $sql = AggregateSqlEmitter::emit(
-            $this->fakeDriver('pgsql'),
-            $def,
-            'i.',
-            'i.published = 1',
-        );
-
-        $this->assertSame(
+        yield 'pg string_agg filter uses CASE WHEN' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::stringAgg('name')->into('names'), 'i.published = 1',
             "STRING_AGG(CASE WHEN i.published = 1 THEN i.name::text ELSE NULL END, ', ' ORDER BY i.name)",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_string_agg_distinct_with_filter_uses_filter_clause(): void
-    {
         // PG rejects DISTINCT aggregates whose ORDER BY expressions don't appear
-        // in the argument list. Wrapping the value in CASE breaks that rule —
-        // the FILTER clause keeps the argument simple and identical to ORDER BY.
-        $def = Aggregate::stringAgg('tag')->distinct()->into('distinct_tags');
-        $sql = AggregateSqlEmitter::emit(
-            $this->fakeDriver('pgsql'),
-            $def,
-            'i.',
-            'i.published = 1',
-        );
-
-        $this->assertSame(
+        // in the argument list. Wrapping the value in CASE breaks that rule — the
+        // FILTER clause keeps the argument simple and identical to ORDER BY.
+        yield 'pg string_agg distinct with filter uses FILTER clause' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::stringAgg('tag')->distinct()->into('distinct_tags'), 'i.published = 1',
             "STRING_AGG(DISTINCT i.tag::text, ', ' ORDER BY i.tag::text) FILTER (WHERE i.published = 1)",
-            $sql,
-        );
-    }
+        ];
 
-    public function test_pg_json_agg_filter_uses_filter_clause(): void
-    {
-        $def = Aggregate::jsonAgg('id')->into('ids');
-        $sql = AggregateSqlEmitter::emit(
-            $this->fakeDriver('pgsql'),
-            $def,
-            'i.',
-            'i.published = 1',
-        );
-
-        $this->assertSame(
+        yield 'pg json_agg filter uses FILTER clause' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonAgg('id')->into('ids'), 'i.published = 1',
             'JSON_AGG(i.id ORDER BY i.id) FILTER (WHERE i.published = 1)',
-            $sql,
-        );
+        ];
     }
 
-    public function test_leaf_distinct_count_inclusive_returns_one_for_non_null(): void
+    /**
+     * Leaf fast-path inline value (a single-row subtree) per driver.
+     *
+     * @param  Closure(): AggregateDefinition  $makeDefinition
+     */
+    #[DataProvider('leafInlineCases')]
+    public function test_leaf_inline(string $driver, Closure $makeDefinition, string $expected): void
     {
-        $def = Aggregate::distinctCount('owner_id')->into('distinct_owners');
-        $sql = AggregateSqlEmitter::leafInline($this->sqliteConnection, $def, 't.');
+        $sql = AggregateSqlEmitter::leafInline($this->fakeDriver($driver), $makeDefinition(), 't.');
 
-        $this->assertSame('CASE WHEN t.owner_id IS NULL THEN 0 ELSE 1 END', $sql);
+        $this->assertSame($expected, $sql);
     }
 
-    public function test_leaf_distinct_count_exclusive_returns_zero(): void
+    /**
+     * @return iterable<string, array{0: string, 1: Closure(): AggregateDefinition, 2: string}>
+     */
+    public static function leafInlineCases(): iterable
     {
-        $def = Aggregate::distinctCount('owner_id')->exclusive()->into('distinct_owners');
-        $sql = AggregateSqlEmitter::leafInline($this->sqliteConnection, $def, 't.');
+        yield 'distinct_count inclusive returns 1 for non-null' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::distinctCount('owner_id')->into('distinct_owners'),
+            'CASE WHEN t.owner_id IS NULL THEN 0 ELSE 1 END',
+        ];
 
-        $this->assertSame('0', $sql);
-    }
+        yield 'distinct_count exclusive returns 0' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::distinctCount('owner_id')->exclusive()->into('distinct_owners'),
+            '0',
+        ];
 
-    public function test_leaf_string_agg_exclusive_returns_null(): void
-    {
-        $def = Aggregate::stringAgg('name')->exclusive()->into('child_names');
-        $sql = AggregateSqlEmitter::leafInline($this->sqliteConnection, $def, 't.');
+        yield 'string_agg exclusive returns NULL' => [
+            'sqlite', static fn (): AggregateDefinition => Aggregate::stringAgg('name')->exclusive()->into('child_names'),
+            'NULL',
+        ];
 
-        $this->assertSame('NULL', $sql);
-    }
+        yield 'json_agg inclusive on pg' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonAgg('id')->into('ids'),
+            'JSON_BUILD_ARRAY(t.id)',
+        ];
 
-    public function test_leaf_json_agg_inclusive_pg(): void
-    {
-        $def = Aggregate::jsonAgg('id')->into('ids');
-        $sql = AggregateSqlEmitter::leafInline($this->fakeDriver('pgsql'), $def, 't.');
+        yield 'json_agg inclusive on mysql' => [
+            'mysql', static fn (): AggregateDefinition => Aggregate::jsonAgg('id')->into('ids'),
+            'JSON_ARRAY(t.id)',
+        ];
 
-        $this->assertSame('JSON_BUILD_ARRAY(t.id)', $sql);
-    }
-
-    public function test_leaf_json_agg_inclusive_mysql(): void
-    {
-        $def = Aggregate::jsonAgg('id')->into('ids');
-        $sql = AggregateSqlEmitter::leafInline($this->fakeDriver('mysql'), $def, 't.');
-
-        $this->assertSame('JSON_ARRAY(t.id)', $sql);
-    }
-
-    public function test_leaf_json_object_agg_inclusive_pg_with_null_guard(): void
-    {
-        $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('lookup');
-        $sql = AggregateSqlEmitter::leafInline($this->fakeDriver('pgsql'), $def, 't.');
-
-        $this->assertSame(
+        yield 'json_object_agg inclusive on pg with null guard' => [
+            'pgsql', static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('lookup'),
             'CASE WHEN t.slug IS NOT NULL THEN JSON_BUILD_OBJECT(t.slug::text, t.name) ELSE NULL END',
-            $sql,
-        );
+        ];
     }
 
-    public function test_watch_columns_returns_source(): void
+    /**
+     * @param  Closure(): AggregateDefinition  $makeDefinition
+     * @param  list<string>  $expected
+     */
+    #[DataProvider('watchColumnsCases')]
+    public function test_watch_columns(Closure $makeDefinition, array $expected): void
     {
-        $def = Aggregate::stringAgg('name')->into('child_names');
-        $this->assertSame(['name'], AggregateSqlEmitter::watchColumns($def));
+        $this->assertSame($expected, AggregateSqlEmitter::watchColumns($makeDefinition()));
     }
 
-    public function test_watch_columns_returns_multi_column_sources(): void
+    /**
+     * @return iterable<string, array{0: Closure(): AggregateDefinition, 1: list<string>}>
+     */
+    public static function watchColumnsCases(): iterable
     {
-        $def = Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])
-            ->into('descendant_summary');
-        $this->assertSame(['id', 'name'], AggregateSqlEmitter::watchColumns($def));
-    }
+        yield 'scalar string_agg watches its source' => [
+            static fn (): AggregateDefinition => Aggregate::stringAgg('name')->into('child_names'),
+            ['name'],
+        ];
 
-    public function test_watch_columns_returns_key_and_value_for_json_object_agg(): void
-    {
-        $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('lookup');
-        $this->assertSame(['slug', 'name'], AggregateSqlEmitter::watchColumns($def));
+        yield 'multi-column json_agg watches every source' => [
+            static fn (): AggregateDefinition => Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])->into('descendant_summary'),
+            ['id', 'name'],
+        ];
+
+        yield 'json_object_agg watches key and value' => [
+            static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('lookup'),
+            ['slug', 'name'],
+        ];
     }
 }
 
