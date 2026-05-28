@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\ScopedArea;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -74,5 +75,16 @@ final class ScopedAggregateMaintenanceTest extends TestCase
 
         $this->assertSame(118, $t1['root']->refresh()->amount_total); // 18 + 100
         $this->assertSame(210, $t2['root']->refresh()->amount_total); // unchanged
+    }
+
+    public function test_aggregate_errors_without_an_anchor_throws_on_a_scoped_model(): void
+    {
+        // A scoped model can't be repaired/inspected forest-wide: every
+        // aggregate operation must be anchored to one tree so it stays
+        // inside a single partition. The anchorless call is refused.
+        $this->expectException(ScopeViolationException::class);
+        $this->expectExceptionMessage('pass an anchor node to scope this operation');
+
+        ScopedArea::aggregateErrors();
     }
 }

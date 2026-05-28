@@ -7,12 +7,12 @@ namespace Vusys\NestedSet\Tests\Unit\Aggregates\Sql;
 use Closure;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Connection;
-use Illuminate\Database\SQLiteConnection;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
+use Vusys\NestedSet\Tests\Support\DriverFakedConnection;
 
 /**
  * Snapshot tests for the per-driver SQL emitter. The connection is a
@@ -254,36 +254,5 @@ final class AggregateSqlEmitterTest extends TestCase
             static fn (): AggregateDefinition => Aggregate::jsonObjectAgg(key: 'slug', value: 'name')->into('lookup'),
             ['slug', 'name'],
         ];
-    }
-}
-
-/**
- * Delegating connection that reports a synthetic driver name. Wraps a
- * real SQLite connection so PDO::quote keeps working for string
- * literals; only the few backend-dispatch checks in
- * {@see AggregateSqlEmitter} see the spoofed driver.
- *
- * @internal scope: this test file only
- */
-final class DriverFakedConnection extends SQLiteConnection
-{
-    public function __construct(
-        private readonly Connection $delegate,
-        private readonly string $fakedDriver,
-    ) {
-        // We never call parent::__construct — every override below
-        // forwards to the real delegate.
-    }
-
-    #[\Override]
-    public function getDriverName(): string
-    {
-        return $this->fakedDriver;
-    }
-
-    #[\Override]
-    public function getPdo(): \PDO
-    {
-        return $this->delegate->getPdo();
     }
 }
