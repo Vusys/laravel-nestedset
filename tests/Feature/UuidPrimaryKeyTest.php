@@ -361,4 +361,30 @@ final class UuidPrimaryKeyTest extends TestCase
 
         StuckCursorUuidTag::fixAggregates(chunkSize: 1);
     }
+
+    // ----------------------------------------------------------------
+    // getParentId() on a string-keyed model
+    // ----------------------------------------------------------------
+
+    public function test_get_parent_id_coerces_a_non_string_scalar_to_string(): void
+    {
+        // On a string-keyed model the parent_id is returned as a string.
+        // A raw int/float attribute (e.g. a hand-built row, or a DB that
+        // hands back a numeric type) is coerced rather than narrowed.
+        $tag = new UuidTag(['name' => 'child']);
+        $tag->setAttribute('parent_id', 123);
+
+        $this->assertSame('123', $tag->getParentId());
+    }
+
+    public function test_get_parent_id_rejects_a_non_scalar_parent_id(): void
+    {
+        $tag = new UuidTag(['name' => 'child']);
+        $tag->setAttribute('parent_id', ['not', 'scalar']);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('is not int/string/stringable');
+
+        $tag->getParentId();
+    }
 }

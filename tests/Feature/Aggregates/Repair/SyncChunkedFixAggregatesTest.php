@@ -168,4 +168,17 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         );
         $this->assertFalse(Area::aggregatesAreBroken(), 'one-shot path still repaired the tree');
     }
+
+    public function test_low_level_fix_aggregates_chunk_rejects_a_non_positive_chunk_size(): void
+    {
+        // The public `fixAggregates(chunkSize: 0)` wrapper treats 0 as
+        // "no chunking", but the lower-level cursor entry point requires
+        // a real page size — a zero/negative chunk would never advance.
+        $this->seedAreaTree(2);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('chunkSize must be > 0');
+
+        Area::fixAggregatesChunk(null, null, 0);
+    }
 }
