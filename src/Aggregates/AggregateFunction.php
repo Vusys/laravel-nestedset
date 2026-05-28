@@ -91,6 +91,30 @@ enum AggregateFunction: string
     }
 
     /**
+     * True for aggregate kinds that always need a full subtree recompute
+     * on every mutation — no delta or cheap-skip fast path applies.
+     *
+     * Includes the four collection-aggregate kinds (DistinctCount / StringAgg /
+     * JsonAgg / JsonObjectAgg) plus the bitwise rollups. MIN/MAX are also
+     * recompute-only but carry a cheap-skip filter on the previous extremum
+     * value, so they get their own captured-recompute branch instead of going
+     * through the chain-recompute path.
+     */
+    public function requiresChainRecompute(): bool
+    {
+        return match ($this) {
+            self::DistinctCount,
+            self::StringAgg,
+            self::JsonAgg,
+            self::JsonObjectAgg,
+            self::BitOr,
+            self::BitAnd,
+            self::BitXor => true,
+            default => false,
+        };
+    }
+
+    /**
      * True for functions whose canonical "empty subtree" answer is NULL
      * rather than zero. Aggregate columns of these functions are stored
      * nullable; SUM, COUNT, and DistinctCount default to 0 and stay

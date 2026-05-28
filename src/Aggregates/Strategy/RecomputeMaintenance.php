@@ -37,6 +37,25 @@ use Vusys\NestedSet\NodeBounds;
 final class RecomputeMaintenance
 {
     /**
+     * Reads `config('nestedset.aggregate_locking')` and normalises any
+     * unknown value to `'auto'`. Returned string is shaped to fit the
+     * `$locking` parameter on {@see self::apply()} and its delta-side
+     * sibling on {@see DeltaMaintenance}.
+     *
+     * @return 'always'|'auto'|'never'
+     */
+    public static function lockingFromConfig(): string
+    {
+        $value = config('nestedset.aggregate_locking', 'auto');
+
+        return match ($value) {
+            'always' => 'always',
+            'never' => 'never',
+            default => 'auto',
+        };
+    }
+
+    /**
      * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
