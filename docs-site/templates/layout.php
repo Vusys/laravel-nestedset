@@ -31,6 +31,7 @@ if (! function_exists('navLink')) {
     <title><?= htmlspecialchars($title) ?> · <?= htmlspecialchars($siteName) ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.css">
     <link rel="stylesheet" href="<?= $baseUrl ?>style.css">
+    <link rel="stylesheet" href="<?= $baseUrl ?>tree-widget.css">
 </head>
 <body data-built-at="<?= $builtAt ?>">
 <?php
@@ -99,6 +100,7 @@ if (! function_exists('navLink')) {
 
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script src="<?= $baseUrl ?>tree-widget.js"></script>
 <script src="<?= $baseUrl ?>app.js"></script>
 </body>
 </html>

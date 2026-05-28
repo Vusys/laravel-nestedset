@@ -8,6 +8,12 @@
     --accent: #0969da;
     --accent-bg: #ddf4ff;
 
+    --callout-note:      #0969da;
+    --callout-tip:       #1a7f37;
+    --callout-important: #8250df;
+    --callout-warning:   #9a6700;
+    --callout-caution:   #cf222e;
+
     --syntax-comment:  #6a737d;
     --syntax-punct:    #24292e;
     --syntax-number:   #005cc5;
@@ -34,6 +40,12 @@
     --border: #353b46;
     --accent: #66b1ff;
     --accent-bg: #1f6feb33;
+
+    --callout-note:      #58a6ff;
+    --callout-tip:       #3fb950;
+    --callout-important: #bc8cff;
+    --callout-warning:   #d29922;
+    --callout-caution:   #f85149;
 
     --syntax-comment:  #8b949e;
     --syntax-punct:    #c9d1d9;
@@ -289,7 +301,18 @@ html, body {
     padding-left: 0.6rem;
     margin-left: -0.6rem;
 }
-.toc-sidebar a:hover { color: var(--accent); }
+.toc-sidebar a:hover { color: var(--fg); }
+.toc-sidebar a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: 500;
+}
+.toc-sidebar li li { margin: 0.15rem 0; }
+.toc-sidebar li li a {
+    padding-left: 1.5rem;
+    font-size: 0.95em;
+}
+.toc-sidebar li li li a { padding-left: 2.4rem; }
 
 .page-nav {
     display: grid;
@@ -341,3 +364,156 @@ html, body {
     }
     .theme-toggle { top: 0.6rem; right: 0.6rem; }
 }
+
+/* ---------------------------------------------------------------------------
+   Callouts (GitHub-style alerts) — see expandCallouts() in build.php.
+   --------------------------------------------------------------------------- */
+
+.callout {
+    --c: var(--callout-note);
+    margin: 1.25rem 0;
+    padding: 0.85rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--c) 35%, var(--border));
+    border-left: 3px solid var(--c);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--c) 7%, var(--bg));
+}
+.callout > :first-child { margin-top: 0; }
+.callout > :last-child { margin-bottom: 0; }
+
+.callout-note      { --c: var(--callout-note); }
+.callout-tip       { --c: var(--callout-tip); }
+.callout-important { --c: var(--callout-important); }
+.callout-warning   { --c: var(--callout-warning); }
+.callout-caution   { --c: var(--callout-caution); }
+
+.callout-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 600;
+    color: var(--c);
+    margin: 0 0 0.4rem;
+    font-size: 0.95rem;
+}
+.callout-title::before {
+    content: "";
+    width: 1.05rem;
+    height: 1.05rem;
+    flex: 0 0 auto;
+    background: currentColor;
+    -webkit-mask: var(--icon) center / contain no-repeat;
+    mask: var(--icon) center / contain no-repeat;
+}
+.callout-note .callout-title    { --icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM7 7a1 1 0 112 0v4a1 1 0 11-2 0V7zm1-3.25A1.25 1.25 0 108 6.25 1.25 1.25 0 008 3.75z"/></svg>'); }
+.callout-tip .callout-title     { --icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8 1.5a4.5 4.5 0 00-2.7 8.1c.4.3.7.8.7 1.3v.1h4v-.1c0-.5.3-1 .7-1.3A4.5 4.5 0 008 1.5zM6 13h4v.5a1.5 1.5 0 01-3 0H6z"/></svg>'); }
+.callout-important .callout-title { --icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2.5 2A1.5 1.5 0 001 3.5v7A1.5 1.5 0 002.5 12H5l3 3v-3h5.5A1.5 1.5 0 0015 10.5v-7A1.5 1.5 0 0013.5 2h-11zM7 4h2v4H7V4zm0 5h2v2H7V9z"/></svg>'); }
+.callout-warning .callout-title { --icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8.9 1.5a1 1 0 00-1.8 0l-6.8 12A1 1 0 001.2 15h13.6a1 1 0 00.9-1.5l-6.8-12zM7 6h2v4H7V6zm0 5h2v2H7v-2z"/></svg>'); }
+.callout-caution .callout-title { --icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM7 4h2v5H7V4zm0 6h2v2H7v-2z"/></svg>'); }
+
+.callout a { color: var(--c); }
+
+/* ---------------------------------------------------------------------------
+   Code block toolbar — language label + copy button, injected by app.js.
+   --------------------------------------------------------------------------- */
+
+.code-block { position: relative; }
+.code-block pre { margin: 0; }
+
+.code-toolbar {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.code-block:hover .code-toolbar,
+.code-block:focus-within .code-toolbar { opacity: 1; }
+
+.code-lang {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    user-select: none;
+}
+
+.copy-btn {
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.18rem 0.5rem;
+    cursor: pointer;
+    line-height: 1.2;
+}
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+.copy-btn.copied { color: var(--callout-tip); border-color: var(--callout-tip); }
+
+/* ---------------------------------------------------------------------------
+   Landing hero.
+   --------------------------------------------------------------------------- */
+
+.hero {
+    margin: 0 0 2.5rem;
+    padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--border);
+}
+.hero h1 {
+    border: 0;
+    padding: 0;
+    margin: 0 0 0.5rem;
+    font-size: 2.35rem;
+    letter-spacing: -0.02em;
+}
+.hero-tagline {
+    font-size: 1.15rem;
+    color: var(--fg-muted);
+    margin: 0 0 1.25rem;
+    max-width: 56ch;
+    line-height: 1.5;
+}
+.hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 1.4rem;
+}
+.hero-badges span {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+}
+.hero-cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+.hero-cta a {
+    display: inline-block;
+    padding: 0.5rem 1.1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.92rem;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    color: var(--fg);
+}
+.hero-cta a.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.hero-cta a.primary:hover { filter: brightness(1.05); text-decoration: none; }
+.hero-cta a:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.hero-cta a.primary:hover { color: #fff; }

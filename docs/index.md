@@ -1,8 +1,17 @@
-# Introduction
-
-A modern Laravel implementation of the nested-set model for hierarchical data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations, multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit.
-
-Target: **PHP 8.3+** / **Laravel 11, 12, 13**.
+<div class="hero">
+<h1>laravel-nestedset</h1>
+<p class="hero-tagline">A modern nested-set implementation for Laravel. Atomic subtree moves, automatically maintained aggregate roll-ups, multi-tree scoping, soft-delete cascade, and an opinionated repair toolkit — with strict types and PHPStan level 9 throughout.</p>
+<div class="hero-badges">
+<span>PHP 8.3+</span>
+<span>Laravel 11 · 12 · 13</span>
+<span>PHPStan level 9</span>
+<span>SQLite · MySQL · MariaDB · Postgres</span>
+</div>
+<div class="hero-cta">
+<a class="primary" href="getting-started/installation.html">Get started</a>
+<a href="getting-started/model-setup.html">Model setup</a>
+</div>
+</div>
 
 ```php
 use App\Models\Category;
@@ -58,7 +67,25 @@ Category::query()->withFreshAggregates()->get();   // ad-hoc correlated recomput
 
 The nested-set encoding stores `lft` and `rgt` integers on every node so any subtree, ancestor chain, or descendant set is a single `BETWEEN` query — no recursive CTEs, no N+1 loops. The price is that mutations (insert / move / delete) have to shift many rows to keep the lft/rgt sequence dense, so it's best suited to **read-heavy hierarchies**: category trees, menu structures, org charts, comment threads.
 
+Select a node below to see how its `lft`/`rgt` interval wraps its whole subtree — that containment is the entire trick. Each node also shows **Σ**, a `products` count rolled up from its descendants; selecting a node reveals the `SUM` query behind it:
+
+```ns-tree
+Electronics
+  Computers
+    Laptops {products=42}
+    Desktops {products=18}
+  Phones
+    Android {products=37}
+    iOS {products=15}
+Clothing
+  Shoes {products=64}
+  Outerwear {products=29}
+```
+
 This package executes every shift as a single `CASE WHEN UPDATE`, so even a subtree move that touches thousands of rows is one round trip.
+
+> [!TIP]
+> `parent_id` is the source of truth. The `lft`/`rgt`/`depth` columns are a derived index — if they ever drift, [`fixTree()`](maintenance/fix-tree.html) rebuilds them from a `parent_id` walk.
 
 ## What's in this documentation
 
