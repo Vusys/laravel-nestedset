@@ -333,7 +333,7 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
 
     public function test_wide_shallow_listener_fix_aggregates(): void
     {
-        // fixListenerAggregatesPhp is O(N²) — guard against silent
+        // ListenerMaintenance::fixListenerAggregatesPhp is O(N²) — guard against silent
         // regressions in that bound.
         foreach ([100, 1_000] as $n) {
             DB::table('monsters')->delete();
