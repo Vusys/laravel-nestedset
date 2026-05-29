@@ -48,7 +48,7 @@ foreach ($pages as $i => $page) {
         exit(1);
     }
 
-    $result = $converter->convert($raw);
+    $result = $converter->convert(expandCallouts($raw));
     $html = (string) $result;
     $toc = extractToc($html);
     $bodyHtml = stripFirstToc($html);
@@ -60,7 +60,7 @@ foreach ($pages as $i => $page) {
     mustMakeDir(dirname($outAbs));
     mustWriteFile($outAbs, renderLayout($layoutFile, [
         'title' => $title,
-        'siteName' => 'laravel-nestedset',
+        'siteName' => 'vusys/laravel-nestedset',
         'content' => $bodyHtml,
         'toc' => $toc,
         'nav' => $nav,
@@ -105,6 +105,70 @@ function makeConverter(): MarkdownConverter
     $env->addExtension(new TableOfContentsExtension);
 
     return new MarkdownConverter($env);
+}
+
+/**
+ * Expand GitHub-style alert blockquotes into callout markup before the
+ * Markdown is converted:
+ *
+ *   > [!NOTE]
+ *   > Body text, parsed as Markdown.
+ *
+ * becomes a <div class="callout callout-note"> whose body is still rendered
+ * as Markdown (the surrounding blank lines re-open the Markdown parser inside
+ * the raw-HTML block, per the CommonMark HTML-block rules). An optional title
+ * may follow the marker: `> [!NOTE] Heads up`.
+ */
+function expandCallouts(string $markdown): string
+{
+    $types = [
+        'NOTE' => ['note', 'Note'],
+        'TIP' => ['tip', 'Tip'],
+        'IMPORTANT' => ['important', 'Important'],
+        'WARNING' => ['warning', 'Warning'],
+        'CAUTION' => ['caution', 'Caution'],
+    ];
+
+    $lines = explode("\n", $markdown);
+    $out = [];
+    $count = count($lines);
+    $i = 0;
+
+    while ($i < $count) {
+        if (preg_match('/^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/', $lines[$i], $m)) {
+            [$cls, $defaultTitle] = $types[strtoupper($m[1])];
+            $title = trim($m[2]) !== '' ? trim($m[2]) : $defaultTitle;
+
+            $body = [];
+            $i++;
+            while ($i < $count && preg_match('/^>\s?(.*)$/', $lines[$i], $bm)) {
+                $body[] = $bm[1];
+                $i++;
+            }
+            while ($body !== [] && trim($body[0]) === '') {
+                array_shift($body);
+            }
+            while ($body !== [] && trim((string) end($body)) === '') {
+                array_pop($body);
+            }
+
+            $out[] = '<div class="callout callout-'.$cls.'">';
+            $out[] = '<p class="callout-title">'.htmlspecialchars($title).'</p>';
+            $out[] = '';
+            foreach ($body as $b) {
+                $out[] = $b;
+            }
+            $out[] = '';
+            $out[] = '</div>';
+
+            continue;
+        }
+
+        $out[] = $lines[$i];
+        $i++;
+    }
+
+    return implode("\n", $out);
 }
 
 function flattenNav(array $nav): array
@@ -339,7 +403,7 @@ function renderMissing(array $page, array $nav, string $siteDir, string $layoutF
 
     mustWriteFile($outAbs, renderLayout($layoutFile, [
         'title' => $page['title'].' (placeholder)',
-        'siteName' => 'laravel-nestedset',
+        'siteName' => 'vusys/laravel-nestedset',
         'content' => $bodyHtml,
         'toc' => '',
         'nav' => $nav,

@@ -1,0 +1,232 @@
+/* ---------------------------------------------------------------------------
+   Nested-set tree widget. Themed with the site's CSS variables so it tracks
+   light/dark automatically. Hydrated by tree-widget.js from ```ns-tree blocks.
+   --------------------------------------------------------------------------- */
+
+.ns-widget {
+    --ns-line: var(--border);
+    --ns-descendant: var(--accent-bg);
+
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 0;
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg);
+    font-size: 0.9rem;
+}
+
+.ns-tree {
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+}
+
+.ns-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ns-tree .ns-children {
+    margin-left: 0.75rem;
+    padding-left: 0.75rem;
+    border-left: 1px solid var(--ns-line);
+}
+
+.ns-tree .ns-root {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+}
+
+.ns-item { position: relative; }
+
+.ns-node {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0.28rem 0.5rem;
+    margin: 0.1rem 0;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.ns-node:hover { background: var(--bg-elevated); }
+.ns-node:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.ns-node-name { font-weight: 500; }
+
+.ns-chip {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.02rem 0.45rem;
+    white-space: nowrap;
+}
+
+.ns-own {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-bg);
+}
+
+.ns-trailing {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding-left: 0.5rem;
+}
+
+.ns-rollup {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--accent);
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem;
+    white-space: nowrap;
+}
+
+.ns-bounds {
+    display: inline-flex;
+    gap: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.ns-lft, .ns-rgt {
+    display: inline-block;
+    min-width: 1.4em;
+    text-align: center;
+    padding: 0.18rem 0.3rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+    background: var(--bg);
+}
+
+/* selection / relationship states ------------------------------------------ */
+
+.ns-item.is-selected > .ns-node {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.ns-item.is-selected > .ns-node .ns-lft,
+.ns-item.is-selected > .ns-node .ns-rgt {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #fff;
+}
+.ns-item.is-selected > .ns-node .ns-chip,
+.ns-item.is-selected > .ns-node .ns-rollup {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #fff;
+}
+
+.ns-item.is-descendant > .ns-node,
+.ns-item.is-preview > .ns-node {
+    background: var(--ns-descendant);
+    border-color: var(--accent);
+}
+
+.ns-item.is-ancestor > .ns-node {
+    border-color: var(--accent);
+    border-style: dashed;
+}
+
+/* aside --------------------------------------------------------------------- */
+
+.ns-aside {
+    border-left: 1px solid var(--border);
+    background: var(--bg-elevated);
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.ns-hint {
+    color: var(--fg-muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.ns-sql-title {
+    font-weight: 600;
+    margin-bottom: 0.45rem;
+}
+
+.ns-sql-code {
+    margin: 0 0 0.5rem;
+    padding: 0.6rem 0.7rem;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.ns-sql-note {
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+    line-height: 1.5;
+}
+.ns-sql-note code {
+    font-size: 0.92em;
+    padding: 0.05em 0.3em;
+}
+
+.ns-legend {
+    margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.75rem;
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+}
+.ns-key { display: inline-flex; align-items: center; gap: 0.35rem; }
+.ns-key::before {
+    content: "";
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 3px;
+    border: 1px solid var(--accent);
+    display: inline-block;
+}
+.ns-key-selected::before { background: var(--accent); }
+.ns-key-descendant::before { background: var(--ns-descendant); }
+.ns-key-ancestor::before { background: transparent; border-style: dashed; }
+
+@media (max-width: 720px) {
+    .ns-widget { grid-template-columns: 1fr; }
+    .ns-aside {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+    }
+}
