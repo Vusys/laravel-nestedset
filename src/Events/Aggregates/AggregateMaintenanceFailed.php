@@ -27,9 +27,10 @@ final readonly class AggregateMaintenanceFailed
         public string $modelClass,
         public int|string|null $anchorId,
         /**
-         * One of: 'capture', 'apply', 'recompute', 'on_create',
-         * 'on_delete', 'on_restore'. Identifies which lifecycle hook
-         * the exception came out of.
+         * One of: 'capture', 'apply', 'on_create', 'on_delete',
+         * 'on_restore'. Identifies which lifecycle hook the exception
+         * came out of — matches the stage strings dispatched from
+         * {@see \Vusys\NestedSet\NodeTrait::runAggregateHook()}.
          */
         public string $stage,
         public Throwable $exception,
