@@ -26,8 +26,8 @@
     --toc-width: 200px;
     --header-height: 56px;
 
-    --font-sans: "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    --font-mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --font-sans: "Fira Sans", -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica", "Arial", sans-serif;
+    --font-mono: "Fira Code", ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
 }
 
 [data-theme="dark"] {
@@ -377,6 +377,7 @@ code, pre, .sidebar-brand {
 
 .callout {
     --c: var(--callout-note);
+
     margin: 1.25rem 0;
     padding: 0.85rem 1rem;
     border: 1px solid color-mix(in srgb, var(--c) 35%, var(--border));
@@ -407,7 +408,7 @@ code, pre, .sidebar-brand {
     width: 1.05rem;
     height: 1.05rem;
     flex: 0 0 auto;
-    background: currentColor;
+    background: currentcolor;
     -webkit-mask: var(--icon) center / contain no-repeat;
     mask: var(--icon) center / contain no-repeat;
 }

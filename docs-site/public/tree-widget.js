@@ -273,6 +273,7 @@
         if (kids.length) {
             li.setAttribute('aria-expanded', 'true');
             var ul = el('ul', 'ns-children');
+            ul.setAttribute('role', 'group');
             kids.forEach(function (child) { ul.appendChild(renderNode(child, ctx)); });
             li.appendChild(ul);
         }
