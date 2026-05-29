@@ -67,12 +67,20 @@ final class CompanionSourceTransformTest extends TestCase
     public function test_identity_returns_the_numeric_value_or_zero(): void
     {
         $this->assertEqualsWithDelta(7.0, CompanionSourceTransform::Identity->applyPhp(7), 1e-9);
+        $this->assertEqualsWithDelta(-5.0, CompanionSourceTransform::Identity->applyPhp(-5), 1e-9);
+        // Numeric zero coerces to float 0.0; only the non-numeric fallback returns int 0.
+        $this->assertSame(0.0, CompanionSourceTransform::Identity->applyPhp(0));
+        $this->assertSame(0, CompanionSourceTransform::Identity->applyPhp(null));
         $this->assertSame(0, CompanionSourceTransform::Identity->applyPhp('not-numeric'));
     }
 
     public function test_square_multiplies_the_value_by_itself(): void
     {
         $this->assertEqualsWithDelta(9.0, CompanionSourceTransform::Square->applyPhp(3), 1e-9);
+        $this->assertEqualsWithDelta(9.0, CompanionSourceTransform::Square->applyPhp(-3), 1e-9);
+        // Numeric zero coerces to float 0.0; only the non-numeric fallback returns int 0.
+        $this->assertSame(0.0, CompanionSourceTransform::Square->applyPhp(0));
         $this->assertSame(0, CompanionSourceTransform::Square->applyPhp(null));
+        $this->assertSame(0, CompanionSourceTransform::Square->applyPhp('not-numeric'));
     }
 }
