@@ -62,7 +62,6 @@ Format:
 - [Transactions](reference/transactions.md)
 - [Events](reference/events.md)
 - [Production Notes](reference/production.md)
-- [vs. kalnoy/nestedset](reference/comparison.md)
 
 # Internals
 
