@@ -41,7 +41,7 @@ Fuzzer knobs (`composer fuzz`): `FUZZER_SEEDS`, `FUZZER_STEPS`, `FUZZER_RUNS`, `
 ## Architecture
 
 ### The hot path: `NodeTrait`
-`src/NodeTrait.php` is the user-facing API entry point. It's a composition of seven concerns, each owning one slice of behaviour:
+`src/NodeTrait.php` is the user-facing API entry point. It's a composition of eight concerns, each owning one slice of behaviour:
 
 | Concern | Responsibility |
 |---|---|
@@ -52,6 +52,7 @@ Fuzzer knobs (`composer fuzz`): `FUZZER_SEEDS`, `FUZZER_STEPS`, `FUZZER_RUNS`, `
 | `HasNodeInspection` | `isRoot` / `isLeaf` / `isDescendantOf` etc., plus `NodeBounds` value object |
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` |
 | `HasNestedSetAggregates` | precalculated aggregate columns (SUM/COUNT/AVG/MIN/MAX, filtered, listener-based) |
+| `HasTreeExport` | `toAsciiTree` / `toMermaid` / `toDot` / `toJsonTree` serialisers, plus `*Forest` / `*Scope` static variants |
 
 Models **must** `implements HasNestedSet` (the contract in `src/Contracts/`). The trait provides default implementations of every interface method.
 

@@ -96,7 +96,7 @@ final class ApprovedAmountListener implements TreeAggregateListener
 }
 ```
 
-For SUM operations, `null` is treated as zero (the row doesn't contribute). For MIN/MAX, `null` skips the row entirely — useful when you want "minimum across only the qualifying rows".
+A `null` return excludes the row from the aggregate. For SUM the resulting value is the same as returning `0` (both add nothing); for COUNT / AVG / MIN / MAX the two differ — `null` skips the row entirely, while `0` still counts as a contributing row. Use `null` (not `0`) when the row genuinely doesn't qualify so a COUNT or AVG over the same listener gets the right denominator.
 
 ## Multiple Min/Max sliced by type
 

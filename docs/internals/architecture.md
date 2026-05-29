@@ -46,7 +46,7 @@ trait NodeTrait
 | `HasNestedSetAggregates` | precalculated rollup columns (SUM/COUNT/AVG/MIN/MAX, filtered, listener-based) | [Aggregate Maintenance](aggregate-maintenance.html) |
 | `HasSoftDeleteTree` | cascade soft-delete / restore with `deleted_at` stamp matching | [Aggregate Maintenance](aggregate-maintenance.html#soft-deletes) |
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` | [Bulk Insertion](../tree-operations/bulk-insertion.html) |
-| `HasTreeExport` | `toAscii()` / `toMermaid()` / `toDot()` / `toJson()` tree serialisers | [Tree Exporters](../querying/exporters.html) |
+| `HasTreeExport` | `toAsciiTree()` / `toMermaid()` / `toDot()` / `toJsonTree()` tree serialisers, plus `*Forest` / `*Scope` static counterparts | [Tree Exporters](../querying/exporters.html) |
 
 Models **must** `implements HasNestedSet` (`src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
 

@@ -52,7 +52,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'cheapest_price',  min: 'price')]
 class Category extends Model implements HasNestedSet { use NodeTrait; }
 
-// Electronics
+// Electronics                Gadgets   ← second root, products = 0
 // ├── Laptops  (products = 10)
 // └── Phones   (products = 13)
 
@@ -61,7 +61,7 @@ $electronics->refresh()->products_total;   // 23  — rolled up from descendants
 $phones->update(['products' => 20]);
 $electronics->refresh()->products_total;   // 30  — ancestors updated in the same write
 
-$phones->moveTo($gadgets)->save();         // move the Phones subtree to a different root
+$phones->moveTo($gadgets)->save();         // re-parent Phones under Gadgets
 $electronics->refresh()->products_total;   // 10  — old ancestors shrink
 $gadgets->refresh()->products_total;       // 20  — new ancestors grow
 
