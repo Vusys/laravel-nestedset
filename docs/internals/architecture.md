@@ -1,22 +1,13 @@
 # Architecture Overview
 
-This section is a source-level walkthrough of how `vusys/laravel-nestedset` is
-built — the algorithms, the SQL, and how the classes collaborate. The
-task-oriented sections (Tree Operations, Querying, Aggregates, Maintenance)
-tell you *what the package does*; Internals tells you *how it does it*, so you
-can read the source, debug a corruption report, or contribute with confidence.
+This section is a source-level walkthrough of how `vusys/laravel-nestedset` is built — the algorithms, the SQL, and how the classes collaborate. The task-oriented sections (Tree Operations, Querying, Aggregates, Maintenance) tell you *what the package does*; Internals tells you *how it does it*, so you can read the source, debug a corruption report, or contribute with confidence.
 
 > [!NOTE]
-> Citations name the file plus the `Class::method()` — those are the durable
-> anchors. Line numbers are a convenience and drift as the code changes. This
-> walkthrough was captured against **`v0.13.0-26-gca9b1fb`**; if your checkout
-> differs, trust the method names over the line numbers.
+> Citations name the file plus the `Class::method()` — those are the durable anchors. Line numbers are a convenience and drift as the code changes. This walkthrough was captured against **`v0.13.0-26-gca9b1fb`**; if your checkout differs, trust the method names over the line numbers.
 
 ## The shape of the package
 
-Every public capability is reachable from one trait, `NodeTrait`
-(`src/NodeTrait.php`). A model opts in by using the trait and implementing the
-`HasNestedSet` contract:
+Every public capability is reachable from one trait, `NodeTrait` (`src/NodeTrait.php`). A model opts in by using the trait and implementing the `HasNestedSet` contract:
 
 ```php
 use Illuminate\Database\Eloquent\Model;
@@ -29,9 +20,7 @@ class Category extends Model implements HasNestedSet
 }
 ```
 
-`NodeTrait` is deliberately thin — it is a **composition of eight concerns**,
-each owning one slice of behaviour, plus a handful of Eloquent overrides. The
-trait body is little more than a list of `use` statements:
+`NodeTrait` is deliberately thin — it is a **composition of eight concerns**, each owning one slice of behaviour, plus a handful of Eloquent overrides. The trait body is little more than a list of `use` statements:
 
 ```php
 trait NodeTrait
@@ -59,16 +48,11 @@ trait NodeTrait
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` | [Bulk Insertion](../tree-operations/bulk-insertion.html) |
 | `HasTreeExport` | `toAscii()` / `toMermaid()` / `toDot()` / `toJson()` tree serialisers | [Tree Exporters](../querying/exporters.html) |
 
-Models **must** `implements HasNestedSet` (`src/Contracts/HasNestedSet.php`).
-The trait supplies a default implementation of every contract method, so the
-interface costs nothing to satisfy — its job is to give Larastan (and your IDE)
-a typed surface to resolve `getLft()`, `getBounds()`, and the column-name
-accessors against.
+Models **must** `implements HasNestedSet` (`src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
 
 ## The layers underneath
 
-The concerns are the API surface. They delegate the actual SQL to a layer of
-query builders under `src/Query/`:
+The concerns are the API surface. They delegate the actual SQL to a layer of query builders under `src/Query/`:
 
 ```text
  model (NodeTrait)
@@ -85,19 +69,10 @@ query builders under `src/Query/`:
  database
 ```
 
-- `TreeBaseQueryBuilder` — the package's `Illuminate\Database\Query\Builder`
-  subclass; a home for SQL-execution hooks (e.g. the MariaDB `optimizer_switch`
-  prefix used by fresh-aggregate reads).
-- `TreeQueryBuilder` — the Eloquent builder returned from every `NodeTrait`
-  model. Adds `whereDescendantOf`, `whereAncestorOf`, `whereIsRoot`,
-  `withDepth`, `defaultOrder`, `withFreshAggregates`, and more.
-- `TreeMutationBuilder` / `TreeRepairBuilder` — internal builders for the
-  write and repair paths. They take a connection, table, and column names and
-  emit the single-statement updates.
-- `TreeExpression` — wraps a raw SQL string as an `Expression` so the query
-  builder splices it into the `SET` clause verbatim. It is also the
-  backend-dialect generator (LATERAL on PostgreSQL/MySQL, `STRAIGHT_JOIN` on
-  MySQL, derived-table shape on MariaDB, correlated fallback on SQLite).
+- `TreeBaseQueryBuilder` — the package's `Illuminate\Database\Query\Builder` subclass; a home for SQL-execution hooks (e.g. the MariaDB `optimizer_switch` prefix used by fresh-aggregate reads).
+- `TreeQueryBuilder` — the Eloquent builder returned from every `NodeTrait` model. Adds `whereDescendantOf`, `whereAncestorOf`, `whereIsRoot`, `withDepth`, `defaultOrder`, `withFreshAggregates`, and more.
+- `TreeMutationBuilder` / `TreeRepairBuilder` — internal builders for the write and repair paths. They take a connection, table, and column names and emit the single-statement updates.
+- `TreeExpression` — wraps a raw SQL string as an `Expression` so the query builder splices it into the `SET` clause verbatim. It is also the backend-dialect generator (LATERAL on PostgreSQL/MySQL, `STRAIGHT_JOIN` on MySQL, derived-table shape on MariaDB, correlated fallback on SQLite).
 
 `NodeTrait` wires these in via two Eloquent overrides:
 
@@ -119,16 +94,11 @@ protected function newBaseQueryBuilder(): TreeBaseQueryBuilder
 }
 ```
 
-Because `newEloquentBuilder()` is narrowed to return `TreeQueryBuilder`, every
-`Category::query()` chain exposes the tree scopes with full static analysis —
-no macros, no `@method` annotations.
+Because `newEloquentBuilder()` is narrowed to return `TreeQueryBuilder`, every `Category::query()` chain exposes the tree scopes with full static analysis — no macros, no `@method` annotations.
 
 ## Lifecycle wiring — `bootNodeTrait()` {#lifecycle-wiring}
 
-The trait hooks into the Eloquent model lifecycle in `bootNodeTrait()`
-(`src/NodeTrait.php`). This single method is the spine of the whole package:
-the mutation engine, the aggregate maintenance, and the cascade logic all hang
-off these standard model events.
+The trait hooks into the Eloquent model lifecycle in `bootNodeTrait()` (`src/NodeTrait.php`). This single method is the spine of the whole package: the mutation engine, the aggregate maintenance, and the cascade logic all hang off these standard model events.
 
 | Eloquent event | Hook | What it does |
 |---|---|---|
@@ -139,14 +109,9 @@ off these standard model events.
 | `deleted` | soft cascade → force cascade → `applyAggregateOnDelete()` → `applyStructuralCleanupOnDelete()` | Cascade the delete through descendants, decrement ancestor aggregates, then close the lft/rgt gap. |
 | `restored` | restore cascade → `applyAggregateOnRestore()` | Un-trash descendants, then re-add their contribution to ancestors. |
 
-Each aggregate hook runs inside `runAggregateHook()`, a `try`/`catch` that
-dispatches an `AggregateMaintenanceFailed` event before re-throwing — so a
-failing rollup surfaces to Sentry/Bugsnag while still rolling back the wrapping
-transaction.
+Each aggregate hook runs inside `runAggregateHook()`, a `try`/`catch` that dispatches an `AggregateMaintenanceFailed` event before re-throwing — so a failing rollup surfaces to Sentry/Bugsnag while still rolling back the wrapping transaction.
 
-A detail worth internalising early: the `saving` hook guards against the most
-common footgun — calling `Model::create([...])` or `->save()` on a node that
-was never placed in the tree:
+A detail worth internalising early: the `saving` hook guards against the most common footgun — calling `Model::create([...])` or `->save()` on a node that was never placed in the tree:
 
 ```php
 if (! $node->exists
@@ -157,50 +122,29 @@ if (! $node->exists
 }
 ```
 
-Without this, the row would land with `lft = rgt = 0` (the migration default)
-and create an `invalid_bounds` corruption. The package fails loudly instead.
+Without this, the row would land with `lft = rgt = 0` (the migration default) and create an `invalid_bounds` corruption. The package fails loudly instead.
 
 ## The aggregates subsystem
 
-`src/Aggregates/` is a self-contained subsystem the lifecycle hooks call into.
-There are three kinds of aggregate column, all sharing the same hooks:
+`src/Aggregates/` is a self-contained subsystem the lifecycle hooks call into. There are three kinds of aggregate column, all sharing the same hooks:
 
-- **SQL aggregates** — declared via `#[NestedSetAggregate]`; SUM/COUNT/AVG/
-  MIN/MAX (and variance, bitwise, bool, geometric/harmonic mean, …) over a
-  source column with optional filters.
-- **Listener aggregates** — declared via `#[NestedSetAggregateListener]`; a PHP
-  `contribution(Model $node)` method computes each row's value.
-- **Ad-hoc fresh aggregates** — `withFreshAggregates([...])`; no stored column,
-  recomputed on read via a correlated subquery.
+- **SQL aggregates** — declared via `#[NestedSetAggregate]`; SUM/COUNT/AVG/ MIN/MAX (and variance, bitwise, bool, geometric/harmonic mean, …) over a source column with optional filters.
+- **Listener aggregates** — declared via `#[NestedSetAggregateListener]`; a PHP `contribution(Model $node)` method computes each row's value.
+- **Ad-hoc fresh aggregates** — `withFreshAggregates([...])`; no stored column, recomputed on read via a correlated subquery.
 
-Maintenance picks one of two strategies per column — `Strategy/DeltaMaintenance`
-(a signed delta applied to ancestors) or `Strategy/RecomputeMaintenance` (a
-`SELECT`-then-`UPDATE` of the invalidated subset) — depending on whether the
-change can be expressed as a delta. The full machinery is covered in
-[Aggregate Maintenance](aggregate-maintenance.html).
+Maintenance picks one of two strategies per column — `Strategy/DeltaMaintenance` (a signed delta applied to ancestors) or `Strategy/RecomputeMaintenance` (a `SELECT`-then-`UPDATE` of the invalidated subset) — depending on whether the change can be expressed as a delta. The full machinery is covered in [Aggregate Maintenance](aggregate-maintenance.html).
 
 ## Scoping (multi-tree tables)
 
-A single table can hold many independent trees ("scopes"). Declare the
-partition column(s) with `#[NestedSetScope('menu_id')]` or a
-`getScopeAttributes()` method. `NestedSetScopeResolver` (`src/Scope/`) derives
-the scope; every builder constrains its writes to the scope, and
-`HasTreeMutation` rejects cross-scope writes with `ScopeViolationException`.
-Scoped repair methods (`fixTree`, `fixAggregates`) require an anchor node so a
-repair stays inside one tree rather than walking a multi-million-row table. See
-[Scoped Trees](../querying/scoped-trees.html).
+A single table can hold many independent trees ("scopes"). Declare the partition column(s) with `#[NestedSetScope('menu_id')]` or a `getScopeAttributes()` method. `NestedSetScopeResolver` (`src/Scope/`) derives the scope; every builder constrains its writes to the scope, and `HasTreeMutation` rejects cross-scope writes with `ScopeViolationException`. Scoped repair methods (`fixTree`, `fixAggregates`) require an anchor node so a repair stays inside one tree rather than walking a multi-million-row table. See [Scoped Trees](../querying/scoped-trees.html).
 
 ## The service provider — schema macros {#service-provider}
 
-`NestedSetServiceProvider` (`src/NestedSetServiceProvider.php`) registers four
-`Blueprint` macros plus a per-connection hook:
+`NestedSetServiceProvider` (`src/NestedSetServiceProvider.php`) registers four `Blueprint` macros plus a per-connection hook:
 
-- `$table->nestedSet(scope, cover, parentIdType)` — adds the four columns
-  (`lft`/`rgt` unsigned bigint, `parent_id` nullable, `depth` unsigned int) and
-  one composite index.
+- `$table->nestedSet(scope, cover, parentIdType)` — adds the four columns (`lft`/`rgt` unsigned bigint, `parent_id` nullable, `depth` unsigned int) and one composite index.
 - `$table->dropNestedSet(...)` — the inverse.
-- `$table->nestedSetAggregate('column', type: ...)` — adds an aggregate storage
-  column **plus its companion columns** (see [Aggregate Maintenance](aggregate-maintenance.html#companion-columns)).
+- `$table->nestedSetAggregate('column', type: ...)` — adds an aggregate storage column **plus its companion columns** (see [Aggregate Maintenance](aggregate-maintenance.html#companion-columns)).
 - `$table->dropNestedSetAggregate(...)` — the inverse, dropping companions too.
 
 The composite index column order is set by `nestedSetIndexColumns()`:
@@ -215,12 +159,7 @@ return [
 ];
 ```
 
-Scope first means each tree occupies its own contiguous slice of the index;
-the `cover` tail lets subtree-aggregate subqueries
-(`WHERE inner.lft >= outer.lft AND inner.rgt <= outer.rgt`) run as covering
-scans with no heap visits. The provider also installs SQLite user-defined
-`BIT_OR`/`BIT_AND`/`BIT_XOR` aggregates on every fresh connection so the same
-native-aggregate SQL runs on all four backends.
+Scope first means each tree occupies its own contiguous slice of the index; the `cover` tail lets subtree-aggregate subqueries (`WHERE inner.lft >= outer.lft AND inner.rgt <= outer.rgt`) run as covering scans with no heap visits. The provider also installs SQLite user-defined `BIT_OR`/`BIT_AND`/`BIT_XOR` aggregates on every fresh connection so the same native-aggregate SQL runs on all four backends.
 
 ## Configuration
 
@@ -228,34 +167,20 @@ native-aggregate SQL runs on all four backends.
 
 - `columns.*` — override the four structural column names.
 - `auto_transaction` (default `true`) — wrap every mutation in a transaction.
-- `aggregate_locking` (`auto` / `always` / `never`) — control `FOR UPDATE`
-  locking on the recompute path. See [Concurrency & Transactions](concurrency.html).
+- `aggregate_locking` (`auto` / `always` / `never`) — control `FOR UPDATE` locking on the recompute path. See [Concurrency & Transactions](concurrency.html).
 - `queue.*` — connection/queue routing for `queueFixAggregates()`.
 - `events_enabled` (default `true`) — short-circuit every telemetry firing site.
 
 ## Load-bearing design decisions
 
-These five choices explain most of *why* the code looks the way it does. Keep
-them in mind while reading the rest of this section.
+These five choices explain most of *why* the code looks the way it does. Keep them in mind while reading the rest of this section.
 
-1. **`parent_id` is the source of truth.** `lft`/`rgt`/`depth` are a derived
-   index. `fixTree()` rebuilds the index from a `parent_id` walk — never the
-   reverse. A corrupted index is always recoverable as long as `parent_id` is
-   intact. → [Integrity & Repair](repair.html)
-2. **Every shift is one atomic `CASE WHEN UPDATE`.** Inserts, moves, and bulk
-   repairs renumber many rows in a single statement, so the on-disk state never
-   passes through an invariant-violating intermediate. → [The Mutation Engine](mutation-engine.html)
-3. **`depth` is stored, not computed.** It is maintained on every mutation,
-   which makes level queries and aggregate ancestry scans cheap.
-4. **Mutations are queued, then dispatched on `save()`.** `appendToNode($parent)`
-   only records a `PendingOperation`; the write happens in the `saving` hook, so
-   the gap, the INSERT/UPDATE, and the aggregate hooks share one transaction.
-5. **Telemetry is observable but optional.** Every meaningful operation fires a
-   typed event, gated by `events_enabled` and a per-event listener check so an
-   unobserved event costs nothing. → [Concurrency & Transactions](concurrency.html#event-dispatch)
+1. **`parent_id` is the source of truth.** `lft`/`rgt`/`depth` are a derived index. `fixTree()` rebuilds the index from a `parent_id` walk — never the reverse. A corrupted index is always recoverable as long as `parent_id` is intact. → [Integrity & Repair](repair.html)
+2. **Every shift is one atomic `CASE WHEN UPDATE`.** Inserts, moves, and bulk repairs renumber many rows in a single statement, so the on-disk state never passes through an invariant-violating intermediate. → [The Mutation Engine](mutation-engine.html)
+3. **`depth` is stored, not computed.** It is maintained on every mutation, which makes level queries and aggregate ancestry scans cheap.
+4. **Mutations are queued, then dispatched on `save()`.** `appendToNode($parent)` only records a `PendingOperation`; the write happens in the `saving` hook, so the gap, the INSERT/UPDATE, and the aggregate hooks share one transaction.
+5. **Telemetry is observable but optional.** Every meaningful operation fires a typed event, gated by `events_enabled` and a per-event listener check so an unobserved event costs nothing. → [Concurrency & Transactions](concurrency.html#event-dispatch)
 
 ## Where to go next
 
-Read [The Nested-Set Model](nested-set-model.html) first — it establishes the
-encoding and invariants every other page assumes. From there, the pages can be
-read in any order.
+Read [The Nested-Set Model](nested-set-model.html) first — it establishes the encoding and invariants every other page assumes. From there, the pages can be read in any order.
