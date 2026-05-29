@@ -236,8 +236,11 @@ jobs:
       # to a compact per-mutant status record before uploading.
       - name: Distil report
         if: always()
+        # infection.json embeds the full source of every mutated file, so
+        # json_decode of the raw report can blow past the default CLI
+        # memory_limit — lift it for this one invocation.
         run: |
-          python3 .github/scripts/merge_infection.py distill \
+          php -d memory_limit=-1 tooling/merge-infection.php distill \
             build/infection/infection.json \
             "compact-${{ matrix.db }}-${{ matrix.shard }}.json" \
             --db "${{ matrix.db }}" \
@@ -267,6 +270,13 @@ jobs:
       # report artifact, which embeds source).
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+
       - name: Download compact reports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -276,7 +286,7 @@ jobs:
 
       - name: Merge into union report
         run: |
-          python3 .github/scripts/merge_infection.py merge \
+          php tooling/merge-infection.php merge \
             compacts/*.json \
             --out-summary union-summary.md \
             --out-escaped escaped-everywhere.txt \
@@ -312,7 +322,7 @@ jobs:
             echo "No Stryker API key configured; skipping dashboard publish."
             exit 0
           fi
-          MSI=$(python3 -c "import json;print(json.load(open('union.json'))['msi'])")
+          MSI=$(php -r 'echo json_decode(file_get_contents("union.json"), true)["msi"];')
           echo "Publishing union MSI=${MSI} to Stryker dashboard."
           curl --silent --show-error --fail \
             --request PUT \
