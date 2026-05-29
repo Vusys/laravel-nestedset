@@ -63,3 +63,13 @@ Format:
 - [Events](reference/events.md)
 - [Production Notes](reference/production.md)
 - [vs. kalnoy/nestedset](reference/comparison.md)
+
+# Internals
+
+- [Architecture Overview](internals/architecture.md)
+- [The Nested-Set Model](internals/nested-set-model.md)
+- [The Mutation Engine](internals/mutation-engine.md)
+- [Query Engine & Relations](internals/query-engine.md)
+- [Aggregate Maintenance](internals/aggregate-maintenance.md)
+- [Integrity & Repair](internals/repair.md)
+- [Concurrency & Transactions](internals/concurrency.md)
