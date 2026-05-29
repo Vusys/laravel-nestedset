@@ -3,12 +3,19 @@ name: Infection
 # Mutation testing — two modes:
 #
 # `pr` (PRs): runs in --git-diff-lines so only mutations in changed
-# code are evaluated. Fast enough to gate PRs; doesn't produce a
-# project-wide MSI, so doesn't publish to the Stryker dashboard.
+# code are evaluated, on SQLite. Fast enough to gate PRs; doesn't
+# produce a project-wide MSI, so doesn't publish to the dashboard.
 #
-# `full` (master push + weekly + manual): runs the full mutation
-# suite and uploads results to the Stryker dashboard. This is the
-# slow run that feeds the README badge.
+# `full` (master push + weekly + manual): a `shard x db` matrix. Each
+# cell mutates a quarter of src/ against one database backend. The
+# `aggregate` job then unions every cell — a mutant is a true gap only
+# if it survived in *every* backend that covered it. The union MSI is
+# published to the Stryker dashboard (feeds the README badge).
+#
+# Why the matrix: a single full SQLite run already takes ~65 min, and
+# the networked backends (MySQL/MariaDB/PostgreSQL) are materially
+# slower per mutant. Sharding by src/ subtree keeps each cell well
+# under its timeout while letting all four backends run in parallel.
 
 on:
   pull_request:
@@ -21,6 +28,11 @@ on:
 
 permissions:
   contents: read
+
+# A new push to a branch supersedes any in-flight mutation run on it.
+concurrency:
+  group: infection-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pr:
@@ -92,14 +104,82 @@ jobs:
             --threads=$(nproc)
 
   full:
-    name: Mutation testing (full suite)
+    # No custom `name:` — GitHub auto-appends the matrix values
+    # (`full (concerns, sqlite)` etc.), which renders cleanly even on
+    # the skipped PR path. A custom name containing ${{ matrix.* }}
+    # would render the literal expression when the job is skipped.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # Full mutation run on src/ is genuinely slow — give it room.
-    # If it consistently runs long we can switch to a sharded matrix.
-    timeout-minutes: 120
+    # One quarter of src/ against one backend. The slowest cell
+    # (~5.5k-LOC shard on a networked backend) is expected well inside
+    # this; the cap is generous headroom, not a target.
+    timeout-minutes: 90
     permissions:
       contents: read
+
+    strategy:
+      # Don't cancel the other cells if one fails — partial mutation
+      # data is more useful than nothing for an information-only run,
+      # and the aggregate job tolerates missing cells.
+      fail-fast: false
+      matrix:
+        # Shards are LOC-balanced, non-overlapping path prefixes that
+        # together cover all of src/. `--filter` matches on substring
+        # of the file path, so anchoring each on `src/<Dir>/` keeps
+        # src/Query/Aggregates/ inside the `query` shard (not also in
+        # `aggregates`).
+        shard: [concerns, query, aggregates, rest]
+        db: [sqlite, mysql, mariadb, pgsql]
+        include:
+          - { shard: concerns,   filter: 'src/Concerns/' }
+          - { shard: query,      filter: 'src/Query/' }
+          - { shard: aggregates, filter: 'src/Aggregates/' }
+          - { shard: rest,       filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Export/,src/Jobs/,src/Relations/,src/Scope/,src/Testing/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          - { db: sqlite,  db_connection: sqlite }
+          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:lts
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -108,7 +188,7 @@ jobs:
         uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # v2
         with:
           php-version: '8.4'
-          extensions: mbstring, pdo_sqlite
+          extensions: mbstring, pdo_mysql, pdo_pgsql, pdo_sqlite
           coverage: pcov
           tools: composer:v2
 
@@ -136,25 +216,117 @@ jobs:
           composer config --no-plugins allow-plugins.infection/extension-installer true
           composer update --prefer-dist --no-interaction --no-progress
 
-      - name: Run Infection (full suite)
+      - name: Run Infection (shard ${{ matrix.shard }} / ${{ matrix.db }})
         env:
-          # Picked up by Infection's Stryker logger and used to upload
-          # the run to https://dashboard.stryker-mutator.io. Only writes
-          # when running on a branch that matches `logs.stryker.report`
-          # in infection.json5 (currently "master").
-          STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
         run: |
           vendor/bin/infection \
+            --filter='${{ matrix.filter }}' \
             --logger-github \
             --no-progress \
             --no-interaction \
             --threads=$(nproc)
 
-      - name: Upload Infection report
+      # Reduce the (very large — source is embedded per mutant) report
+      # to a compact per-mutant status record before uploading.
+      - name: Distil report
+        if: always()
+        # infection.json embeds the full source of every mutated file, so
+        # json_decode of the raw report can blow past the default CLI
+        # memory_limit — lift it for this one invocation.
+        run: |
+          php -d memory_limit=-1 tooling/merge-infection.php distill \
+            build/infection/infection.json \
+            "compact-${{ matrix.db }}-${{ matrix.shard }}.json" \
+            --db "${{ matrix.db }}" \
+            --shard "${{ matrix.shard }}"
+
+      - name: Upload compact report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: infection-report-${{ github.run_id }}
-          path: build/infection/
+          name: compact-${{ matrix.db }}-${{ matrix.shard }}
+          path: compact-${{ matrix.db }}-${{ matrix.shard }}.json
           if-no-files-found: warn
           retention-days: 14
+
+  aggregate:
+    name: Union across backends
+    needs: full
+    # Run even if some cells failed — partial union beats none.
+    if: ${{ always() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      # Need the merge script and src/ (the latter for the full Stryker
+      # report artifact, which embeds source).
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+
+      - name: Download compact reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: compact-*
+          path: compacts
+          merge-multiple: true
+
+      - name: Merge into union report
+        run: |
+          php tooling/merge-infection.php merge \
+            compacts/*.json \
+            --out-summary union-summary.md \
+            --out-escaped escaped-everywhere.txt \
+            --out-json union.json \
+            --out-stryker stryker-report.json \
+            --source-root .
+          cat union-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload union report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: infection-union-${{ github.run_id }}
+          path: |
+            union.json
+            union-summary.md
+            escaped-everywhere.txt
+            stryker-report.json
+          retention-days: 14
+
+      # Publish just the union score to the Stryker dashboard (feeds the
+      # README badge). Score-only is the documented low-risk body; the
+      # full file-level report is uploaded as an artifact above for a
+      # later dashboard-explorer follow-up. Best-effort: a dashboard
+      # hiccup must not fail the run, and the existing badge value
+      # survives a rejected PUT.
+      - name: Publish union MSI to Stryker dashboard
+        if: ${{ github.ref == 'refs/heads/master' }}
+        continue-on-error: true
+        env:
+          STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+        run: |
+          if [ -z "$STRYKER_DASHBOARD_API_KEY" ]; then
+            echo "No Stryker API key configured; skipping dashboard publish."
+            exit 0
+          fi
+          MSI=$(php -r 'echo json_decode(file_get_contents("union.json"), true)["msi"];')
+          echo "Publishing union MSI=${MSI} to Stryker dashboard."
+          curl --silent --show-error --fail \
+            --request PUT \
+            --header "X-Api-Key: ${STRYKER_DASHBOARD_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "{\"mutationScore\": ${MSI}}" \
+            "https://dashboard.stryker-mutator.io/api/reports/github.com/${GITHUB_REPOSITORY}/master"
