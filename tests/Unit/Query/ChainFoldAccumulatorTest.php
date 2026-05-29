@@ -63,6 +63,10 @@ final class ChainFoldAccumulatorTest extends TestCase
 
                 continue;
             }
+            // assertEqualsWithDelta coerces null to 0 in the subtraction,
+            // so a number→null mutation would pass against an expected
+            // 0.0. Reject null explicitly first.
+            $this->assertNotNull($actual[$i], "step {$i} should not be null");
             $this->assertEqualsWithDelta($expected, $actual[$i], 1e-9, "step {$i}");
         }
     }
@@ -160,6 +164,45 @@ final class ChainFoldAccumulatorTest extends TestCase
             fn (): AggregateDefinition => Aggregate::boolOr('x')->into('b'),
             [[false, null], [true, null]],
             [false, true],
+        ];
+
+        // bool_and compares boolSum === boolCount, so it pins the *exact*
+        // 0/1 contribution asBoolInt() produces — bool_or only checks
+        // `> 0` and so masks an over-large contribution.
+        yield 'bool_and reads native PHP booleans as a 0/1 contribution' => [
+            fn (): AggregateDefinition => Aggregate::boolAnd('x')->into('b'),
+            [[true, null], [true, null]],
+            [true, true],
+        ];
+
+        yield 'bool_and treats a float 1.0 source as truthy' => [
+            fn (): AggregateDefinition => Aggregate::boolAnd('x')->into('b'),
+            [[1.0, null]],
+            [true],
+        ];
+
+        yield 'bool_and reads a textual truthy marker as a single contribution' => [
+            fn (): AggregateDefinition => Aggregate::boolAnd('x')->into('b'),
+            [['true', null], ['t', null]],
+            [true, true],
+        ];
+
+        yield 'bool_and lower-cases string markers before matching' => [
+            fn (): AggregateDefinition => Aggregate::boolAnd('x')->into('b'),
+            [['FALSE', null]],
+            [false],
+        ];
+
+        yield 'bool_and trims whitespace before matching string markers' => [
+            fn (): AggregateDefinition => Aggregate::boolAnd('x')->into('b'),
+            [[' false ', null]],
+            [false],
+        ];
+
+        yield 'bool_and reads an empty string as a false marker' => [
+            fn (): AggregateDefinition => Aggregate::boolAnd('x')->into('b'),
+            [['', null]],
+            [false],
         ];
 
         // Companion definitions carry a source transform. These can only
@@ -293,6 +336,23 @@ final class ChainFoldAccumulatorTest extends TestCase
             fn (): AggregateDefinition => Aggregate::harmonicMean('x')->into('h'),
             [[0, null], [4, null]],
             [null, 4.0],
+        ];
+
+        // Reciprocals that cancel to exactly zero must report null, not
+        // divide by zero — pins the `sumRecip !== 0.0` guard at the
+        // display.
+        yield 'harmonic mean is null when reciprocals cancel to zero' => [
+            fn (): AggregateDefinition => Aggregate::harmonicMean('x')->into('h'),
+            [[2, null], [-2, null]],
+            [2.0, null],
+        ];
+
+        // Σ(1/x) landing on exactly 1.0 must still divide — guards
+        // against the guard being written against the literal 1.0.
+        yield 'harmonic mean divides when reciprocal sum is one' => [
+            fn (): AggregateDefinition => Aggregate::harmonicMean('x')->into('h'),
+            [[2, null], [2, null]],
+            [2.0, 2.0],
         ];
 
         yield 'ln companion (geometric-mean __sum_log) folds log(source)' => [

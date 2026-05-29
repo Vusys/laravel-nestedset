@@ -101,6 +101,61 @@ final class AggregateTest extends TestCase
         yield 'json_object_agg negative limit' => [fn (): Aggregate => Aggregate::jsonObjectAgg('k', 'v', limit: -1), 'limit must be >= 0'];
     }
 
+    /**
+     * `limit` is valid at zero (the documented "limit must be >= 0")
+     * and at any positive value — pins the `&& $limit < 0` guard so it
+     * neither rejects zero (`<=`) nor rejects every set limit (`||`).
+     *
+     * @param  Closure(): Aggregate  $factory
+     */
+    #[DataProvider('validLimitCases')]
+    public function test_factory_accepts_zero_and_positive_limits(Closure $factory, int $expectedLimit): void
+    {
+        $this->assertSame($expectedLimit, $factory()->limit);
+    }
+
+    /**
+     * @return iterable<string, array{0: Closure(): Aggregate, 1: int}>
+     */
+    public static function validLimitCases(): iterable
+    {
+        yield 'string_agg limit 0' => [fn (): Aggregate => Aggregate::stringAgg('x', limit: 0), 0];
+        yield 'string_agg positive limit' => [fn (): Aggregate => Aggregate::stringAgg('x', limit: 5), 5];
+        yield 'json_agg limit 0' => [fn (): Aggregate => Aggregate::jsonAgg('x', limit: 0), 0];
+        yield 'json_agg positive limit' => [fn (): Aggregate => Aggregate::jsonAgg('x', limit: 5), 5];
+        yield 'json_object_agg limit 0' => [fn (): Aggregate => Aggregate::jsonObjectAgg('k', 'v', limit: 0), 0];
+        yield 'json_object_agg positive limit' => [fn (): Aggregate => Aggregate::jsonObjectAgg('k', 'v', limit: 5), 5];
+    }
+
+    public function test_json_agg_explicit_order_by_overrides_the_source_default(): void
+    {
+        $this->assertSame('sort_col', Aggregate::jsonAgg('x', orderBy: 'sort_col')->orderBy);
+    }
+
+    public function test_json_agg_order_by_defaults_to_the_source_column(): void
+    {
+        $this->assertSame('x', Aggregate::jsonAgg('x')->orderBy);
+    }
+
+    public function test_json_object_agg_explicit_order_by_overrides_the_key_default(): void
+    {
+        $this->assertSame('sort_col', Aggregate::jsonObjectAgg('k', 'v', orderBy: 'sort_col')->orderBy);
+    }
+
+    public function test_json_object_agg_order_by_defaults_to_the_key_column(): void
+    {
+        $this->assertSame('k', Aggregate::jsonObjectAgg('k', 'v')->orderBy);
+    }
+
+    public function test_json_agg_array_source_is_inclusive_and_captures_sources(): void
+    {
+        $aggregate = Aggregate::jsonAgg(['a', 'b']);
+
+        $this->assertTrue($aggregate->inclusive);
+        $this->assertNull($aggregate->source);
+        $this->assertSame(['a' => 'a', 'b' => 'b'], $aggregate->sources);
+    }
+
     public function test_variance_factory_defaults_to_population(): void
     {
         $aggregate = Aggregate::variance('tickets');
