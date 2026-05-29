@@ -137,7 +137,37 @@
         update();
     }
 
+    // ---- sidebar scroll persistence ---------------------------------------
+    //
+    // The sidebar is its own scroll container, so a full page reload would
+    // otherwise drop the user back at the top of the nav every time they
+    // click a link low in the list.
+
+    function initSidebarScroll() {
+        var nav = document.querySelector('.sidebar-nav');
+        if (!nav) {
+            return;
+        }
+        var KEY = 'sidebar-scroll';
+        var stored = sessionStorage.getItem(KEY);
+        if (stored !== null) {
+            nav.scrollTop = parseInt(stored, 10) || 0;
+        }
+        var pending = false;
+        nav.addEventListener('scroll', function () {
+            if (pending) {
+                return;
+            }
+            pending = true;
+            requestAnimationFrame(function () {
+                pending = false;
+                sessionStorage.setItem(KEY, String(nav.scrollTop));
+            });
+        }, { passive: true });
+    }
+
     function init() {
+        initSidebarScroll();
         enhanceCodeBlocks();
         initScrollSpy();
     }

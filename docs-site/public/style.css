@@ -1,12 +1,12 @@
 :root {
     --bg: #ffffff;
     --bg-elevated: #f6f8fa;
-    --bg-code: #f4f4f6;
+    --bg-code: #fafafa;
     --fg: #1f2328;
     --fg-muted: #59636e;
     --border: #d1d9e0;
-    --accent: #0969da;
-    --accent-bg: #ddf4ff;
+    --accent: #8250df;
+    --accent-bg: #f0e3ff;
 
     --callout-note:      #0969da;
     --callout-tip:       #1a7f37;
@@ -14,31 +14,31 @@
     --callout-warning:   #9a6700;
     --callout-caution:   #cf222e;
 
-    --syntax-comment:  #6a737d;
-    --syntax-punct:    #24292e;
-    --syntax-number:   #005cc5;
-    --syntax-string:   #032f62;
-    --syntax-keyword:  #d73a49;
-    --syntax-function: #6f42c1;
-    --syntax-variable: #e36209;
+    --syntax-comment:  #a0a1a7;
+    --syntax-punct:    #383a42;
+    --syntax-number:   #986801;
+    --syntax-string:   #50a14f;
+    --syntax-keyword:  #a626a4;
+    --syntax-function: #4078f2;
+    --syntax-variable: #e45649;
 
-    --sidebar-width: 240px;
+    --sidebar-width: 280px;
     --toc-width: 200px;
     --header-height: 56px;
 
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --font-sans: "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 [data-theme="dark"] {
     --bg: #1c2028;
     --bg-elevated: #242933;
-    --bg-code: #1f242c;
+    --bg-code: #282c34;
     --fg: #e6edf3;
     --fg-muted: #9da6b3;
     --border: #353b46;
-    --accent: #66b1ff;
-    --accent-bg: #1f6feb33;
+    --accent: #bc8cff;
+    --accent-bg: #8957e533;
 
     --callout-note:      #58a6ff;
     --callout-tip:       #3fb950;
@@ -46,13 +46,13 @@
     --callout-warning:   #d29922;
     --callout-caution:   #f85149;
 
-    --syntax-comment:  #8b949e;
-    --syntax-punct:    #c9d1d9;
-    --syntax-number:   #79c0ff;
-    --syntax-string:   #a5d6ff;
-    --syntax-keyword:  #ff7b72;
-    --syntax-function: #d2a8ff;
-    --syntax-variable: #ffa657;
+    --syntax-comment:  #7f848e;
+    --syntax-punct:    #abb2bf;
+    --syntax-number:   #d19a66;
+    --syntax-string:   #98c379;
+    --syntax-keyword:  #c678dd;
+    --syntax-function: #61afef;
+    --syntax-variable: #e06c75;
 }
 
 * { box-sizing: border-box; }
@@ -129,6 +129,9 @@ html, body {
     font-size: 0.9rem;
     line-height: 1;
 }
+.theme-toggle { font-size: 1.05rem; }
+.theme-toggle::before { content: "🌙"; }
+[data-theme="dark"] .theme-toggle::before { content: "☀️"; }
 .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
 .layout {
@@ -184,10 +187,10 @@ html, body {
     line-height: 1.25;
     font-weight: 600;
 }
-.prose h1 { font-size: 2rem; margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
-.prose h2 { font-size: 1.4rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
-.prose h3 { font-size: 1.15rem; }
-.prose h4 { font-size: 1rem; }
+.prose h1 { font-size: 2.3rem; margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+.prose h2 { font-size: 1.65rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+.prose h3 { font-size: 1.3rem; }
+.prose h4 { font-size: 1.05rem; }
 
 .prose p, .prose ul, .prose ol { margin: 0.75rem 0; }
 .prose a { color: var(--accent); text-decoration: none; }
@@ -216,6 +219,11 @@ html, body {
     font-size: 0.875em;
     line-height: 1.5;
     color: inherit;
+}
+
+code, pre, .sidebar-brand {
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
 }
 
 /* Prism token colours, themed via CSS variables. */

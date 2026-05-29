@@ -60,7 +60,7 @@ foreach ($pages as $i => $page) {
     mustMakeDir(dirname($outAbs));
     mustWriteFile($outAbs, renderLayout($layoutFile, [
         'title' => $title,
-        'siteName' => 'laravel-nestedset',
+        'siteName' => 'vusys/laravel-nestedset',
         'content' => $bodyHtml,
         'toc' => $toc,
         'nav' => $nav,
@@ -403,7 +403,7 @@ function renderMissing(array $page, array $nav, string $siteDir, string $layoutF
 
     mustWriteFile($outAbs, renderLayout($layoutFile, [
         'title' => $page['title'].' (placeholder)',
-        'siteName' => 'laravel-nestedset',
+        'siteName' => 'vusys/laravel-nestedset',
         'content' => $bodyHtml,
         'toc' => '',
         'nav' => $nav,

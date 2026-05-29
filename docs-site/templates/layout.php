@@ -30,6 +30,9 @@ if (! function_exists('navLink')) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= htmlspecialchars($title) ?> · <?= htmlspecialchars($siteName) ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap">
     <link rel="stylesheet" href="<?= $baseUrl ?>style.css">
     <link rel="stylesheet" href="<?= $baseUrl ?>tree-widget.css">
 </head>
@@ -66,7 +69,7 @@ if (! function_exists('navLink')) {
     </nav>
 </aside>
 
-<button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+<button class="theme-toggle" type="button" aria-label="Toggle theme"></button>
 
 <div class="layout">
     <main class="content">
