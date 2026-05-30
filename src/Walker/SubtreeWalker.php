@@ -137,6 +137,11 @@ final class SubtreeWalker implements Countable
      */
     public function walk(Closure $visitor, string $strategy = 'pre', ?WalkFilter $filter = null): void
     {
+        // Guard before the match so a caller bypassing the phpdoc union
+        // (e.g. a string from config) gets an actionable error instead
+        // of PHP's bare UnhandledMatchError.
+        self::assertStrategy($strategy);
+
         $tuples = match ($strategy) {
             'pre' => $this->iteratePreOrder($filter, signalAware: true),
             'post' => $this->iteratePostOrder($filter),
@@ -175,6 +180,8 @@ final class SubtreeWalker implements Countable
      */
     public function flatten(string $strategy = 'pre', ?WalkFilter $filter = null): EloquentCollection
     {
+        self::assertStrategy($strategy);
+
         $generator = match ($strategy) {
             'pre' => $this->dfs($filter),
             'post' => $this->dfsPostOrder($filter),
@@ -515,6 +522,23 @@ final class SubtreeWalker implements Countable
         }
 
         return ['count' => $count, 'maxDepth' => $maxDepth, 'leaves' => $leaves];
+    }
+
+    /**
+     * Verifies `$strategy` is one of the three supported labels and
+     * throws a clearer error than PHP's bare `UnhandledMatchError` when
+     * it isn't. The phpdoc on `walk()` / `flatten()` already narrows
+     * the type for static analysis; this guard handles the runtime
+     * case where a caller bypasses it (e.g. a string from config).
+     */
+    private static function assertStrategy(string $strategy): void
+    {
+        if ($strategy !== 'pre' && $strategy !== 'post' && $strategy !== 'bfs') {
+            throw new InvalidArgumentException(sprintf(
+                'Unsupported walk strategy: "%s"; expected one of: pre, post, bfs.',
+                $strategy,
+            ));
+        }
     }
 
     /**

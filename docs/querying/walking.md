@@ -68,7 +68,7 @@ The explicit form is the right tool when you want to walk a *partial* subtree �
 
 For the tree
 
-```
+```text
 Electronics
 ├── Laptops
 └── Phones

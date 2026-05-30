@@ -37,9 +37,22 @@ final readonly class WalkFilter
     /**
      * Depth-limited walk: visit the walk root + `$maxDepth` further levels.
      * Counts relative to the walk root, not the absolute `depth` column.
+     *
+     * `$maxDepth` must be `>= 0`. A negative value would reject every
+     * node — including the walk root, whose depth is `0` — silently
+     * yielding an empty walk; we treat that as a programmer error and
+     * throw rather than producing a no-op.
      */
     public static function depth(int $maxDepth): self
     {
+        if ($maxDepth < 0) {
+            throw new \InvalidArgumentException(sprintf(
+                'WalkFilter::depth: $maxDepth must be >= 0; got %d. '
+                .'A negative maxDepth would reject every node — including the walk root.',
+                $maxDepth,
+            ));
+        }
+
         return new self(maxDepth: $maxDepth);
     }
 

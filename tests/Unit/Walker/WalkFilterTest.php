@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Walker;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Walker\SubtreeWalker;
@@ -133,6 +134,25 @@ final class WalkFilterTest extends TestCase
         $this->assertSame(['depth' => 0, 'idx' => 0, 'count' => 1], $seen['root']);
         $this->assertSame(['depth' => 1, 'idx' => 0, 'count' => 2], $seen['A']);
         $this->assertSame(['depth' => 1, 'idx' => 1, 'count' => 2], $seen['B']);
+    }
+
+    public function test_depth_rejects_negative_input_with_actionable_message(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        // The catch is "negative depth silently rejects every node" —
+        // the message should make that explicit.
+        $this->expectExceptionMessageMatches('/maxDepth.*>= 0.*-1/s');
+
+        WalkFilter::depth(-1);
+    }
+
+    public function test_depth_zero_is_a_valid_root_only_walk(): void
+    {
+        // Boundary: depth(0) means "visit the walk root only" — a
+        // legitimate use case, not an error.
+        $filter = WalkFilter::depth(0);
+
+        $this->assertSame(0, $filter->maxDepth);
     }
 
     public function test_compose_handles_null_inputs_gracefully(): void
