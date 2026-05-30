@@ -77,19 +77,9 @@ jobs:
           key: composer-infection-${{ hashFiles('composer.json') }}
           restore-keys: composer-infection-
 
-      # Infection 0.29.x maxes out at symfony/console ^7, but Laravel 13
-      # pulls symfony/console ^8. Pin the mutation-testing job to
-      # Laravel 12 so Infection resolves — `src/` is identical across
-      # Laravel versions, so this doesn't change what is mutated.
-      - name: Pin Laravel 12 for Infection compat
-        run: |
-          composer require --dev --no-update \
-            "laravel/framework:^12.0" \
-            "orchestra/testbench:^10.0"
-
       - name: Install dependencies (with Infection)
         run: |
-          composer require --dev --no-update "infection/infection:^0.29"
+          composer require --dev --no-update "infection/infection:^0.33"
           composer config --no-plugins allow-plugins.infection/extension-installer true
           composer update --prefer-dist --no-interaction --no-progress
 
@@ -255,15 +245,9 @@ jobs:
           key: composer-infection-${{ hashFiles('composer.json') }}
           restore-keys: composer-infection-
 
-      - name: Pin Laravel 12 for Infection compat
-        run: |
-          composer require --dev --no-update \
-            "laravel/framework:^12.0" \
-            "orchestra/testbench:^10.0"
-
       - name: Install dependencies (with Infection)
         run: |
-          composer require --dev --no-update "infection/infection:^0.29"
+          composer require --dev --no-update "infection/infection:^0.33"
           composer config --no-plugins allow-plugins.infection/extension-installer true
           composer update --prefer-dist --no-interaction --no-progress
 
