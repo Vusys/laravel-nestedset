@@ -89,7 +89,7 @@ Maintenance uses two strategies (`Strategy/DeltaMaintenance` vs `Strategy/Recomp
 
 ## Tests
 
-PHPUnit 12 with Orchestra Testbench. All tests extend `Vusys\NestedSet\Tests\TestCase`, which:
+PHPUnit 12 with Orchestra Testbench. Feature tests extend `Vusys\NestedSet\Tests\TestCase`; pure-unit tests that don't need Laravel to boot can extend `PHPUnit\Framework\TestCase` directly (faster, no DB / migrations). `Vusys\NestedSet\Tests\TestCase`:
 - Truncates fixture tables in `setUp()` (persistent backends — MySQL/MariaDB/PG — would otherwise leak rows between tests).
 - Runs a **tree-integrity check on every fixture in `tearDown()`**. Set `$this->allowBrokenTreeAtTearDown = true` for tests that intentionally leave the tree corrupt (repair tests, force-delete orphan tests).
 - Calls `syncSequence($table)` after raw bulk inserts with explicit ids on PostgreSQL — its sequence doesn't auto-advance.
