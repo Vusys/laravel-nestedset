@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Vusys\NestedSet\Attributes\NestedSetScope;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Tests\Fixtures\Factories\MenuItemFactory;
 
 /**
  * @property int $id
@@ -27,6 +30,9 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetScope('menu_id')]
 final class MenuItem extends Model implements HasNestedSet
 {
+    /** @use HasFactory<MenuItemFactory> */
+    use HasFactory;
+
     use NodeTrait;
 
     /** @var list<string> */
@@ -45,5 +51,11 @@ final class MenuItem extends Model implements HasNestedSet
     public function menu(): BelongsTo
     {
         return $this->belongsTo(Menu::class);
+    }
+
+    /** @return Factory<self> */
+    protected static function newFactory(): Factory
+    {
+        return MenuItemFactory::new();
     }
 }
