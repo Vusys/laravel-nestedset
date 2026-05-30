@@ -202,6 +202,28 @@ jobs:
           --health-retries=5
 
     steps:
+      # GHA's `ubuntu-latest` ships with ~30GB of preinstalled tooling
+      # we don't use (Android SDK, .NET, Haskell, etc.), leaving ~14GB
+      # free SSD. Under `--threads=$(nproc)` infection writes per-mutant
+      # temp files + PCOV coverage + reports concurrently, and on the
+      # largest shards has tipped the host past its low-disk threshold —
+      # the runner agent then receives a host-side SIGTERM ("##[error]The
+      # runner has received a shutdown signal"). Freeing the unused
+      # tooling up front eliminates disk as a variable. See runs
+      # 26687996851, 26689964992, 26691533334 for the failure mode.
+      - name: Free disk space on runner
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          # Tool caches frees the most space (~10GB). The defaults are
+          # safe for a PHP/composer + Docker-services workload.
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false # services use mysql/mariadb/postgres images we still need
+          swap-storage: false  # leaves swap intact for any memory spike headroom
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup PHP
