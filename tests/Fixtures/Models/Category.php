@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Tests\Fixtures\Factories\CategoryFactory;
 
 /**
  * @property int $id
  * @property string $name
+ * @property string|null $title
  * @property int $lft
  * @property int $rgt
  * @property int $depth
@@ -27,11 +31,14 @@ use Vusys\NestedSet\NodeTrait;
  */
 final class Category extends Model implements HasNestedSet
 {
+    /** @use HasFactory<CategoryFactory> */
+    use HasFactory;
+
     use NodeTrait;
     use SoftDeletes;
 
     /** @var list<string> */
-    protected $fillable = ['name'];
+    protected $fillable = ['name', 'title'];
 
     /** @var array<string, string> */
     protected $casts = [
@@ -40,4 +47,10 @@ final class Category extends Model implements HasNestedSet
         'depth' => 'integer',
         'parent_id' => 'integer',
     ];
+
+    /** @return Factory<self> */
+    protected static function newFactory(): Factory
+    {
+        return CategoryFactory::new();
+    }
 }
