@@ -141,14 +141,26 @@ jobs:
           # connection pool, the 16GB hosted runner has tipped past
           # its memory budget and the host has sent SIGTERM to the
           # runner agent ("##[error]The runner has received a shutdown
-          # signal") on multiple runs — 26689964992 (facade), 26691533334
-          # (testing/sqlite), 26693083125 (testing/{sqlite,mariadb}),
-          # the last one with the free-disk step in place and 88GB still
-          # free, ruling out disk. Capping testing at 2 threads halves
-          # peak memory at the cost of ~2× wall time (still well inside
-          # the 90-min job cap).
+          # signal") on multiple runs. Capping testing at 2 threads
+          # halves peak memory at the cost of ~2× wall time (still well
+          # inside the 90-min job cap).
           - { shard: testing,        threads: '2',        filter: 'src/Testing/' }
           - { shard: rest,           threads: '$(nproc)', filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          # Per-cell override: (testing, pgsql) drops to --threads=1.
+          # The in-step [MON] sampler captured the worker-spawn spike
+          # on run 26695018287: avail memory cratered from 8596 MiB
+          # to 655 MiB in 5s and pushed 2837 MiB into swap before
+          # recovering. That run passed by ~4% headroom; earlier runs
+          # (26689964992, 26691533334, 26693083125, 26693829083) at
+          # higher peaks crossed the host's OOM threshold and the
+          # host SIGTERMed the runner agent. Postgres is heavier per
+          # connection (process-per-conn with its own memory arena
+          # vs MariaDB's thread-per-conn), which puts only this one
+          # cell over the line. More-specific include entries
+          # override less-specific ones for added matrix values like
+          # `threads`, so this leaves the other 3 testing cells at 2
+          # threads (each passes comfortably).
+          - { shard: testing, db: pgsql, threads: '1' }
           - { db: sqlite,  db_connection: sqlite }
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
