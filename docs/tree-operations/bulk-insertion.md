@@ -67,3 +67,7 @@ Model::withoutEvents(static fn () => Category::bulkInsertTree($rows, appendTo: $
 - **Scope columns are silently overwritten with the anchor's values.** On scoped models, every inserted row's scope-column attributes are replaced with the values read off `$appendTo` regardless of what the input row contains. This is by design (a bulk insert into one anchor's subtree always belongs to that anchor's scope) but worth knowing — passing `['tenant_id' => 99]` in a row when `$appendTo->tenant_id === 7` produces a row with `tenant_id = 7`, not an error.
 - Scoped models (those with `#[NestedSetScope]` or `getScopeAttributes()`) require an `$appendTo` anchor — the scope-column values are copied from it onto every inserted row.
 - Wrapped in a transaction; if any per-row `save()` throws, the gap-open and any prior inserts roll back together.
+
+## Test fixtures and seeders
+
+For tests and seeders, prefer the [Factory Tree Builder](../reference/factories.md) — a factory mixin (`BuildsNestedSetTrees`) that hands `bulkInsertTree` the same payload you'd assemble manually, plus factory state, per-row customisation, and `afterCreating` integration. `Category::factory()->tree(depth: 3, branching: 2)->create()` builds a 15-node tree in one call with the same three-statement budget.
