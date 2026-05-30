@@ -64,6 +64,15 @@ jobs:
           # Infection only needs line coverage, not full debug info.
           coverage: pcov
           tools: composer:v2
+          # Cap PHP at 2GB so a runaway mutant can't take down the
+          # runner. Normal tests use <256MB; the [MON] sampler on run
+          # 26695949472 caught a single php process climbing to 14.5GB
+          # on testing/pgsql — a mutant of BuildsNestedSetTrees with
+          # unbounded recursion/loop. At memory_limit=2G PHP throws
+          # OutOfMemoryError, infection records the mutant as killed
+          # by error (correct outcome — the mutant IS killed), and the
+          # runner stays healthy.
+          ini-values: memory_limit=2G
 
       - name: Configure Composer authentication
         env:
@@ -248,6 +257,12 @@ jobs:
           extensions: mbstring, pdo_mysql, pdo_pgsql, pdo_sqlite
           coverage: pcov
           tools: composer:v2
+          # See `pr` job for rationale: cap PHP at 2GB so a runaway
+          # mutant fails cleanly via OOM instead of taking down the
+          # runner. Belt-and-braces alongside the testing-shard thread
+          # caps; either alone should suffice for the diagnosed
+          # 14.5GB-allocating BuildsNestedSetTrees mutant.
+          ini-values: memory_limit=2G
 
       - name: Configure Composer authentication
         env:
