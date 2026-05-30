@@ -14,6 +14,7 @@ use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
+use Vusys\NestedSet\Tests\Fixtures\Models\ScopedArea;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -163,6 +164,90 @@ final class FactoryTreeTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
         Category::factory()->treeFromShape([])->create();
+    }
+
+    // ----------------------------------------------------------------
+    // Argument validation
+    // ----------------------------------------------------------------
+
+    public function test_negative_depth_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/depth must be >= 0/');
+        Category::factory()->tree(depth: -1, branching: 1);
+    }
+
+    public function test_int_branching_zero_with_positive_depth_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/branching must be >= 1/');
+        Category::factory()->tree(depth: 2, branching: 0);
+    }
+
+    public function test_branching_array_shorter_than_depth_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/branching array length \(2\) is less than depth \(3\)/');
+        Category::factory()->tree(depth: 3, branching: [2, 2]);
+    }
+
+    public function test_branching_array_zero_entry_with_deeper_levels_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/branching\[0\] is 0/');
+        Category::factory()->tree(depth: 2, branching: [0, 2]);
+    }
+
+    // ----------------------------------------------------------------
+    // create() / make() passthrough
+    // ----------------------------------------------------------------
+
+    public function test_create_without_tree_shape_delegates_to_parent(): void
+    {
+        $row = Category::factory()
+            ->afterMaking(fn (Category $c): Category => $c->makeRoot())
+            ->create();
+
+        $this->assertInstanceOf(Category::class, $row);
+        $this->assertSame(1, Category::query()->count());
+        $this->assertNotSame('', $row->name);
+        $this->assertNull($row->parent_id);
+    }
+
+    public function test_create_with_attributes_under_tree_shape_applies_state_first(): void
+    {
+        $root = Category::factory()
+            ->tree(depth: 0, branching: 0, labelColumn: null)
+            ->create(['name' => 'Stamped']);
+
+        $this->assertInstanceOf(Category::class, $root);
+        $this->assertSame('Stamped', $root->name);
+        $this->assertSame(1, Category::query()->count());
+    }
+
+    public function test_make_without_tree_shape_delegates_to_parent(): void
+    {
+        $row = Category::factory()->make();
+
+        $this->assertInstanceOf(Category::class, $row);
+        $this->assertFalse($row->exists, 'make() must not persist when no tree shape is queued.');
+        $this->assertSame(0, Category::query()->count());
+    }
+
+    public function test_preview_tree_without_queued_shape_throws(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/call tree\(\) or treeFromShape\(\) first/');
+        Category::factory()->previewTree();
+    }
+
+    public function test_count_zero_returns_empty_collection(): void
+    {
+        $result = Category::factory()->count(0)->tree(depth: 1, branching: 2)->create();
+
+        $this->assertInstanceOf(EloquentCollection::class, $result);
+        $this->assertCount(0, $result);
+        $this->assertSame(0, Category::query()->count());
     }
 
     // ----------------------------------------------------------------
@@ -381,6 +466,36 @@ final class FactoryTreeTest extends TestCase
         MenuItem::factory()
             ->state(['menu_id' => $menuB->id])
             ->tree(depth: 0, branching: 0, parent: $other)
+            ->create();
+    }
+
+    public function test_scoped_factory_without_scope_state_falls_through_to_anchor_scope(): void
+    {
+        $menu = Menu::create(['name' => 'Inherited']);
+        $anchor = new MenuItem(['name' => 'Anchor', 'menu_id' => $menu->id]);
+        $anchor->saveAsRoot();
+        $anchor->refresh();
+
+        $result = MenuItem::factory()
+            ->tree(depth: 1, branching: 1, parent: $anchor)
+            ->create();
+
+        $this->assertInstanceOf(MenuItem::class, $result);
+        $this->assertSame($menu->id, $result->menu_id, 'menu_id flows from the anchor when factory state is silent.');
+    }
+
+    public function test_parent_class_mismatch_rejected_upfront(): void
+    {
+        $crossClassAnchor = new ScopedArea(['name' => 'cross-class', 'tenant_id' => 1]);
+        $crossClassAnchor->saveAsRoot();
+        $crossClassAnchor->refresh();
+
+        $this->expectException(ScopeViolationException::class);
+        $this->expectExceptionMessageMatches('/must be an instance of/');
+
+        MenuItem::factory()
+            ->state(['menu_id' => 99])
+            ->tree(depth: 0, branching: 0, parent: $crossClassAnchor)
             ->create();
     }
 

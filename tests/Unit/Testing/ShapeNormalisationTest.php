@@ -204,6 +204,51 @@ final class ShapeNormalisationTest extends TestCase
         $shape->normalise();
     }
 
+    public function test_branching_array_bounds_guard_throws(): void
+    {
+        $shape = new TreeBuilderShape(
+            kind: TreeBuilderShape::KIND_UNIFORM,
+            depth: 3,
+            branching: [2, 2],
+            explicitShape: [],
+            parent: null,
+            labelColumn: 'name',
+            per: null,
+            afterCreating: true,
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/parent depth 2/');
+        $shape->normalise();
+    }
+
+    public function test_walk_dfs_rejects_non_array_children_on_raw_input(): void
+    {
+        $bogus = [['name' => 'x', 'children' => 'not-an-array']];
+
+        $this->expectException(InvalidArgumentException::class);
+        iterator_to_array(TreeBuilderShape::walkDfs($bogus), false);
+    }
+
+    public function test_walk_dfs_derives_depth_and_sibling_index_from_path_when_meta_absent(): void
+    {
+        $raw = [
+            ['name' => 'root', 'children' => [
+                ['name' => 'child'],
+            ]],
+        ];
+
+        $observed = [];
+        foreach (TreeBuilderShape::walkDfs($raw) as $node) {
+            $observed[] = [$node['attributes']['name'] ?? null, $node['depth'], $node['siblingIndex']];
+        }
+
+        $this->assertSame(
+            [['root', 0, 0], ['child', 1, 0]],
+            $observed,
+        );
+    }
+
     public function test_sibling_index_metadata_resets_per_branch(): void
     {
         $shape = $this->uniform(depth: 2, branching: 2);
