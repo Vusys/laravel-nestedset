@@ -214,13 +214,22 @@ jobs:
       - name: Free disk space on runner
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
-          # Tool caches frees the most space (~10GB). The defaults are
-          # safe for a PHP/composer + Docker-services workload.
-          tool-cache: true
+          # `tool-cache: false` is mandatory: setup-php caches the PHP
+          # install under /opt/hostedtoolcache, which `tool-cache: true`
+          # wipes — leaving setup-php to fall back to the system
+          # /usr/bin/php8.4 (which `large-packages` then breaks).
+          tool-cache: false
+          # `large-packages: false` is mandatory: the action's hardcoded
+          # large-packages list does `apt remove php-*`, and apt's
+          # auto-cleanup then drags out shared libraries the system PHP
+          # needs — initial PHPUnit then exits 143 instantly. See run
+          # 26692858197 for the failure mode.
+          large-packages: false
+          # Safe to drop — frees ~20GB across android (~14GB) + dotnet
+          # (~2GB) + haskell (~5GB) without touching the PHP toolchain.
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
           docker-images: false # services use mysql/mariadb/postgres images we still need
           swap-storage: false  # leaves swap intact for any memory spike headroom
 
