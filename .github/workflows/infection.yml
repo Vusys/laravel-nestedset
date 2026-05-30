@@ -64,6 +64,15 @@ jobs:
           # Infection only needs line coverage, not full debug info.
           coverage: pcov
           tools: composer:v2
+          # Cap PHP at 2GB so a runaway mutant can't take down the
+          # runner. Normal tests use <256MB; the [MON] sampler on run
+          # 26695949472 caught a single php process climbing to 14.5GB
+          # on testing/pgsql — a mutant of BuildsNestedSetTrees with
+          # unbounded recursion/loop. At memory_limit=2G PHP throws
+          # OutOfMemoryError, infection records the mutant as killed
+          # by error (correct outcome — the mutant IS killed), and the
+          # runner stays healthy.
+          ini-values: memory_limit=2G
 
       - name: Configure Composer authentication
         env:
@@ -120,28 +129,47 @@ jobs:
         shard: [concerns, query, agg-core, agg-registry, walker-export, testing, rest]
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { shard: concerns,       filter: 'src/Concerns/' }
-          - { shard: query,          filter: 'src/Query/' }
+          # `threads` is bash — `$(nproc)` is shell-substituted at run
+          # time (matrix values flow through unquoted into the run
+          # command). Most shards take all 4 cores; see `testing` below.
+          - { shard: concerns,       threads: '$(nproc)', filter: 'src/Concerns/' }
+          - { shard: query,          threads: '$(nproc)', filter: 'src/Query/' }
           # `src/Aggregates/` split: agg-core holds the runtime SQL +
           # delta/recompute pipeline; agg-registry holds the per-model
           # registration + listener machinery. `Aggregate.php` lives in
           # agg-core (it's the runtime entry point); `Definitions/` and
           # `Registry/` live in agg-registry.
-          - { shard: agg-core,       filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
-          - { shard: agg-registry,   filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
-          # `src/Testing/` gets its own shard: BuildsNestedSetTrees is a
-          # tree-factory trait used by most tests, so mutating it exercises
-          # the full fixture-build path under each mutant. On networked
-          # backends with `--threads=$(nproc)` that's enough load (test
-          # forks × DB connections × PCOV temp files) to push the hosted
-          # runner over its disk/memory budget and trigger a runner-side
-          # shutdown signal — see run 26689964992 (facade/{mariadb,mysql}
-          # both died at the same mutant range with "runner has received
-          # a shutdown signal"). Walker + Export are read-only tree
-          # consumers and stay paired.
-          - { shard: walker-export,  filter: 'src/Walker/,src/Export/' }
-          - { shard: testing,        filter: 'src/Testing/' }
-          - { shard: rest,           filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          - { shard: agg-core,       threads: '$(nproc)', filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
+          - { shard: agg-registry,   threads: '$(nproc)', filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
+          - { shard: walker-export,  threads: '$(nproc)', filter: 'src/Walker/,src/Export/' }
+          # `src/Testing/` gets its own shard AND its own thread cap.
+          # BuildsNestedSetTrees is a tree-factory trait used by most
+          # fixtures, so every mutant exercises the full fixture-build
+          # path. With 4 parallel workers each holding a PHP runtime +
+          # test suite state + PCOV coverage + (on networked DBs) a
+          # connection pool, the 16GB hosted runner has tipped past
+          # its memory budget and the host has sent SIGTERM to the
+          # runner agent ("##[error]The runner has received a shutdown
+          # signal") on multiple runs. Capping testing at 2 threads
+          # halves peak memory at the cost of ~2× wall time (still well
+          # inside the 90-min job cap).
+          - { shard: testing,        threads: '2',        filter: 'src/Testing/' }
+          - { shard: rest,           threads: '$(nproc)', filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          # Per-cell override: (testing, pgsql) drops to --threads=1.
+          # The in-step [MON] sampler captured the worker-spawn spike
+          # on run 26695018287: avail memory cratered from 8596 MiB
+          # to 655 MiB in 5s and pushed 2837 MiB into swap before
+          # recovering. That run passed by ~4% headroom; earlier runs
+          # (26689964992, 26691533334, 26693083125, 26693829083) at
+          # higher peaks crossed the host's OOM threshold and the
+          # host SIGTERMed the runner agent. Postgres is heavier per
+          # connection (process-per-conn with its own memory arena
+          # vs MariaDB's thread-per-conn), which puts only this one
+          # cell over the line. More-specific include entries
+          # override less-specific ones for added matrix values like
+          # `threads`, so this leaves the other 3 testing cells at 2
+          # threads (each passes comfortably).
+          - { shard: testing, db: pgsql, threads: '1' }
           - { db: sqlite,  db_connection: sqlite }
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
@@ -229,6 +257,12 @@ jobs:
           extensions: mbstring, pdo_mysql, pdo_pgsql, pdo_sqlite
           coverage: pcov
           tools: composer:v2
+          # See `pr` job for rationale: cap PHP at 2GB so a runaway
+          # mutant fails cleanly via OOM instead of taking down the
+          # runner. Belt-and-braces alongside the testing-shard thread
+          # caps; either alone should suffice for the diagnosed
+          # 14.5GB-allocating BuildsNestedSetTrees mutant.
+          ini-values: memory_limit=2G
 
       - name: Configure Composer authentication
         env:
@@ -245,6 +279,27 @@ jobs:
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
+      # Captures baseline disk + memory just before infection. If a cell
+      # later trips the host SIGTERM watchdog ("##[error]The runner has
+      # received a shutdown signal"), the post-mortem has hard numbers
+      # instead of guesses. Cheap (~50ms); leave in.
+      - name: Diagnostic — disk & memory baseline
+        run: |
+          echo "::group::df -h /"
+          df -h /
+          echo "::endgroup::"
+          echo "::group::free -h"
+          free -h
+          echo "::endgroup::"
+
+      # Wraps infection in a foreground/background pair: a 5-second
+      # memory+swap sampler streams to stdout *while* infection runs,
+      # so the data lands in the live step log and survives even when
+      # the runner agent is SIGTERMed by the host (which is what makes
+      # `if: always()` post-mortem steps unreliable for this failure —
+      # the cascade marks them as `skipped`). Each sample is one line
+      # prefixed `[MON]` so it's grep-able. `trap` cleans up the
+      # sampler when infection exits for any reason.
       - name: Run Infection (shard ${{ matrix.shard }} / ${{ matrix.db }})
         env:
           DB_CONNECTION: ${{ matrix.db_connection }}
@@ -254,12 +309,26 @@ jobs:
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
         run: |
+          (
+            while true; do
+              ts=$(date +%H:%M:%S)
+              # free -m → MiB; columns: total used free shared buff/cache available
+              mem=$(free -m | awk 'NR==2 {printf "tot=%dMi used=%dMi free=%dMi avail=%dMi", $2,$3,$4,$7}')
+              swap=$(free -m | awk 'NR==3 {printf "swap_used=%dMi", $3}')
+              top=$(ps -eo rss,comm --sort=-rss --no-headers | head -3 | awk '{printf "%dMi:%s ", $1/1024, $2}')
+              echo "[MON $ts] $mem | $swap | top3: $top"
+              sleep 5
+            done
+          ) &
+          MON_PID=$!
+          trap 'kill $MON_PID 2>/dev/null || true; wait $MON_PID 2>/dev/null || true' EXIT
+
           vendor/bin/infection \
             --filter='${{ matrix.filter }}' \
             --logger-github \
             --no-progress \
             --no-interaction \
-            --threads=$(nproc)
+            --threads=${{ matrix.threads }}
 
       # Reduce the (very large — source is embedded per mutant) report
       # to a compact per-mutant status record before uploading.
