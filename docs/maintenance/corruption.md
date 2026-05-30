@@ -4,27 +4,7 @@ This document explains how a nested-set table managed by this package can become
 
 If you only have time for one paragraph: **`parent_id` is treated as authoritative.** Every repair the package does works by walking the tree implied by `parent_id` and rebuilding `lft` / `rgt` / `depth` from that walk. So as long as `parent_id` describes the tree you actually want, every other column is recoverable. If `parent_id` itself is wrong (cycles, lost references, cross-scope pointers), no automated repair can guess the intended shape.
 
-## Table of contents
-
-1. [Background: the invariants](#1-background-the-invariants)
-2. [Detection — `countErrors()` and `aggregateErrors()`](#2-detection)
-3. [Corruption categories](#3-corruption-categories)
-   - 3.1 [`invalid_bounds`](#31-invalidbounds)
-   - 3.2 [`duplicate_lft` / `duplicate_rgt`](#32-duplicatelft--duplicatergt)
-   - 3.3 [`orphans`](#33-orphans)
-   - 3.4 [`parent_id` cycles](#34-parentid-cycles)
-   - 3.5 [Aggregate drift](#35-aggregate-drift)
-4. [Recovery](#4-recovery)
-   - 4.1 [What `fixTree()` actually does](#41-what-fixtree-actually-does)
-   - 4.2 [What `fixAggregates()` actually does](#42-what-fixaggregates-actually-does)
-   - 4.3 [Recovery cheat-sheet](#43-recovery-cheat-sheet)
-5. [Not-automatically-recoverable cases](#5-not-automatically-recoverable-cases)
-6. [Prevention](#6-prevention)
-7. [Diagnostic SQL](#7-diagnostic-sql)
-
----
-
-## 1. Background: the invariants
+## Background: the invariants
 
 A well-formed nested-set tree (in a single scope) satisfies all of:
 
@@ -41,7 +21,7 @@ A well-formed nested-set tree (in a single scope) satisfies all of:
 
 When the package's own API is the only thing that mutates the table, all of these are maintained automatically. Corruption means at least one of them has been broken — typically by a write that bypassed the package.
 
-## 2. Detection
+## Detection
 
 Two methods detect violations:
 
@@ -63,13 +43,13 @@ On scoped models pass an anchor: `Category::countErrors($root)`. Without one the
 
 The structural check is fast — index range scans plus a `GROUP BY` for the duplicate counts. The aggregate-drift check is the same cost as one `withFreshAggregates` pass.
 
-> **Cycles are not currently surfaced by `countErrors()`.** They appear indirectly as "rows you couldn't see in the tree after a repair" — see §3.4. Detection SQL is in §7.
+> **Cycles are not currently surfaced by `countErrors()`.** They appear indirectly as "rows you couldn't see in the tree after a repair" — see [`parent_id` cycles](#parentid-cycles). Detection SQL is in [Diagnostic SQL](#diagnostic-sql).
 
 > **Visualise the damage.** When `countErrors()` returns non-zero, `dd($root->toAsciiTree())` or `Category::toMermaidForest()` often makes the damage obvious at a glance. The exporters fold by `parent_id` and throw `CorruptTreeException` on cycles, so the output matches what `fixTree()` would rebuild. See [Tree Exporters](../querying/exporters.md).
 
-## 3. Corruption categories
+## Corruption categories
 
-### 3.1 `invalid_bounds`
+### `invalid_bounds`
 
 **Symptom.** A row has `lft >= rgt`.
 
@@ -83,7 +63,7 @@ The structural check is fast — index range scans plus a `GROUP BY` for the dup
 
 **Repair.** Automatic. `fixTree()` rebuilds `lft`/`rgt`/`depth` from `parent_id` so the affected row gets a fresh, consistent interval.
 
-### 3.2 `duplicate_lft` / `duplicate_rgt`
+### `duplicate_lft` / `duplicate_rgt`
 
 **Symptom.** Two rows in the same scope share the same `lft` value (or the same `rgt` value).
 
@@ -97,11 +77,11 @@ The structural check is fast — index range scans plus a `GROUP BY` for the dup
 
 **Repair.** Automatic. `fixTree()` rebuilds the numbering.
 
-### 3.3 `orphans`
+### `orphans`
 
 **Symptom.** A row's `parent_id` is non-null but no row with that id exists in the same scope.
 
-**Meaning.** The row claims a parent that isn't reachable. Reads treat the row as an unaffiliated stub. **`fixTree()` does not "fix" this** — see §5.
+**Meaning.** The row claims a parent that isn't reachable. Reads treat the row as an unaffiliated stub. **`fixTree()` does not "fix" this** — see [Not-automatically-recoverable cases](#not-automatically-recoverable-cases).
 
 **Typical causes.**
 
@@ -116,7 +96,7 @@ The structural check is fast — index range scans plus a `GROUP BY` for the dup
 
 The package can't pick the right answer because the right answer is domain-specific.
 
-### 3.4 `parent_id` cycles
+### `parent_id` cycles
 
 **Symptom.** Two or more rows form a cycle through `parent_id` (e.g. `A.parent_id = B.id`, `B.parent_id = A.id`). None of them is `parent_id = null`, but none reaches `null` by walking parents either.
 
@@ -127,12 +107,12 @@ The package can't pick the right answer because the right answer is domain-speci
 - A `update parent_id =` statement that swapped two rows' parents, introducing a 2-cycle. The package's own API rejects this: the `insertAfterNode` / `appendToNode` family validates that you're not moving a node into its own subtree. Bypassing those guards is the only way to create a cycle.
 - Imported data from another source where the parent column wasn't validated for acyclicity.
 
-**Repair.** Not automatic. There is no way for the package to know which edge in the cycle is "wrong". Diagnostic SQL is in §7. Common manual fixes:
+**Repair.** Not automatic. There is no way for the package to know which edge in the cycle is "wrong". Diagnostic SQL is in [Diagnostic SQL](#diagnostic-sql). Common manual fixes:
 
 1. Pick one row in the cycle and `update categories set parent_id = null` on it (promote it to root). The cycle is now broken; the others become children of the new root. Then run `fixTree()`.
 2. Identify the row whose `parent_id` change introduced the cycle (via audit logs or git blame on the data-fix script) and reset that one row's `parent_id` to its correct historical value.
 
-### 3.5 Aggregate drift
+### Aggregate drift
 
 **Symptom.** `Category::aggregateErrors()` reports a non-zero count for one or more aggregate columns.
 
@@ -146,9 +126,9 @@ The package can't pick the right answer because the right answer is domain-speci
 
 **Repair.** Automatic. `Category::fixAggregates()` overwrites stored values with freshly-computed ones from the source. The structural tree must already be intact — drift is computed by joining each row to its subtree, so corrupt bounds give garbage results. Run `fixTree()` first if both have happened.
 
-## 4. Recovery
+## Recovery
 
-### 4.1 What `fixTree()` actually does
+### What `fixTree()` actually does
 
 ```php
 Category::fixTree();                // forest (unscoped)
@@ -163,9 +143,9 @@ Category::fixTree($rootCategory);   // single tree, scoped or anchored
 Two important consequences:
 
 - **`parent_id` is read, not written.** Whatever `parent_id` you have is what the rebuild trusts. Bad `parent_id` ⇒ bad rebuild.
-- **Unreachable rows aren't touched.** Orphans (§3.3) and rows in cycles (§3.4) are silently left with their pre-repair bounds. The `TreeFixResult.errors` count after the run will still show them.
+- **Unreachable rows aren't touched.** Orphans ([orphans](#orphans)) and rows in cycles ([`parent_id` cycles](#parentid-cycles)) are silently left with their pre-repair bounds. The `TreeFixResult.errors` count after the run will still show them.
 
-### 4.2 What `fixAggregates()` actually does
+### What `fixAggregates()` actually does
 
 ```php
 Category::fixAggregates();          // forest
@@ -197,27 +177,27 @@ Both paths share the same underlying chunking machinery; see [Repairing Aggregat
 
 Idempotent: running it twice in a row, the second invocation finds zero drift and updates nothing. Safe to call after every batch operation as belt-and-braces.
 
-### 4.3 Recovery cheat-sheet
+### Recovery cheat-sheet
 
 | What you observe | Run this | Then |
 | --- | --- | --- |
 | `isBroken() === true` | `fixTree()` | Re-run `countErrors()` — orphans/cycles will still show. |
 | `aggregatesAreBroken() === true`, structure intact | `fixAggregates()` | Done. |
 | Both broken | `fixTree()`, then `fixAggregates()` | `fixTree()` calls `fixAggregates()` for you internally — but only on the post-rebuild structure, so the order is important. |
-| Orphans after `fixTree()` | Re-parent, root-ify, or delete per §3.3 | Then `fixTree()`. |
-| Cycles after `fixTree()` | See §3.4 | Diagnostic SQL in §7. |
+| Orphans after `fixTree()` | Re-parent, root-ify, or delete per [orphans](#orphans) | Then `fixTree()`. |
+| Cycles after `fixTree()` | See [`parent_id` cycles](#parentid-cycles) | Diagnostic SQL in [Diagnostic SQL](#diagnostic-sql). |
 
-## 5. Not-automatically-recoverable cases
+## Not-automatically-recoverable cases
 
 The package cannot guess the right answer for:
 
 1. **`parent_id` cycles.** No way to pick which edge in the cycle is the bogus one.
 2. **Orphans** (in the sense of automatically *clearing* the orphan condition). Detected, but cleaning up requires a domain decision.
 3. **Lost source values.** If the column an aggregate is computed over (e.g. `articles`) has itself been corrupted, `fixAggregates` will dutifully recompute the wrong answer. Aggregates can only be as accurate as their source.
-4. **Cross-scope `parent_id`.** A scoped model whose row points its `parent_id` at a row in a different scope is treated as orphan by the same-scope orphan check — and recovery options are the same as §3.3.
+4. **Cross-scope `parent_id`.** A scoped model whose row points its `parent_id` at a row in a different scope is treated as orphan by the same-scope orphan check — and recovery options are the same as [orphans](#orphans).
 5. **Schema drift.** If `lft`/`rgt`/`parent_id`/`depth` columns were renamed in the database but not in the model (or vice versa), the package will silently operate on stale state. Always keep the migration and `config('nestedset.columns')` in sync.
 
-## 6. Prevention
+## Prevention
 
 In order of impact:
 
@@ -233,7 +213,7 @@ In order of impact:
 6. **`forceDelete` cascades through the trait — `DB::table(...) ->delete()` does not.** Always delete through the model when you care about descendants.
 7. **For scoped models, never move a row between scopes via raw SQL.** The trait throws `ScopeViolationException` for cross-scope moves through the public API; raw SQL bypasses that guard.
 
-## 7. Diagnostic SQL
+## Diagnostic SQL
 
 Useful one-liners when you're staring at a broken table.
 

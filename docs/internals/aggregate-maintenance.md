@@ -162,9 +162,17 @@ $where = "outer_a.{$lftCol} <= ? AND outer_a.{$rgtCol} >= ?";   // ancestor chai
 
 It is *two* statements rather than one correlated-subquery `UPDATE` because MySQL forbids updating a table while selecting from it in a subquery; the SELECT-then- UPDATE shape works on all four backends. Three details make it efficient and correct:
 
-- **Cheap-skip** (`$filterEquals`): the caller passes the deleted/changed node's stored extremum, ORed into the outer `WHERE`. Ancestors whose stored MIN/MAX *demonstrably didn't* match the changing value are never selected, so "delete a non-extreme row → recompute nothing".
-- **Inclusive vs exclusive bounds**: the inner subquery uses `>= / <=` for inclusive aggregates and strict `> / <` for exclusive ones — ```php $boundsClause = $spec['inclusive'] ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}" : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}"; ```
-- **`excludeBounds`**: on the before-move hook the moving subtree is still physically present, so its rows are excluded from the scan (`AND NOT (inner_a.lft >= … AND inner_a.rgt <= …)`) to reflect the post-move-but-pre-SQL state.
+### Cheap-skip
+
+The caller passes the deleted/changed node's stored extremum (`$filterEquals`), ORed into the outer `WHERE`. Ancestors whose stored MIN/MAX *demonstrably didn't* match the changing value are never selected, so "delete a non-extreme row → recompute nothing".
+
+### Inclusive vs exclusive bounds
+
+The inner subquery uses `>= / <=` for inclusive aggregates and strict `> / <` for exclusive ones — `$boundsClause = $spec['inclusive'] ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}" : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}";`
+
+### `excludeBounds`
+
+On the before-move hook the moving subtree is still physically present, so its rows are excluded from the scan (`AND NOT (inner_a.lft >= … AND inner_a.rgt <= …)`) to reflect the post-move-but-pre-SQL state.
 
 Whether the SELECT takes a `FOR UPDATE` lock is governed by `aggregate_locking` — see [Concurrency & Transactions](concurrency.html#aggregate-locking).
 

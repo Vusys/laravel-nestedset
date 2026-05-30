@@ -113,6 +113,14 @@ Both compose with the standard filter modifiers — `filter`, `filterNotNull`, `
 
 ## Limitations
 
-- **Listener aggregates do not support geometric / harmonic mean.** The contribution-per-row contract carries one numeric value with no positivity context; declare these over a real SQL source column.
-- **`exclusive: true` routes through chain recompute.** Same trade-off as exclusive `Avg` / `Variance` — correct but slower than the inline delta. Prefer the default inclusive declarations unless the exclusive value is what the domain actually wants.
-- **Backend support is uniform.** Both functions emit `EXP(LN(...))` / `1.0 / col` against ordinary `SUM` / `COUNT` companions — no native `GEOMETRIC_MEAN` / `HARMONIC_MEAN` SQL functions are required, so MySQL, MariaDB, PostgreSQL, and SQLite all behave identically.
+### Listener aggregates do not support geometric / harmonic mean
+
+The contribution-per-row contract carries one numeric value with no positivity context; declare these over a real SQL source column.
+
+### `exclusive: true` routes through chain recompute
+
+Same trade-off as exclusive `Avg` / `Variance` — correct but slower than the inline delta. Prefer the default inclusive declarations unless the exclusive value is what the domain actually wants.
+
+### Backend support is uniform
+
+Both functions emit `EXP(LN(...))` / `1.0 / col` against ordinary `SUM` / `COUNT` companions — no native `GEOMETRIC_MEAN` / `HARMONIC_MEAN` SQL functions are required, so MySQL, MariaDB, PostgreSQL, and SQLite all behave identically.

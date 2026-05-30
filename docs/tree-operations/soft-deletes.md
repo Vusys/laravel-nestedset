@@ -68,6 +68,14 @@ Scoped models work the same way — every cascade query is constrained by the sa
 
 ## Limitations
 
-- **Soft-delete column rename** is supported — the package reads the column name via reflection on `getDeletedAtColumn()`, so overriding `const DELETED_AT` or the method works without configuration.
-- **Microsecond precision** depends on the column type — see the note above.
-- **`withTrashed()` outer queries** see soft-deleted descendants too; pair with `freshAggregate('col', withTrashed: true)` if you're auditing aggregates across the trashed surface. See [Reading Values](../aggregates/reading.html).
+### Soft-delete column rename is supported
+
+The package reads the column name via reflection on `getDeletedAtColumn()`, so overriding `const DELETED_AT` or the method works without configuration.
+
+### Microsecond precision depends on the column type
+
+See the note above on `DATETIME(6)` vs `DATETIME(0)`.
+
+### `withTrashed()` outer queries see soft-deleted descendants
+
+Pair with `freshAggregate('col', withTrashed: true)` if you're auditing aggregates across the trashed surface. See [Reading Values](../aggregates/reading.html).

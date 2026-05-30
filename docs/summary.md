@@ -64,6 +64,7 @@ Format:
 - [Transactions](reference/transactions.md)
 - [Events](reference/events.md)
 - [Production Notes](reference/production.md)
+- [Glossary](reference/glossary.md)
 
 # Internals
 

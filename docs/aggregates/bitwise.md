@@ -64,6 +64,14 @@ The XOR delta SET clause uses the portable identity `a XOR b = (a | b) - (a & b)
 
 ## Limitations
 
-- **Listener aggregates** (bitwise over a PHP-computed contribution) are rejected at definition construction. Declare bitwise aggregates over a real source column or roll your own from a Sum + per-bit count.
-- **`bitOr` and `bitAnd` source updates and deletes route through chain recompute.** For deep trees this is O(depth × subtree-size) per mutation. If your write path is hot and the subtree is large, prefer `bitXor` (full delta path) or defer maintenance via `queueFixAggregates` / `withDeferredAggregateMaintenance`.
-- **Source values are coerced to integer at SET-clause emission.** Floats silently truncate. Bitwise operations only have well-defined semantics on integers; if your source column holds floats, the rollup is almost certainly wrong by design.
+### Listener aggregates are rejected
+
+Bitwise over a PHP-computed contribution is rejected at definition construction. Declare bitwise aggregates over a real source column or roll your own from a Sum + per-bit count.
+
+### `bitOr` and `bitAnd` source updates route through chain recompute
+
+For deep trees this is O(depth × subtree-size) per mutation. If your write path is hot and the subtree is large, prefer `bitXor` (full delta path) or defer maintenance via `queueFixAggregates` / `withDeferredAggregateMaintenance`.
+
+### Source values are coerced to integer at SET-clause emission
+
+Floats silently truncate. Bitwise operations only have well-defined semantics on integers; if your source column holds floats, the rollup is almost certainly wrong by design.

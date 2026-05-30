@@ -188,11 +188,25 @@ Scope first means each tree occupies its own contiguous slice of the index; the 
 
 These five choices explain most of *why* the code looks the way it does. Keep them in mind while reading the rest of this section.
 
-1. **`parent_id` is the source of truth.** `lft`/`rgt`/`depth` are a derived index. `fixTree()` rebuilds the index from a `parent_id` walk — never the reverse. A corrupted index is always recoverable as long as `parent_id` is intact. → [Integrity & Repair](repair.html)
-2. **Every shift is one atomic `CASE WHEN UPDATE`.** Inserts, moves, and bulk repairs renumber many rows in a single statement, so the on-disk state never passes through an invariant-violating intermediate. → [The Mutation Engine](mutation-engine.html)
-3. **`depth` is stored, not computed.** It is maintained on every mutation, which makes level queries and aggregate ancestry scans cheap.
-4. **Mutations are queued, then dispatched on `save()`.** `appendToNode($parent)` only records a `PendingOperation`; the write happens in the `saving` hook, so the gap, the INSERT/UPDATE, and the aggregate hooks share one transaction.
-5. **Telemetry is observable but optional.** Every meaningful operation fires a typed event, gated by `events_enabled` and a per-event listener check so an unobserved event costs nothing. → [Concurrency & Transactions](concurrency.html#event-dispatch)
+### `parent_id` is the source of truth
+
+`lft`/`rgt`/`depth` are a derived index. `fixTree()` rebuilds the index from a `parent_id` walk — never the reverse. A corrupted index is always recoverable as long as `parent_id` is intact. → [Integrity & Repair](repair.html)
+
+### Every shift is one atomic `CASE WHEN UPDATE`
+
+Inserts, moves, and bulk repairs renumber many rows in a single statement, so the on-disk state never passes through an invariant-violating intermediate. → [The Mutation Engine](mutation-engine.html)
+
+### `depth` is stored, not computed
+
+It is maintained on every mutation, which makes level queries and aggregate ancestry scans cheap.
+
+### Mutations are queued, then dispatched on `save()`
+
+`appendToNode($parent)` only records a `PendingOperation`; the write happens in the `saving` hook, so the gap, the INSERT/UPDATE, and the aggregate hooks share one transaction.
+
+### Telemetry is observable but optional
+
+Every meaningful operation fires a typed event, gated by `events_enabled` and a per-event listener check so an unobserved event costs nothing. → [Concurrency & Transactions](concurrency.html#event-dispatch)
 
 ## Where to go next
 
