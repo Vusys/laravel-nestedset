@@ -61,7 +61,7 @@ abstract class TestCase extends OrchestraTestCase
         // first `for()` call — negligible alongside test setUp.
         AggregateRegistry::flush();
 
-        $tables = ['areas', 'archived_branches', 'bitwise_areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags', 'uuid_tags', 'uuid_menu_items', 'uuid_menus', 'metric_areas', 'text_json_areas', 'weighted_areas', 'flag_areas', 'mean_areas', 'scoped_areas'];
+        $tables = ['areas', 'archived_branches', 'bitwise_areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags', 'uuid_tags', 'uuid_menu_items', 'uuid_menus', 'metric_areas', 'text_json_areas', 'weighted_areas', 'flag_areas', 'mean_areas', 'scoped_areas', 'multi_scoped_branches'];
 
         foreach ($tables as $table) {
             if (DB::connection()->getSchemaBuilder()->hasTable($table)) {
