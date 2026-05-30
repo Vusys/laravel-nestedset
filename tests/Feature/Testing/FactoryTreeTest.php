@@ -12,6 +12,7 @@ use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -342,20 +343,21 @@ final class FactoryTreeTest extends TestCase
 
     public function test_scoped_factory_with_anchor_produces_scoped_tree(): void
     {
-        $anchor = new MenuItem(['name' => 'Anchor', 'menu_id' => 7]);
+        $menu = Menu::create(['name' => 'Sidebar']);
+        $anchor = new MenuItem(['name' => 'Anchor', 'menu_id' => $menu->id]);
         $anchor->saveAsRoot();
         $anchor->refresh();
 
         $result = MenuItem::factory()
-            ->state(['menu_id' => 7])
+            ->state(['menu_id' => $menu->id])
             ->tree(depth: 2, branching: 2, parent: $anchor)
             ->create();
 
         $this->assertInstanceOf(MenuItem::class, $result);
-        $this->assertSame(7, $result->menu_id);
+        $this->assertSame($menu->id, $result->menu_id);
         $this->assertSame(8, MenuItem::query()->count(), '1 anchor + 7-node subtree = 8 rows.');
         foreach (MenuItem::query()->get() as $node) {
-            $this->assertSame(7, $node->menu_id);
+            $this->assertSame($menu->id, $node->menu_id);
         }
     }
 
@@ -368,14 +370,16 @@ final class FactoryTreeTest extends TestCase
 
     public function test_parent_scope_mismatch_rejected_upfront(): void
     {
-        $other = new MenuItem(['name' => 'anchor', 'menu_id' => 1]);
+        $menuA = Menu::create(['name' => 'A']);
+        $menuB = Menu::create(['name' => 'B']);
+        $other = new MenuItem(['name' => 'anchor', 'menu_id' => $menuA->id]);
         $other->saveAsRoot();
         $other->refresh();
 
         $this->expectException(ScopeViolationException::class);
 
         MenuItem::factory()
-            ->state(['menu_id' => 2])
+            ->state(['menu_id' => $menuB->id])
             ->tree(depth: 0, branching: 0, parent: $other)
             ->create();
     }

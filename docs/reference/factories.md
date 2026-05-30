@@ -255,7 +255,7 @@ The per-row closure wins last because it's the most specific layer; blanket `sta
 
 ## Forests and `count()`
 
-`count(N)->tree(...)` produces N independent trees, each its own `bulkInsertTree` call:
+`count(N)->tree(...)` produces N independent trees, each with its own `bulkInsertTree` call:
 
 ```php
 $roots = Category::factory()->count(3)->tree(depth: 2, branching: 2)->create();
