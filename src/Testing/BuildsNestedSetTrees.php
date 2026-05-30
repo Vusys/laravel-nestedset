@@ -560,9 +560,6 @@ trait BuildsNestedSetTrees
     }
 
     /**
-     * @return list<class-string>
-     */
-    /**
      * @param  class-string  $class
      * @return list<class-string>
      */

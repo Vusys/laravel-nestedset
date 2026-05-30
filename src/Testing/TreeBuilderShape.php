@@ -176,6 +176,14 @@ final readonly class TreeBuilderShape
         }
 
         if (is_array($this->branching)) {
+            if (! array_key_exists($parentDepth, $this->branching)) {
+                throw new InvalidArgumentException(sprintf(
+                    'tree(): branching array has no entry for parent depth %d (length %d) — provide one entry per generation up to depth.',
+                    $parentDepth,
+                    count($this->branching),
+                ));
+            }
+
             return $this->branching[$parentDepth];
         }
 
