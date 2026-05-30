@@ -5,12 +5,12 @@
 A modern Laravel implementation of the nested-set model for hierarchical data — strict types throughout, PHPStan level 9, atomic CASE-WHEN mutations, multi-tree scoping, soft-delete cascade, live aggregate roll-ups, and an opinionated repair toolkit.
 
 ```php
-use App\Models\Category;
+use App\Models\BudgetItem;
 
-$root = new Category(['name' => 'Root']);
+$root = new BudgetItem(['name' => 'Engineering']);
 $root->saveAsRoot();
 
-$child = new Category(['name' => 'Child']);
+$child = new BudgetItem(['name' => 'Salaries', 'cost' => 28000]);
 $child->appendToNode($root)->save();
 
 $child->depth;                       // 1
@@ -21,7 +21,7 @@ $child->ancestors()->get();          // collection containing $root
 
 $root->refresh();                    // re-read parent bounds after the append
 $root->descendants()->get();         // collection containing $child
-$root->getSubtreeSize();             // 4  (slot count: rgt - lft + 1 = 2 × node count)
+$root->getDescendantCount();         // 1  (descendants, excluding self; +1 for total nodes in subtree)
 ```
 
 Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX roll-ups are maintained automatically as the tree changes:
@@ -30,28 +30,51 @@ Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX roll-ups a
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Export\AsciiOptions;
 use Vusys\NestedSet\NodeTrait;
 
-#[NestedSetAggregate(column: 'products_total',  sum: 'products')]
-#[NestedSetAggregate(column: 'products_count',  count: true)]
-#[NestedSetAggregate(column: 'in_stock_total',  sum: 'products', filter: ['in_stock' => true])]
-#[NestedSetAggregate(column: 'cheapest_price',  min: 'price')]
-class Category extends Model implements HasNestedSet { use NodeTrait; }
+#[NestedSetAggregate(column: 'cost_total',      sum:   'cost')]
+#[NestedSetAggregate(column: 'item_count',      count: true)]
+#[NestedSetAggregate(column: 'avg_cost',        avg:   'cost')]
+#[NestedSetAggregate(column: 'biggest_item',    max:   'cost')]
+#[NestedSetAggregate(column: 'recurring_total', sum:   'cost', filter: ['recurring' => true])]
+class BudgetItem extends Model implements HasNestedSet { use NodeTrait; }
 
-// Electronics                Gadgets   ← second root, products = 0
-// ├── Laptops  (products = 10)
-// └── Phones   (products = 13)
+// Render the forest with each node's own cost + rolled-up subtree total:
+$render = fn () => BudgetItem::toAsciiTreeForest(new AsciiOptions(
+    label: fn ($n) => "{$n->name}  (cost = {$n->cost}, total = {$n->cost_total})",
+));
 
-$electronics->refresh()->products_total;   // 23  — rolled up from descendants
+echo $render();
+// Engineering              (cost = 0,     total = 32000)
+// ├── People               (cost = 0,     total = 28000)
+// │   ├── Salaries         (cost = 26000, total = 26000)
+// │   └── Bonuses          (cost = 2000,  total = 2000)
+// └── Tools                (cost = 0,     total = 4000)
+//     ├── SaaS             (cost = 2500,  total = 2500)
+//     └── Hardware         (cost = 1500,  total = 1500)
+// Operations               (cost = 0,     total = 1500)
+// └── Office               (cost = 1500,  total = 1500)
 
-$phones->update(['products' => 20]);
-$electronics->refresh()->products_total;   // 30  — ancestors updated in the same write
+BudgetItem::query()->where('name', '=', 'Bonuses')->first()->update(['cost' => 4000]);
+BudgetItem::query()->where('name', '=', 'Engineering')->first()->refresh()->cost_total;   // 34000  — every ancestor updates (Bonuses → People → Engineering)
 
-$phones->moveTo($gadgets)->save();         // re-parent Phones under Gadgets
-$electronics->refresh()->products_total;   // 10  — old ancestors shrink
-$gadgets->refresh()->products_total;       // 20  — new ancestors grow
+// move the whole Tools subtree (3 nodes) under Operations — one statement
+BudgetItem::query()->where('name', '=', 'Tools')->first()
+    ->moveTo(BudgetItem::query()->where('name', '=', 'Operations')->first())
+    ->save();
+echo $render();
+// Engineering              (cost = 0,     total = 30000)   ← old parent shrank (Tools left, taking 4000)
+// └── People               (cost = 0,     total = 30000)
+//     ├── Salaries         (cost = 26000, total = 26000)
+//     └── Bonuses          (cost = 4000,  total = 4000)
+// Operations               (cost = 0,     total = 5500)    ← new parent grew by the whole moved subtree
+// ├── Office               (cost = 1500,  total = 1500)
+// └── Tools                (cost = 0,     total = 4000)
+//     ├── SaaS             (cost = 2500,  total = 2500)
+//     └── Hardware         (cost = 1500,  total = 1500)
 
-Category::query()->withFreshAggregates()->get();   // ad-hoc correlated recomputation (read-only — see Aggregates → Drift)
+BudgetItem::query()->withFreshAggregates()->get();   // ad-hoc correlated recomputation (read-only — see Aggregates → Drift)
 ```
 
 ## Why nested set?
@@ -85,7 +108,8 @@ Full documentation lives at **<https://vusys.github.io/laravel-nestedset/>**.
 - **Querying** — [Tree Queries](https://vusys.github.io/laravel-nestedset/querying/queries.html) · [Eloquent Relations](https://vusys.github.io/laravel-nestedset/querying/relations.html) · [In-memory Tree Shaping](https://vusys.github.io/laravel-nestedset/querying/tree-shaping.html) · [Walking Subtrees](https://vusys.github.io/laravel-nestedset/querying/walking.html) · [Tree Exporters](https://vusys.github.io/laravel-nestedset/querying/exporters.html) · [Inspection](https://vusys.github.io/laravel-nestedset/querying/inspection.html) · [Scoped Trees](https://vusys.github.io/laravel-nestedset/querying/scoped-trees.html)
 - **Aggregates** — [Overview](https://vusys.github.io/laravel-nestedset/aggregates/overview.html) · [Setup](https://vusys.github.io/laravel-nestedset/aggregates/setup.html) · [Reading](https://vusys.github.io/laravel-nestedset/aggregates/reading.html) · [Declaring](https://vusys.github.io/laravel-nestedset/aggregates/declaring.html) · [Filtered](https://vusys.github.io/laravel-nestedset/aggregates/filtered.html) · [Collection](https://vusys.github.io/laravel-nestedset/aggregates/text-and-json.html) · [Listeners](https://vusys.github.io/laravel-nestedset/aggregates/listeners.html) · [Variance & Stddev](https://vusys.github.io/laravel-nestedset/aggregates/maths.html) · [Weighted Avg & Booleans](https://vusys.github.io/laravel-nestedset/aggregates/weighted-avg-and-booleans.html) · [Means](https://vusys.github.io/laravel-nestedset/aggregates/means.html) · [Quantiles](https://vusys.github.io/laravel-nestedset/aggregates/quantiles.html) · [Bitwise](https://vusys.github.io/laravel-nestedset/aggregates/bitwise.html) · [Recipes](https://vusys.github.io/laravel-nestedset/aggregates/recipes.html) · [Maintenance](https://vusys.github.io/laravel-nestedset/aggregates/maintenance.html) · [Drift & Limitations](https://vusys.github.io/laravel-nestedset/aggregates/drift.html)
 - **Maintenance** — [Tree Repair](https://vusys.github.io/laravel-nestedset/maintenance/fix-tree.html) · [Repairing Aggregates](https://vusys.github.io/laravel-nestedset/maintenance/fix-aggregates.html) · [Corruption Reference](https://vusys.github.io/laravel-nestedset/maintenance/corruption.html)
-- **Reference** — [Configuration](https://vusys.github.io/laravel-nestedset/reference/config.html) · [Testing Helpers](https://vusys.github.io/laravel-nestedset/reference/testing.html) · [Factory Tree Builder](https://vusys.github.io/laravel-nestedset/reference/factories.html) · [Transactions](https://vusys.github.io/laravel-nestedset/reference/transactions.html) · [Events](https://vusys.github.io/laravel-nestedset/reference/events.html) · [Production Notes](https://vusys.github.io/laravel-nestedset/reference/production.html) · [vs. kalnoy/nestedset](https://vusys.github.io/laravel-nestedset/reference/comparison.html)
+- **Reference** — [Configuration](https://vusys.github.io/laravel-nestedset/reference/config.html) · [Testing Helpers](https://vusys.github.io/laravel-nestedset/reference/testing.html) · [Factory Tree Builder](https://vusys.github.io/laravel-nestedset/reference/factories.html) · [Transactions](https://vusys.github.io/laravel-nestedset/reference/transactions.html) · [Events](https://vusys.github.io/laravel-nestedset/reference/events.html) · [Production Notes](https://vusys.github.io/laravel-nestedset/reference/production.html) · [Glossary](https://vusys.github.io/laravel-nestedset/reference/glossary.html)
+- **Internals** — [Architecture Overview](https://vusys.github.io/laravel-nestedset/internals/architecture.html)
 
 The site is built from the markdown in [`docs/`](docs/) — if you spot an error, edit the source and open a PR.
 
