@@ -16,6 +16,7 @@ use Vusys\NestedSet\Concerns\HasTreeExport;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Concerns\HasTreeRelations;
 use Vusys\NestedSet\Concerns\HasTreeRepair;
+use Vusys\NestedSet\Concerns\HasTreeWalk;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
@@ -46,6 +47,7 @@ trait NodeTrait
     use HasTreeMutation;
     use HasTreeRelations;
     use HasTreeRepair;
+    use HasTreeWalk;
 
     /**
      * Wires every Eloquent lifecycle event the package consumes.

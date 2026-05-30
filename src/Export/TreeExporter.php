@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Export;
 
 use Closure;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Stringable;
 use Throwable;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\CorruptTreeException;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Walker\SubtreeWalker;
+use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
  * Folds an ordered set of nested-set nodes into an in-memory parent →
@@ -81,17 +84,28 @@ final readonly class TreeExporter
 
     public function toMermaid(MermaidOptions $opts): string
     {
+        $visible = $this->resolveVisibleKeys($opts->filter);
+
         $lines = ['graph '.$opts->direction];
 
-        foreach ($this->nodes as $entry) {
+        foreach ($this->nodes as $key => $entry) {
+            if ($visible !== null && ! isset($visible[$key])) {
+                continue;
+            }
             $id = $this->nodeId($entry['node']);
             $label = $this->mermaidLabel($entry['node'], $opts);
             $lines[] = "    {$id}[\"{$label}\"]";
         }
 
-        foreach ($this->nodes as $entry) {
+        foreach ($this->nodes as $key => $entry) {
+            if ($visible !== null && ! isset($visible[$key])) {
+                continue;
+            }
             $parentId = $this->nodeId($entry['node']);
             foreach ($entry['children'] as $childKey) {
+                if ($visible !== null && ! isset($visible[$childKey])) {
+                    continue;
+                }
                 $childId = $this->nodeId($this->nodes[$childKey]['node']);
                 $lines[] = "    {$parentId} --> {$childId}";
             }
@@ -102,21 +116,32 @@ final readonly class TreeExporter
 
     public function toDot(DotOptions $opts): string
     {
+        $visible = $this->resolveVisibleKeys($opts->filter);
+
         $lines = [
             'digraph tree {',
             "    rankdir={$opts->direction};",
             '    node [shape=box];',
         ];
 
-        foreach ($this->nodes as $entry) {
+        foreach ($this->nodes as $key => $entry) {
+            if ($visible !== null && ! isset($visible[$key])) {
+                continue;
+            }
             $id = $this->nodeId($entry['node']);
             $label = $this->dotLabel($entry['node'], $opts);
             $lines[] = "    \"{$id}\" [label=\"{$label}\"];";
         }
 
-        foreach ($this->nodes as $entry) {
+        foreach ($this->nodes as $key => $entry) {
+            if ($visible !== null && ! isset($visible[$key])) {
+                continue;
+            }
             $parentId = $this->nodeId($entry['node']);
             foreach ($entry['children'] as $childKey) {
+                if ($visible !== null && ! isset($visible[$childKey])) {
+                    continue;
+                }
                 $childId = $this->nodeId($this->nodes[$childKey]['node']);
                 $lines[] = "    \"{$parentId}\" -> \"{$childId}\";";
             }
@@ -129,10 +154,22 @@ final readonly class TreeExporter
 
     public function toAsciiTree(AsciiOptions $opts): string
     {
+        // AsciiOptions's maxDepth predates WalkFilter; compose both so
+        // either knob produces the same pruning, and a user filter
+        // narrows further than maxDepth would alone.
+        $depthFilter = $opts->maxDepth !== null
+            ? WalkFilter::depth($opts->maxDepth)
+            : null;
+        $effectiveFilter = $this->composeFilters($opts->filter, $depthFilter);
+        $visible = $this->resolveVisibleKeys($effectiveFilter);
+
         /** @var list<string> $lines */
         $lines = [];
         foreach ($this->roots as $rootKey) {
-            $this->renderAsciiNode($rootKey, $opts, $lines, 0, '', null);
+            if ($visible !== null && ! isset($visible[$rootKey])) {
+                continue;
+            }
+            $this->renderAsciiNode($rootKey, $opts, $lines, 0, '', null, $visible);
         }
 
         return implode("\n", $lines);
@@ -143,18 +180,31 @@ final readonly class TreeExporter
      */
     public function toJson(JsonOptions $opts): array
     {
-        if (count($this->roots) === 1) {
-            return $this->jsonNode($this->roots[0], $opts);
+        $visible = $this->resolveVisibleKeys($opts->filter);
+
+        $visibleRoots = $visible === null
+            ? $this->roots
+            : array_values(array_filter(
+                $this->roots,
+                static fn (int|string $k): bool => isset($visible[$k]),
+            ));
+
+        if (count($visibleRoots) === 1) {
+            return $this->jsonNode($visibleRoots[0], $opts, $visible);
         }
 
         return array_map(
-            fn (int|string $r): array => $this->jsonNode($r, $opts),
-            $this->roots,
+            fn (int|string $r): array => $this->jsonNode($r, $opts, $visible),
+            $visibleRoots,
         );
     }
 
     /**
      * @param  list<string>  $lines
+     * @param  array<int|string, true>|null  $visible  Null means no filter
+     *                                                 applied; otherwise
+     *                                                 only keys in the map
+     *                                                 render.
      */
     private function renderAsciiNode(
         int|string $key,
@@ -163,6 +213,7 @@ final readonly class TreeExporter
         int $indentLevel,
         string $continuation,
         ?bool $isLastSibling,
+        ?array $visible,
     ): void {
         $entry = $this->nodes[$key];
         $node = $entry['node'];
@@ -185,7 +236,12 @@ final readonly class TreeExporter
             return;
         }
 
-        $children = $entry['children'];
+        $children = $visible === null
+            ? $entry['children']
+            : array_values(array_filter(
+                $entry['children'],
+                static fn (int|string $c): bool => isset($visible[$c]),
+            ));
         $count = count($children);
 
         $childContinuation = $continuation;
@@ -201,14 +257,16 @@ final readonly class TreeExporter
                 $indentLevel + 1,
                 $childContinuation,
                 $i === $count - 1,
+                $visible,
             );
         }
     }
 
     /**
+     * @param  array<int|string, true>|null  $visible
      * @return array<string, mixed>
      */
-    private function jsonNode(int|string $key, JsonOptions $opts): array
+    private function jsonNode(int|string $key, JsonOptions $opts, ?array $visible): array
     {
         $entry = $this->nodes[$key];
         $node = $entry['node'];
@@ -222,12 +280,87 @@ final readonly class TreeExporter
             $payload[$col] = $node->getAttribute($col);
         }
 
+        $children = $visible === null
+            ? $entry['children']
+            : array_values(array_filter(
+                $entry['children'],
+                static fn (int|string $c): bool => isset($visible[$c]),
+            ));
+
         $payload[$opts->childrenKey] = array_map(
-            fn (int|string $c): array => $this->jsonNode($c, $opts),
-            $entry['children'],
+            fn (int|string $c): array => $this->jsonNode($c, $opts, $visible),
+            $children,
         );
 
         return $payload;
+    }
+
+    /**
+     * Builds the visible-key set for the supplied filter by walking each
+     * inferred root with a fresh {@see SubtreeWalker}. Returns null when
+     * `$filter` is null so callers can fast-path the unfiltered case
+     * with a single `if ($visible === null)` check.
+     *
+     * Cost is `O(M × N)` for a forest of `M` roots over `N` total nodes
+     * — each per-root walker rebuilds the index. For typical
+     * single-root subtree exports this is `O(N)`; for forest dumps it
+     * is still bounded by the loaded slice and matches the same
+     * iteration cost the format walks already pay.
+     *
+     * @return array<int|string, true>|null
+     */
+    private function resolveVisibleKeys(?WalkFilter $filter): ?array
+    {
+        if (! $filter instanceof WalkFilter) {
+            return null;
+        }
+
+        // `includeRoot: false` is meaningful for visitor-form walks but
+        // not for exporters — dropping the root would orphan the
+        // rendered output. Normalise it away here so callers can hand
+        // in any filter shape they like.
+        $effective = $filter->includeRoot
+            ? $filter
+            : new WalkFilter(
+                maxDepth: $filter->maxDepth,
+                visitable: $filter->visitable,
+                includeRoot: true,
+            );
+
+        /** @var list<Model&HasNestedSet> $items */
+        $items = [];
+        foreach ($this->nodes as $entry) {
+            $items[] = $entry['node'];
+        }
+        $collection = new EloquentCollection($items);
+
+        /** @var array<int|string, true> $visible */
+        $visible = [];
+        foreach ($this->roots as $rootKey) {
+            $rootNode = $this->nodes[$rootKey]['node'];
+            $walker = new SubtreeWalker($collection, $rootNode);
+            foreach ($walker->dfs($effective) as $visitedNode) {
+                $vk = $visitedNode->getKey();
+                if (is_int($vk) || is_string($vk)) {
+                    $visible[$vk] = true;
+                }
+            }
+        }
+
+        return $visible;
+    }
+
+    /**
+     * Composes two optional filters into one effective filter. Returns
+     * null when both are null so the resolve path can short-circuit.
+     */
+    private function composeFilters(?WalkFilter $a, ?WalkFilter $b): ?WalkFilter
+    {
+        if (! $a instanceof WalkFilter && ! $b instanceof WalkFilter) {
+            return null;
+        }
+
+        return WalkFilter::compose($a, $b);
     }
 
     private function mermaidLabel(Model&HasNestedSet $node, MermaidOptions $opts): string

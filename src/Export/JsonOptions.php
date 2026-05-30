@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Export;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
  * Knobs for {@see TreeExporter::toJson()}.
@@ -23,5 +24,6 @@ final readonly class JsonOptions
         public array $extras = [],
         public string $childrenKey = 'children',
         public bool $withTrashed = false,
+        public ?WalkFilter $filter = null,
     ) {}
 }

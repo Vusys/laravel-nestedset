@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Export;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
  * Knobs for {@see TreeExporter::toAsciiTree()}.
@@ -16,6 +17,10 @@ final readonly class AsciiOptions
 {
     /**
      * @param  LabelClosure|null  $label
+     * @param  WalkFilter|null  $filter  Optional walker filter (depth +
+     *                                   predicate). Composes with
+     *                                   `$maxDepth` if both set — the
+     *                                   stricter depth wins.
      */
     public function __construct(
         public bool $unicode = true,
@@ -23,5 +28,6 @@ final readonly class AsciiOptions
         public bool $showDepth = false,
         public ?int $maxDepth = null,
         public bool $withTrashed = false,
+        public ?WalkFilter $filter = null,
     ) {}
 }

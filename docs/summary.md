@@ -27,6 +27,7 @@ Format:
 - [Tree Queries](querying/queries.md)
 - [Eloquent Relations](querying/relations.md)
 - [In-memory Tree Shaping](querying/tree-shaping.md)
+- [Walking Subtrees](querying/walking.md)
 - [Tree Exporters](querying/exporters.md)
 - [Inspection](querying/inspection.md)
 - [Scoped Trees](querying/scoped-trees.md)
