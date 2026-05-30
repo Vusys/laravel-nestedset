@@ -281,6 +281,30 @@ jobs:
             --no-interaction \
             --threads=${{ matrix.threads }}
 
+      # Post-mortem: runs even if infection died. If the host SIGTERMed
+      # the runner, this step often still executes (we see "Stop
+      # containers" run in failed cells). `dmesg` is where the kernel
+      # logs OOM-killer activity ("Out of memory: Killed process ..."),
+      # which would confirm or refute the memory-pressure hypothesis.
+      # sudo without password works on hosted runners.
+      - name: Post-mortem — disk, memory, kernel log
+        if: always()
+        run: |
+          echo "::group::free -h (post)"
+          free -h || true
+          echo "::endgroup::"
+          echo "::group::df -h / (post)"
+          df -h / || true
+          echo "::endgroup::"
+          echo "::group::ps top-15 by RSS"
+          ps -eo pid,rss,vsz,pcpu,cmd --sort=-rss | head -16 || true
+          echo "::endgroup::"
+          echo "::group::dmesg tail (last 100 lines, grep OOM/kill)"
+          sudo dmesg | tail -100 || true
+          echo "---"
+          sudo dmesg | grep -iE 'oom|killed|memory' | tail -40 || true
+          echo "::endgroup::"
+
       # Reduce the (very large — source is embedded per mutant) report
       # to a compact per-mutant status record before uploading.
       - name: Distil report
