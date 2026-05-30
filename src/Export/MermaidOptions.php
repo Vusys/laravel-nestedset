@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Export;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
  * Knobs for {@see TreeExporter::toMermaid()}.
@@ -27,6 +28,7 @@ final readonly class MermaidOptions
         public bool $showId = false,
         public array $showAggregates = [],
         public bool $withTrashed = false,
+        public ?WalkFilter $filter = null,
     ) {
         if (! in_array($direction, self::VALID_DIRECTIONS, true)) {
             throw new \InvalidArgumentException(sprintf(

@@ -2,6 +2,9 @@
 
 When you've already fetched a flat result, build the tree without extra queries. Every `get()` on a `NodeTrait` model returns a `NodeCollection`, which knows how to assemble itself.
 
+> [!TIP]
+> If you only need to *visit* each node — not assemble nested `children` arrays — see [Walking Subtrees](walking.md). Walking is purely in-memory and skips the children-array allocation that `toTree()` builds.
+
 ## The flat → tree transform
 
 ```php

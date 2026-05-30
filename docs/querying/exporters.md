@@ -35,8 +35,9 @@ echo $electronics->toAsciiTree(new AsciiOptions(unicode: false));
 | `unicode` | `bool` | `true` | Box-drawing glyphs (`├ └ │`) vs plain ASCII (`\|-- \`-- \|   `). |
 | `label` | `Closure(Model): string\|int\|float\|null` | `fn ($n) => $n->name` | Render each row. Falls back to the primary key if the closure throws or returns null. |
 | `showDepth` | `bool` | `false` | Append `(depth=N)` to each label. |
-| `maxDepth` | `?int` | `null` | Truncate beyond depth N (counted from the export root). |
+| `maxDepth` | `?int` | `null` | Truncate beyond depth N (counted from the export root). Composes with `filter` — the stricter depth wins. |
 | `withTrashed` | `bool` | `false` | Include soft-deleted descendants. |
+| `filter` | `?WalkFilter` | `null` | Predicate-based pruning. See [Walking Subtrees → Pruning with `WalkFilter`](walking.md#pruning-with-walkfilter). |
 
 ## Mermaid
 
@@ -78,6 +79,7 @@ $electronics->toMermaid(new MermaidOptions(
 | `showId` | `bool` | `false` | Append `(id=N)` to each label. |
 | `showAggregates` | `list<string>` | `[]` | Aggregate columns appended as extra label lines. |
 | `withTrashed` | `bool` | `false` | Include soft-deleted descendants. |
+| `filter` | `?WalkFilter` | `null` | Predicate-based pruning. See [Walking Subtrees → Pruning with `WalkFilter`](walking.md#pruning-with-walkfilter). |
 
 Special characters in labels are HTML-escaped (`"` → `&quot;`, `<` → `&lt;`, newlines → `<br/>`). UUID primary keys hash to a short alphanumeric prefix (`n4a91f2c0`) so the identifiers stay valid Mermaid syntax.
 
@@ -104,7 +106,7 @@ digraph tree {
 }
 ```
 
-`DotOptions` mirrors `MermaidOptions` (direction defaults to `TB`). Quotes and backslashes in labels are DOT-escaped.
+`DotOptions` mirrors `MermaidOptions` (direction defaults to `TB`, and the same `filter: ?WalkFilter` field is supported). Quotes and backslashes in labels are DOT-escaped.
 
 ## JSON
 
@@ -144,6 +146,7 @@ The method is named `toJsonTree()` (not `toJson()`) because Eloquent already def
 | `extras` | `list<string>` | `[]` | Raw column names to copy onto each payload (e.g. `['lft', 'rgt', 'depth']`). |
 | `childrenKey` | `string` | `'children'` | Rename the children array key (`'items'`, `'nodes'`, …). |
 | `withTrashed` | `bool` | `false` | Include soft-deleted descendants. |
+| `filter` | `?WalkFilter` | `null` | Predicate-based pruning. See [Walking Subtrees → Pruning with `WalkFilter`](walking.md#pruning-with-walkfilter). |
 
 ## Whole-tree exports
 

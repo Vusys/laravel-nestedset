@@ -54,6 +54,8 @@ Category::with([
 
 The composite index already covers `depth`, so the bounded `WHERE` costs no more than the unbounded eager load on the same rows.
 
+Eager-loading `descendants` is also the recommended setup for [walking a subtree](walking.md) — the walker reads the loaded relation directly without issuing its own query.
+
 ## Combining with tree query scopes
 
 Relations stack with the [tree-query scopes](queries.html) freely. This pattern is common for category-tree pages: load every root with its first two levels, ordered for display:

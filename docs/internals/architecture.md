@@ -20,7 +20,7 @@ class Category extends Model implements HasNestedSet
 }
 ```
 
-`NodeTrait` is deliberately thin — it is a **composition of eight concerns**, each owning one slice of behaviour, plus a handful of Eloquent overrides. The trait body is little more than a list of `use` statements:
+`NodeTrait` is deliberately thin — it is a **composition of nine concerns**, each owning one slice of behaviour, plus a handful of Eloquent overrides. The trait body is little more than a list of `use` statements:
 
 ```php
 trait NodeTrait
@@ -33,6 +33,7 @@ trait NodeTrait
     use HasTreeMutation;
     use HasTreeRelations;
     use HasTreeRepair;
+    use HasTreeWalk;
     // ...
 }
 ```
@@ -47,6 +48,18 @@ trait NodeTrait
 | `HasSoftDeleteTree` | cascade soft-delete / restore with `deleted_at` stamp matching | [Aggregate Maintenance](aggregate-maintenance.html#soft-deletes) |
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` | [Bulk Insertion](../tree-operations/bulk-insertion.html) |
 | `HasTreeExport` | `toAscii()` / `toMermaid()` / `toDot()` / `toJson()` tree serialisers | [Tree Exporters](../querying/exporters.html) |
+| `HasTreeWalk` | `walk()` / `dfs()` / `dfsPostOrder()` / `bfs()` / `flattenedSubtree()` — visitor + generators over a loaded subtree, with `WalkContext` and `WalkFilter` | [Walking Subtrees](../querying/walking.html) |
+
+### The walker — `src/Walker/`
+
+`HasTreeWalk` is thin glue; the real implementation lives in four value objects:
+
+- **`SubtreeWalker`** is the engine. It takes a flat collection plus a root model, builds two indexes on construction (`byKey: id => Model` and `childrenByParentKey: parentId => list<id>`, both `O(N)`), and exposes iterative-DFS and queue-BFS generators that yield `(Model, WalkContext)` tuples. Both DFS strategies use an explicit task stack so deep trees do not blow PHP's call stack. The walker also implements `Countable` and exposes `maxDepth()` / `leafCount()` companions — all three share a single-pass index walk and memoise.
+- **`WalkContext`** is the readonly value object passed as the visitor's second argument. It carries depth (relative to the walk root, not the absolute `depth` column), parent, sibling index/count, the derived `isFirstSibling`/`isLastSibling` flags, and a lazy `pathToRoot()` that walks up via the index on first call.
+- **`WalkFilter`** is a `final readonly` triple of `maxDepth`, `visitable`, `includeRoot`. Named constructors (`depth()`, `where()`, `compose()`) and an instance `andThen()` cover the common shapes. The same `WalkFilter` plugs into every exporter's option object so a depth/predicate filter applied to ASCII output works identically against Mermaid and JSON.
+- **`WalkSignal`** is a two-case enum (`SkipSubtree`, `Stop`) returned by visitor closures to steer the walk. Skip is honoured by pre-order DFS and BFS, ignored by post-order. Returning `null` (or `void`) continues.
+
+The walker is purely a consumer of in-memory data — it never queries. When the public methods on `HasTreeWalk` are called without an explicit `$subtree`, they fall back to `$this->descendants`; if the relation is not loaded either, they throw `UnloadedSubtreeException`. The exporters use it internally to compute their visible-key set when a `WalkFilter` is supplied.
 
 Models **must** `implements HasNestedSet` (`src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
 

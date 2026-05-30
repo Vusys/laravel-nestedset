@@ -41,7 +41,7 @@ Fuzzer knobs (`composer fuzz`): `FUZZER_SEEDS`, `FUZZER_STEPS`, `FUZZER_RUNS`, `
 ## Architecture
 
 ### The hot path: `NodeTrait`
-`src/NodeTrait.php` is the user-facing API entry point. It's a composition of seven concerns, each owning one slice of behaviour:
+`src/NodeTrait.php` is the user-facing API entry point. It's a composition of eight concerns, each owning one slice of behaviour:
 
 | Concern | Responsibility |
 |---|---|
@@ -50,6 +50,7 @@ Fuzzer knobs (`composer fuzz`): `FUZZER_SEEDS`, `FUZZER_STEPS`, `FUZZER_RUNS`, `
 | `HasTreeRepair` | `isBroken`, `countErrors`, `fixTree`, `TreeFixResult` |
 | `HasSoftDeleteTree` | cascade soft-delete / restore with `deleted_at` stamp matching |
 | `HasNodeInspection` | `isRoot` / `isLeaf` / `isDescendantOf` etc., plus `NodeBounds` value object |
+| `HasTreeWalk` | `walk()` / `dfs()` / `dfsPostOrder()` / `bfs()` / `flattenedSubtree()` — in-memory visitor + generators over `relationLoaded('descendants')` or an explicit subtree. Throws `UnloadedSubtreeException` when nothing is loaded; never queries. |
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` |
 | `HasNestedSetAggregates` | precalculated aggregate columns (SUM/COUNT/AVG/MIN/MAX, filtered, listener-based) |
 
@@ -115,6 +116,7 @@ Concrete fixture types in test helpers are intentional — they exist so PHPStan
 - Reordering existing fixture migrations — `TestCase::setUp` truncates a fixed list.
 - Calling `fixTree()` / `fixAggregates()` / `isBroken()` on scoped models without an anchor — throws `ScopeViolationException` by design (prevents accidental full-table walks on multi-million-row forests).
 - Adding code comments explaining WHAT — only add when WHY is non-obvious.
+- Adding implicit DB hits to the walker — `walk()` deliberately throws `UnloadedSubtreeException` when nothing is loaded. The contract is "respect the caller's load scope"; widening it silently breaks every partial-subtree use case (the test plan asserts no query fires).
 
 ## Reference docs
 
