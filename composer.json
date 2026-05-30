@@ -11,6 +11,7 @@
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.0",
+        "infection/infection": "^0.33",
         "larastan/larastan": "^2.9|^3.0",
         "laravel/pint": "^1.0",
         "orchestra/testbench": "^9.0|^10.0|^11.0",
@@ -37,7 +38,10 @@
     "minimum-stability": "stable",
     "prefer-stable": true,
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "infection/extension-installer": true
+        }
     },
     "scripts": {
         "analyse": "phpstan analyse",
@@ -49,9 +53,11 @@
         "test": "phpunit",
         "test:coverage": "XDEBUG_MODE=coverage phpunit --coverage-text",
         "test:coverage-html": "XDEBUG_MODE=coverage phpunit --coverage-html=build/coverage",
-        "fuzz": "phpunit --group fuzzer"
+        "fuzz": "phpunit --group fuzzer",
+        "infection": "infection --threads=max"
     },
     "scripts-descriptions": {
-        "fuzz": "Run the seeded fuzzers (skipped by default). Configure via FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars; set FUZZER_SEEDS=random for non-deterministic exploration."
+        "fuzz": "Run the seeded fuzzers (skipped by default). Configure via FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars; set FUZZER_SEEDS=random for non-deterministic exploration.",
+        "infection": "Run mutation testing locally against the current backend (DB_CONNECTION). Defaults to all cores; pass `--threads=N` to limit. CI runs the same binary in a shard×backend matrix — see .github/workflows/infection.yml."
     }
 }
