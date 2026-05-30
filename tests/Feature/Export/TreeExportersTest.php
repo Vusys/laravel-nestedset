@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Export;
 
+use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\CorruptTreeException;
 use Vusys\NestedSet\Export\AsciiOptions;
 use Vusys\NestedSet\Export\DotOptions;
@@ -14,6 +15,7 @@ use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
 use Vusys\NestedSet\Tests\TestCase;
+use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
  * Snapshot-style tests for the tree exporters. All fixtures build the
@@ -666,6 +668,44 @@ final class TreeExportersTest extends TestCase
         $mermaid = $electronics->toMermaid(new MermaidOptions(showAggregates: ['price_avg']));
 
         $this->assertStringContainsString('price_avg: 12.5', $mermaid);
+    }
+
+    public function test_filter_prunes_nodes_and_edges_uniformly_across_formats(): void
+    {
+        // All four exporters share one filter primitive — they should
+        // produce the same node/edge inclusion decision when handed the
+        // same predicate. Here we exclude the Phones subtree (Phones +
+        // iPhone + Android) and assert it disappears from every format.
+        [$electronics] = $this->buildElectronicsTree();
+
+        $excludePhones = WalkFilter::where(
+            static fn (\Illuminate\Database\Eloquent\Model&HasNestedSet $n): bool => $n->getAttribute('name') !== 'Phones',
+        );
+
+        $mermaid = $electronics->toMermaid(new MermaidOptions(filter: $excludePhones));
+        $this->assertStringContainsString('Electronics', $mermaid);
+        $this->assertStringContainsString('Laptops', $mermaid);
+        $this->assertStringNotContainsString('Phones', $mermaid);
+        $this->assertStringNotContainsString('iPhone', $mermaid);
+        $this->assertStringNotContainsString('Android', $mermaid);
+
+        $dot = $electronics->toDot(new DotOptions(filter: $excludePhones));
+        $this->assertStringContainsString('Electronics', $dot);
+        $this->assertStringContainsString('Laptops', $dot);
+        $this->assertStringNotContainsString('Phones', $dot);
+        $this->assertStringNotContainsString('iPhone', $dot);
+
+        $ascii = $electronics->toAsciiTree(new AsciiOptions(filter: $excludePhones));
+        $this->assertSame("Electronics\n└── Laptops", $ascii);
+
+        $json = $electronics->toJsonTree(new JsonOptions(filter: $excludePhones));
+        // toJsonTree returns an associative payload for a single root and
+        // a list of payloads for a forest. Single-root path here.
+        $this->assertSame('Electronics', $json['label']);
+        $children = $json['children'];
+        $this->assertIsArray($children);
+        $childLabels = array_map(static fn (mixed $c): mixed => is_array($c) ? $c['label'] ?? null : null, $children);
+        $this->assertSame(['Laptops'], $childLabels);
     }
 
     public function test_uuid_node_id_is_deterministic_hash_of_key(): void

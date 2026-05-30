@@ -168,6 +168,23 @@ final class WalkFilterTest extends TestCase
         $this->assertTrue($bothNull->includeRoot);
     }
 
+    public function test_compose_keeps_the_single_predicate_when_only_one_side_carries_it(): void
+    {
+        // When one input has a `where` and the other only carries
+        // `maxDepth`, the result should keep the predicate verbatim
+        // (rather than building an AND with a no-op).
+        $depthOnly = WalkFilter::depth(5);
+        $whereOnly = WalkFilter::where(
+            static fn (Model&HasNestedSet $n): bool => self::nameOf($n) === 'keep',
+        );
+
+        $a = WalkFilter::compose($depthOnly, $whereOnly);
+        $this->assertSame($whereOnly->visitable, $a->visitable);
+
+        $b = WalkFilter::compose($whereOnly, $depthOnly);
+        $this->assertSame($whereOnly->visitable, $b->visitable);
+    }
+
     /**
      * @param  iterable<Model&HasNestedSet>  $iter
      * @return list<string>

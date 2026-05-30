@@ -140,7 +140,7 @@ final class SubtreeWalker implements Countable
         // Guard before the match so a caller bypassing the phpdoc union
         // (e.g. a string from config) gets an actionable error instead
         // of PHP's bare UnhandledMatchError.
-        self::assertStrategy($strategy);
+        $this->assertStrategy($strategy);
 
         $tuples = match ($strategy) {
             'pre' => $this->iteratePreOrder($filter, signalAware: true),
@@ -180,7 +180,7 @@ final class SubtreeWalker implements Countable
      */
     public function flatten(string $strategy = 'pre', ?WalkFilter $filter = null): EloquentCollection
     {
-        self::assertStrategy($strategy);
+        $this->assertStrategy($strategy);
 
         $generator = match ($strategy) {
             'pre' => $this->dfs($filter),
@@ -531,9 +531,9 @@ final class SubtreeWalker implements Countable
      * the type for static analysis; this guard handles the runtime
      * case where a caller bypasses it (e.g. a string from config).
      */
-    private static function assertStrategy(string $strategy): void
+    private function assertStrategy(string $strategy): void
     {
-        if ($strategy !== 'pre' && $strategy !== 'post' && $strategy !== 'bfs') {
+        if (! in_array($strategy, ['pre', 'post', 'bfs'], true)) {
             throw new InvalidArgumentException(sprintf(
                 'Unsupported walk strategy: "%s"; expected one of: pre, post, bfs.',
                 $strategy,

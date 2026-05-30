@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Walker\SubtreeWalker;
+use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
  * Pure unit tests over a hand-built fixture — no DB, no service
@@ -187,6 +188,57 @@ final class SubtreeWalkerTest extends TestCase
         $second = $walker->count();
 
         $this->assertSame($first, $second);
+    }
+
+    public function test_filter_prunes_post_order_walk_at_entry_phase(): void
+    {
+        // Post-order skips the subtree at the *enter* phase — by the
+        // time the parent would otherwise fire on exit, the rejected
+        // subtree's exit frames were never pushed.
+        ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
+        $walker = new SubtreeWalker($nodes, $root);
+
+        $filter = WalkFilter::where(
+            static fn (Model&HasNestedSet $n): bool => self::nameOf($n) !== 'A',
+        );
+
+        $names = $this->collectNames($walker->dfsPostOrder($filter));
+
+        // A and its children (X, Y) are pruned; only B's subtree + root remain.
+        $this->assertSame(['Z', 'B', 'root'], $names);
+    }
+
+    public function test_filter_prunes_bfs_walk_skipping_descent_into_rejected_node(): void
+    {
+        ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
+        $walker = new SubtreeWalker($nodes, $root);
+
+        $filter = WalkFilter::where(
+            static fn (Model&HasNestedSet $n): bool => self::nameOf($n) !== 'A',
+        );
+
+        $names = $this->collectNames($walker->bfs($filter));
+
+        // root visits, A is rejected (no visit, no descent), B visits at
+        // depth 1, then Z at depth 2. X and Y never appear because A's
+        // children were never queued.
+        $this->assertSame(['root', 'B', 'Z'], $names);
+    }
+
+    public function test_assert_strategy_throws_invalid_argument_for_unknown_label(): void
+    {
+        // The phpdoc union prevents bad strategies at static-analysis
+        // time; reflection lets the test exercise the runtime guard
+        // directly without weakening the production type.
+        ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
+        $walker = new SubtreeWalker($nodes, $root);
+
+        $ref = new \ReflectionMethod($walker, 'assertStrategy');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/strategy.*"level".*pre, post, bfs/s');
+
+        $ref->invoke($walker, 'level');
     }
 
     public function test_flatten_returns_collection_in_chosen_strategys_order(): void

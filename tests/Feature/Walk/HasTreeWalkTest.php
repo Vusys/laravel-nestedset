@@ -200,6 +200,28 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(['Root A', 'Child A'], $names);
     }
 
+    public function test_dfs_post_order_and_bfs_wrappers_delegate_to_the_walker(): void
+    {
+        // The DFS-post and BFS wrappers on HasTreeWalk are one-liners
+        // but are part of the public surface — pin their behaviour
+        // against the same loaded subtree.
+        [$electronics] = $this->buildElectronicsTree();
+        $electronics->load('descendants');
+
+        $post = [];
+        foreach ($electronics->dfsPostOrder() as $node) {
+            $post[] = self::nameOf($node);
+        }
+
+        $bfs = [];
+        foreach ($electronics->bfs() as $node) {
+            $bfs[] = self::nameOf($node);
+        }
+
+        $this->assertSame(['Laptops', 'iPhone', 'Android', 'Phones', 'Electronics'], $post);
+        $this->assertSame(['Electronics', 'Laptops', 'Phones', 'iPhone', 'Android'], $bfs);
+    }
+
     public function test_flattened_subtree_returns_collection_in_strategy_order(): void
     {
         [$electronics] = $this->buildElectronicsTree();
