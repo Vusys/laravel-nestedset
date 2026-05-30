@@ -7,7 +7,7 @@ name: Infection
 # produce a project-wide MSI, so doesn't publish to the dashboard.
 #
 # `full` (master push + weekly + manual): a `shard x db` matrix. Each
-# cell mutates a quarter of src/ against one database backend. The
+# cell mutates one slice of src/ against one database backend. The
 # `aggregate` job then unions every cell — a mutant is a true gap only
 # if it survived in *every* backend that covered it. The union MSI is
 # published to the Stryker dashboard (feeds the README badge).
@@ -110,8 +110,8 @@ jobs:
     # would render the literal expression when the job is skipped.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # One quarter of src/ against one backend. The slowest cell
-    # (~5.5k-LOC shard on a networked backend) is expected well inside
+    # One sixth of src/ against one backend. The slowest cell
+    # (~5.4k-LOC shard on a networked backend) is expected well inside
     # this; the cap is generous headroom, not a target.
     timeout-minutes: 90
     permissions:
@@ -127,14 +127,25 @@ jobs:
         # together cover all of src/. `--filter` matches on substring
         # of the file path, so anchoring each on `src/<Dir>/` keeps
         # src/Query/Aggregates/ inside the `query` shard (not also in
-        # `aggregates`).
-        shard: [concerns, query, aggregates, rest]
+        # `agg-core`/`agg-registry`). When adding a new top-level
+        # `src/<Dir>/` it must be wired into one of these shards or it
+        # is silently un-mutated.
+        shard: [concerns, query, agg-core, agg-registry, facade, rest]
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { shard: concerns,   filter: 'src/Concerns/' }
-          - { shard: query,      filter: 'src/Query/' }
-          - { shard: aggregates, filter: 'src/Aggregates/' }
-          - { shard: rest,       filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Export/,src/Jobs/,src/Relations/,src/Scope/,src/Testing/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          - { shard: concerns,     filter: 'src/Concerns/' }
+          - { shard: query,        filter: 'src/Query/' }
+          # `src/Aggregates/` split: agg-core holds the runtime SQL +
+          # delta/recompute pipeline; agg-registry holds the per-model
+          # registration + listener machinery. `Aggregate.php` lives in
+          # agg-core (it's the runtime entry point); `Definitions/` and
+          # `Registry/` live in agg-registry.
+          - { shard: agg-core,     filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
+          - { shard: agg-registry, filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
+          # Tree-consumer surface: walking, exporting, test helpers.
+          # All operate on already-built trees rather than mutating them.
+          - { shard: facade,       filter: 'src/Walker/,src/Export/,src/Testing/' }
+          - { shard: rest,         filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
           - { db: sqlite,  db_connection: sqlite }
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
