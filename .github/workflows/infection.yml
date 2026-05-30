@@ -110,7 +110,7 @@ jobs:
     # would render the literal expression when the job is skipped.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # One sixth of src/ against one backend. The slowest cell
+    # One slice (~1/7) of src/ against one backend. The slowest cell
     # (~5.4k-LOC shard on a networked backend) is expected well inside
     # this; the cap is generous headroom, not a target.
     timeout-minutes: 90
@@ -130,22 +130,31 @@ jobs:
         # `agg-core`/`agg-registry`). When adding a new top-level
         # `src/<Dir>/` it must be wired into one of these shards or it
         # is silently un-mutated.
-        shard: [concerns, query, agg-core, agg-registry, facade, rest]
+        shard: [concerns, query, agg-core, agg-registry, walker-export, testing, rest]
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { shard: concerns,     filter: 'src/Concerns/' }
-          - { shard: query,        filter: 'src/Query/' }
+          - { shard: concerns,       filter: 'src/Concerns/' }
+          - { shard: query,          filter: 'src/Query/' }
           # `src/Aggregates/` split: agg-core holds the runtime SQL +
           # delta/recompute pipeline; agg-registry holds the per-model
           # registration + listener machinery. `Aggregate.php` lives in
           # agg-core (it's the runtime entry point); `Definitions/` and
           # `Registry/` live in agg-registry.
-          - { shard: agg-core,     filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
-          - { shard: agg-registry, filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
-          # Tree-consumer surface: walking, exporting, test helpers.
-          # All operate on already-built trees rather than mutating them.
-          - { shard: facade,       filter: 'src/Walker/,src/Export/,src/Testing/' }
-          - { shard: rest,         filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          - { shard: agg-core,       filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
+          - { shard: agg-registry,   filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
+          # `src/Testing/` gets its own shard: BuildsNestedSetTrees is a
+          # tree-factory trait used by most tests, so mutating it exercises
+          # the full fixture-build path under each mutant. On networked
+          # backends with `--threads=$(nproc)` that's enough load (test
+          # forks × DB connections × PCOV temp files) to push the hosted
+          # runner over its disk/memory budget and trigger a runner-side
+          # shutdown signal — see run 26689964992 (facade/{mariadb,mysql}
+          # both died at the same mutant range with "runner has received
+          # a shutdown signal"). Walker + Export are read-only tree
+          # consumers and stay paired.
+          - { shard: walker-export,  filter: 'src/Walker/,src/Export/' }
+          - { shard: testing,        filter: 'src/Testing/' }
+          - { shard: rest,           filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
           - { db: sqlite,  db_connection: sqlite }
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
