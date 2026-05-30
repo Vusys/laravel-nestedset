@@ -120,28 +120,35 @@ jobs:
         shard: [concerns, query, agg-core, agg-registry, walker-export, testing, rest]
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { shard: concerns,       filter: 'src/Concerns/' }
-          - { shard: query,          filter: 'src/Query/' }
+          # `threads` is bash — `$(nproc)` is shell-substituted at run
+          # time (matrix values flow through unquoted into the run
+          # command). Most shards take all 4 cores; see `testing` below.
+          - { shard: concerns,       threads: '$(nproc)', filter: 'src/Concerns/' }
+          - { shard: query,          threads: '$(nproc)', filter: 'src/Query/' }
           # `src/Aggregates/` split: agg-core holds the runtime SQL +
           # delta/recompute pipeline; agg-registry holds the per-model
           # registration + listener machinery. `Aggregate.php` lives in
           # agg-core (it's the runtime entry point); `Definitions/` and
           # `Registry/` live in agg-registry.
-          - { shard: agg-core,       filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
-          - { shard: agg-registry,   filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
-          # `src/Testing/` gets its own shard: BuildsNestedSetTrees is a
-          # tree-factory trait used by most tests, so mutating it exercises
-          # the full fixture-build path under each mutant. On networked
-          # backends with `--threads=$(nproc)` that's enough load (test
-          # forks × DB connections × PCOV temp files) to push the hosted
-          # runner over its disk/memory budget and trigger a runner-side
-          # shutdown signal — see run 26689964992 (facade/{mariadb,mysql}
-          # both died at the same mutant range with "runner has received
-          # a shutdown signal"). Walker + Export are read-only tree
-          # consumers and stay paired.
-          - { shard: walker-export,  filter: 'src/Walker/,src/Export/' }
-          - { shard: testing,        filter: 'src/Testing/' }
-          - { shard: rest,           filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
+          - { shard: agg-core,       threads: '$(nproc)', filter: 'src/Aggregates/Sql/,src/Aggregates/Strategy/,src/Aggregates/Filters/,src/Aggregates/Aggregate.php,src/Aggregates/AggregateFunction.php,src/Aggregates/AggregateFixResult.php,src/Aggregates/ListenerAggregate.php,src/Aggregates/Numeric.php' }
+          - { shard: agg-registry,   threads: '$(nproc)', filter: 'src/Aggregates/Registry/,src/Aggregates/Listeners/,src/Aggregates/Definitions/' }
+          - { shard: walker-export,  threads: '$(nproc)', filter: 'src/Walker/,src/Export/' }
+          # `src/Testing/` gets its own shard AND its own thread cap.
+          # BuildsNestedSetTrees is a tree-factory trait used by most
+          # fixtures, so every mutant exercises the full fixture-build
+          # path. With 4 parallel workers each holding a PHP runtime +
+          # test suite state + PCOV coverage + (on networked DBs) a
+          # connection pool, the 16GB hosted runner has tipped past
+          # its memory budget and the host has sent SIGTERM to the
+          # runner agent ("##[error]The runner has received a shutdown
+          # signal") on multiple runs — 26689964992 (facade), 26691533334
+          # (testing/sqlite), 26693083125 (testing/{sqlite,mariadb}),
+          # the last one with the free-disk step in place and 88GB still
+          # free, ruling out disk. Capping testing at 2 threads halves
+          # peak memory at the cost of ~2× wall time (still well inside
+          # the 90-min job cap).
+          - { shard: testing,        threads: '2',        filter: 'src/Testing/' }
+          - { shard: rest,           threads: '$(nproc)', filter: 'src/Attributes/,src/Contracts/,src/Events/,src/Exceptions/,src/Jobs/,src/Relations/,src/Scope/,src/Columns.php,src/NestedSetServiceProvider.php,src/NodeBounds.php,src/NodeCollection.php,src/NodeTrait.php,src/PendingOperation.php,src/Position.php,src/TreeFixResult.php' }
           - { db: sqlite,  db_connection: sqlite }
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
@@ -245,6 +252,19 @@ jobs:
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
+      # Captures baseline disk + memory just before infection. If a cell
+      # later trips the host SIGTERM watchdog ("##[error]The runner has
+      # received a shutdown signal"), the post-mortem has hard numbers
+      # instead of guesses. Cheap (~50ms); leave in.
+      - name: Diagnostic — disk & memory baseline
+        run: |
+          echo "::group::df -h /"
+          df -h /
+          echo "::endgroup::"
+          echo "::group::free -h"
+          free -h
+          echo "::endgroup::"
+
       - name: Run Infection (shard ${{ matrix.shard }} / ${{ matrix.db }})
         env:
           DB_CONNECTION: ${{ matrix.db_connection }}
@@ -259,7 +279,7 @@ jobs:
             --logger-github \
             --no-progress \
             --no-interaction \
-            --threads=$(nproc)
+            --threads=${{ matrix.threads }}
 
       # Reduce the (very large — source is embedded per mutant) report
       # to a compact per-mutant status record before uploading.
