@@ -61,10 +61,10 @@ Calls like `appendToNode($parent)` set a `PendingOperation` on the model. The ac
 
 ### Query layer
 `src/Query/`:
-- `TreeBaseQueryBuilder` — parent of the others; cross-cutting helpers.
 - `TreeQueryBuilder` — extends Eloquent's builder; adds `whereDescendantOf`, `whereAncestorOf`, `whereIsRoot`, `withDepth`, `defaultOrder`, `withFreshAggregates`, etc. Returned automatically from any model using `NodeTrait`.
-- `TreeMutationBuilder` / `TreeRepairBuilder` / `TreeAggregateBuilder` — internal builders for the maintenance side. Tests at `tests/Feature/Query/` exercise these directly.
-- `TreeExpression` — backend-aware SQL fragment generator (LATERAL on PG/MySQL, STRAIGHT_JOIN on MySQL, derived shape on MariaDB, correlated fallback on SQLite).
+- `TreeBaseQueryBuilder` — extends Laravel's base `Query\Builder` (a separate hierarchy from `TreeQueryBuilder`). Exists solely to host the MariaDB `SET STATEMENT optimizer_switch='split_materialized=off'` prefix used by the fresh-aggregate read path. Override is consulted in `runSelect()`.
+- `TreeMutationBuilder` / `TreeRepairBuilder` — internal builders for the write and repair paths. Tests at `tests/Feature/Query/` exercise these directly.
+- `TreeExpression` — thin `Expression` wrapper that lets dynamically composed (but package-owned) SQL bypass Laravel's `@template TValue of literal-string|int|float` constraint. Not a backend dispatcher — the per-driver SQL shapes (LATERAL on PG/MySQL, derived-table on MariaDB, correlated fallback on SQLite) live in `src/Query/Aggregates/Read/AggregateSqlFragments.php` and `FreshAggregateProjector.php`.
 
 ### Aggregates subsystem (`src/Aggregates/`)
 Three kinds of aggregate column, all sharing the same lifecycle hooks:
@@ -102,7 +102,7 @@ Concrete fixture types in test helpers are intentional — they exist so PHPStan
 
 ### Test categories
 - `tests/Unit/` — pure-PHP value-object tests (no DB).
-- `tests/Feature/` — DB-backed; one file per concern usually. `Corruption/` covers every corruption category in `docs/CORRUPTION.md`. Files ending `FuzzerTest.php` are tagged `#[Group('fuzzer')]` and excluded from default runs.
+- `tests/Feature/` — DB-backed; one file per concern usually. `Corruption/` covers every corruption category in `docs/maintenance/corruption.md`. Files ending `FuzzerTest.php` are tagged `#[Group('fuzzer')]` and excluded from default runs.
 - `tests/Performance/` — separate suite (`vendor/bin/phpunit testsuite Performance`). Cross-backend benchmarks; not run on PR CI.
 
 ### Testing helpers
@@ -120,5 +120,5 @@ Concrete fixture types in test helpers are intentional — they exist so PHPStan
 ## Reference docs
 
 - `README.md` — extensive usage docs; treat as the spec for the public API.
-- `docs/CORRUPTION.md` — corruption taxonomy + recovery recipes.
+- `docs/maintenance/corruption.md` — corruption taxonomy + recovery recipes.
 - `config/nestedset.php` — column names, `auto_transaction`, `aggregate_locking` (`auto`/`always`/`never`), queue routing for `queueFixAggregates`.

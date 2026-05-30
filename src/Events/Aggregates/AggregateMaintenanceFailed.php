@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Events\Aggregates;
 
 use Throwable;
+use Vusys\NestedSet\NodeTrait;
 
 /**
  * Fires when an exception escapes one of the trait's aggregate-
@@ -30,7 +31,7 @@ final readonly class AggregateMaintenanceFailed
          * One of: 'capture', 'apply', 'on_create', 'on_delete',
          * 'on_restore'. Identifies which lifecycle hook the exception
          * came out of — matches the stage strings dispatched from
-         * {@see \Vusys\NestedSet\NodeTrait::runAggregateHook()}.
+         * {@see NodeTrait::runAggregateHook()}.
          */
         public string $stage,
         public Throwable $exception,
