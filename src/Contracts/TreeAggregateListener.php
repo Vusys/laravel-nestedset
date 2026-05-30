@@ -22,8 +22,11 @@ interface TreeAggregateListener
     /**
      * Returns this node's numeric contribution to the aggregate.
      *
-     * Return null to exclude the node (relevant for Min/Max; for Sum
-     * null is treated as 0).
+     * Return null to exclude the node from the aggregate. For Sum the
+     * end value is the same as returning 0 (both add nothing); for
+     * Count, Avg, Min, and Max returning null and returning 0 produce
+     * different results — null skips the row entirely (no +1 to count,
+     * no extremum candidate), 0 still counts as a contributing row.
      *
      * @param  Model  $node  the node being evaluated
      */

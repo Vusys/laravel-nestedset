@@ -154,11 +154,21 @@ $computers->nextSibling()->name;        // 'Audio'
 
 ## The refresh footgun
 
-> Pass a fresh copy of the parent / sibling (`->refresh()`) when you've inserted other rows since loading it.
+> After mutating under a node you hold a reference to, call `->refresh()` on it before reading from it again.
 
-The trait re-reads the target's bounds from the database before mutating, so the tree stays safe against stale `parent_id`s — but it can't refresh nodes you handed it. After any mutation, the in-memory copy you used as a target has stale `lft` / `rgt` values; the next mutation against that same instance must `->refresh()` first or risk inserting at the wrong slot.
+The trait re-reads the target's `lft` / `rgt` from the database inside every mutation, so the **mutation itself is safe** against stale target instances — passing an out-of-date parent or sibling can't cause a wrong-slot insert. What goes stale is the in-memory model **after** the mutation: every insert shifts ancestors' `rgt` (and may shift siblings' bounds too), but the in-memory copy you handed in still carries the pre-mutation values.
 
-The asymmetry is deliberate: the **target** node is read fresh from the DB inside every mutation (the package owns that read), so a stale target instance can't cause wrong-slot inserts — but the **moving** node is the user's object and the package can't safely refresh it without clobbering pending in-memory changes you may want persisted. If you've held a reference to a parent / sibling across multiple mutations, refresh that reference; if you've only handed it to one `appendToNode(...)->save()`, you don't need to.
+The footgun is **subsequent reads** off that stale instance. Any method that derives from `getBounds()` — `->descendants()->get()`, `->getSubtreeSize()`, `getDescendantCount()`, the inspection predicates — uses the in-memory `lft` / `rgt`, so they return wrong answers until you refresh:
+
+```php
+$root->saveAsRoot();
+$child->appendToNode($root)->save();
+
+$root->descendants()->get();             // EMPTY — $root->rgt is still 2 in memory
+$root->refresh()->descendants()->get();  // collection containing $child
+```
+
+The asymmetry is deliberate: the **target** node is read fresh from the DB inside the mutation (the package owns that read), but the **moving** node and any sibling/parent references you keep across calls are your objects — the package can't safely refresh them without clobbering pending in-memory changes you may want persisted. Rule of thumb: if you held a reference to a parent / sibling across a mutation that touched its subtree, refresh it before reading from it again.
 
 ## Cross-tree moves
 

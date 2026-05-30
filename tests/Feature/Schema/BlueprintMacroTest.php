@@ -23,7 +23,7 @@ final class BlueprintMacroTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_nested_set_macro_creates_four_columns(): void
+    public function test_nested_set_macro_adds_lft_rgt_parent_id_and_depth_columns(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();

@@ -81,14 +81,14 @@ The `NodeMoved` / `SubtreeMoved` pair exists because moving an interior node ren
 
 | Event | Fires when | Payload |
 |---|---|---|
-| `FixAggregatesCompleted` | `Model::fixAggregates()` finishes (sync, single-shot or chunked) | `perColumn`, `totalRowsUpdated`, `durationMs`, `chunkSize`, `totalChunks` |
-| `FixAggregatesChunkCompleted` | once per chunk in sync chunked + per dispatch in queued chunked | `chunkIndex`, `chunkSize`, `rowsUpdated`, `cursorAfter`, `durationMs` |
-| `FixAggregatesJobDispatched` | `Model::queueFixAggregates()` hands a job to the dispatcher | `chunkSize`, `onConnection`, `onQueue` |
-| `DeferredMaintenanceStarting` | outermost entry of `withDeferredAggregateMaintenance()` | `modelClass`, `anchorId` |
-| `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair | `rowsFixed`, `closureDurationMs`, `repairDurationMs` |
+| `FixAggregatesCompleted` | `Model::fixAggregates()` finishes (sync, single-shot or chunked) | `anchorId`, `totalRowsUpdated`, `perColumn`, `durationMs`, `chunkSize`, `totalChunks` |
+| `FixAggregatesChunkCompleted` | once per chunk in sync chunked + per dispatch in queued chunked | `anchorId`, `chunkIndex`, `chunkSize`, `rowsUpdated`, `cursorAfter`, `durationMs` |
+| `FixAggregatesJobDispatched` | `Model::queueFixAggregates()` hands a job to the dispatcher | `anchorId`, `chunkSize`, `onConnection`, `onQueue` |
+| `DeferredMaintenanceStarting` | outermost entry of `withDeferredAggregateMaintenance()` | `anchorId` |
+| `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair | `anchorId`, `rowsFixed`, `closureDurationMs`, `repairDurationMs` |
 | `NodeAggregatesRecomputed` | once per lifecycle hook (`on_create` / `on_delete` / `on_restore` / `move`) when the model declares aggregates | `nodeId`, `columns`, `stage` |
 | `AggregateDriftDetected` | `aggregateErrors()` finds at least one column with non-zero drift | `anchorId`, `perColumn`, `totalDrift` |
-| `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks; the original is rethrown | `stage`, `exception` |
+| `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks; the original is rethrown | `anchorId`, `stage`, `exception` |
 
 `NodeAggregatesRecomputed` is the cache-invalidation signal: when an aggregate column on the ancestor chain has just been recomputed for this node, invalidate cached rollups under the same ancestor scope.
 

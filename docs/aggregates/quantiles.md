@@ -89,12 +89,12 @@ Category::query()
     ->withFreshAggregates([
         'in_stock_median' => Aggregate::median('price')->filter(['in_stock' => true]),
         'recent_p95'      => Aggregate::percentile('viewed_at', 0.95)
-            ->filterRaw('viewed_at > ?', ['viewed_at']),
+            ->filterRaw("viewed_at > '2020-01-01'", ['viewed_at']),
     ])
     ->get();
 ```
 
-`filterRawWatches` doesn't matter here in the maintenance sense — there's nothing to maintain — but the value must still be syntactically valid for the SQL emitter to thread the predicate through.
+`filterRaw()` inlines its SQL verbatim — write the predicate with literal values, not `?` bound parameters, since the package does not parameter-bind filter SQL (see [Filtered Aggregates → security note](filtered.html#filter-forms)). The `$watches` list is required by the signature but doesn't drive maintenance here — there's nothing to maintain — pass `[]` if the predicate references no columns, or list every referenced column otherwise.
 
 ## When to reach for quantiles vs. stored aggregates
 

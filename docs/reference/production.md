@@ -48,12 +48,17 @@ fresh-aggregate path running unexpectedly slow on MariaDB.
 
 > [!NOTE]
 > The flag is consulted inside `Builder::runSelect()` only — i.e. it
-> takes effect on `->get()` / `->first()` / `->cursor()` / `->paginate()`.
-> Aggregate calls that bypass `runSelect()` (`->count()`, `->sum()`,
-> `->exists()`) and DML calls (`->update()`, `->delete()`) don't carry
-> the prefix. In practice this matches the use case — the fresh-aggregate
-> overhead is on the row-returning paths — but worth knowing if you
-> profile a `->count()` and wonder why the optimisation didn't show up.
+> takes effect on `->get()` / `->first()` / `->paginate()` / `->chunk()`
+> (all of which funnel through `get()` → `runSelect()`). Calls that
+> bypass `runSelect()` — `->cursor()` (calls `Connection::cursor()`
+> directly), aggregate methods (`->count()`, `->sum()`, `->exists()`),
+> and DML (`->update()`, `->delete()`) — don't carry the prefix. In
+> practice this matches the use case — the fresh-aggregate overhead is
+> on the row-returning paths — but worth knowing if you profile a
+> `->count()` (or stream via `->cursor()`) and wonder why the
+> optimisation didn't show up. For cursor-style streaming over a
+> derived-shape fresh-read query on MariaDB, wrap the read in a
+> `chunk()` instead.
 
 ## Telemetry
 

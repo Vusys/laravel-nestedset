@@ -261,6 +261,8 @@ SELECT child.id, child.parent_id, child.name
  WHERE child.parent_id IS NOT NULL AND parent.id IS NULL;
 ```
 
+> **Scoped tables.** For `#[NestedSetScope]` models, equate the scope columns inside the JOIN — `ON parent.id = child.parent_id AND parent.menu_id = child.menu_id` — and add `AND child.menu_id = ?` to the outer `WHERE`. A child whose `parent_id` happens to match a row in a *different* scope would otherwise join successfully and mask the orphan; the package's `orphanQuery()` (`src/Query/TreeRepairBuilder.php`) does this scope-equality on the JOIN for the same reason.
+
 **Find aggregate drift on one column** (e.g. `articles_total`):
 
 ```sql
@@ -274,6 +276,8 @@ SELECT outer_a.id, outer_a.articles_total AS stored, agg.computed
   ) AS agg ON agg.outer_id = outer_a.id
  WHERE outer_a.articles_total <> agg.computed;
 ```
+
+> **Soft deletes and scopes.** This is the canonical form for an inclusive `SUM(articles)` over an unscoped, hard-delete-only table. For tables with `SoftDeletes`, add `AND d.deleted_at IS NULL` to the inner join (and the same on `outer_a` if you want trashed ancestors to be skipped too) — the package's maintenance excludes soft-deleted descendants, so without the filter this query will report false drift. For scoped models, add the scope equality to both `o`/`d` and `outer_a`/`agg`. The package's `withFreshAggregates()` (`src/Query/Aggregates/Read/FreshAggregateProjector.php`) emits both predicates automatically — call it instead of writing the SQL by hand whenever you can.
 
 **Spot-check a single node**: list its subtree via the lft predicate and via `parent_id` recursion, then compare row counts. Disagreement means either bounds are wrong (run `fixTree()`) or there's a cycle in that subtree.
 
