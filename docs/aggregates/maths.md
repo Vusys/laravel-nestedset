@@ -83,5 +83,10 @@ The SQL guards against the closely related "tiny negative variance" case (a near
 
 ## Limitations
 
-- **Listener aggregates** (variance over a PHP-computed contribution) are not supported in this milestone. Use SQL aggregates for variance and stddev, or maintain Sum + SumSq + Count manually and derive the variance in your application code.
-- **Exclusive variance / stddev** route through the chain-recompute path (the same path used for exclusive Avg). This is correct but slower than the cheap inline delta — prefer inclusive declarations unless your domain genuinely needs the exclusive value.
+### Listener aggregates are not supported
+
+Variance over a PHP-computed contribution is not supported in this milestone. Use SQL aggregates for variance and stddev, or maintain Sum + SumSq + Count manually and derive the variance in your application code.
+
+### Exclusive variance / stddev route through chain recompute
+
+Same path used for exclusive Avg. This is correct but slower than the cheap inline delta — prefer inclusive declarations unless your domain genuinely needs the exclusive value.

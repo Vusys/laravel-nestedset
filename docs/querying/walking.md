@@ -231,9 +231,17 @@ If you have already loaded the subtree, `flattenedSubtree` is free. If you haven
 
 Other rough edges to know about:
 
-- **Orphans.** Nodes in the loaded collection whose `parent_id` doesn't match any other loaded row (and isn't the walk root) are unreachable from the root and silently skipped. Walk by reachability, not by raw membership.
-- **Partial loads are honoured.** If you load only depth 0 + 1, the walker treats the depth-1 nodes as leaves. It will not fetch their children for you.
-- **Attribute mutations are fine.** Mutating non-structural attributes (e.g. `$node->name = 'new'`) inside a visitor is safe — the walker doesn't observe attribute changes. The structural index is only sensitive to `parent_id`.
+### Orphans
+
+Nodes in the loaded collection whose `parent_id` doesn't match any other loaded row (and isn't the walk root) are unreachable from the root and silently skipped. Walk by reachability, not by raw membership.
+
+### Partial loads are honoured
+
+If you load only depth 0 + 1, the walker treats the depth-1 nodes as leaves. It will not fetch their children for you.
+
+### Attribute mutations are fine
+
+Mutating non-structural attributes (e.g. `$node->name = 'new'`) inside a visitor is safe — the walker doesn't observe attribute changes. The structural index is only sensitive to `parent_id`.
 
 ## Comparison with `toTree()`
 

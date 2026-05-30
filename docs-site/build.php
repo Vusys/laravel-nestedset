@@ -50,8 +50,7 @@ foreach ($pages as $i => $page) {
 
     $result = $converter->convert(expandCallouts($raw));
     $html = (string) $result;
-    $toc = extractToc($html);
-    $bodyHtml = stripFirstToc($html);
+    [$bodyHtml, $toc] = autoNumberHeadingsAndToc($html);
 
     $title = $page['title'];
     $outRel = relativeOutputPath($page['file'], $i === 0);
@@ -93,7 +92,7 @@ function makeConverter(): MarkdownConverter
             'html_class' => 'toc',
             'position' => 'top',
             'min_heading_level' => 2,
-            'max_heading_level' => 3,
+            'max_heading_level' => 4,
             'normalize' => 'relative',
         ],
     ]);
@@ -382,6 +381,89 @@ function stripFirstToc(string $html): string
     $span = findTocSpan($html);
 
     return $span === null ? $html : substr($html, 0, $span[0]).substr($html, $span[0] + $span[1]);
+}
+
+/**
+ * Auto-number H2/H3 headings ("1.", "1.1", "2.", "2.1", "2.2", "3."…), apply
+ * the same numbers to the auto-generated TOC entries, move the TOC just below
+ * the first H1, and return [bodyHtml, tocHtmlForSidebar]. Pages without an H2
+ * are returned unchanged with an empty TOC.
+ */
+function autoNumberHeadingsAndToc(string $html): array
+{
+    if (trim($html) === '') {
+        return [$html, ''];
+    }
+
+    $numbers = [];
+    $h2 = 0;
+    $h3 = 0;
+    $h4 = 0;
+
+    $html = preg_replace_callback(
+        '#<h([234])([^>]*?)>(.*?)</h\1>#s',
+        function (array $m) use (&$h2, &$h3, &$h4, &$numbers): string {
+            $level = (int) $m[1];
+            $attrs = $m[2];
+            $inner = $m[3];
+
+            if ($level === 2) {
+                $h2++;
+                $h3 = 0;
+                $h4 = 0;
+                $number = $h2.'.';
+            } elseif ($level === 3) {
+                if ($h2 === 0) {
+                    return $m[0];
+                }
+                $h3++;
+                $h4 = 0;
+                $number = "{$h2}.{$h3}";
+            } else {
+                if ($h2 === 0 || $h3 === 0) {
+                    return $m[0];
+                }
+                $h4++;
+                $number = "{$h2}.{$h3}.{$h4}";
+            }
+
+            if (preg_match('/\bid="([^"]+)"/', $attrs.' '.$inner, $idm) === 1) {
+                $numbers[$idm[1]] = $number;
+            }
+
+            $prefix = '<span class="heading-number">'.$number.'</span> ';
+            if (preg_match('#^(\s*<a\b[^>]*class="heading-anchor"[^>]*>.*?</a>)(.*)$#s', $inner, $am) === 1) {
+                $newInner = $am[1].$prefix.$am[2];
+            } else {
+                $newInner = $prefix.$inner;
+            }
+
+            return "<h{$level}{$attrs}>{$newInner}</h{$level}>";
+        },
+        $html
+    );
+
+    $span = findTocSpan($html);
+    if ($span !== null && $numbers !== []) {
+        $tocHtml = substr($html, $span[0], $span[1]);
+        $tocHtml = preg_replace_callback(
+            '~(<a\s+href="\#)([^"]+)("\s*>)~',
+            function (array $m) use ($numbers): string {
+                if (! isset($numbers[$m[2]])) {
+                    return $m[0];
+                }
+
+                return $m[0].'<span class="toc-number">'.$numbers[$m[2]].'</span> ';
+            },
+            $tocHtml
+        );
+        $html = substr($html, 0, $span[0]).$tocHtml.substr($html, $span[0] + $span[1]);
+    }
+
+    $sidebarToc = extractToc($html);
+    $html = stripFirstToc($html);
+
+    return [$html, $sidebarToc];
 }
 
 function renderLayout(string $file, array $vars): string

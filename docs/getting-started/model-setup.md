@@ -91,45 +91,31 @@ per-user folder structures — add `#[NestedSetScope]`. See
 
 The trait throws two categories of typed exception. **Programmer-error exceptions** (`\LogicException` subclasses) signal misuse — callers shouldn't try to catch and recover from these in normal flow. **Runtime exceptions** (`\RuntimeException` subclasses) signal data-state problems that may legitimately need handling — corrupted trees, source values outside an aggregate's domain.
 
-**Programmer-error (`LogicException`):**
+### Programmer-error (`LogicException`)
 
-- **`Vusys\NestedSet\Exceptions\UnplacedNodeException`** — `save()`
-  was called on a new node that hasn't been placed in any tree (no
-  `appendToNode` / `prependToNode` / `insertBeforeNode` /
-  `insertAfterNode` / `makeRoot`). Check
-  `$node->isPlacedInTree()` if you need to gate the call.
-- **`Vusys\NestedSet\Exceptions\ScopeViolationException`** — a write
-  crossed scope boundaries on a `#[NestedSetScope]` model
-  (`appendToNode($parentInDifferentScope)`), or a scoped model called
-  one of the methods that requires a scoping argument without it:
-  - `fixTree`, `fixAggregates`, `aggregateErrors` — each requires a
-    `?HasNestedSet $anchor` argument.
-  - `bulkInsertTree` — requires a `?HasNestedSet $appendTo` second
-    argument. `$appendTo` plays the same anchor role on this method
-    (the inserted rows land under that node and inherit its scope).
+#### `UnplacedNodeException`
 
-  The anchor rule prevents accidental full-table walks across millions
-  of rows in many trees. See
-  [Scoped Trees](../querying/scoped-trees.html).
-- **`Vusys\NestedSet\Exceptions\AggregateConfigurationException`** —
-  thrown at registry build time when a `#[NestedSetAggregate]`
-  declaration is malformed (zero or multiple aggregate functions, more
-  than one filter form, empty `filterRawWatches` without the
-  no-column-dependencies opt-in). Boot-time failure by design —
-  surfaces config errors before they become silent drift in
-  production. See [Aggregates → Declaring](../aggregates/declaring.html)
-  and [Filtered Aggregates](../aggregates/filtered.html).
+`save()` was called on a new node that hasn't been placed in any tree (no `appendToNode` / `prependToNode` / `insertBeforeNode` / `insertAfterNode` / `makeRoot`). Check `$node->isPlacedInTree()` if you need to gate the call.
 
-**Runtime (`RuntimeException`):**
+#### `ScopeViolationException`
 
-- **`Vusys\NestedSet\Exceptions\CorruptTreeException`** — the
-  exporters and a few read paths fold the subtree in PHP and refuse
-  to silently infinite-loop on a `parent_id` cycle. Surfaces only on
-  pre-existing corruption (raw `UPDATE` on `parent_id` that bypassed
-  the package); fix with [Tree Repair](../maintenance/fix-tree.html).
-- **`Vusys\NestedSet\Exceptions\AggregateSourceConstraintViolationException`** —
-  a save wrote a non-positive value into a `geometricMean` source
-  column, or zero into a `harmonicMean` source column. Either reject
-  the value upstream or declare the aggregate with
-  `allowNonPositive()` to silently skip violating rows instead. See
-  [Geometric & Harmonic Mean](../aggregates/means.html#the-positivity--non-zero-constraint).
+A write crossed scope boundaries on a `#[NestedSetScope]` model (`appendToNode($parentInDifferentScope)`), or a scoped model called one of the methods that requires a scoping argument without it:
+
+- `fixTree`, `fixAggregates`, `aggregateErrors` — each requires a `?HasNestedSet $anchor` argument.
+- `bulkInsertTree` — requires a `?HasNestedSet $appendTo` second argument. `$appendTo` plays the same anchor role on this method (the inserted rows land under that node and inherit its scope).
+
+The anchor rule prevents accidental full-table walks across millions of rows in many trees. See [Scoped Trees](../querying/scoped-trees.html).
+
+#### `AggregateConfigurationException`
+
+Thrown at registry build time when a `#[NestedSetAggregate]` declaration is malformed (zero or multiple aggregate functions, more than one filter form, empty `filterRawWatches` without the no-column-dependencies opt-in). Boot-time failure by design — surfaces config errors before they become silent drift in production. See [Aggregates → Declaring](../aggregates/declaring.html) and [Filtered Aggregates](../aggregates/filtered.html).
+
+### Runtime (`RuntimeException`)
+
+#### `CorruptTreeException`
+
+The exporters and a few read paths fold the subtree in PHP and refuse to silently infinite-loop on a `parent_id` cycle. Surfaces only on pre-existing corruption (raw `UPDATE` on `parent_id` that bypassed the package); fix with [Tree Repair](../maintenance/fix-tree.html).
+
+#### `AggregateSourceConstraintViolationException`
+
+A save wrote a non-positive value into a `geometricMean` source column, or zero into a `harmonicMean` source column. Either reject the value upstream or declare the aggregate with `allowNonPositive()` to silently skip violating rows instead. See [Geometric & Harmonic Mean](../aggregates/means.html#the-positivity--non-zero-constraint).

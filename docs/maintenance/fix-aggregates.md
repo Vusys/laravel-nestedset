@@ -62,19 +62,27 @@ public static function withDeferredAggregateMaintenance(
 
 The wrapper returns whatever the closure returns — `mixed`, generically typed (`@template T` → `T`) so the inferred return type matches the closure body.
 
-**What still fires inside the closure:**
+### What still fires inside the closure
+
 - Every Eloquent event (`saving` / `created` / `saved` / `deleted` / `restoring` / `restored`)
 - Mutators, casts, mass-assignment guards, observers — exactly as they would outside the block
 
-**What's deferred:**
+### What's deferred
+
 - The trait's per-row aggregate-column updates on the ancestor chain (`articles_total`, `articles_count_all`, etc.)
 - All the MIN/MAX recompute and AVG companion writes that normally piggy-back on each save
 
-**Re-entrant.** Nested calls share one counter and only the outermost call triggers the final repair — fine to wrap a higher-level batch around a callee that already defers.
+### Re-entrant
 
-**Failure-safe.** If the closure throws, the counter still decrements and `fixAggregates()` still fires before the exception propagates — leaving the table half-repaired would be worse than spending the fix cost. A secondary error inside the repair is logged via `error_log` (so the primary exception wins) and the caller is responsible for re-running `fixAggregates()` once they've handled the primary failure.
+Nested calls share one counter and only the outermost call triggers the final repair — fine to wrap a higher-level batch around a callee that already defers.
 
-**Observability.** The outermost call dispatches `DeferredMaintenanceStarting` on entry and `DeferredAggregateMaintenanceCompleted` on a successful exit (carrying `rowsFixed`, `closureDurationMs`, `repairDurationMs`). A throw inside the closure skips the completion event — that signal is reserved for batches that ran to completion, so listeners can use it as a "batch boundary" marker. The package's own `bulkInsertTree()` uses this same wrapper internally — see the [Bulk Insertion](../tree-operations/bulk-insertion.html) docs for that integration.
+### Failure-safe
+
+If the closure throws, the counter still decrements and `fixAggregates()` still fires before the exception propagates — leaving the table half-repaired would be worse than spending the fix cost. A secondary error inside the repair is logged via `error_log` (so the primary exception wins) and the caller is responsible for re-running `fixAggregates()` once they've handled the primary failure.
+
+### Observability
+
+The outermost call dispatches `DeferredMaintenanceStarting` on entry and `DeferredAggregateMaintenanceCompleted` on a successful exit (carrying `rowsFixed`, `closureDurationMs`, `repairDurationMs`). A throw inside the closure skips the completion event — that signal is reserved for batches that ran to completion, so listeners can use it as a "batch boundary" marker. The package's own `bulkInsertTree()` uses this same wrapper internally — see the [Bulk Insertion](../tree-operations/bulk-insertion.html) docs for that integration.
 
 Trade-off: this trades N small ancestor UPDATEs for one all-at-once repair pass. The repair touches every row whose stored aggregates may have drifted, so it's worth it when N is large (CSV imports, scripts, fixture seeding) and a poor fit for one-or-two saves where the per-row update is already cheap.
 

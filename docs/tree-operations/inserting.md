@@ -101,9 +101,17 @@ $tablets->moveAfter($audio);     // wraps insertAfterNode($audio)
 
 ### Things to know
 
-- **Same-position moves still emit `NodeMoved`.** Resolving to a position the node already occupies skips the structural SQL — the underlying `CASE WHEN` is a no-op — but the event surface still fires with `fromBounds === toBounds`. Consumers wiring audit listeners that treat `NodeMoved` as "the tree changed" should filter on `fromBounds !== toBounds`.
-- **Cross-scope rejection happens at different times depending on the position arm.** Integer positions ≥ 1 do an eager `assertSameScope` (the sibling lookup needs scope to build the query); the string-equivalent arms (`'first'`, `'last'`, `0`) defer to `save()` time, matching the primitives they wrap.
-- **The parent must be saved for integer positions ≥ 1.** `moveTo($unsavedParent, 1)` throws `LogicException` because there's no parent key to look up siblings against. `'first'` / `'last'` / `0` delegate straight to the primitives without that constraint (though `save()` will still fail against an unplaced parent).
+#### Same-position moves still emit `NodeMoved`
+
+Resolving to a position the node already occupies skips the structural SQL — the underlying `CASE WHEN` is a no-op — but the event surface still fires with `fromBounds === toBounds`. Consumers wiring audit listeners that treat `NodeMoved` as "the tree changed" should filter on `fromBounds !== toBounds`.
+
+#### Cross-scope rejection happens at different times depending on the position arm
+
+Integer positions ≥ 1 do an eager `assertSameScope` (the sibling lookup needs scope to build the query); the string-equivalent arms (`'first'`, `'last'`, `0`) defer to `save()` time, matching the primitives they wrap.
+
+#### The parent must be saved for integer positions ≥ 1
+
+`moveTo($unsavedParent, 1)` throws `LogicException` because there's no parent key to look up siblings against. `'first'` / `'last'` / `0` delegate straight to the primitives without that constraint (though `save()` will still fail against an unplaced parent).
 
 ## up / down — reorder among siblings
 

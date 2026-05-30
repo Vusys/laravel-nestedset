@@ -205,10 +205,14 @@ public function moveNode(NodeBounds $from, int $position, int $depthDelta): void
 }
 ```
 
+### The band
+
 The idea (credited in the source to the kalnoy/nestedset move trick): only rows inside the **band** `[boundFrom, boundTo]` move at all — everything outside it is untouched. Within the band there are two groups:
 
 - the **moving subtree** (`lft..rgt`), which shifts by `subtreeShift`;
 - the **bystanders** — rows the subtree slides past — which shift by `bystanderShift` to fill the space the subtree vacates (or to open the space it needs). The bystander shift is exactly `∓height`, because the subtree occupies `height` slots.
+
+### `WHEN`-clause ordering
 
 `shiftCase()` emits the per-column `CASE`, and the ordering of the `WHEN`s is load-bearing:
 

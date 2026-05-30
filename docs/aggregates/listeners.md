@@ -166,7 +166,18 @@ $node->freshAggregate('weighted_power'); // PHP-computed fresh value for one nod
 
 ## Listener aggregate limitations
 
-- **`withFreshAggregates()` does not cover listener columns** — the collection-level fresh-read path is SQL-only. Use `freshAggregate('col')` for a single node or repair the whole set with `fixAggregates()`.
-- **`fixAggregates()` is O(N²) for listener columns** — it loads every in-scope node and scans each node's subtree in PHP. Use `withDeferredAggregateMaintenance()` for batch mutations to amortise the cost down to one pass.
-- **Listener repair / Min-Max recompute holds the bounding-box subtree in PHP memory.** `fixAggregates()` loads every in-scope Eloquent model; the Min/Max recompute path loads every in-scope node under the topmost affected ancestor. At N > ~100K nodes this is the more pressing constraint than CPU. Anchored `fixAggregates($subtreeRoot)` and chunked `fixAggregates(chunkSize: …)` both bound the working set.
-- **Filters are encoded in the listener itself** — there is no `filter:` param on `#[NestedSetAggregateListener]`. Return `null` from `contribution()` to exclude a node, or `0` / `1` to count conditionally.
+### No `withFreshAggregates()` support
+
+The collection-level fresh-read path is SQL-only and does not cover listener columns. Use `freshAggregate('col')` for a single node, or repair the whole set with `fixAggregates()`.
+
+### `fixAggregates()` is O(N²) for listener columns
+
+It loads every in-scope node and scans each node's subtree in PHP. Use `withDeferredAggregateMaintenance()` for batch mutations to amortise the cost down to one pass.
+
+### Repair / Min-Max recompute holds the bounding-box subtree in PHP memory
+
+`fixAggregates()` loads every in-scope Eloquent model; the Min/Max recompute path loads every in-scope node under the topmost affected ancestor. At N > ~100K nodes this is the more pressing constraint than CPU. Anchored `fixAggregates($subtreeRoot)` and chunked `fixAggregates(chunkSize: …)` both bound the working set.
+
+### Filters are encoded in the listener itself
+
+There is no `filter:` param on `#[NestedSetAggregateListener]`. Return `null` from `contribution()` to exclude a node, or `0` / `1` to count conditionally.

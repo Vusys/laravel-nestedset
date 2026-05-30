@@ -64,10 +64,24 @@ The job is idempotent — running it against a clean tree finds zero drift and w
 
 ## Limitations and footguns
 
-- **Soft-delete cascade preserves stored aggregates on the soft-deleted subtree;** ancestor chain is decremented. `restored` re-adds.
-- **`replicate()` clones reset every aggregate column** to the function's empty element. Count-shaped kinds (`Sum`, `Count`, `DistinctCount`) reset to `0`; every other kind — `Avg`, `Min`, `Max`, `Variance`, `Stddev`, `WeightedAvg`, `BoolOr`, `BoolAnd`, `GeometricMean`, `HarmonicMean`, `BitOr`, `BitAnd`, `BitXor`, `StringAgg`, `JsonAgg`, `JsonObjectAgg` — resets to `NULL`. (The behaviour delegates to `AggregateFunction::nullableOnEmpty()`, so the partition matches the storage `nullable` flag exactly.) The clone backfills correctly on placement.
-- **Plain `Category::create(...)` without `appendToNode()` / `makeRoot()`** leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance is skipped until the node is placed in the tree. Check the state with `$node->isPlacedInTree(): bool` — returns false when both `lft` and `rgt` are still the migration default.
-- **AVG over a nullable source.** `avg: 'col'` uses `AVG(col)`, which skips NULL rows. If the source is nullable, the auto-promoted COUNT companion uses `COUNT(col)` (which also skips NULLs — i.e. counts only non-NULL rows) so the ratio stays consistent.
-- **MIN/MAX recompute cost.** Deletes and source-decreasing updates that invalidate the stored extremum trigger a SELECT-then-UPDATE recompute. Cheap-skipped when the change couldn't have affected the extremum — but if you have a deep, wide tree with hot MIN/MAX columns, expect occasional spikes. The SELECT-then-UPDATE concurrency behaviour is governed by [`aggregate_locking`](../reference/config.html#aggregate_locking) — default `'auto'` adds a row-level lock on backends that need it, the cost of which scales with subtree size.
+### Soft-delete cascade preserves stored aggregates
+
+The soft-deleted subtree keeps its own rolled-up values; the ancestor chain is decremented. `restored` re-adds.
+
+### `replicate()` resets aggregate columns
+
+Clones reset every aggregate column to the function's empty element. Count-shaped kinds (`Sum`, `Count`, `DistinctCount`) reset to `0`; every other kind — `Avg`, `Min`, `Max`, `Variance`, `Stddev`, `WeightedAvg`, `BoolOr`, `BoolAnd`, `GeometricMean`, `HarmonicMean`, `BitOr`, `BitAnd`, `BitXor`, `StringAgg`, `JsonAgg`, `JsonObjectAgg` — resets to `NULL`. (The behaviour delegates to `AggregateFunction::nullableOnEmpty()`, so the partition matches the storage `nullable` flag exactly.) The clone backfills correctly on placement.
+
+### Unplaced nodes skip aggregate maintenance
+
+Plain `Category::create(...)` without `appendToNode()` / `makeRoot()` leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance is skipped until the node is placed in the tree. Check the state with `$node->isPlacedInTree(): bool` — returns false when both `lft` and `rgt` are still the migration default.
+
+### AVG over a nullable source
+
+`avg: 'col'` uses `AVG(col)`, which skips NULL rows. If the source is nullable, the auto-promoted COUNT companion uses `COUNT(col)` (which also skips NULLs — i.e. counts only non-NULL rows) so the ratio stays consistent.
+
+### MIN/MAX recompute cost
+
+Deletes and source-decreasing updates that invalidate the stored extremum trigger a SELECT-then-UPDATE recompute. Cheap-skipped when the change couldn't have affected the extremum — but if you have a deep, wide tree with hot MIN/MAX columns, expect occasional spikes. The SELECT-then-UPDATE concurrency behaviour is governed by [`aggregate_locking`](../reference/config.html#aggregate_locking) — default `'auto'` adds a row-level lock on backends that need it, the cost of which scales with subtree size.
 
 See `tests/Feature/Aggregates/` for executable examples of every maintenance path.

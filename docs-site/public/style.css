@@ -276,6 +276,16 @@ code, pre, .sidebar-brand {
 .prose h4:hover .heading-anchor,
 .prose .heading-anchor:focus { opacity: 1; }
 
+.prose .heading-number {
+    color: var(--fg-muted);
+    font-weight: 500;
+}
+
+.toc-sidebar .toc-number {
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 .toc-sidebar {
     position: sticky;
     top: 2.5rem;
@@ -319,6 +329,7 @@ code, pre, .sidebar-brand {
     font-size: 0.95em;
 }
 .toc-sidebar li li li a { padding-left: 2.4rem; }
+.toc-sidebar li li li li a { padding-left: 3.3rem; font-size: 0.9em; }
 
 .page-nav {
     display: grid;

@@ -181,8 +181,22 @@ Calling `*Scope` on an unscoped model throws `LogicException` — use the `*Fore
 
 ## Edge cases
 
-- **Soft deletes.** Excluded by default. Pass `withTrashed: true` on any options object to include them; combine with a custom `label` closure if you want to mark them visually (`[deleted] {$name}`).
-- **Unplaced node** (`lft = rgt = 0`). The descendants query returns nothing, so the export is just the root row.
-- **Cyclic `parent_id`.** Detected during the fold; throws `Vusys\NestedSet\Exceptions\CorruptTreeException` rather than infinite-looping. This only triggers on corrupt data — see [Tree Repair](../maintenance/fix-tree.md).
-- **Label fallback.** If the `label` closure throws or returns `null` / `''` / a non-stringable object, the renderer falls back to the primary key.
-- **Large trees.** The exporters are debug / UI tools, not analytics pipelines — they load the whole subtree into memory. Use `maxDepth` for ASCII rendering, or paginate by anchor for forests larger than ~10k nodes.
+### Soft deletes
+
+Excluded by default. Pass `withTrashed: true` on any options object to include them; combine with a custom `label` closure if you want to mark them visually (`[deleted] {$name}`).
+
+### Unplaced node
+
+Where `lft = rgt = 0`. The descendants query returns nothing, so the export is just the root row.
+
+### Cyclic `parent_id`
+
+Detected during the fold; throws `Vusys\NestedSet\Exceptions\CorruptTreeException` rather than infinite-looping. This only triggers on corrupt data — see [Tree Repair](../maintenance/fix-tree.md).
+
+### Label fallback
+
+If the `label` closure throws or returns `null` / `''` / a non-stringable object, the renderer falls back to the primary key.
+
+### Large trees
+
+The exporters are debug / UI tools, not analytics pipelines — they load the whole subtree into memory. Use `maxDepth` for ASCII rendering, or paginate by anchor for forests larger than ~10k nodes.
