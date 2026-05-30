@@ -19,7 +19,12 @@ return new class extends Migration
 
             $table->unsignedInteger('tickets')->default(0);
 
-            $table->nestedSet(scope: ['tenant_id', 'site_id'], cover: ['tickets']);
+            // No `cover:` column — MySQL/MariaDB cap composite-index
+            // identifier names at 64 characters, and
+            // `multi_scoped_branches_tenant_id_site_id_lft_rgt_parent_id_tickets_index`
+            // is 70. The covering optimisation isn't load-bearing for
+            // these correctness tests.
+            $table->nestedSet(scope: ['tenant_id', 'site_id']);
 
             $table->nestedSetAggregate('tickets_total');
             $table->nestedSetAggregate('tickets_count');

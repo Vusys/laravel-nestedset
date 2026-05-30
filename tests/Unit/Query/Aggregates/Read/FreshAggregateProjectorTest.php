@@ -28,7 +28,7 @@ use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
  */
 final class FreshAggregateProjectorTest extends TestCase
 {
-    private static function call(?string $version): bool
+    private function call(?string $version): bool
     {
         $method = new ReflectionMethod(FreshAggregateProjector::class, 'mysqlVersionSupportsLateral');
 
@@ -72,6 +72,6 @@ final class FreshAggregateProjectorTest extends TestCase
     #[DataProvider('versions')]
     public function test_mysql_version_supports_lateral(?string $version, bool $expected): void
     {
-        $this->assertSame($expected, self::call($version));
+        $this->assertSame($expected, $this->call($version));
     }
 }

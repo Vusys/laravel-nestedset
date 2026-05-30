@@ -160,9 +160,9 @@ final class MultiScopeAggregateMaintenanceTest extends TestCase
         $log = DB::getQueryLog();
         $matched = false;
         foreach ($log as $entry) {
-            $sql = $entry['query'];
             // The chain-shape probe is the only query the suite emits that
             // groups by parent_id with a HAVING clause.
+            $sql = (string) $entry['query'];
             if (str_contains($sql, 'GROUP BY') && str_contains($sql, 'parent_id') && str_contains($sql, 'HAVING')) {
                 $this->assertStringContainsString('tenant_id', $sql);
                 $this->assertStringContainsString('site_id', $sql);
