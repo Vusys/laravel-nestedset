@@ -591,6 +591,32 @@ final class AggregateSqlFragmentsTest extends TestCase
     }
 
     /**
+     * Multi-column scope: the correlated raw-filter fallback must emit
+     * one `inner.col = outer.col` predicate per scope column. The loop
+     * uses `$scopeClause .= ...`, so a `.= → =` mutation would drop all
+     * but the last column — silently leaking aggregate rows across
+     * tenant boundaries. Single-column fixtures can't observe this; the
+     * data provider's other cases all use scopeCols=['menu_id'].
+     */
+    public function test_correlated_raw_filter_emits_every_scope_predicate(): void
+    {
+        $sql = AggregateSqlFragments::aggregateExpressionInJoinedContext(
+            Aggregate::sum('x')->filterRaw('active = 1', ['active'])->into('col'),
+            innerQualifier: 'd.',
+            outerAlias: 'o',
+            table: 'branches',
+            lftCol: 'lft',
+            rgtCol: 'rgt',
+            scopeCols: ['tenant_id', 'site_id'],
+            rawFilterContext: false,
+            connection: $this->sqliteConnection,
+        );
+
+        $this->assertStringContainsString('nss_rf.tenant_id = o.tenant_id', $sql);
+        $this->assertStringContainsString('nss_rf.site_id = o.site_id', $sql);
+    }
+
+    /**
      * wrapLeafFastPath drives leafInlineExpression + filteredLeafInline
      * across the function ladder, plus soft-delete wrapping.
      *

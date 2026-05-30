@@ -60,6 +60,7 @@ Format:
 
 - [Configuration](reference/config.md)
 - [Testing Helpers](reference/testing.md)
+- [Factory Tree Builder](reference/factories.md)
 - [Transactions](reference/transactions.md)
 - [Events](reference/events.md)
 - [Production Notes](reference/production.md)

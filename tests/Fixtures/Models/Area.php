@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeTrait;
+use Vusys\NestedSet\Tests\Fixtures\Factories\AreaFactory;
 
 /**
  * Fixture model exercising the aggregate column feature. The five
@@ -40,6 +43,9 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'tickets_max', max: 'tickets')]
 final class Area extends Model implements HasNestedSet
 {
+    /** @use HasFactory<AreaFactory> */
+    use HasFactory;
+
     use NodeTrait;
 
     /** @var list<string> */
@@ -58,4 +64,10 @@ final class Area extends Model implements HasNestedSet
         'tickets_min' => 'integer',
         'tickets_max' => 'integer',
     ];
+
+    /** @return Factory<self> */
+    protected static function newFactory(): Factory
+    {
+        return AreaFactory::new();
+    }
 }

@@ -44,6 +44,15 @@ return new class extends Migration
             $table->nestedSetAggregate('weighted_avg__sum');
             $table->nestedSetAggregate('weighted_avg__count');
 
+            // Exclusive listener column — counts only DESCENDANTS that
+            // match the FireCountListener predicate (the node itself
+            // never contributes to its own value). Forces the strict-
+            // bounds branch (`innerLft > outerLft && innerRgt < outerRgt`)
+            // in ListenerMaintenance and HasNestedSetAggregates; until
+            // this column existed no listener fixture was exclusive, so
+            // the `>` checks were equivalent to `>=` against the suite.
+            $table->integer('descendant_fire_count')->default(0);
+
             $table->timestamps();
             // Soft deletes so restore-path tests can exercise
             // applyAggregateOnRestore for listener aggregates.

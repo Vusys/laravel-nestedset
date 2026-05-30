@@ -36,6 +36,10 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
  * that need Eloquent (counts, fresh-aggregate fetches) additionally
  * require the node to be a `Model` — runtime-narrowed inside each
  * assertion, with a clear failure message if it isn't.
+ *
+ * For test fixtures, see {@see BuildsNestedSetTrees} — a factory mixin
+ * that hands back a real tree (`tree()` / `treeFromShape()`) backed by
+ * `bulkInsertTree` so even depth-3-branching-5 fixtures stay fast.
  */
 trait InteractsWithTrees
 {

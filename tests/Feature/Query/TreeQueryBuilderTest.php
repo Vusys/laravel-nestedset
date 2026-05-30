@@ -198,14 +198,14 @@ final class TreeQueryBuilderTest extends TestCase
     // defaultOrder / reversed
     // ----------------------------------------------------------------
 
-    public function test_default_order_sorts_by_lft_ascending(): void
+    public function test_default_order_walks_tree_in_pre_order_traversal(): void
     {
         $names = $this->q()->defaultOrder()->pluck('name')->all();
 
         $this->assertSame(['Root', 'Child A', 'AA', 'AB', 'Child B'], $names);
     }
 
-    public function test_reversed_sorts_by_lft_descending(): void
+    public function test_reversed_walks_tree_bottom_up_in_reverse_pre_order(): void
     {
         $names = $this->q()->reversed()->pluck('name')->all();
 
@@ -228,7 +228,7 @@ final class TreeQueryBuilderTest extends TestCase
     // leaves / root
     // ----------------------------------------------------------------
 
-    public function test_leaves_returns_same_as_where_is_leaf(): void
+    public function test_leaves_is_an_alias_for_where_is_leaf(): void
     {
         $via_leaves = $this->q()->leaves()->pluck('name')->sort()->values()->all();
         $via_where = $this->q()->whereIsLeaf()->pluck('name')->sort()->values()->all();

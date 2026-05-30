@@ -41,3 +41,7 @@ final class CategoryTreeTest extends TestCase
 | `assertAggregatesAreIntact($modelClass, ?$anchor)` | wraps `aggregatesAreBroken()`; failure message includes per-column drift; fails fast with a clear message when the model declares no aggregates |
 
 The trait depends only on the `HasNestedSet` contract for parameters that don't need DB access, and on `Model & HasNestedSet` for the few that do (`assertHasChildren`, `assertAggregateMatchesFresh`).
+
+## Building fixture trees
+
+For tests that need more than a flat 3-node fixture, the [Factory Tree Builder](factories.md) hands back a real placed tree in one call (`Category::factory()->tree(depth: 3, branching: 2)->create()`) — backed by `bulkInsertTree`, so even large fixtures stay fast. See [Factory Tree Builder](factories.md) for the full API.

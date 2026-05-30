@@ -38,7 +38,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'cheapest_price',  min: 'price')]
 class Category extends Model implements HasNestedSet { use NodeTrait; }
 
-// Electronics
+// Electronics                Gadgets   ← second root, products = 0
 // ├── Laptops  (products = 10)
 // └── Phones   (products = 13)
 
@@ -47,7 +47,7 @@ $electronics->refresh()->products_total;   // 23  — rolled up from descendants
 $phones->update(['products' => 20]);
 $electronics->refresh()->products_total;   // 30  — ancestors updated in the same write
 
-$phones->moveTo($gadgets)->save();         // move the Phones subtree to a different root
+$phones->moveTo($gadgets)->save();         // re-parent Phones under Gadgets
 $electronics->refresh()->products_total;   // 10  — old ancestors shrink
 $gadgets->refresh()->products_total;       // 20  — new ancestors grow
 
@@ -85,7 +85,7 @@ Full documentation lives at **<https://vusys.github.io/laravel-nestedset/>**.
 - **Querying** — [Tree Queries](https://vusys.github.io/laravel-nestedset/querying/queries.html) · [Eloquent Relations](https://vusys.github.io/laravel-nestedset/querying/relations.html) · [In-memory Tree Shaping](https://vusys.github.io/laravel-nestedset/querying/tree-shaping.html) · [Walking Subtrees](https://vusys.github.io/laravel-nestedset/querying/walking.html) · [Tree Exporters](https://vusys.github.io/laravel-nestedset/querying/exporters.html) · [Inspection](https://vusys.github.io/laravel-nestedset/querying/inspection.html) · [Scoped Trees](https://vusys.github.io/laravel-nestedset/querying/scoped-trees.html)
 - **Aggregates** — [Overview](https://vusys.github.io/laravel-nestedset/aggregates/overview.html) · [Setup](https://vusys.github.io/laravel-nestedset/aggregates/setup.html) · [Reading](https://vusys.github.io/laravel-nestedset/aggregates/reading.html) · [Declaring](https://vusys.github.io/laravel-nestedset/aggregates/declaring.html) · [Filtered](https://vusys.github.io/laravel-nestedset/aggregates/filtered.html) · [Collection](https://vusys.github.io/laravel-nestedset/aggregates/text-and-json.html) · [Listeners](https://vusys.github.io/laravel-nestedset/aggregates/listeners.html) · [Variance & Stddev](https://vusys.github.io/laravel-nestedset/aggregates/maths.html) · [Weighted Avg & Booleans](https://vusys.github.io/laravel-nestedset/aggregates/weighted-avg-and-booleans.html) · [Means](https://vusys.github.io/laravel-nestedset/aggregates/means.html) · [Quantiles](https://vusys.github.io/laravel-nestedset/aggregates/quantiles.html) · [Bitwise](https://vusys.github.io/laravel-nestedset/aggregates/bitwise.html) · [Recipes](https://vusys.github.io/laravel-nestedset/aggregates/recipes.html) · [Maintenance](https://vusys.github.io/laravel-nestedset/aggregates/maintenance.html) · [Drift & Limitations](https://vusys.github.io/laravel-nestedset/aggregates/drift.html)
 - **Maintenance** — [Tree Repair](https://vusys.github.io/laravel-nestedset/maintenance/fix-tree.html) · [Repairing Aggregates](https://vusys.github.io/laravel-nestedset/maintenance/fix-aggregates.html) · [Corruption Reference](https://vusys.github.io/laravel-nestedset/maintenance/corruption.html)
-- **Reference** — [Configuration](https://vusys.github.io/laravel-nestedset/reference/config.html) · [Testing Helpers](https://vusys.github.io/laravel-nestedset/reference/testing.html) · [Transactions](https://vusys.github.io/laravel-nestedset/reference/transactions.html) · [Events](https://vusys.github.io/laravel-nestedset/reference/events.html) · [Production Notes](https://vusys.github.io/laravel-nestedset/reference/production.html) · [vs. kalnoy/nestedset](https://vusys.github.io/laravel-nestedset/reference/comparison.html)
+- **Reference** — [Configuration](https://vusys.github.io/laravel-nestedset/reference/config.html) · [Testing Helpers](https://vusys.github.io/laravel-nestedset/reference/testing.html) · [Factory Tree Builder](https://vusys.github.io/laravel-nestedset/reference/factories.html) · [Transactions](https://vusys.github.io/laravel-nestedset/reference/transactions.html) · [Events](https://vusys.github.io/laravel-nestedset/reference/events.html) · [Production Notes](https://vusys.github.io/laravel-nestedset/reference/production.html) · [vs. kalnoy/nestedset](https://vusys.github.io/laravel-nestedset/reference/comparison.html)
 
 The site is built from the markdown in [`docs/`](docs/) — if you spot an error, edit the source and open a PR.
 
