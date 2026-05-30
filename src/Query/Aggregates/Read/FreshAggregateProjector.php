@@ -446,12 +446,27 @@ final class FreshAggregateProjector
             return false;
         }
 
-        if (! is_string($version)) {
+        return self::mysqlVersionSupportsLateral(is_string($version) ? $version : null);
+    }
+
+    /**
+     * Pure version-string check for whether a MySQL server reports a
+     * version that supports the SQL `LATERAL` keyword. Split out from
+     * {@see supportsLateral()} so the entire decision can be unit-tested
+     * with seeded version strings — the wider helper depends on a live
+     * Connection / PDO that's awkward to fake at the version level.
+     *
+     * Returns false for null, for non-version-shaped strings, and for
+     * the MariaDB family (which advertises a MySQL-shaped version but
+     * rejects `LATERAL` as a syntax error). MySQL adopted LATERAL in
+     * 8.0.14.
+     */
+    private static function mysqlVersionSupportsLateral(?string $version): bool
+    {
+        if ($version === null) {
             return false;
         }
 
-        // MariaDB returns its version string with "MariaDB" in it; the
-        // SQL `LATERAL` keyword is not supported there.
         if (stripos($version, 'mariadb') !== false) {
             return false;
         }
@@ -464,7 +479,6 @@ final class FreshAggregateProjector
         $minor = (int) $m[2];
         $patch = (int) ($m[3] ?? 0);
 
-        // MySQL 8.0.14+ added LATERAL.
         return ($major > 8) || ($major === 8 && ($minor > 0 || $patch >= 14));
     }
 

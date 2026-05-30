@@ -38,7 +38,7 @@ final class ChainFoldAccumulatorTest extends TestCase
     /**
      * @param  Closure(): AggregateDefinition  $makeDefinition
      * @param  list<array{0: mixed, 1: mixed}>  $rows
-     * @param  list<int|bool|null>  $expectedInclusive
+     * @param  list<int|float|bool|null>  $expectedInclusive
      */
     #[DataProvider('exactKindCases')]
     public function test_exact_running_inclusive(Closure $makeDefinition, array $rows, array $expectedInclusive): void
@@ -72,10 +72,18 @@ final class ChainFoldAccumulatorTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{0: Closure(): AggregateDefinition, 1: list<array{0: mixed, 1: mixed}>, 2: list<int|bool|null>}>
+     * @return iterable<string, array{0: Closure(): AggregateDefinition, 1: list<array{0: mixed, 1: mixed}>, 2: list<int|float|bool|null>}>
      */
     public static function exactKindCases(): iterable
     {
+        // sum keeps a fractional total as float once the running sum
+        // becomes fractional — pins the int/float branch of isWhole().
+        yield 'sum returns float when the running total has a fractional part' => [
+            fn (): AggregateDefinition => Aggregate::sum('x')->into('s'),
+            [[2, null], [1.5, null], [0.5, null]],
+            [2, 3.5, 4],  // step 2: 3.5 (float, not whole); step 3: 4 (back to int via isWhole)
+        ];
+
         yield 'sum folds ints and returns int' => [
             fn (): AggregateDefinition => Aggregate::sum('x')->into('s'),
             [[2, null], [3, null], [5, null]],
@@ -235,6 +243,56 @@ final class ChainFoldAccumulatorTest extends TestCase
             [6, 26],
         ];
 
+        // String-typed numeric sources — sqlite (and a handful of cast
+        // configurations on other backends) return numeric column values
+        // as PHP strings. The chain-fold relies on explicit (int)/(float)
+        // casts at the boundary; dropping any of them would either coerce
+        // implicitly (silently passing) or violate the int|float return
+        // type and throw downstream. Stringy inputs pin those boundary
+        // casts directly — pure-int rows can't distinguish "value cast
+        // to float" from "value already float".
+        yield 'sum folds stringy-numeric sources to ints when whole' => [
+            fn (): AggregateDefinition => Aggregate::sum('x')->into('s'),
+            [['2', null], ['3', null], ['5', null]],
+            [2, 5, 10],
+        ];
+
+        yield 'sum keeps a fractional total as float when sources are stringy' => [
+            fn (): AggregateDefinition => Aggregate::sum('x')->into('s'),
+            [['1.5', null], ['2.25', null]],
+            [1.5, 3.75],
+        ];
+
+        yield 'min tracks stringy-numeric sources with correct types' => [
+            fn (): AggregateDefinition => Aggregate::min('x')->into('m'),
+            [['10', null], ['3', null], ['7', null]],
+            [10, 3, 3],
+        ];
+
+        yield 'max tracks stringy-numeric sources with correct types' => [
+            fn (): AggregateDefinition => Aggregate::max('x')->into('m'),
+            [['1', null], ['10', null], ['4', null]],
+            [1, 10, 10],
+        ];
+
+        yield 'bit_or accepts stringy-numeric sources' => [
+            fn (): AggregateDefinition => Aggregate::bitOr('x')->into('b'),
+            [['1', null], ['10', null], ['0', null]],
+            [1, 11, 11],
+        ];
+
+        yield 'bit_and accepts stringy-numeric sources' => [
+            fn (): AggregateDefinition => Aggregate::bitAnd('x')->into('b'),
+            [['15', null], ['10', null], ['12', null]],
+            [15, 10, 8],
+        ];
+
+        yield 'bit_xor accepts stringy-numeric sources' => [
+            fn (): AggregateDefinition => Aggregate::bitXor('x')->into('b'),
+            [['5', null], ['3', null], ['6', null]],
+            [5, 6, 0],
+        ];
+
         yield 'as-int companion (bool __sum) folds the 0/1 contribution' => [
             fn (): AggregateDefinition => new AggregateDefinition(
                 column: '__sum',
@@ -317,6 +375,34 @@ final class ChainFoldAccumulatorTest extends TestCase
         yield 'geometric mean' => [
             fn (): AggregateDefinition => Aggregate::geometricMean('x')->into('g'),
             [[2, null], [8, null]],
+            [2.0, 4.0],
+        ];
+
+        // Stringy-numeric weighted-avg sources — pins the (float)
+        // casts at ChainFoldAccumulator.php:92 / :93. Without the
+        // casts $weightNumeric * $valueNumeric would coerce implicitly,
+        // hiding mistakes in the accumulator's running types.
+        yield 'weighted avg accepts stringy-numeric values and weights' => [
+            fn (): AggregateDefinition => Aggregate::weightedAvg('x', 'w')->into('wa'),
+            [['2', '5'], ['4', '5']],
+            [2.0, 3.0],  // (5*2 + 5*4) / (5 + 5) = 30/10 = 3.0
+        ];
+
+        // Stringy-numeric companion-derived sources — pins the (float)
+        // cast at ChainFoldAccumulator.php:81 for sum-of-square and
+        // similar companions in the variance / stddev path.
+        yield 'population variance accepts stringy-numeric sources' => [
+            fn (): AggregateDefinition => Aggregate::variance('x')->into('v'),
+            [['2', null], ['4', null], ['6', null]],
+            // mean = 4, variance = ((2-4)^2 + (4-4)^2 + (6-4)^2)/3 = 8/3
+            [0.0, 1.0, 8 / 3],
+        ];
+
+        // Stringy-numeric geometric-mean source — pins the (float)
+        // cast at ChainFoldAccumulator.php:112.
+        yield 'geometric mean accepts stringy-numeric sources' => [
+            fn (): AggregateDefinition => Aggregate::geometricMean('x')->into('g'),
+            [['2', null], ['8', null]],
             [2.0, 4.0],
         ];
 
