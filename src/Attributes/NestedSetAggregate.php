@@ -26,8 +26,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  * Exactly one of `sum | count | avg | min | max | variance | stddev |
  * weightedAvg | boolOr | boolAnd | geometricMean | harmonicMean |
  * bitOr | bitAnd | bitXor | distinctCount | stringAgg | jsonAgg |
- * jsonObjectAgg` must be provided per attribute instance; passing zero
- * or more than one throws
+ * jsonObjectAgg | topK` must be provided per attribute instance; passing
+ * zero or more than one throws
  * {@see AggregateConfigurationException} when the registry resolves
  * declarations. `count: true` declares COUNT(*); for the
  * non-null-skipping COUNT(column) variant use the method-override form

@@ -35,8 +35,8 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
  *    delta-maintainable internal columns; the user-facing column is
  *    written by a SQL formula over the companions on every mutation.
  *  - *recompute-only*: Min, Max, BitOr, BitAnd, DistinctCount, StringAgg,
- *    JsonAgg, JsonObjectAgg — no companions; each mutation re-reads the
- *    subtree.
+ *    JsonAgg, JsonObjectAgg, TopK — no companions; each mutation re-reads
+ *    the subtree.
  *  - *fresh-read-only*: Median, Percentile — no companions, no maintenance;
  *    only available via `withFreshAggregates()`.
  */
@@ -101,7 +101,7 @@ enum AggregateFunction: string
      * on every mutation — no delta or cheap-skip fast path applies.
      *
      * Includes the four collection-aggregate kinds (DistinctCount / StringAgg /
-     * JsonAgg / JsonObjectAgg) plus the bitwise rollups. MIN/MAX are also
+     * JsonAgg / JsonObjectAgg), TopK, and the bitwise rollups. MIN/MAX are also
      * recompute-only but carry a cheap-skip filter on the previous extremum
      * value, so they get their own captured-recompute branch instead of going
      * through the chain-recompute path.

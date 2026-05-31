@@ -706,10 +706,16 @@ final class AggregateSqlEmitter
 
         // JSON_AGG / JSON_ARRAYAGG / JSON_GROUP_ARRAY don't guarantee
         // input-row order on every backend, so re-apply the same
-        // ordering inside the aggregator where supported.
+        // ordering inside the aggregator where supported. MySQL's
+        // JSON_ARRAYAGG is documented as "undefined order" even though
+        // it preserves it in practice — fall back to GROUP_CONCAT with
+        // explicit ORDER BY, then bracket-wrap, so the contract holds
+        // independently of the underlying implementation. NULL bubbles
+        // through CONCAT, keeping the empty-subtree → NULL semantics.
         $jsonAgg = match ($driver) {
             'pgsql' => 'JSON_AGG(JSON_BUILD_ARRAY(top._src, top._by) ORDER BY top._by DESC, top._src DESC)',
-            'mysql' => 'JSON_ARRAYAGG(JSON_ARRAY(top._src, top._by))',
+            'mysql' => "CONCAT('[', GROUP_CONCAT(JSON_ARRAY(top._src, top._by) "
+                ."ORDER BY top._by DESC, top._src DESC SEPARATOR ','), ']')",
             'sqlite' => 'JSON_GROUP_ARRAY(JSON_ARRAY(top._src, top._by))',
             default => throw self::unsupportedDriver('topK', $driver),
         };
