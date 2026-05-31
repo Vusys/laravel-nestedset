@@ -12,6 +12,7 @@ use Vusys\NestedSet\Concerns\HasBulkInsert;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
+use Vusys\NestedSet\Concerns\HasSubtreeClone;
 use Vusys\NestedSet\Concerns\HasTreeExport;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Concerns\HasTreeRelations;
@@ -43,6 +44,7 @@ trait NodeTrait
     use HasNestedSetAggregates;
     use HasNodeInspection;
     use HasSoftDeleteTree;
+    use HasSubtreeClone;
     use HasTreeExport;
     use HasTreeMutation;
     use HasTreeRelations;
