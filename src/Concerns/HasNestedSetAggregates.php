@@ -1216,9 +1216,12 @@ trait HasNestedSetAggregates
     /**
      * Loose equality for change-feed diffing. NULL is distinct from
      * any concrete value (we want to emit "0 → null" and "null → 0"
-     * as real changes). For numeric values we compare as floats so
-     * driver-side type variation (PG DECIMAL strings, MySQL ints)
-     * does not produce spurious diffs.
+     * as real changes). For numeric values we normalise driver-side
+     * type variation (PG DECIMAL strings, MySQL ints) — integer-like
+     * pairs are compared as canonical integer strings to keep 64-bit
+     * BIGINT precision (a float cast loses bits past 2^53, which
+     * would silently swallow change events on large SUM/COUNT
+     * aggregates), and any other numeric pair compares as floats.
      */
     private static function aggregateChangeFeedValuesEqual(
         int|float|bool|string|null $a,
@@ -1234,10 +1237,62 @@ trait HasNestedSetAggregates
             return $a === $b;
         }
         if (is_numeric($a) && is_numeric($b)) {
+            if (self::isIntegerLikeNumeric($a) && self::isIntegerLikeNumeric($b)) {
+                return self::normaliseIntegerNumericString($a) === self::normaliseIntegerNumericString($b);
+            }
+
             return (float) $a === (float) $b;
         }
 
         return $a === $b;
+    }
+
+    /**
+     * True when the raw value represents an integer without a
+     * fractional part — a PHP `int`, or a string of the form
+     * `-?\d+` (the wire-format DB drivers return BIGINTs as). Used
+     * by {@see self::aggregateChangeFeedValuesEqual()} to route
+     * comparison through the precision-preserving string path.
+     */
+    private static function isIntegerLikeNumeric(int|float|bool|string|null $value): bool
+    {
+        if (is_int($value)) {
+            return true;
+        }
+        if (is_string($value) && $value !== '') {
+            return (bool) preg_match('/^[+-]?\d+$/', $value);
+        }
+
+        return false;
+    }
+
+    /**
+     * Canonicalise an integer-like numeric to a comparable string —
+     * strip an optional `+`/`-` sign prefix, drop leading zeros,
+     * and collapse `-0` to `0`. Operates on the raw string rather
+     * than casting through PHP `int` so values that exceed
+     * `PHP_INT_MAX` (e.g. UNSIGNED BIGINT on MySQL) still compare
+     * correctly. Only meaningful for inputs where
+     * {@see self::isIntegerLikeNumeric()} returns true.
+     */
+    private static function normaliseIntegerNumericString(int|float|bool|string|null $value): string
+    {
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        $raw = (string) $value;
+        $negative = false;
+        if ($raw !== '' && ($raw[0] === '+' || $raw[0] === '-')) {
+            $negative = $raw[0] === '-';
+            $raw = substr($raw, 1);
+        }
+        $raw = ltrim($raw, '0');
+        if ($raw === '') {
+            return '0';
+        }
+
+        return $negative ? '-'.$raw : $raw;
     }
 
     /**

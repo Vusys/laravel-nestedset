@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Events;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
+use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Events\Aggregates\NestedSetAggregateChanged;
 use Vusys\NestedSet\Events\Aggregates\NodeAggregatesRecomputed;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -155,6 +156,34 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertContains($branchB->getKey(), $bTotal->ancestorChain);
         $this->assertNotContains($branchB->getKey(), $aTotal->ancestorChain);
         $this->assertNotContains($branchA->getKey(), $bTotal->ancestorChain);
+    }
+
+    public function test_value_equality_uses_string_compare_for_large_64bit_integers(): void
+    {
+        // Two integers that exceed the 2^53 float-mantissa limit but
+        // differ only in the low-order bits collapse to the same float
+        // under a `(float)$a === (float)$b` comparison. The change-feed
+        // diff must catch this so a one-unit move on a large SUM still
+        // emits an event.
+        $reflection = new \ReflectionMethod(
+            HasNestedSetAggregates::class,
+            'aggregateChangeFeedValuesEqual',
+        );
+
+        // 2^53 + 1 (the first integer PHP float cannot represent exactly).
+        $small = '9007199254740992';
+        $larger = '9007199254740993';
+
+        $this->assertTrue($reflection->invoke(null, $small, $small));
+        $this->assertFalse($reflection->invoke(null, $small, $larger));
+        // Int-shaped string vs PHP int with the same value: still equal.
+        $this->assertTrue($reflection->invoke(null, (int) $small, $small));
+        // Driver-side leading-zero / sign formatting normalises away.
+        $this->assertTrue($reflection->invoke(null, '00042', 42));
+        $this->assertTrue($reflection->invoke(null, '-0', 0));
+        // Float-valued aggregates (AVG / variance) still compare numerically.
+        $this->assertTrue($reflection->invoke(null, 1.5, '1.5'));
+        $this->assertFalse($reflection->invoke(null, 1.5, '1.500001'));
     }
 
     public function test_event_does_not_fire_when_no_listener_is_registered(): void
