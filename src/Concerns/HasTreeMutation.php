@@ -12,11 +12,14 @@ use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Events\Mutation\NodePromotedToRoot;
 use Vusys\NestedSet\Events\Mutation\NodesSwapped;
+use Vusys\NestedSet\Events\Mutation\SiblingsReordered;
 use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleted;
 use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleting;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoving;
+use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
+use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\PendingOperation;
 use Vusys\NestedSet\Position;
@@ -196,6 +199,380 @@ trait HasTreeMutation
     public function moveAfter(HasNestedSet $sibling): static
     {
         return $this->insertAfterNode($sibling);
+    }
+
+    /**
+     * Reshuffle this node's direct children into the order given by
+     * `$idsInOrder` using one atomic CASE-WHEN UPDATE. Every direct
+     * child must appear exactly once — missing, unknown, or duplicate
+     * keys throw {@see InvalidSiblingOrderException}.
+     *
+     * The supplied list may contain either primary-key values or
+     * model instances; instances are normalised to their primary key.
+     *
+     * If the supplied order matches the current `lft` order the call
+     * is a no-op: no UPDATE fires, no {@see SiblingsReordered} event
+     * is emitted, and the method returns `$this` unchanged. A parent
+     * with no children is likewise a silent no-op.
+     *
+     * The reorder issues a raw UPDATE through {@see TreeMutationBuilder},
+     * bypassing the Eloquent `saving` / `saved` listener chain — so the
+     * aggregate-maintenance hooks (which key off the lifecycle) never
+     * run. Sibling reordering doesn't change ancestry, so stored
+     * aggregate values stay correct without maintenance.
+     *
+     * Returns `$this` refreshed from the database so `lft` / `rgt`
+     * reflect the post-reorder bounds (the parent's own bounds are
+     * unchanged but the in-memory copy is left in sync for the caller).
+     *
+     * @param  list<int|string|HasNestedSet>  $idsInOrder
+     *
+     * @throws UnplacedNodeException
+     *                               When this parent has never been placed in the tree.
+     * @throws InvalidSiblingOrderException
+     *                                      When the supplied membership does not exactly match the parent's direct children.
+     */
+    public function reorderChildren(array $idsInOrder): static
+    {
+        if (! $this->exists) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::reorderChildren() requires a saved parent.',
+                static::class,
+            ));
+        }
+
+        // Resolve the parent's own bounds from the database — the
+        // in-memory copy may be stale (e.g. siblings have been added
+        // since this instance was loaded) and the UPDATE predicate
+        // hinges on those bounds being current.
+        $mutator = $this->newTreeMutator();
+        $parentBounds = $mutator->getNodeData($this->keyOf($this));
+
+        // The parent's subtree is empty — nothing to reorder.
+        if ($parentBounds->rgt - $parentBounds->lft === 1) {
+            if ($idsInOrder !== []) {
+                throw InvalidSiblingOrderException::unknownChildren(
+                    $this->normaliseSiblingKeys($idsInOrder),
+                );
+            }
+
+            return $this;
+        }
+
+        $requestedKeys = $this->normaliseSiblingKeys($idsInOrder);
+        $duplicates = $this->duplicateKeys($requestedKeys);
+        if ($duplicates !== []) {
+            throw InvalidSiblingOrderException::duplicateChildren($duplicates);
+        }
+
+        // The leaf-check above (rgt - lft === 1) guarantees the parent
+        // has at least one descendant, which in turn means at least one
+        // direct child — so this list is never empty here.
+        /** @var list<array{key: int|string, lft: int, rgt: int}> $current */
+        $current = $this->loadDirectChildBounds();
+
+        $currentKeys = array_map(static fn (array $row): int|string => $row['key'], $current);
+
+        $unknown = array_values(array_diff($requestedKeys, $currentKeys));
+        if ($unknown !== []) {
+            throw InvalidSiblingOrderException::unknownChildren($unknown);
+        }
+
+        $missing = array_values(array_diff($currentKeys, $requestedKeys));
+        if ($missing !== []) {
+            throw InvalidSiblingOrderException::missingChildren($missing);
+        }
+
+        // Identity reorder: every position matches → no UPDATE.
+        $isIdentity = true;
+        foreach ($currentKeys as $i => $key) {
+            if (! $this->keysEqual($key, $requestedKeys[$i])) {
+                $isIdentity = false;
+                break;
+            }
+        }
+        if ($isIdentity) {
+            return $this;
+        }
+
+        // Index current rows by key for O(1) lookup as we walk the
+        // requested order computing new starting lft for each sibling.
+        $byKey = [];
+        foreach ($current as $row) {
+            $byKey[(string) $row['key']] = $row;
+        }
+
+        /** @var list<array{int, int, int}> $shifts */
+        $shifts = [];
+        $cursor = $parentBounds->lft + 1;
+        foreach ($requestedKeys as $key) {
+            $row = $byKey[(string) $key];
+            $height = $row['rgt'] - $row['lft'] + 1;
+            $delta = $cursor - $row['lft'];
+            $shifts[] = [$row['lft'], $row['rgt'], $delta];
+            $cursor += $height;
+        }
+
+        $startNs = hrtime(true);
+
+        $rowsAffected = $this->getConnection()->transaction(
+            fn (): int => $mutator->reorderSiblings(
+                parentLft: $parentBounds->lft,
+                parentRgt: $parentBounds->rgt,
+                shifts: $shifts,
+            ),
+        );
+
+        $durationMs = (hrtime(true) - $startNs) / 1_000_000;
+
+        EventDispatcher::dispatch(new SiblingsReordered(
+            modelClass: static::class,
+            parent: $this,
+            idsInOrder: $requestedKeys,
+            rowsAffected: $rowsAffected,
+            durationMs: $durationMs,
+        ));
+
+        return $this;
+    }
+
+    /**
+     * Sugar over {@see reorderChildren()}: sorts this node's direct
+     * children by a column name or a closure and applies the
+     * resulting order. Equivalent to
+     * `$this->reorderChildren($this->children->sortBy($key)->pluck($this->getKeyName())->all())`
+     * but reads the children directly so callers don't have to.
+     *
+     * Useful for one-shot needs like "sort siblings alphabetically".
+     *
+     * @param  string|\Closure(static): mixed  $key
+     */
+    public function reorderChildrenBy(string|\Closure $key): static
+    {
+        if (! $this->exists) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::reorderChildrenBy() requires a saved parent.',
+                static::class,
+            ));
+        }
+
+        $children = $this->newQuery()
+            ->where($this->getParentIdName(), $this->keyOf($this))
+            ->orderBy($this->getLftName())
+            ->get();
+
+        if ($children->isEmpty()) {
+            return $this;
+        }
+
+        $ordered = $children->sortBy($key)->values();
+
+        /** @var list<int|string> $ids */
+        $ids = [];
+        foreach ($ordered as $child) {
+            $ids[] = $this->keyOf($child);
+        }
+
+        return $this->reorderChildren($ids);
+    }
+
+    /**
+     * Move this node to position `$position` (1-indexed) within its
+     * current sibling group. A thin wrapper over its parent's
+     * {@see reorderChildren()} that preserves everyone else's relative
+     * order.
+     *
+     * Position semantics match `up()` / `down()`: position 1 is the
+     * first sibling, position `count(siblings)` is the last.
+     *
+     * @throws \OutOfRangeException
+     *                              When `$position` is outside `[1, count(siblings)]`.
+     * @throws UnplacedNodeException
+     *                               When this node has no parent (a root has no sibling group to reorder within).
+     */
+    public function moveToSiblingPosition(int $position): static
+    {
+        $parentId = $this->getParentId();
+
+        if ($parentId === null) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::moveToSiblingPosition() requires the node to have a parent — roots have no sibling group to reorder within. Use up()/down() to reorder roots, or rebuild the tree.',
+                static::class,
+            ));
+        }
+
+        /** @var static|null $parent */
+        $parent = $this->newQuery()->whereKey($parentId)->first();
+
+        if ($parent === null) {
+            throw new LogicException(sprintf(
+                '%s::moveToSiblingPosition(): parent (id=%s) not found.',
+                static::class,
+                (string) $parentId,
+            ));
+        }
+
+        $siblings = $parent->loadDirectChildBounds();
+        $count = count($siblings);
+
+        if ($position < 1 || $position > $count) {
+            throw new \OutOfRangeException(sprintf(
+                '%s::moveToSiblingPosition(%d): position must be in [1, %d].',
+                static::class,
+                $position,
+                $count,
+            ));
+        }
+
+        $selfKey = $this->keyOf($this);
+
+        // Pull self out of the sibling list, then insert at the
+        // requested (1-indexed) slot.
+        $others = array_values(array_filter(
+            array_map(static fn (array $row): int|string => $row['key'], $siblings),
+            fn ($key): bool => ! $this->keysEqual($key, $selfKey),
+        ));
+
+        $newOrder = $others;
+        array_splice($newOrder, $position - 1, 0, [$selfKey]);
+
+        $parent->reorderChildren($newOrder);
+
+        return $this->refresh();
+    }
+
+    /**
+     * Static alias for `$parent->reorderChildren($idsInOrder)`.
+     * Reads more naturally at call sites that already have a parent
+     * variable in scope, e.g. `Category::reorderSiblings($parent, $ids)`.
+     *
+     * @param  list<int|string|HasNestedSet>  $idsInOrder
+     */
+    public static function reorderSiblings(Model&HasNestedSet $parent, array $idsInOrder): static
+    {
+        if (! $parent instanceof static) {
+            throw new LogicException(sprintf(
+                '%s::reorderSiblings(): parent must be an instance of %s, got %s.',
+                static::class,
+                static::class,
+                $parent::class,
+            ));
+        }
+
+        return $parent->reorderChildren($idsInOrder);
+    }
+
+    /**
+     * Direct children of this node, returned as a list of
+     * `[key, lft, rgt]` triples in lft order. Used by the reorder
+     * helpers to (a) validate caller-supplied membership and (b)
+     * compute per-sibling subtree heights without loading full
+     * Eloquent instances.
+     *
+     * @return list<array{key: int|string, lft: int, rgt: int}>
+     *
+     * @internal
+     */
+    public function loadDirectChildBounds(): array
+    {
+        $query = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getParentIdName(), $this->keyOf($this))
+            ->orderBy($this->getLftName());
+
+        foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+            $query->where($col, $value);
+        }
+
+        $isIntKey = $this->getKeyType() === 'int';
+        $keyName = $this->getKeyName();
+        $lftName = $this->getLftName();
+        $rgtName = $this->getRgtName();
+
+        $rows = $query->get([$keyName, $lftName, $rgtName]);
+
+        $out = [];
+        foreach ($rows as $row) {
+            $key = $row->{$keyName};
+            if (! is_int($key) && ! is_string($key)) {
+                continue;
+            }
+            $out[] = [
+                'key' => $isIntKey ? (int) $key : (string) $key,
+                'lft' => (int) $row->{$lftName},
+                'rgt' => (int) $row->{$rgtName},
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<int|string|HasNestedSet>  $idsInOrder
+     * @return list<int|string>
+     */
+    private function normaliseSiblingKeys(array $idsInOrder): array
+    {
+        $isIntKey = $this->getKeyType() === 'int';
+        $out = [];
+        foreach ($idsInOrder as $entry) {
+            if ($entry instanceof HasNestedSet && $entry instanceof Model) {
+                $key = $entry->getKey();
+            } else {
+                $key = $entry;
+            }
+
+            if (! is_int($key) && ! is_string($key)) {
+                throw new LogicException(sprintf(
+                    '%s::reorderChildren(): every entry must be a primary key (int|string) or a saved %s instance; got %s.',
+                    static::class,
+                    static::class,
+                    get_debug_type($entry),
+                ));
+            }
+
+            $out[] = $isIntKey ? (int) $key : (string) $key;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<int|string>  $keys
+     * @return list<int|string>
+     */
+    private function duplicateKeys(array $keys): array
+    {
+        $seen = [];
+        $dupes = [];
+        foreach ($keys as $key) {
+            $needle = (string) $key;
+            if (isset($seen[$needle])) {
+                // Preserve int/string identity of the original key.
+                if (! in_array($key, $dupes, true)) {
+                    $dupes[] = $key;
+                }
+
+                continue;
+            }
+            $seen[$needle] = true;
+        }
+
+        return $dupes;
+    }
+
+    private function keysEqual(int|string $a, int|string $b): bool
+    {
+        if ($a === $b) {
+            return true;
+        }
+
+        // Tolerate int/string mixes from raw DB rows vs Eloquent casts.
+        if (is_numeric($a) && is_numeric($b)) {
+            return (string) $a === (string) $b;
+        }
+
+        return false;
     }
 
     /**

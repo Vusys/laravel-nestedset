@@ -177,6 +177,84 @@ final readonly class TreeMutationBuilder
     }
 
     // ----------------------------------------------------------------
+    // Sibling reordering
+    // ----------------------------------------------------------------
+
+    /**
+     * Reshuffles the direct children of a parent in one CASE-WHEN
+     * UPDATE. `$shifts` is a list of `[oldLft, oldRgt, delta]` triples
+     * — one per direct child whose subtree needs to slide by `delta`.
+     *
+     * The UPDATE walks every row strictly between `$parentLft` and
+     * `$parentRgt` (i.e. every descendant of the parent, excluding the
+     * parent itself) and adds the matching sibling's `delta` to both
+     * `lft` and `rgt`. Each row maps to at most one sibling subtree
+     * because the `[oldLft, oldRgt]` windows are disjoint by
+     * construction, so the order of CASE WHEN branches is incidental.
+     *
+     * `depth` and `parent_id` are untouched: siblings keep their depth,
+     * descendants keep their depth relative to their sibling, and no
+     * row changes parent.
+     *
+     * Returns the number of rows the UPDATE affected — useful for
+     * event payloads. Returns 0 when `$shifts` is empty (caller should
+     * have short-circuited identity reorders before getting here).
+     *
+     * @param  list<array{int, int, int}>  $shifts
+     */
+    public function reorderSiblings(int $parentLft, int $parentRgt, array $shifts): int
+    {
+        if ($shifts === []) {
+            return 0;
+        }
+
+        // Filter out zero-delta siblings — they never appear in the CASE
+        // and they widen the table scan only nominally (the BETWEEN
+        // predicate still scopes to the parent's subtree). Skipping them
+        // keeps the CASE expression compact when only a couple of
+        // siblings actually move.
+        $movingShifts = array_values(array_filter(
+            $shifts,
+            static fn (array $shift): bool => $shift[2] !== 0,
+        ));
+
+        if ($movingShifts === []) {
+            return 0;
+        }
+
+        // MySQL/MariaDB evaluate multi-column UPDATE assignments left-to-right
+        // and observe already-assigned values in later expressions. A single
+        // CASE keyed on `lft` would see the new lft when the rgt assignment
+        // ran, mis-routing the BETWEEN check. Build one CASE per column so
+        // each predicate keys on the column being assigned (still untouched
+        // at the moment of evaluation). Mirrors moveNode()/shiftCase().
+        return $this->scoped()
+            ->where($this->lft, '>', $parentLft)
+            ->where($this->rgt, '<', $parentRgt)
+            ->update([
+                $this->lft => new TreeExpression(
+                    "{$this->lft} + ".$this->buildShiftCase($this->lft, $movingShifts),
+                ),
+                $this->rgt => new TreeExpression(
+                    "{$this->rgt} + ".$this->buildShiftCase($this->rgt, $movingShifts),
+                ),
+            ]);
+    }
+
+    /**
+     * @param  list<array{int, int, int}>  $shifts
+     */
+    private function buildShiftCase(string $column, array $shifts): string
+    {
+        $branches = '';
+        foreach ($shifts as [$oldLft, $oldRgt, $delta]) {
+            $branches .= "WHEN {$column} BETWEEN {$oldLft} AND {$oldRgt} THEN {$delta} ";
+        }
+
+        return "CASE {$branches}ELSE 0 END";
+    }
+
+    // ----------------------------------------------------------------
     // Node data retrieval
     // ----------------------------------------------------------------
 
