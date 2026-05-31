@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
 use Vusys\NestedSet\Concerns\HasBulkInsert;
+use Vusys\NestedSet\Concerns\HasMaterialisedPath;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Concerns\HasSoftDeleteTree;
@@ -41,6 +42,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 trait NodeTrait
 {
     use HasBulkInsert;
+    use HasMaterialisedPath;
     use HasNestedSetAggregates;
     use HasNodeInspection;
     use HasSoftDeleteTree;
@@ -96,14 +98,23 @@ trait NodeTrait
                     $node::class,
                 ));
             }
+            if (method_exists($node, 'applyMaterialisedPathsOnSaving')) {
+                $node->applyMaterialisedPathsOnSaving();
+            }
             if (method_exists($node, 'captureAggregateDeltas')) {
                 self::runAggregateHook($node, 'capture', static fn () => $node->captureAggregateDeltas());
             }
         });
 
         static::saved(static function (Model $node): void {
-            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateDeltas')) {
+            if (! $node instanceof HasNestedSet) {
+                return;
+            }
+            if (method_exists($node, 'applyAggregateDeltas')) {
                 self::runAggregateHook($node, 'apply', static fn () => $node->applyAggregateDeltas());
+            }
+            if (method_exists($node, 'applyMaterialisedPathsOnSaved')) {
+                $node->applyMaterialisedPathsOnSaved();
             }
         });
 
