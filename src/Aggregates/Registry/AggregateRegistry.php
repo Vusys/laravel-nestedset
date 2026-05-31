@@ -15,6 +15,7 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
+use Vusys\NestedSet\Aggregates\Strategy\LazyInvalidation;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
@@ -114,6 +115,60 @@ final class AggregateRegistry
     }
 
     /**
+     * Returns invalidation specs for every lazy aggregate column declared
+     * on `$class` — user-facing and internal companions alike (an internal
+     * companion can never be lazy today, but the iteration is robust
+     * either way). Each spec carries the value column name, its
+     * `<column>_computed_at` stamp column, and the inclusivity flag
+     * the {@see LazyInvalidation}
+     * helper consumes to choose between `<=`/`>=` and `<`/`>` bounds
+     * containment.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return list<array{column: string, stampColumn: string, inclusive: bool}>
+     */
+    public static function lazySpecsFor(string $class): array
+    {
+        $specs = [];
+        foreach (self::for($class) as $definition) {
+            if (! $definition->isLazy()) {
+                continue;
+            }
+            $specs[] = [
+                'column' => $definition->getColumn(),
+                'stampColumn' => $definition->lazyStampColumn(),
+                'inclusive' => $definition->isInclusive(),
+            ];
+        }
+
+        return $specs;
+    }
+
+    /**
+     * Returns the subset of {@see self::lazySpecsFor()} whose value column
+     * appears in `$columnNames`. Used by mutation hooks (save / capture)
+     * that already determined which lazy columns were affected by the
+     * change.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @param  list<string>  $columnNames
+     * @return list<array{column: string, stampColumn: string, inclusive: bool}>
+     */
+    public static function lazySpecsForColumns(string $class, array $columnNames): array
+    {
+        if ($columnNames === []) {
+            return [];
+        }
+
+        $wanted = array_flip($columnNames);
+
+        return array_values(array_filter(
+            self::lazySpecsFor($class),
+            static fn (array $spec): bool => isset($wanted[$spec['column']]),
+        ));
+    }
+
+    /**
      * For each inclusive AVG declaration on $class, returns the
      * column names of its companion SUM and COUNT definitions over
      * the same source. The result is consumed by Phase E maintenance
@@ -194,6 +249,9 @@ final class AggregateRegistry
                 $sumColumn = null;
                 $countColumn = null;
                 foreach ($companions as $companion) {
+                    if ($companion->lazy) {
+                        continue;
+                    }
                     if ($companion->operation === AggregateFunction::Sum && $sumColumn === null) {
                         $sumColumn = $companion->column;
                     }
@@ -476,6 +534,14 @@ final class AggregateRegistry
             if (! self::filtersMatch($candidate->filter, $parent->filter)) {
                 continue;
             }
+            // Lazy candidates are NULL between mutations; adopting one as
+            // a companion-derived display column's input would feed the
+            // derived formula a NULL value and silently break the parent.
+            // Auto-promotion creates a non-lazy internal companion
+            // alongside in this case.
+            if ($candidate->lazy) {
+                continue;
+            }
             if (! $extra($candidate)) {
                 continue;
             }
@@ -736,14 +802,18 @@ final class AggregateRegistry
                         // match the parent count as valid companions.
                         // A different filter would silently feed the
                         // parent filtered data; a different inclusivity
-                        // would feed it a different row set.
+                        // would feed it a different row set. Lazy
+                        // candidates are excluded too — their stored
+                        // value is NULL between mutations, and the
+                        // parent display column would inherit that.
                         $companionsForSource = array_values(array_filter(
                             $companionsForSource,
                             static fn (AggregateDefinition $candidate): bool => self::filtersMatch(
                                 $candidate->filter,
                                 $definition->filter,
                             ) && $candidate->inclusive === $definition->inclusive
-                                && $candidate->sourceTransform === CompanionSourceTransform::Identity,
+                                && $candidate->sourceTransform === CompanionSourceTransform::Identity
+                                && ! $candidate->lazy,
                         ));
 
                         if (self::hasCompanion($companionsForSource, $spec)) {
@@ -778,6 +848,14 @@ final class AggregateRegistry
                 foreach ($companionSet as $spec) {
                     $alreadyDeclared = false;
                     foreach ($companions as $companion) {
+                        // Skip lazy candidates: their stored value is
+                        // NULL between mutations, and the parent display
+                        // column would inherit that NULL. Auto-promotion
+                        // creates a fresh non-lazy internal companion
+                        // alongside.
+                        if ($companion->lazy) {
+                            continue;
+                        }
                         if ($companion->operation === $spec->function) {
                             $alreadyDeclared = true;
                             break;

@@ -170,9 +170,19 @@ final class NestedSetServiceProvider extends ServiceProvider
         Blueprint::macro('nestedSetAggregate', function (
             string $column,
             string $type = NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+            bool $lazy = false,
         ): void {
             /** @var Blueprint $this */
-            NestedSetServiceProvider::addAggregateColumn($this, $column, $type);
+            NestedSetServiceProvider::addAggregateColumn($this, $column, $type, $lazy);
+
+            if ($lazy) {
+                // Lazy aggregates store a stamp companion that the read
+                // accessor uses to detect staleness — NULL means "needs
+                // recompute on next read". The convention is
+                // `<column>_computed_at`; users who need a non-default
+                // name should declare the column manually.
+                $this->timestamp($column.'_computed_at')->nullable();
+            }
 
             foreach (NestedSetServiceProvider::companionAllocationsFor($column, $type) as $companion) {
                 NestedSetServiceProvider::addAggregateColumn(
@@ -186,12 +196,17 @@ final class NestedSetServiceProvider extends ServiceProvider
         Blueprint::macro('dropNestedSetAggregate', function (
             string $column,
             string $type = NestedSetServiceProvider::AGGREGATE_TYPE_SUM_COUNT,
+            bool $lazy = false,
         ): void {
             /** @var Blueprint $this */
             $columns = [
                 $column,
                 ...NestedSetServiceProvider::companionColumnsFor($column, $type),
             ];
+
+            if ($lazy) {
+                $columns[] = $column.'_computed_at';
+            }
 
             $this->dropColumn($columns);
         });
@@ -202,7 +217,7 @@ final class NestedSetServiceProvider extends ServiceProvider
      * for the `nestedSetAggregate` Blueprint macro; also used to emit
      * companion columns (always shaped as `sum_count`).
      */
-    public static function addAggregateColumn(Blueprint $table, string $column, string $type): void
+    public static function addAggregateColumn(Blueprint $table, string $column, string $type, bool $lazy = false): void
     {
         if ($type === self::AGGREGATE_TYPE_SUM_COUNT) {
             // SUM / COUNT — non-null, default 0. Signed bigInteger
@@ -210,7 +225,15 @@ final class NestedSetServiceProvider extends ServiceProvider
             // delta-subtraction expressions whose intermediate
             // type would be unsigned-minus-int. Range is still
             // 9.2 quintillion — ample for SUM over deep subtrees.
-            $table->bigInteger($column)->default(0);
+            //
+            // Lazy override: the lazy machinery sets the value to NULL
+            // on invalidation, so the column must be nullable. No
+            // default — the read accessor populates it on first hit.
+            if ($lazy) {
+                $table->bigInteger($column)->nullable();
+            } else {
+                $table->bigInteger($column)->default(0);
+            }
 
             return;
         }
@@ -271,7 +294,13 @@ final class NestedSetServiceProvider extends ServiceProvider
 
         if ($type === self::AGGREGATE_TYPE_DISTINCT_COUNT) {
             // DistinctCount — same shape as Count: non-null, default 0.
-            $table->bigInteger($column)->default(0);
+            // Lazy override mirrors sum_count: nullable so invalidation
+            // can NULL the value.
+            if ($lazy) {
+                $table->bigInteger($column)->nullable();
+            } else {
+                $table->bigInteger($column)->default(0);
+            }
 
             return;
         }

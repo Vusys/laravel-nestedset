@@ -30,4 +30,29 @@ interface AggregateDefinitionContract
      * by the engine but are not part of the public API surface.
      */
     public function isInternal(): bool;
+
+    /**
+     * True when this aggregate's column is maintained lazily — mutations
+     * invalidate (set the column and its `<column>_computed_at` stamp to
+     * NULL) instead of eagerly recomputing; the next read populates both.
+     *
+     * Mirrors the `$lazy` constructor flag on the concrete definitions.
+     */
+    public function isLazy(): bool;
+
+    /**
+     * TTL (seconds) after which a stamped lazy column is considered stale
+     * and the next read triggers a recompute. `null` means "no time-based
+     * expiry — only invalidate on mutation". Always `null` when
+     * {@see self::isLazy()} returns false.
+     */
+    public function lazyTtlSeconds(): ?int;
+
+    /**
+     * Companion stamp column name (`<column>_computed_at`) the lazy
+     * machinery reads and writes to track freshness. Returns the same
+     * string regardless of `isLazy()` for use as a derivation helper —
+     * callers should gate on `isLazy()` before reading or writing it.
+     */
+    public function lazyStampColumn(): string;
 }

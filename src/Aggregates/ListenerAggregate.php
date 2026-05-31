@@ -34,6 +34,8 @@ final readonly class ListenerAggregate
         private string $listenerClass,
         private AggregateFunction $operation,
         private bool $inclusive,
+        private bool $lazy = false,
+        private ?int $ttl = null,
     ) {}
 
     /**
@@ -86,7 +88,7 @@ final readonly class ListenerAggregate
      */
     public function inclusive(): self
     {
-        return new self($this->listenerClass, $this->operation, true);
+        return new self($this->listenerClass, $this->operation, true, $this->lazy, $this->ttl);
     }
 
     /**
@@ -96,7 +98,26 @@ final readonly class ListenerAggregate
      */
     public function exclusive(): self
     {
-        return new self($this->listenerClass, $this->operation, false);
+        return new self($this->listenerClass, $this->operation, false, $this->lazy, $this->ttl);
+    }
+
+    /**
+     * Mark this listener aggregate as lazily maintained. Mutations
+     * invalidate the column (set value and `<column>_computed_at` to
+     * NULL on every ancestor); the first read past the invalidation
+     * runs the listener over the subtree, stores the result, and
+     * stamps the companion. Use when listener contributions are
+     * expensive and reads are rarer than mutations.
+     *
+     * Allowed on Sum / Count / Min / Max only — Avg routes through
+     * companion-derived display columns and rejects lazy at definition
+     * build time. `$ttl` (seconds) sets a freshness window; pass
+     * `null` to disable time-based expiry (refresh only on
+     * read-after-mutation).
+     */
+    public function lazy(?int $ttl = null): self
+    {
+        return new self($this->listenerClass, $this->operation, $this->inclusive, true, $ttl);
     }
 
     /**
@@ -118,6 +139,8 @@ final readonly class ListenerAggregate
             listenerClass: $this->listenerClass,
             operation: $this->operation,
             inclusive: $this->inclusive,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 }
