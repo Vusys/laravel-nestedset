@@ -96,7 +96,20 @@ final readonly class TreeDiff implements JsonSerializable
 
         foreach ($beforeKeys as $key) {
             if (! isset($afterKeySet[$key])) {
-                $removed[] = new Removed(key: $key);
+                $beforeRow = $beforeRows[$key];
+                $attrs = $beforeRow['attrs'];
+                foreach (array_keys($structural) as $col) {
+                    unset($attrs[$col]);
+                }
+                foreach (array_keys($ignoreSet) as $col) {
+                    unset($attrs[$col]);
+                }
+                $removed[] = new Removed(
+                    key: $key,
+                    parentKey: $beforeRow['parent'],
+                    attributes: $attrs,
+                    siblingPosition: $beforeRow['pos'],
+                );
             }
         }
 
@@ -171,6 +184,13 @@ final readonly class TreeDiff implements JsonSerializable
      * recorded on `Moved`, so callers using `invert()` for round-trip
      * must accept that pure reorder undo restores parent but not
      * order. See the docs gotchas section.
+     *
+     * `Removed` carries the row's pre-removal parent / attributes /
+     * sibling position so the inverted `Added` can re-insert the
+     * original row. Callers who construct `Removed` instances by hand
+     * without those fields will see the inverted `Added` come through
+     * with empty attributes — the diff can only invert what it was
+     * told.
      */
     public function invert(): self
     {
@@ -178,15 +198,20 @@ final readonly class TreeDiff implements JsonSerializable
         foreach ($this->removed as $r) {
             $newAdded[] = new Added(
                 key: $r->key,
-                parentKey: null,
-                attributes: [],
-                siblingPosition: 0,
+                parentKey: $r->parentKey,
+                attributes: $r->attributes,
+                siblingPosition: $r->siblingPosition,
             );
         }
 
         $newRemoved = [];
         foreach ($this->added as $a) {
-            $newRemoved[] = new Removed(key: $a->key);
+            $newRemoved[] = new Removed(
+                key: $a->key,
+                parentKey: $a->parentKey,
+                attributes: $a->attributes,
+                siblingPosition: $a->siblingPosition,
+            );
         }
 
         $newMoved = [];
@@ -749,16 +774,26 @@ final readonly class TreeDiff implements JsonSerializable
 
         $ordered = [];
         $emitted = [];
+        $visiting = [];
 
-        $emit = static function (int|string $key) use (&$emit, &$byKey, &$emitted, &$ordered, &$addedKeySet, $structural, $ignore): void {
+        $emit = static function (int|string $key) use (&$emit, &$byKey, &$emitted, &$visiting, &$ordered, &$addedKeySet, $structural, $ignore): void {
             if (isset($emitted[$key])) {
                 return;
             }
+            if (isset($visiting[$key])) {
+                throw new DanglingParentException(sprintf(
+                    'Tree diff: added rows form a parent cycle reachable from %s.',
+                    self::formatKey($key),
+                ));
+            }
+            $visiting[$key] = true;
+
             $row = $byKey[$key];
             $parent = $row['parent'];
             if ($parent !== null && isset($addedKeySet[$parent]) && ! isset($emitted[$parent])) {
                 $emit($parent);
             }
+            unset($visiting[$key]);
             $emitted[$key] = true;
 
             $attrs = $row['attrs'];

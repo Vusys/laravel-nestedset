@@ -574,8 +574,46 @@ final class TreeDiffApplier
         if ($key === null) {
             return 'n:';
         }
+        if (is_array($key)) {
+            return 'a:'.self::canonicalJson($key);
+        }
+        if (is_object($key)) {
+            return 'o:'.spl_object_hash($key);
+        }
 
-        return 'x:'.spl_object_hash((object) $key);
+        return 't:'.get_debug_type($key);
+    }
+
+    /**
+     * Recursively ksort associative arrays so a `json_encode` output
+     * is independent of key order — required for stable hashing of
+     * resolver-produced identity values that happen to be array-shaped.
+     *
+     * @param  array<mixed, mixed>  $value
+     */
+    private static function canonicalJson(array $value): string
+    {
+        $normalised = self::canonicalArray($value);
+
+        return json_encode($normalised, JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $value
+     * @return array<mixed, mixed>
+     */
+    private static function canonicalArray(array $value): array
+    {
+        foreach ($value as $k => $v) {
+            if (is_array($v)) {
+                $value[$k] = self::canonicalArray($v);
+            }
+        }
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return $value;
     }
 
     private static function formatKey(mixed $key): string

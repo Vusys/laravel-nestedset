@@ -27,7 +27,7 @@ final class JsonTreeNormaliser
     {
         $decoded = self::decode($input);
         $rows = self::wrap($decoded);
-        $shape = self::detectShape($rows);
+        $shape = self::detectShape($rows, $options->childrenKey);
 
         if ($shape === 'nested') {
             return self::normaliseNested($rows, $options->childrenKey);
@@ -81,7 +81,7 @@ final class JsonTreeNormaliser
     /**
      * @param  list<mixed>  $rows
      */
-    private static function detectShape(array $rows): string
+    private static function detectShape(array $rows, string $childrenKey): string
     {
         $hasChildren = false;
         $hasFlat = false;
@@ -92,7 +92,7 @@ final class JsonTreeNormaliser
                     get_debug_type($row),
                 ));
             }
-            if (array_key_exists('children', $row)) {
+            if (array_key_exists($childrenKey, $row)) {
                 $hasChildren = true;
             } elseif (array_key_exists('parent_id', $row)) {
                 $hasFlat = true;
@@ -100,9 +100,10 @@ final class JsonTreeNormaliser
         }
 
         if ($hasChildren && $hasFlat) {
-            throw new InvalidJsonTreeException(
-                'fromJsonTree: payload shape is ambiguous — some rows have "children", others have "parent_id".',
-            );
+            throw new InvalidJsonTreeException(sprintf(
+                'fromJsonTree: payload shape is ambiguous — some rows have "%s", others have "parent_id".',
+                $childrenKey,
+            ));
         }
 
         return $hasChildren ? 'nested' : 'flat';
