@@ -29,9 +29,14 @@ final class MaterialisedPathParentRelationCacheTest extends TestCase
         $loaded->save();
 
         $queries = DB::getQueryLog();
+        // Strip identifier quoting so the filter matches on every backend
+        // (PG/SQLite double-quote identifiers, MySQL/MariaDB backtick).
         $parentLookups = array_filter(
             $queries,
-            static fn (array $q): bool => str_contains((string) $q['query'], 'select "url_path" from "slugged_categories" where "id"'),
+            static fn (array $q): bool => str_contains(
+                str_replace(['"', '`'], '', (string) $q['query']),
+                'select url_path from slugged_categories where id',
+            ),
         );
         $this->assertSame([], $parentLookups, 'no parent SELECT when relation is loaded');
 

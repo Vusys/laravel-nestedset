@@ -28,6 +28,15 @@ final class NoDefaultsFixture extends Model implements HasNestedSet
     use NodeTrait;
 }
 
+// Class-attribute default says wrap=false; the per-path explicit value
+// says wrap=true. Used to verify the topmost (per-path) layer wins.
+#[NestedSetMaterialisedPathDefaults(separator: '.', wrap: false)]
+#[NestedSetMaterialisedPath(column: 'doc_path', slug: 'name', wrap: true)]
+final class PerPathOverridesDefaultsFixture extends Model implements HasNestedSet
+{
+    use NodeTrait;
+}
+
 final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
 {
     protected function setUp(): void
@@ -82,25 +91,40 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
 
     public function test_class_defaults_only_match_exact_fqcn(): void
     {
-        // Configure for the parent class only; the child should not inherit.
+        // Configure defaults under a real ancestor of NoDefaultsFixture
+        // (every Eloquent fixture extends Model). With exact-FQCN
+        // matching the child must not inherit; an `is_a` walk would.
         config([
             'nestedset.materialised_path.class_defaults' => [
-                'NonExistent\\BaseModel' => ['separator' => '#'],
+                Model::class => ['separator' => '#'],
             ],
         ]);
         MaterialisedPathRegistry::forgetCache();
 
         $paths = MaterialisedPathRegistry::for(NoDefaultsFixture::class);
-        $this->assertSame('/', $paths['doc_path']->getSeparator(), 'no inheritance');
+        $this->assertSame('/', $paths['doc_path']->getSeparator(), 'no inheritance from ancestor');
     }
 
     public function test_per_path_attribute_wins_over_every_defaults_layer(): void
     {
-        $paths = MaterialisedPathRegistry::for(DefaultsAttrFixture::class);
-        // The per-path explicit value (none set on this fixture) would be
-        // the topmost layer; the class-attribute defaults applied here
-        // are the next layer down. The wrap=false carries through.
-        $this->assertFalse($paths['doc_path']->getWrap());
+        // PerPathOverridesDefaultsFixture sets wrap=true on the path
+        // attribute itself. Class-level attribute defaults say
+        // wrap=false; per-class config below also says wrap=false;
+        // global config (set in setUp) says wrap=true but is the lowest
+        // layer. The per-path explicit value must beat every layer
+        // below it, so the resolved wrap must be true.
+        config([
+            'nestedset.materialised_path.class_defaults' => [
+                PerPathOverridesDefaultsFixture::class => ['wrap' => false],
+            ],
+        ]);
+        MaterialisedPathRegistry::forgetCache();
+
+        $paths = MaterialisedPathRegistry::for(PerPathOverridesDefaultsFixture::class);
+        $this->assertTrue(
+            $paths['doc_path']->getWrap(),
+            'per-path explicit value beats class attribute + class_defaults config',
+        );
     }
 
     public function test_registry_caches_per_fqcn(): void

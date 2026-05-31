@@ -355,7 +355,12 @@ trait HasMaterialisedPath
 
         $cacheKey = $column.'@'.$parentId;
         if (array_key_exists($cacheKey, $this->materialisedPathParentCache)) {
-            return $this->materialisedPathParentCache[$cacheKey] ?: null;
+            // Empty-string sentinel means "looked up, no path"; any other
+            // value (including the literal '0') is a legitimate stored
+            // path and must pass through. `?:` would collapse '0' to null.
+            $cached = $this->materialisedPathParentCache[$cacheKey];
+
+            return $cached === '' ? null : $cached;
         }
 
         if ($this->relationLoaded('parent')) {
