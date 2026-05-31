@@ -59,6 +59,14 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
             ));
         }
 
+        if ($this->lazy && $this->internal) {
+            throw new AggregateConfigurationException(sprintf(
+                'Listener aggregate "%s": `lazy` cannot be true for internal listener companions. '
+                .'Set `lazy: true` on the user-facing declaration instead.',
+                $column,
+            ));
+        }
+
         if ($this->lazy && ! $this->operation->supportsLazy()) {
             throw new AggregateConfigurationException(sprintf(
                 'Listener aggregate "%s" cannot be declared lazy: operation %s is companion-derived. '

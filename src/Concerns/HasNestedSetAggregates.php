@@ -206,7 +206,11 @@ trait HasNestedSetAggregates
      */
     public function getAttribute($key)
     {
-        if ($key === '') {
+        // Mirror Eloquent's own falsy-key short-circuit. The lazy
+        // discriminator below narrows $key to string for
+        // lazyDefinitionForColumn(), so null / false / 0 / '' / '0'
+        // must skip past it before that call.
+        if (! $key) {
             return parent::getAttribute($key);
         }
 
@@ -3223,10 +3227,16 @@ trait HasNestedSetAggregates
 
         if ($rootId !== null) {
             $bounds = self::anchorBoundsRow($instance, $rootId);
-            if ($bounds !== null) {
-                $query->where($instance->getLftName(), '>=', $bounds['lft'])
-                    ->where($instance->getRgtName(), '<=', $bounds['rgt']);
+            if ($bounds === null) {
+                // Anchor disappeared between the differ pass and the
+                // stamp pass (a parallel hard-delete, say). Bail out
+                // rather than fall through to a query whose only
+                // remaining constraints are scope — that would stamp
+                // every other tree in the table.
+                return;
             }
+            $query->where($instance->getLftName(), '>=', $bounds['lft'])
+                ->where($instance->getRgtName(), '<=', $bounds['rgt']);
         }
 
         foreach ($scope as $col => $value) {
