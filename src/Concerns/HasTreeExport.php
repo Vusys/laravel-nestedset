@@ -14,6 +14,9 @@ use Vusys\NestedSet\Export\DotOptions;
 use Vusys\NestedSet\Export\JsonOptions;
 use Vusys\NestedSet\Export\MermaidOptions;
 use Vusys\NestedSet\Export\TreeExporter;
+use Vusys\NestedSet\Import\JsonImportOptions;
+use Vusys\NestedSet\Import\JsonTreeImporter;
+use Vusys\NestedSet\NodeCollection;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -146,6 +149,27 @@ trait HasTreeExport
         return TreeExporter::fromOrderedNodes(
             self::loadScopeForExport($scopeValue, $opts->withTrashed),
         )->toJson($opts);
+    }
+
+    /**
+     * Inverse of {@see self::toJsonTree()} — accepts the exporter's
+     * shape (or a decoded JSON string in the same shape) and inserts
+     * the payload under `$parent` or as new roots.
+     *
+     * @param  array<int|string, mixed>|string  $json
+     * @return NodeCollection<int, Model&HasNestedSet>
+     */
+    public static function fromJsonTree(
+        array|string $json,
+        ?HasNestedSet $parent = null,
+        ?JsonImportOptions $options = null,
+    ): NodeCollection {
+        $options ??= new JsonImportOptions;
+
+        /** @var class-string<Model&HasNestedSet> $modelClass */
+        $modelClass = static::class;
+
+        return JsonTreeImporter::import($modelClass, $json, $parent, $options);
     }
 
     /**

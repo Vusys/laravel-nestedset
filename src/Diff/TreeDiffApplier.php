@@ -1,0 +1,595 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Vusys\NestedSet\Diff;
+
+use Closure;
+use Illuminate\Database\Eloquent\Model;
+use LogicException;
+use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Diff\TreeChange\Added;
+use Vusys\NestedSet\Diff\TreeChange\Modified;
+use Vusys\NestedSet\Diff\TreeChange\Moved;
+use Vusys\NestedSet\Diff\TreeChange\Removed;
+use Vusys\NestedSet\Exceptions\CyclicMoveException;
+use Vusys\NestedSet\Exceptions\MissingParentException;
+
+/**
+ * Applies a {@see TreeDiff} to a live model class.
+ *
+ * Ordering: remove → add → move → modify, all under one transaction
+ * with aggregate maintenance deferred to a single trailing pass. The
+ * applier is stateless; every operation hangs off the diff + model
+ * class passed in.
+ *
+ * Identity resolution uses the diff's `$on`. When `$on === 'id'` the
+ * resolver is the identity function; otherwise the default does a
+ * single `whereIn` against the named column. Callers with non-trivial
+ * mapping (composite keys, scoped lookups) pass an explicit
+ * `$resolver` closure.
+ */
+final class TreeDiffApplier
+{
+    /**
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  Closure(mixed): (int|string|null)|null  $resolver
+     */
+    public static function apply(
+        TreeDiff $diff,
+        string $modelClass,
+        ?Closure $resolver,
+        bool $dryRun,
+    ): TreeDiffResult {
+        if ($diff->isEmpty()) {
+            return new TreeDiffResult(
+                added: [],
+                removed: [],
+                moved: [],
+                modified: [],
+                dryRun: $dryRun,
+                plannedStatements: [],
+            );
+        }
+
+        self::assertCycleFree($diff);
+
+        $instance = self::makeInstance($modelClass);
+
+        self::assertSchemaMatches($diff, $instance);
+
+        $on = $diff->on;
+        $identities = self::collectIdentities($diff);
+        $resolved = $resolver instanceof Closure
+            ? self::resolveAll($identities, $resolver)
+            : self::resolveDefault($modelClass, $on, $identities);
+        $resolver ??= static fn (mixed $identity): int|string|null => self::resolveLookup($identity, $resolved);
+
+        if ($dryRun) {
+            return self::dryRunResult($diff);
+        }
+
+        $accumulator = new TreeDiffApplierAccumulator;
+
+        $work = static function () use ($diff, $modelClass, $resolver, &$resolved, $accumulator): void {
+            self::doRemoves($diff, $modelClass, $resolved, $accumulator);
+            self::doAdds($diff, $modelClass, $resolver, $resolved, $accumulator);
+            self::doMoves($diff, $modelClass, $resolved, $accumulator);
+            self::doModifies($diff, $modelClass, $resolved, $accumulator);
+        };
+
+        $connection = $instance->getConnection();
+        self::callStatic($modelClass, 'withDeferredAggregateMaintenance', [
+            static function () use ($connection, $work): void {
+                $connection->transaction(static function () use ($work): void {
+                    $work();
+                });
+            },
+            null,
+        ]);
+
+        return new TreeDiffResult(
+            added: $accumulator->added,
+            removed: $accumulator->removed,
+            moved: $accumulator->moved,
+            modified: $accumulator->modified,
+            dryRun: false,
+            plannedStatements: [],
+        );
+    }
+
+    /**
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     */
+    private static function makeInstance(string $modelClass): Model
+    {
+        return new $modelClass;
+    }
+
+    /**
+     * Invokes a `NodeTrait`-provided static method on `$modelClass`.
+     *
+     * The {@see HasNestedSet} contract intentionally omits the trait's
+     * mutation surface (`bulkInsertTree`, `withDeferredAggregateMaintenance`,
+     * etc.) so user code can implement the contract by hand for tests.
+     * Dispatching through a callable keeps the contract minimal while
+     * letting the applier call the methods every real fixture exposes.
+     *
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  list<mixed>  $args
+     */
+    private static function callStatic(string $modelClass, string $method, array $args): mixed
+    {
+        $callable = [$modelClass, $method];
+        if (! is_callable($callable)) {
+            throw new LogicException(sprintf(
+                'TreeDiff::apply(): %s does not expose static %s() — typically NodeTrait is missing.',
+                $modelClass,
+                $method,
+            ));
+        }
+
+        return $callable(...$args);
+    }
+
+    /**
+     * Invokes a `NodeTrait`-provided instance method on a freshly-fetched
+     * model row. See {@see self::callStatic()} for the rationale.
+     *
+     * @param  list<mixed>  $args
+     */
+    private static function callInstance(Model $model, string $method, array $args): mixed
+    {
+        $callable = [$model, $method];
+        if (! is_callable($callable)) {
+            throw new LogicException(sprintf(
+                'TreeDiff::apply(): %s::%s() not callable — typically NodeTrait is missing on the model.',
+                $model::class,
+                $method,
+            ));
+        }
+
+        return $callable(...$args);
+    }
+
+    /**
+     * Validates that every column the diff intends to write exists on
+     * the model. The check is up-front so a half-applied diff never
+     * lands.
+     */
+    private static function assertSchemaMatches(TreeDiff $diff, Model $instance): void
+    {
+        $table = $instance->getTable();
+        $columns = $instance->getConnection()->getSchemaBuilder()->getColumnListing($table);
+        $known = array_fill_keys($columns, true);
+
+        $offenders = [];
+
+        foreach ($diff->added as $added) {
+            foreach (array_keys($added->attributes) as $col) {
+                if (! isset($known[$col])) {
+                    $offenders[$col] = true;
+                }
+            }
+        }
+
+        foreach ($diff->modified as $mod) {
+            foreach (array_keys($mod->after) as $col) {
+                if (! isset($known[$col])) {
+                    $offenders[$col] = true;
+                }
+            }
+        }
+
+        if ($offenders !== []) {
+            throw new LogicException(sprintf(
+                'TreeDiff::apply(): %s has no columns %s — refusing to apply.',
+                $instance::class,
+                implode(', ', array_keys($offenders)),
+            ));
+        }
+    }
+
+    private static function assertCycleFree(TreeDiff $diff): void
+    {
+        /** @var array<string, string|null> $parentByKey */
+        $parentByKey = [];
+        foreach ($diff->moved as $m) {
+            $parentByKey[self::keyHash($m->key)] = $m->toParent === null ? null : self::keyHash($m->toParent);
+        }
+
+        foreach ($diff->moved as $m) {
+            $seen = [];
+            $cursor = self::keyHash($m->key);
+            $seen[$cursor] = true;
+            while (array_key_exists($cursor, $parentByKey) && $parentByKey[$cursor] !== null) {
+                $cursor = $parentByKey[$cursor];
+                if (isset($seen[$cursor])) {
+                    throw new CyclicMoveException(sprintf(
+                        'TreeDiff::apply(): move set forms a cycle reachable from key %s.',
+                        self::formatKey($m->key),
+                    ));
+                }
+                $seen[$cursor] = true;
+            }
+        }
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private static function collectIdentities(TreeDiff $diff): array
+    {
+        $identities = [];
+        foreach ($diff->removed as $r) {
+            $identities[self::keyHash($r->key)] = $r->key;
+        }
+        foreach ($diff->moved as $m) {
+            $identities[self::keyHash($m->key)] = $m->key;
+            if ($m->toParent !== null) {
+                $identities[self::keyHash($m->toParent)] = $m->toParent;
+            }
+        }
+        foreach ($diff->modified as $mod) {
+            $identities[self::keyHash($mod->key)] = $mod->key;
+        }
+        foreach ($diff->added as $a) {
+            if ($a->parentKey !== null) {
+                $identities[self::keyHash($a->parentKey)] = $a->parentKey;
+            }
+        }
+
+        return array_values($identities);
+    }
+
+    /**
+     * @param  list<mixed>  $identities
+     * @param  Closure(mixed): (int|string|null)  $resolver
+     * @return array<string, int|string|null>
+     */
+    private static function resolveAll(array $identities, Closure $resolver): array
+    {
+        $out = [];
+        foreach ($identities as $identity) {
+            $out[self::keyHash($identity)] = $resolver($identity);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Default identity resolver — a single `whereIn` against the `$on`
+     * column (or pass-through when `$on` is the model's primary key).
+     * The closure-`$on` case falls through to pass-through; supplying
+     * a custom resolver is the right path when identity isn't a column.
+     *
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  list<mixed>  $identities
+     * @return array<string, int|string|null>
+     */
+    private static function resolveDefault(string $modelClass, string|Closure $on, array $identities): array
+    {
+        $instance = self::makeInstance($modelClass);
+        $keyName = $instance->getKeyName();
+
+        $passthrough = $on instanceof Closure || $on === $keyName;
+
+        $out = [];
+        if ($passthrough) {
+            foreach ($identities as $identity) {
+                $out[self::keyHash($identity)] = is_int($identity) || is_string($identity) ? $identity : null;
+            }
+
+            return $out;
+        }
+
+        /** @var list<int|string> $scalarIdentities */
+        $scalarIdentities = [];
+        foreach ($identities as $identity) {
+            if (is_int($identity) || is_string($identity)) {
+                $scalarIdentities[] = $identity;
+            } else {
+                $out[self::keyHash($identity)] = null;
+            }
+        }
+
+        if ($scalarIdentities !== []) {
+            $rows = $modelClass::query()
+                ->whereIn($on, $scalarIdentities)
+                ->get([$keyName, $on]);
+
+            /** @var array<int|string, int|string> $map */
+            $map = [];
+            foreach ($rows as $row) {
+                $identityVal = $row->getAttribute($on);
+                $pk = $row->getKey();
+                if ((is_int($identityVal) || is_string($identityVal)) && (is_int($pk) || is_string($pk))) {
+                    $map[$identityVal] = $pk;
+                }
+            }
+
+            foreach ($scalarIdentities as $identity) {
+                $out[self::keyHash($identity)] = $map[$identity] ?? null;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, int|string|null>  $resolved
+     */
+    private static function resolveLookup(mixed $identity, array $resolved): int|string|null
+    {
+        return $resolved[self::keyHash($identity)] ?? null;
+    }
+
+    /**
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  array<string, int|string|null>  $resolved
+     */
+    private static function doRemoves(
+        TreeDiff $diff,
+        string $modelClass,
+        array $resolved,
+        TreeDiffApplierAccumulator $accumulator,
+    ): void {
+        if ($diff->removed === []) {
+            return;
+        }
+
+        $pks = [];
+        $byPk = [];
+        foreach ($diff->removed as $r) {
+            $pk = $resolved[self::keyHash($r->key)] ?? null;
+            if ($pk === null) {
+                continue;
+            }
+            $pks[] = $pk;
+            $byPk[self::keyHash($pk)] = $r->key;
+        }
+
+        if ($pks === []) {
+            return;
+        }
+
+        $rows = $modelClass::query()->whereIn((new $modelClass)->getKeyName(), $pks)->get();
+
+        foreach ($rows as $row) {
+            $row->delete();
+            $key = $row->getKey();
+            $applied = $byPk[self::keyHash($key)] ?? $key;
+            if (is_int($applied) || is_string($applied)) {
+                $accumulator->removed[] = $applied;
+            }
+        }
+    }
+
+    /**
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  Closure(mixed): (int|string|null)  $resolver
+     * @param  array<string, int|string|null>  $resolved
+     *
+     * @param-out array<string, int|string|null>  $resolved
+     */
+    private static function doAdds(
+        TreeDiff $diff,
+        string $modelClass,
+        Closure $resolver,
+        array &$resolved,
+        TreeDiffApplierAccumulator $accumulator,
+    ): void {
+        $keyName = (new $modelClass)->getKeyName();
+
+        foreach ($diff->added as $added) {
+            $attrs = $added->attributes;
+            unset($attrs[$keyName]);
+
+            $model = new $modelClass($attrs);
+
+            if ($added->parentKey === null) {
+                self::callInstance($model, 'makeRoot', []);
+                $model->save();
+            } else {
+                $parentPk = $resolved[self::keyHash($added->parentKey)]
+                    ?? $resolver($added->parentKey);
+                if ($parentPk === null) {
+                    throw new MissingParentException(sprintf(
+                        'TreeDiff::apply(): cannot place added row %s; parent %s did not resolve.',
+                        self::formatKey($added->key),
+                        self::formatKey($added->parentKey),
+                    ));
+                }
+
+                $parent = $modelClass::query()->whereKey($parentPk)->first();
+                if (! $parent instanceof Model) {
+                    throw new MissingParentException(sprintf(
+                        'TreeDiff::apply(): parent row id=%s no longer exists for added %s.',
+                        self::formatKey($parentPk),
+                        self::formatKey($added->key),
+                    ));
+                }
+                self::callInstance($model, 'appendToNode', [$parent]);
+                $model->save();
+            }
+
+            $key = $model->getKey();
+            if (! is_int($key) && ! is_string($key)) {
+                continue;
+            }
+            if (! is_int($added->key) && ! is_string($added->key)) {
+                continue;
+            }
+            $accumulator->added[] = $added->key;
+            $resolved[self::keyHash($added->key)] = $key;
+        }
+    }
+
+    /**
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  array<string, int|string|null>  $resolved
+     */
+    private static function doMoves(
+        TreeDiff $diff,
+        string $modelClass,
+        array $resolved,
+        TreeDiffApplierAccumulator $accumulator,
+    ): void {
+        foreach ($diff->moved as $move) {
+            $rowPk = $resolved[self::keyHash($move->key)] ?? null;
+            if ($rowPk === null) {
+                throw new MissingParentException(sprintf(
+                    'TreeDiff::apply(): cannot move row %s; identity did not resolve.',
+                    self::formatKey($move->key),
+                ));
+            }
+
+            $row = $modelClass::query()->whereKey($rowPk)->first();
+            if (! $row instanceof Model) {
+                throw new MissingParentException(sprintf(
+                    'TreeDiff::apply(): row id=%s no longer exists for move %s.',
+                    self::formatKey($rowPk),
+                    self::formatKey($move->key),
+                ));
+            }
+
+            if ($move->toParent === null) {
+                self::callInstance($row, 'makeRoot', []);
+                $row->save();
+            } else {
+                $parentPk = $resolved[self::keyHash($move->toParent)] ?? null;
+                if ($parentPk === null) {
+                    throw new MissingParentException(sprintf(
+                        'TreeDiff::apply(): cannot move row %s; destination parent %s did not resolve.',
+                        self::formatKey($move->key),
+                        self::formatKey($move->toParent),
+                    ));
+                }
+                $parent = $modelClass::query()->whereKey($parentPk)->first();
+                if (! $parent instanceof Model) {
+                    throw new MissingParentException(sprintf(
+                        'TreeDiff::apply(): destination parent id=%s no longer exists for move %s.',
+                        self::formatKey($parentPk),
+                        self::formatKey($move->key),
+                    ));
+                }
+
+                self::callInstance($row, 'appendToNode', [$parent]);
+                $row->save();
+            }
+
+            if (is_int($move->key) || is_string($move->key)) {
+                $accumulator->moved[] = $move->key;
+            }
+        }
+    }
+
+    /**
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  array<string, int|string|null>  $resolved
+     */
+    private static function doModifies(
+        TreeDiff $diff,
+        string $modelClass,
+        array $resolved,
+        TreeDiffApplierAccumulator $accumulator,
+    ): void {
+        $keyName = (new $modelClass)->getKeyName();
+
+        foreach ($diff->modified as $mod) {
+            $pk = $resolved[self::keyHash($mod->key)] ?? null;
+            if ($pk === null) {
+                throw new MissingParentException(sprintf(
+                    'TreeDiff::apply(): cannot modify row %s; identity did not resolve.',
+                    self::formatKey($mod->key),
+                ));
+            }
+
+            $row = $modelClass::query()->whereKey($pk)->first();
+            if (! $row instanceof Model) {
+                throw new MissingParentException(sprintf(
+                    'TreeDiff::apply(): row id=%s no longer exists for modify %s.',
+                    self::formatKey($pk),
+                    self::formatKey($mod->key),
+                ));
+            }
+
+            foreach ($mod->after as $col => $val) {
+                if ($col === $keyName) {
+                    continue;
+                }
+                $row->setAttribute($col, $val);
+            }
+            $row->save();
+
+            if (is_int($mod->key) || is_string($mod->key)) {
+                $accumulator->modified[] = $mod->key;
+            }
+        }
+    }
+
+    private static function dryRunResult(TreeDiff $diff): TreeDiffResult
+    {
+        $added = array_map(static fn (Added $a): mixed => $a->key, $diff->added);
+        $removed = array_map(static fn (Removed $r): mixed => $r->key, $diff->removed);
+        $moved = array_map(static fn (Moved $m): mixed => $m->key, $diff->moved);
+        $modified = array_map(static fn (Modified $m): mixed => $m->key, $diff->modified);
+
+        $planned = [];
+        if ($diff->removed !== []) {
+            $planned[] = ['statement' => 'delete', 'rows' => count($diff->removed)];
+        }
+        foreach ($diff->added as $_) {
+            $planned[] = ['statement' => 'insert+gap', 'rows' => 1];
+        }
+        foreach ($diff->moved as $_) {
+            $planned[] = ['statement' => 'move', 'rows' => 1];
+        }
+        if ($diff->modified !== []) {
+            $planned[] = ['statement' => 'update', 'rows' => count($diff->modified)];
+        }
+
+        /** @var list<int|string> $added */
+        /** @var list<int|string> $removed */
+        /** @var list<int|string> $moved */
+        /** @var list<int|string> $modified */
+        return new TreeDiffResult(
+            added: $added,
+            removed: $removed,
+            moved: $moved,
+            modified: $modified,
+            dryRun: true,
+            plannedStatements: $planned,
+        );
+    }
+
+    private static function keyHash(mixed $key): string
+    {
+        if (is_int($key)) {
+            return 'i:'.$key;
+        }
+        if (is_string($key)) {
+            return 's:'.$key;
+        }
+        if ($key === null) {
+            return 'n:';
+        }
+
+        return 'x:'.spl_object_hash((object) $key);
+    }
+
+    private static function formatKey(mixed $key): string
+    {
+        if ($key === null) {
+            return 'null';
+        }
+        if (is_int($key)) {
+            return (string) $key;
+        }
+        if (is_string($key)) {
+            return '"'.$key.'"';
+        }
+
+        return get_debug_type($key);
+    }
+}
