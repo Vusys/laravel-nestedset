@@ -70,7 +70,7 @@ Reordering doesn't change ancestry, so stored aggregate values on ancestors stay
 
 ### Concurrency: last write wins
 
-Two clients reordering the same sibling group concurrently both compute their offsets from snapshots that may have been overwritten between their `SELECT` and their `UPDATE`. The result is always a **valid** order — one of the two requested — not a corrupt tree. If you need strict last-writer-loses semantics, wrap the call in `SELECT ... FOR UPDATE` on the parent row.
+Two clients reordering the same sibling group concurrently both compute their offsets from snapshots that may have been overwritten between their `SELECT` and their `UPDATE`. The result is always a **valid** order — one of the two requested — not a corrupt tree, but which one wins is non-deterministic. If you need a deterministic winner, wrap the call in `SELECT ... FOR UPDATE` on the parent row to serialise the two operations: the second client then computes its offsets from the first client's committed state, and the final order is the second client's request applied on top.
 
 ### The event surface
 

@@ -25,7 +25,7 @@ final class ReorderScopedTest extends TestCase
         $menu2 = Menu::create(['name' => 'Menu 2']);
 
         [$root1, $a1, $b1, $c1] = $this->buildChainOfFour($menu1->id, 'm1');
-        [$root2, $a2, $b2, $c2] = $this->buildChainOfFour($menu2->id, 'm2');
+        $this->buildChainOfFour($menu2->id, 'm2');
 
         // Snapshot menu 2's lft/rgt — should be untouched by menu 1's reorder.
         $menu2BoundsBefore = MenuItem::query()

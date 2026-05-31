@@ -222,25 +222,33 @@ final readonly class TreeMutationBuilder
             return 0;
         }
 
-        $case = $this->buildShiftCase($movingShifts);
-
+        // MySQL/MariaDB evaluate multi-column UPDATE assignments left-to-right
+        // and observe already-assigned values in later expressions. A single
+        // CASE keyed on `lft` would see the new lft when the rgt assignment
+        // ran, mis-routing the BETWEEN check. Build one CASE per column so
+        // each predicate keys on the column being assigned (still untouched
+        // at the moment of evaluation). Mirrors moveNode()/shiftCase().
         return $this->scoped()
             ->where($this->lft, '>', $parentLft)
             ->where($this->rgt, '<', $parentRgt)
             ->update([
-                $this->lft => new TreeExpression("{$this->lft} + {$case}"),
-                $this->rgt => new TreeExpression("{$this->rgt} + {$case}"),
+                $this->lft => new TreeExpression(
+                    "{$this->lft} + ".$this->buildShiftCase($this->lft, $movingShifts),
+                ),
+                $this->rgt => new TreeExpression(
+                    "{$this->rgt} + ".$this->buildShiftCase($this->rgt, $movingShifts),
+                ),
             ]);
     }
 
     /**
      * @param  list<array{int, int, int}>  $shifts
      */
-    private function buildShiftCase(array $shifts): string
+    private function buildShiftCase(string $column, array $shifts): string
     {
         $branches = '';
         foreach ($shifts as [$oldLft, $oldRgt, $delta]) {
-            $branches .= "WHEN {$this->lft} BETWEEN {$oldLft} AND {$oldRgt} THEN {$delta} ";
+            $branches .= "WHEN {$column} BETWEEN {$oldLft} AND {$oldRgt} THEN {$delta} ";
         }
 
         return "CASE {$branches}ELSE 0 END";
