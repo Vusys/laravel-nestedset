@@ -56,7 +56,9 @@ Scoped models require an anchor on `aggregateErrors`, `aggregatesAreBroken`, and
 
 ## Observability
 
-Aggregate maintenance fires typed events on Laravel's event bus — `FixAggregatesCompleted`, `FixAggregatesChunkCompleted`, `FixAggregatesJobDispatched`, `DeferredMaintenanceStarting`, `DeferredAggregateMaintenanceCompleted`, `NodeAggregatesRecomputed`, `AggregateDriftDetected`, `AggregateMaintenanceFailed`.
+Aggregate maintenance fires typed events on Laravel's event bus — `FixAggregatesCompleted`, `FixAggregatesChunkCompleted`, `FixAggregatesJobDispatched`, `DeferredMaintenanceStarting`, `DeferredAggregateMaintenanceCompleted`, `NodeAggregatesRecomputed`, `NestedSetAggregateChanged`, `AggregateDriftDetected`, `AggregateMaintenanceFailed`.
+
+`NestedSetAggregateChanged` is the per-(row, column) CDC change feed for maintained aggregates — useful for mirroring to Redis / Kafka / search indexes without polling. It is **opt-in by listener presence**: the firing site short-circuits when nobody subscribes, so the package pays no extra read-side cost when the feed is unused.
 
 See the [Events](../reference/events.html#aggregate-maintenance) page for the full payload reference, recipes, and queue-safety notes.
 
