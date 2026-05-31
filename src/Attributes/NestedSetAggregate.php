@@ -107,6 +107,8 @@ final readonly class NestedSetAggregate
         public ?string $topK = null,
         public ?int $k = null,
         public ?string $by = null,
+        public bool $lazy = false,
+        public ?int $ttl = null,
     ) {}
 
     /**
@@ -302,6 +304,8 @@ final readonly class NestedSetAggregate
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
             weight: $this->weight,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -321,6 +325,8 @@ final readonly class NestedSetAggregate
             source: $source,
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -341,6 +347,8 @@ final readonly class NestedSetAggregate
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
             allowNonPositive: $this->allowNonPositive,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -352,6 +360,8 @@ final readonly class NestedSetAggregate
             source: $source,
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -364,6 +374,8 @@ final readonly class NestedSetAggregate
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
             sample: $this->sample,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -383,6 +395,8 @@ final readonly class NestedSetAggregate
             source: $source,
             inclusive: ! $this->exclusive,
             filter: $this->resolveFilter(),
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -424,6 +438,8 @@ final readonly class NestedSetAggregate
             limit: $this->limit,
             orderBy: $orderBy,
             distinct: $this->distinct,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -454,6 +470,8 @@ final readonly class NestedSetAggregate
                 filter: $this->resolveFilter(),
                 limit: $this->limit,
                 orderBy: $this->orderBy ?? $source,
+                lazy: $this->lazy,
+                ttl: $this->ttl,
             );
         }
 
@@ -475,6 +493,8 @@ final readonly class NestedSetAggregate
             limit: $this->limit,
             orderBy: $this->orderBy,
             sources: $sources,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -510,6 +530,8 @@ final readonly class NestedSetAggregate
             filter: $this->resolveFilter(),
             k: $this->k,
             topKBy: $this->by ?? $source,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -551,6 +573,8 @@ final readonly class NestedSetAggregate
             allowNullKeys: $this->allowNullKeys,
             keyColumn: $key,
             valueColumn: $value,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 

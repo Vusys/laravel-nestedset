@@ -43,6 +43,8 @@ final readonly class NestedSetAggregateListener
         public string $listener,
         public AggregateFunction $operation = AggregateFunction::Sum,
         public bool $exclusive = false,
+        public bool $lazy = false,
+        public ?int $ttl = null,
     ) {}
 
     /**
@@ -63,6 +65,8 @@ final readonly class NestedSetAggregateListener
             listenerClass: $this->listener,
             operation: $this->operation,
             inclusive: ! $this->exclusive,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 }

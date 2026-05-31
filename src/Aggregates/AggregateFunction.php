@@ -146,6 +146,35 @@ enum AggregateFunction: string
     }
 
     /**
+     * True for functions whose stored column may be declared `lazy: true`.
+     *
+     * Companion-derived display functions (Avg / Variance / Stddev /
+     * WeightedAvg / BoolOr / BoolAnd / GeometricMean / HarmonicMean)
+     * are rejected: their display column is the cheap arithmetic
+     * combination of stored companion sums + counts, so making the
+     * display column lazy buys nothing while complicating companion
+     * maintenance. Median / Percentile are fresh-read-only, so the
+     * lazy notion does not apply.
+     *
+     * Allowed: Sum, Count, Min, Max, BitOr, BitAnd, BitXor,
+     * DistinctCount, StringAgg, JsonAgg, JsonObjectAgg.
+     */
+    public function supportsLazy(): bool
+    {
+        return match ($this) {
+            self::Sum, self::Count, self::Min, self::Max,
+            self::BitOr, self::BitAnd, self::BitXor,
+            self::DistinctCount, self::StringAgg,
+            self::JsonAgg, self::JsonObjectAgg,
+            self::TopK => true,
+            self::Avg, self::Variance, self::Stddev,
+            self::WeightedAvg, self::BoolOr, self::BoolAnd,
+            self::GeometricMean, self::HarmonicMean,
+            self::Median, self::Percentile => false,
+        };
+    }
+
+    /**
      * Declares the delta-maintainable companion columns this function
      * needs in order to be maintainable. `Avg` is promoted to a
      * `Sum + Count` companion pair; `Variance` and `Stddev` add a
