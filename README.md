@@ -59,6 +59,13 @@ echo $render();
 BudgetItem::query()->where('name', '=', 'Bonuses')->first()->update(['cost' => 4000]);
 BudgetItem::query()->where('name', '=', 'Engineering')->first()->refresh()->cost_total;   // 34000  — every ancestor updates (Bonuses → People → Engineering)
 
+// reshuffle a sibling group atomically — one CASE-WHEN UPDATE, drag-and-drop friendly
+$engineering = BudgetItem::query()->where('name', '=', 'Engineering')->first();
+$engineering->reorderChildren([
+    $engineering->children->firstWhere('name', 'Tools')->id,
+    $engineering->children->firstWhere('name', 'People')->id,
+]);
+
 // move the whole Tools subtree (3 nodes) under Operations — one statement
 BudgetItem::query()->where('name', '=', 'Tools')->first()
     ->moveTo(BudgetItem::query()->where('name', '=', 'Operations')->first())

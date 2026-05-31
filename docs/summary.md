@@ -19,6 +19,7 @@ Format:
 # Tree Operations
 
 - [Inserting & Moving](tree-operations/inserting.md)
+- [Reordering Siblings](tree-operations/reordering.md)
 - [Soft Deletes](tree-operations/soft-deletes.md)
 - [Bulk Insertion](tree-operations/bulk-insertion.md)
 

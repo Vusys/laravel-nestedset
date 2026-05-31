@@ -64,6 +64,7 @@ When the package cascades soft-delete, restore, or hard-delete through a subtree
 | `SubtreeMoving` | before the structural SQL for an existing-node mutation | `anchor`, `fromBounds`, `operation` |
 | `SubtreeMoved` | after the structural SQL completes | `anchor`, `fromBounds`, `toBounds`, `operation`, `descendantIds`, `durationMs` |
 | `NodesSwapped` | `up()` / `down()` sibling swap completes | both participants + before/after bounds + `direction` |
+| `SiblingsReordered` | `reorderChildren()` / `moveToSiblingPosition()` / `reorderChildrenBy()` non-identity reorder completes | `parent`, `idsInOrder`, `rowsAffected`, `durationMs` |
 | `NodePromotedToRoot` | `makeRoot()` on an existing node | `anchor`, `previousParentId`, `previousDepth` |
 
 The `NodeMoved` / `SubtreeMoved` pair exists because moving an interior node renumbers its entire subtree in SQL — `NodeMoved` carries only the anchor's bounds, so listeners that need the whole moved subtree (breadcrumbs, permission caches, search indexes that key on ancestor paths) should subscribe to `SubtreeMoved` for the descendant-id list.
@@ -218,7 +219,7 @@ Telemetry events are simple readonly value objects with scalar / array fields, s
 Two categories need synchronous capture-and-forward if you want to queue work:
 
 - **`AggregateMaintenanceFailed::$exception`** is a `Throwable` and won't serialise cleanly across most queue drivers.
-- **Model-carrying events** hold live Eloquent instances and / or references to interface types that aren't safe to serialise without full Eloquent context: `BulkInsertTreeStarting`, `BulkInsertTreePlanned`, `BulkInsertNodeSaved`, `BulkInsertTreeSaved`, every `Subtree*` event, `NodesSwapped`, `NodePromotedToRoot`, `SoftDeleteMarkerCaptured`.
+- **Model-carrying events** hold live Eloquent instances and / or references to interface types that aren't safe to serialise without full Eloquent context: `BulkInsertTreeStarting`, `BulkInsertTreePlanned`, `BulkInsertNodeSaved`, `BulkInsertTreeSaved`, every `Subtree*` event, `NodesSwapped`, `SiblingsReordered`, `NodePromotedToRoot`, `SoftDeleteMarkerCaptured`.
 
 The pattern is:
 
