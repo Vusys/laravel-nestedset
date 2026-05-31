@@ -14,8 +14,14 @@ use Vusys\NestedSet\Tests\TestCase;
 
 /**
  * Edge paths on `fromJsonTree()`: empty payload no-op, JSON-string
- * input, flat-shape import, includeKeys + collision, scoped roots
- * requiring scope columns, invalid JSON.
+ * input, invalid JSON, flat-shape import, scoped roots requiring
+ * scope columns, and scope inheritance under an existing parent.
+ *
+ * `includeKeys = true` is intentionally not covered here — the
+ * underlying `bulkInsertTree` path rejects an `id` row attribute as
+ * reserved, so the importer can't currently exercise the collision
+ * branch end-to-end. Re-add a test once that upstream guard is
+ * relaxed.
  */
 final class JsonImportEdgeCasesTest extends TestCase
 {
