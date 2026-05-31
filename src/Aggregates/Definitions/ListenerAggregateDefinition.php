@@ -34,6 +34,12 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
      *                          but excluded from the user-facing
      *                          inspection API (getAggregateDefinitions(),
      *                          aggregateErrors() output).
+     * @param  bool  $lazy  See {@see AggregateDefinition::$lazy}. Forbidden
+     *                      on AVG listener kinds because the display
+     *                      column is derived from Sum + Count companions
+     *                      and a lazy display column would require
+     *                      lazy companions too.
+     * @param  int|null  $ttl  See {@see AggregateDefinition::$ttl}.
      */
     public function __construct(
         public string $column,
@@ -41,6 +47,8 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
         public AggregateFunction $operation,
         public bool $inclusive = true,
         public bool $internal = false,
+        public bool $lazy = false,
+        public ?int $ttl = null,
     ) {
         if (in_array($this->operation, [AggregateFunction::BitOr, AggregateFunction::BitAnd, AggregateFunction::BitXor], true)) {
             throw new AggregateConfigurationException(sprintf(
@@ -50,6 +58,49 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
                 $operation->value,
             ));
         }
+
+        if ($this->lazy && ! $this->operation->supportsLazy()) {
+            throw new AggregateConfigurationException(sprintf(
+                'Listener aggregate "%s" cannot be declared lazy: operation %s is companion-derived. '
+                .'Lazy is allowed on Sum, Count, Min, Max only for listener aggregates.',
+                $column,
+                $operation->value,
+            ));
+        }
+
+        if (! $this->lazy && $this->ttl !== null) {
+            throw new AggregateConfigurationException(sprintf(
+                'Listener aggregate "%s": `ttl` only applies when `lazy: true`.',
+                $column,
+            ));
+        }
+
+        if ($this->ttl !== null && $this->ttl <= 0) {
+            throw new AggregateConfigurationException(sprintf(
+                'Listener aggregate "%s": `ttl` must be a positive integer (seconds), got %d.',
+                $column,
+                $this->ttl,
+            ));
+        }
+    }
+
+    /**
+     * Stamp companion column name for lazy aggregates — same convention
+     * as {@see AggregateDefinition::lazyStampColumn()}.
+     */
+    public function lazyStampColumn(): string
+    {
+        return $this->column.'_computed_at';
+    }
+
+    public function isLazy(): bool
+    {
+        return $this->lazy;
+    }
+
+    public function lazyTtlSeconds(): ?int
+    {
+        return $this->ttl;
     }
 
     public function getColumn(): string
