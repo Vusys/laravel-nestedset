@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
+use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -71,5 +72,12 @@ final class ReorderChildrenByTest extends TestCase
         $leaf->reorderChildrenBy('name');
 
         $this->assertSame(0, $sniffer->updates);
+    }
+
+    public function test_unsaved_parent_throws(): void
+    {
+        $this->expectException(UnplacedNodeException::class);
+
+        (new Category)->reorderChildrenBy('name');
     }
 }

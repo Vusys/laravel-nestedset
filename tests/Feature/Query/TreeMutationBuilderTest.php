@@ -251,4 +251,38 @@ final class TreeMutationBuilderTest extends TestCase
 
         $this->assertSame(1, $count);
     }
+
+    // ----------------------------------------------------------------
+    // reorderSiblings — defensive guards
+    // ----------------------------------------------------------------
+
+    public function test_reorder_siblings_empty_shifts_returns_zero_with_no_update(): void
+    {
+        $count = 0;
+        DB::listen(static function () use (&$count): void {
+            $count++;
+        });
+
+        $affected = $this->mutator->reorderSiblings(parentLft: 1, parentRgt: 10, shifts: []);
+
+        $this->assertSame(0, $affected);
+        $this->assertSame(0, $count);
+    }
+
+    public function test_reorder_siblings_all_zero_delta_returns_zero_with_no_update(): void
+    {
+        $count = 0;
+        DB::listen(static function () use (&$count): void {
+            $count++;
+        });
+
+        $affected = $this->mutator->reorderSiblings(
+            parentLft: 1,
+            parentRgt: 10,
+            shifts: [[2, 7, 0], [8, 9, 0]],
+        );
+
+        $this->assertSame(0, $affected);
+        $this->assertSame(0, $count);
+    }
 }

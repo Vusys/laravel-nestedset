@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
+use LogicException;
 use OutOfRangeException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -117,5 +118,21 @@ final class MoveToSiblingPositionTest extends TestCase
         $this->expectException(UnplacedNodeException::class);
 
         Category::query()->findOrFail(1)->moveToSiblingPosition(1);
+    }
+
+    public function test_throws_when_parent_id_points_to_missing_row(): void
+    {
+        // Defensive guard: parent row vanished between this->load() and the
+        // newQuery()->whereKey($parentId)->first() lookup. Reproduce by
+        // pointing parent_id at a non-existent id via raw UPDATE.
+        $this->allowBrokenTreeAtTearDown = true;
+        DB::table('categories')->where('id', 2)->update(['parent_id' => 999]);
+
+        $orphan = Category::query()->findOrFail(2);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('parent (id=999) not found');
+
+        $orphan->moveToSiblingPosition(1);
     }
 }

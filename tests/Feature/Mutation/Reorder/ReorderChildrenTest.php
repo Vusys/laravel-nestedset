@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
+use LogicException;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -258,5 +259,15 @@ final class ReorderChildrenTest extends TestCase
         $returned = $root->reorderChildren([6, 4, 2]);
 
         $this->assertSame($root, $returned);
+    }
+
+    public function test_rejects_non_int_or_string_entries(): void
+    {
+        $root = Category::query()->findOrFail(1);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('every entry must be a primary key');
+
+        $root->reorderChildren([3.14, 2, 4]); /** @phpstan-ignore-line */
     }
 }

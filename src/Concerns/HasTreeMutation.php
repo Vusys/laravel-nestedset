@@ -265,16 +265,11 @@ trait HasTreeMutation
             throw InvalidSiblingOrderException::duplicateChildren($duplicates);
         }
 
+        // The leaf-check above (rgt - lft === 1) guarantees the parent
+        // has at least one descendant, which in turn means at least one
+        // direct child — so this list is never empty here.
         /** @var list<array{key: int|string, lft: int, rgt: int}> $current */
         $current = $this->loadDirectChildBounds();
-
-        if ($current === []) {
-            if ($requestedKeys !== []) {
-                throw InvalidSiblingOrderException::unknownChildren($requestedKeys);
-            }
-
-            return $this;
-        }
 
         $currentKeys = array_map(static fn (array $row): int|string => $row['key'], $current);
 
