@@ -682,6 +682,22 @@ final class AggregateSqlEmitter
             $innerWhere .= " AND ({$filterSql})";
         }
 
+        // MariaDB walls off derived tables from the outer query's column
+        // scope (no LATERAL support), so the standard "wrap a LIMIT-ed
+        // derived table" shape rejects `inner_a.lft >= outer_a.lft` with
+        // "Unknown column 'outer_a.lft' in 'WHERE'". MariaDB's
+        // JSON_ARRAYAGG accepts ORDER BY + LIMIT inside the aggregate
+        // call, so we emit a single-level correlated scalar subquery
+        // there instead — the outer correlation sits at the same nesting
+        // level as the aggregator, which MariaDB accepts.
+        if (AggregateSqlFragments::isMariaDb($connection)) {
+            return '(SELECT JSON_ARRAYAGG('
+                ."JSON_ARRAY(inner_a.{$source}, inner_a.{$by}) "
+                ."ORDER BY inner_a.{$by} DESC, inner_a.{$source} DESC "
+                ."LIMIT {$k}"
+                .") FROM {$table} AS inner_a WHERE {$innerWhere})";
+        }
+
         $innerSelect = "SELECT inner_a.{$source} AS _src, inner_a.{$by} AS _by"
             ." FROM {$table} AS inner_a"
             ." WHERE {$innerWhere}"
@@ -692,9 +708,9 @@ final class AggregateSqlEmitter
         // input-row order on every backend, so re-apply the same
         // ordering inside the aggregator where supported.
         $jsonAgg = match ($driver) {
-            'pgsql' => "JSON_AGG(JSON_BUILD_ARRAY(top._src, top._by) ORDER BY top._by DESC, top._src DESC)",
-            'mysql', 'mariadb' => "JSON_ARRAYAGG(JSON_ARRAY(top._src, top._by))",
-            'sqlite' => "JSON_GROUP_ARRAY(JSON_ARRAY(top._src, top._by))",
+            'pgsql' => 'JSON_AGG(JSON_BUILD_ARRAY(top._src, top._by) ORDER BY top._by DESC, top._src DESC)',
+            'mysql' => 'JSON_ARRAYAGG(JSON_ARRAY(top._src, top._by))',
+            'sqlite' => 'JSON_GROUP_ARRAY(JSON_ARRAY(top._src, top._by))',
             default => throw self::unsupportedDriver('topK', $driver),
         };
 

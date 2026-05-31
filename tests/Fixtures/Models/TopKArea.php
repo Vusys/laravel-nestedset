@@ -32,13 +32,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property-read TopKArea|null $parent
  */
 #[NestedSetAggregate(column: 'top_revenue_ids', topK: 'id', k: 3, by: 'revenue')]
-#[NestedSetAggregate(
-    column: 'top_active_ids',
-    topK: 'id',
-    k: 3,
-    by: 'revenue',
-    filter: ['category' => 'active'],
-)]
+#[NestedSetAggregate(column: 'top_active_ids', filter: ['category' => 'active'], topK: 'id', k: 3, by: 'revenue')]
 final class TopKArea extends Model implements HasNestedSet
 {
     use NodeTrait;

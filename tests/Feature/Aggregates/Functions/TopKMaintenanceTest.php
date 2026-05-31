@@ -183,8 +183,8 @@ final class TopKMaintenanceTest extends TestCase
         $rootAgain = TopKArea::query()->find($root->getKey());
         $this->assertInstanceOf(TopKArea::class, $rootAgain);
 
-        $storedRevenues = self::revenuesFrom($rootAgain->getAttribute('top_revenue_ids'));
-        $freshRevenues = self::revenuesFrom($fresh);
+        $storedRevenues = $this->revenuesFrom($rootAgain->getAttribute('top_revenue_ids'));
+        $freshRevenues = $this->revenuesFrom($fresh);
 
         $this->assertSame($storedRevenues, $freshRevenues);
     }
@@ -202,11 +202,11 @@ final class TopKMaintenanceTest extends TestCase
         $first = $rows->first();
         $this->assertInstanceOf(TopKArea::class, $first);
 
-        $top = self::decodeJson($first->getAttribute('top2'));
+        $top = $this->decodeJson($first->getAttribute('top2'));
         $this->assertIsArray($top);
         $this->assertCount(2, $top);
 
-        $revenues = self::revenuesFromArray($top);
+        $revenues = $this->revenuesFromArray($top);
         $this->assertSame([700, 500], $revenues);
     }
 
@@ -217,25 +217,28 @@ final class TopKMaintenanceTest extends TestCase
      *
      * @return list<int>
      */
-    private static function revenuesFrom(mixed $value): array
+    private function revenuesFrom(mixed $value): array
     {
-        $decoded = self::decodeJson($value);
+        $decoded = $this->decodeJson($value);
         if (! is_array($decoded)) {
             return [];
         }
 
-        return self::revenuesFromArray($decoded);
+        return $this->revenuesFromArray($decoded);
     }
 
     /**
      * @param  array<int|string, mixed>  $decoded
      * @return list<int>
      */
-    private static function revenuesFromArray(array $decoded): array
+    private function revenuesFromArray(array $decoded): array
     {
         $result = [];
         foreach ($decoded as $row) {
-            if (! is_array($row) || ! array_key_exists(1, $row)) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if (! array_key_exists(1, $row)) {
                 continue;
             }
             $result[] = (int) $row[1];
@@ -244,7 +247,7 @@ final class TopKMaintenanceTest extends TestCase
         return $result;
     }
 
-    private static function decodeJson(mixed $value): mixed
+    private function decodeJson(mixed $value): mixed
     {
         if (is_string($value)) {
             return json_decode($value, associative: true);
