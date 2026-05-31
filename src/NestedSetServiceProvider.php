@@ -56,6 +56,8 @@ final class NestedSetServiceProvider extends ServiceProvider
 
     public const string AGGREGATE_TYPE_JSON = 'json';
 
+    public const string AGGREGATE_TYPE_TOP_K = 'top_k';
+
     public const string AGGREGATE_TYPE_WEIGHTED_AVG = 'weighted_avg';
 
     public const string AGGREGATE_TYPE_BOOL_OR = 'bool_or';
@@ -286,6 +288,15 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
+        if ($type === self::AGGREGATE_TYPE_TOP_K) {
+            // TopK — nullable JSON array of `[source_value, by_value]`
+            // pairs, length up to k. Same per-backend column shape as
+            // JsonAgg: jsonb on PG, JSON on MySQL/MariaDB, text on SQLite.
+            $table->json($column)->nullable();
+
+            return;
+        }
+
         if ($type === self::AGGREGATE_TYPE_JSON) {
             // JsonAgg / JsonObjectAgg — nullable. Backend-specific column
             // type: PG defaults to jsonb (faster reads, key normalisation);
@@ -457,7 +468,8 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_BITWISE,
             self::AGGREGATE_TYPE_DISTINCT_COUNT,
             self::AGGREGATE_TYPE_STRING_AGG,
-            self::AGGREGATE_TYPE_JSON => null,
+            self::AGGREGATE_TYPE_JSON,
+            self::AGGREGATE_TYPE_TOP_K => null,
             default => throw new InvalidArgumentException(self::unknownTypeMessage($type)),
         };
     }
@@ -485,6 +497,7 @@ final class NestedSetServiceProvider extends ServiceProvider
                 self::AGGREGATE_TYPE_DISTINCT_COUNT,
                 self::AGGREGATE_TYPE_STRING_AGG,
                 self::AGGREGATE_TYPE_JSON,
+                self::AGGREGATE_TYPE_TOP_K,
                 self::AGGREGATE_TYPE_WEIGHTED_AVG,
                 self::AGGREGATE_TYPE_BOOL_OR,
                 self::AGGREGATE_TYPE_BOOL_AND,

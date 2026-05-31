@@ -64,6 +64,11 @@ enum AggregateFunction: string
     // M5: read-only quantile kinds — withFreshAggregates() only.
     case Median = 'median';
     case Percentile = 'percentile';
+    // Top-K — stores the K rows with the largest `by` value across the
+    // subtree, materialised as a JSON array of `[source, by]` pairs.
+    // Recompute-only: a single delete from the subtree can promote a
+    // runner-up that was never tracked, so no signed delta exists.
+    case TopK = 'top_k';
 
     /**
      * True for functions whose maintenance can be expressed as a single
@@ -86,7 +91,8 @@ enum AggregateFunction: string
             self::BitOr, self::BitAnd,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg,
-            self::Median, self::Percentile => false,
+            self::Median, self::Percentile,
+            self::TopK => false,
         };
     }
 
@@ -109,7 +115,8 @@ enum AggregateFunction: string
             self::JsonObjectAgg,
             self::BitOr,
             self::BitAnd,
-            self::BitXor => true,
+            self::BitXor,
+            self::TopK => true,
             default => false,
         };
     }
@@ -133,7 +140,8 @@ enum AggregateFunction: string
             self::GeometricMean, self::HarmonicMean,
             self::BitOr, self::BitAnd, self::BitXor,
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg,
-            self::Median, self::Percentile => true,
+            self::Median, self::Percentile,
+            self::TopK => true,
         };
     }
 
@@ -196,7 +204,8 @@ enum AggregateFunction: string
             self::BitOr, self::BitAnd, self::BitXor,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg,
-            self::Median, self::Percentile => [],
+            self::Median, self::Percentile,
+            self::TopK => [],
         };
     }
 }

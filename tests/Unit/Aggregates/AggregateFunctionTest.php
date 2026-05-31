@@ -11,9 +11,9 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_twenty_one_cases(): void
+    public function test_has_exactly_twenty_two_cases(): void
     {
-        $this->assertCount(21, AggregateFunction::cases());
+        $this->assertCount(22, AggregateFunction::cases());
     }
 
     /**
@@ -61,6 +61,7 @@ final class AggregateFunctionTest extends TestCase
         yield 'json_object_agg' => [AggregateFunction::JsonObjectAgg, 'json_object_agg', false, true];
         yield 'median' => [AggregateFunction::Median, 'median', false, true];
         yield 'percentile' => [AggregateFunction::Percentile, 'percentile', false, true];
+        yield 'top_k' => [AggregateFunction::TopK, 'top_k', false, true];
     }
 
     /**
@@ -143,5 +144,6 @@ final class AggregateFunctionTest extends TestCase
         yield 'json_object_agg declares no companions' => [AggregateFunction::JsonObjectAgg, []];
         yield 'median declares no companions' => [AggregateFunction::Median, []];
         yield 'percentile declares no companions' => [AggregateFunction::Percentile, []];
+        yield 'top_k declares no companions' => [AggregateFunction::TopK, []];
     }
 }

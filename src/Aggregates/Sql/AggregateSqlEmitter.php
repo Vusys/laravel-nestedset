@@ -626,8 +626,132 @@ final class AggregateSqlEmitter
             AggregateFunction::JsonAgg => $def->source !== null
                 ? [$def->source]
                 : array_values($def->sources),
+            AggregateFunction::TopK => array_values(array_unique(array_filter([
+                $def->source,
+                $def->topKBy,
+            ], static fn (?string $col): bool => $col !== null && $col !== ''))),
             default => $def->source !== null ? [$def->source] : [],
         };
+    }
+
+    /**
+     * Build a correlated scalar subquery that returns the top-K JSON
+     * array for the outer row's subtree — used by both the maintenance
+     * recompute path and the fresh read path. Output is a JSON array of
+     * `[source_value, by_value]` pairs, length up to `$def->k`, ordered
+     * by the `by` column descending.
+     *
+     * `$boundsAndScope` is the AND-joined predicate that constrains the
+     * inner subtree (lft/rgt bounds, scope joins, soft-delete, etc.).
+     * `$filterSql` adds an extra row-level predicate when the aggregate
+     * is filtered. Inner table is aliased `inner_a`; outer reference is
+     * up to the caller.
+     */
+    public static function emitTopKCorrelatedSubquery(
+        Connection $connection,
+        AggregateDefinition $def,
+        string $table,
+        string $boundsAndScope,
+        ?string $filterSql = null,
+    ): string {
+        if ($def->function !== AggregateFunction::TopK) {
+            throw new AggregateConfigurationException(sprintf(
+                'AggregateSqlEmitter::emitTopKCorrelatedSubquery(): expected TopK, got %s.',
+                $def->function->value,
+            ));
+        }
+
+        $source = self::requireSource($def);
+        $by = $def->topKBy ?? throw new AggregateConfigurationException(sprintf(
+            'TopK "%s" is missing its `by` column.',
+            $def->column,
+        ));
+        $k = $def->k ?? throw new AggregateConfigurationException(sprintf(
+            'TopK "%s" is missing its `k` value.',
+            $def->column,
+        ));
+
+        $driver = $connection->getDriverName();
+
+        $innerWhere = $boundsAndScope;
+        // Rows with a NULL `by` value have no defined rank and must
+        // never enter the Top-K list — every backend orders NULL
+        // unpredictably and the result would become non-deterministic.
+        $innerWhere .= " AND inner_a.{$by} IS NOT NULL";
+        if ($filterSql !== null) {
+            $innerWhere .= " AND ({$filterSql})";
+        }
+
+        // MariaDB walls off derived tables from the outer query's column
+        // scope (no LATERAL support), so the standard "wrap a LIMIT-ed
+        // derived table" shape rejects `inner_a.lft >= outer_a.lft` with
+        // "Unknown column 'outer_a.lft' in 'WHERE'". MariaDB's
+        // JSON_ARRAYAGG accepts ORDER BY + LIMIT inside the aggregate
+        // call, so we emit a single-level correlated scalar subquery
+        // there instead — the outer correlation sits at the same nesting
+        // level as the aggregator, which MariaDB accepts.
+        if (AggregateSqlFragments::isMariaDb($connection)) {
+            return '(SELECT JSON_ARRAYAGG('
+                ."JSON_ARRAY(inner_a.{$source}, inner_a.{$by}) "
+                ."ORDER BY inner_a.{$by} DESC, inner_a.{$source} DESC "
+                ."LIMIT {$k}"
+                .") FROM {$table} AS inner_a WHERE {$innerWhere})";
+        }
+
+        $innerSelect = "SELECT inner_a.{$source} AS _src, inner_a.{$by} AS _by"
+            ." FROM {$table} AS inner_a"
+            ." WHERE {$innerWhere}"
+            ." ORDER BY inner_a.{$by} DESC, inner_a.{$source} DESC"
+            ." LIMIT {$k}";
+
+        // JSON_AGG / JSON_ARRAYAGG / JSON_GROUP_ARRAY don't guarantee
+        // input-row order on every backend, so re-apply the same
+        // ordering inside the aggregator where supported.
+        $jsonAgg = match ($driver) {
+            'pgsql' => 'JSON_AGG(JSON_BUILD_ARRAY(top._src, top._by) ORDER BY top._by DESC, top._src DESC)',
+            'mysql' => 'JSON_ARRAYAGG(JSON_ARRAY(top._src, top._by))',
+            'sqlite' => 'JSON_GROUP_ARRAY(JSON_ARRAY(top._src, top._by))',
+            default => throw self::unsupportedDriver('topK', $driver),
+        };
+
+        return "(SELECT {$jsonAgg} FROM ({$innerSelect}) top)";
+    }
+
+    /**
+     * Leaf-row inline shape for TopK. A leaf's subtree is itself, so
+     * the inclusive form yields a single-element JSON array; exclusive
+     * yields NULL.
+     */
+    public static function leafTopK(Connection $connection, AggregateDefinition $def, string $tableQualifier, ?string $filterSql = null): string
+    {
+        if (! $def->inclusive) {
+            return 'NULL';
+        }
+
+        $source = self::requireSource($def);
+        $by = $def->topKBy ?? throw new AggregateConfigurationException(sprintf(
+            'TopK "%s" is missing its `by` column.',
+            $def->column,
+        ));
+
+        $srcRef = $tableQualifier.$source;
+        $byRef = $tableQualifier.$by;
+
+        $driver = $connection->getDriverName();
+        $singleElement = match ($driver) {
+            'pgsql' => "JSON_BUILD_ARRAY(JSON_BUILD_ARRAY({$srcRef}, {$byRef}))",
+            'mysql', 'mariadb', 'sqlite' => "JSON_ARRAY(JSON_ARRAY({$srcRef}, {$byRef}))",
+            default => throw self::unsupportedDriver('topK leaf inline', $driver),
+        };
+
+        // NULL `by` excludes the row from the result. A filtered leaf
+        // that doesn't pass the predicate also yields NULL.
+        $guard = "{$byRef} IS NOT NULL";
+        if ($filterSql !== null) {
+            $guard .= " AND ({$filterSql})";
+        }
+
+        return "CASE WHEN {$guard} THEN {$singleElement} ELSE NULL END";
     }
 
     private static function quoteString(Connection $connection, string $value): string

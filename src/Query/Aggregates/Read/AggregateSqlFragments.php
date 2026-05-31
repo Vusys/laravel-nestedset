@@ -111,6 +111,12 @@ final class AggregateSqlFragments
                 $definition,
                 $qualifier,
             ),
+            AggregateFunction::TopK => throw new AggregateConfigurationException(
+                'TopK aggregates are emitted as standalone correlated subqueries by '
+                .'FreshAggregateProjector::buildTopKSubquery() — they should never reach '
+                .'AggregateSqlFragments::aggregateExpression(). If you hit this, an upstream '
+                .'caller is routing TopK through the scalar-aggregator path by mistake.',
+            ),
         };
     }
 
@@ -211,6 +217,11 @@ final class AggregateSqlFragments
                 $definition,
                 $qualifier,
                 $pred,
+            ),
+            AggregateFunction::TopK => throw new AggregateConfigurationException(
+                'TopK aggregates are emitted as standalone correlated subqueries by '
+                .'FreshAggregateProjector::buildTopKSubquery() — they should never reach '
+                .'AggregateSqlFragments::filteredAggregateExpression().',
             ),
         };
     }
@@ -343,6 +354,9 @@ final class AggregateSqlFragments
                 $definition,
                 $innerQualifier,
                 $rawFilter,
+            ),
+            AggregateFunction::TopK => throw new \LogicException(
+                'TopK cannot appear in inlineRawFilterExpression() — it is pre-extracted as a correlated subquery.',
             ),
         };
     }
@@ -547,6 +561,9 @@ final class AggregateSqlFragments
                 $definition,
                 $innerAlias.'.',
                 $rawSql,
+            ),
+            AggregateFunction::TopK => throw new \LogicException(
+                'TopK cannot appear in correlatedRawFilterExpression() — it is pre-extracted as a correlated subquery.',
             ),
         };
 
@@ -768,7 +785,8 @@ final class AggregateSqlFragments
                 AggregateFunction::JsonAgg,
                 AggregateFunction::JsonObjectAgg,
                 AggregateFunction::Median,
-                AggregateFunction::Percentile => 'NULL',
+                AggregateFunction::Percentile,
+                AggregateFunction::TopK => 'NULL',
             };
         }
 
@@ -831,6 +849,11 @@ final class AggregateSqlFragments
                     $definition,
                     $tableQualifier,
                 ),
+                AggregateFunction::TopK => AggregateSqlEmitter::leafTopK(
+                    self::requireConnection($connection, $definition),
+                    $definition,
+                    $tableQualifier,
+                ),
             };
         }
 
@@ -864,7 +887,8 @@ final class AggregateSqlFragments
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg,
             AggregateFunction::Median,
-            AggregateFunction::Percentile => 'NULL',
+            AggregateFunction::Percentile,
+            AggregateFunction::TopK => 'NULL',
         };
 
         return sprintf(
@@ -953,6 +977,12 @@ final class AggregateSqlFragments
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
+                $connection,
+                $definition,
+                $tableQualifier,
+                $pred,
+            ),
+            AggregateFunction::TopK => AggregateSqlEmitter::leafTopK(
                 $connection,
                 $definition,
                 $tableQualifier,

@@ -56,6 +56,8 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public ?string $weight = null,
         public bool $allowNonPositive = false,
         public float $percentilePoint = 0.5,
+        public ?int $k = null,
+        public ?string $topKBy = null,
     ) {}
 
     public function getColumn(): string
@@ -98,6 +100,7 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
             $this->sourceTransform->requiresWeight() && $this->weight !== null
                 ? [$this->weight]
                 : [],
+            $this->topKBy !== null ? [$this->topKBy] : [],
             $this->filter?->watchColumns() ?? [],
         )));
     }
