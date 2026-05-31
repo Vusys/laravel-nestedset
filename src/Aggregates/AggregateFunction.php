@@ -35,8 +35,8 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
  *    delta-maintainable internal columns; the user-facing column is
  *    written by a SQL formula over the companions on every mutation.
  *  - *recompute-only*: Min, Max, BitOr, BitAnd, DistinctCount, StringAgg,
- *    JsonAgg, JsonObjectAgg — no companions; each mutation re-reads the
- *    subtree.
+ *    JsonAgg, JsonObjectAgg, TopK — no companions; each mutation re-reads
+ *    the subtree.
  *  - *fresh-read-only*: Median, Percentile — no companions, no maintenance;
  *    only available via `withFreshAggregates()`.
  */
@@ -64,6 +64,11 @@ enum AggregateFunction: string
     // M5: read-only quantile kinds — withFreshAggregates() only.
     case Median = 'median';
     case Percentile = 'percentile';
+    // Top-K — stores the K rows with the largest `by` value across the
+    // subtree, materialised as a JSON array of `[source, by]` pairs.
+    // Recompute-only: a single delete from the subtree can promote a
+    // runner-up that was never tracked, so no signed delta exists.
+    case TopK = 'top_k';
 
     /**
      * True for functions whose maintenance can be expressed as a single
@@ -86,7 +91,8 @@ enum AggregateFunction: string
             self::BitOr, self::BitAnd,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg,
-            self::Median, self::Percentile => false,
+            self::Median, self::Percentile,
+            self::TopK => false,
         };
     }
 
@@ -95,7 +101,7 @@ enum AggregateFunction: string
      * on every mutation — no delta or cheap-skip fast path applies.
      *
      * Includes the four collection-aggregate kinds (DistinctCount / StringAgg /
-     * JsonAgg / JsonObjectAgg) plus the bitwise rollups. MIN/MAX are also
+     * JsonAgg / JsonObjectAgg), TopK, and the bitwise rollups. MIN/MAX are also
      * recompute-only but carry a cheap-skip filter on the previous extremum
      * value, so they get their own captured-recompute branch instead of going
      * through the chain-recompute path.
@@ -109,7 +115,8 @@ enum AggregateFunction: string
             self::JsonObjectAgg,
             self::BitOr,
             self::BitAnd,
-            self::BitXor => true,
+            self::BitXor,
+            self::TopK => true,
             default => false,
         };
     }
@@ -133,7 +140,8 @@ enum AggregateFunction: string
             self::GeometricMean, self::HarmonicMean,
             self::BitOr, self::BitAnd, self::BitXor,
             self::StringAgg, self::JsonAgg, self::JsonObjectAgg,
-            self::Median, self::Percentile => true,
+            self::Median, self::Percentile,
+            self::TopK => true,
         };
     }
 
@@ -196,7 +204,8 @@ enum AggregateFunction: string
             self::BitOr, self::BitAnd, self::BitXor,
             self::DistinctCount, self::StringAgg,
             self::JsonAgg, self::JsonObjectAgg,
-            self::Median, self::Percentile => [],
+            self::Median, self::Percentile,
+            self::TopK => [],
         };
     }
 }

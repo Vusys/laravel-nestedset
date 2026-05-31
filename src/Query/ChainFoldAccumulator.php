@@ -312,6 +312,7 @@ final class ChainFoldAccumulator
             case AggregateFunction::JsonObjectAgg:
             case AggregateFunction::Median:
             case AggregateFunction::Percentile:
+            case AggregateFunction::TopK:
                 throw new \LogicException(sprintf(
                     'ChainFoldAccumulator does not handle %s — recompute-only kinds skip the chain fold.',
                     $definition->function->value,

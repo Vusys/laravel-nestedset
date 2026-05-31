@@ -47,6 +47,7 @@ Every node carries its own subtree's rollup — `Computers` independently report
 - [Declaring Aggregates](declaring.html) — attribute and method-override forms
 - [Filtered Aggregates](filtered.html) — equality, not-null, and raw SQL filters
 - [Collection Aggregates](text-and-json.html) — distinctCount, stringAgg, jsonAgg, jsonObjectAgg
+- [Top-K Aggregate](top-k.html) — the K rows with the largest ranking value across the subtree
 - [Listener Aggregates](listeners.html) — PHP-computed contributions
 - [Variance & Stddev](maths.html) — statistical roll-ups, both population and sample
 - [Weighted Average & Boolean Rollups](weighted-avg-and-booleans.html) — `weightedAvg(value, weight)`, `boolOr`, `boolAnd`

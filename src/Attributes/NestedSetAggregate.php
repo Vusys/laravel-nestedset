@@ -26,8 +26,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  * Exactly one of `sum | count | avg | min | max | variance | stddev |
  * weightedAvg | boolOr | boolAnd | geometricMean | harmonicMean |
  * bitOr | bitAnd | bitXor | distinctCount | stringAgg | jsonAgg |
- * jsonObjectAgg` must be provided per attribute instance; passing zero
- * or more than one throws
+ * jsonObjectAgg | topK` must be provided per attribute instance; passing
+ * zero or more than one throws
  * {@see AggregateConfigurationException} when the registry resolves
  * declarations. `count: true` declares COUNT(*); for the
  * non-null-skipping COUNT(column) variant use the method-override form
@@ -104,6 +104,9 @@ final readonly class NestedSetAggregate
         public ?string $orderBy = null,
         public bool $distinct = false,
         public bool $allowNullKeys = false,
+        public ?string $topK = null,
+        public ?int $k = null,
+        public ?string $by = null,
     ) {}
 
     /**
@@ -139,7 +142,7 @@ final readonly class NestedSetAggregate
                 .'Provide exactly one of sum, count, avg, min, max, variance, stddev, '
                 .'weightedAvg, boolOr, boolAnd, geometricMean, harmonicMean, '
                 .'bitOr, bitAnd, bitXor, '
-                .'distinctCount, stringAgg, jsonAgg, jsonObjectAgg.',
+                .'distinctCount, stringAgg, jsonAgg, jsonObjectAgg, topK.',
                 $this->column,
             ));
         }
@@ -232,6 +235,9 @@ final readonly class NestedSetAggregate
         if ($this->harmonicMean !== null) {
             $declared['harmonicMean'] = $this->harmonicMean;
         }
+        if ($this->topK !== null) {
+            $declared['topK'] = $this->topK;
+        }
 
         return $declared;
     }
@@ -258,6 +264,7 @@ final readonly class NestedSetAggregate
             'boolAnd' => $this->boolRollupDefinition(AggregateFunction::BoolAnd, $this->boolAnd),
             'geometricMean' => $this->meanDefinition(AggregateFunction::GeometricMean, $this->geometricMean),
             'harmonicMean' => $this->meanDefinition(AggregateFunction::HarmonicMean, $this->harmonicMean),
+            'topK' => $this->topKDefinition(),
             default => throw new AggregateConfigurationException(
                 'Unreachable: declaredFunctions() returned an unknown key.',
             ),
@@ -468,6 +475,41 @@ final readonly class NestedSetAggregate
             limit: $this->limit,
             orderBy: $this->orderBy,
             sources: $sources,
+        );
+    }
+
+    private function topKDefinition(): AggregateDefinition
+    {
+        $source = $this->topK;
+        if ($source === null || $source === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": topK requires a non-empty source column.',
+                $this->column,
+            ));
+        }
+
+        if ($this->k === null || $this->k < 1) {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": topK requires `k` to be a positive integer.',
+                $this->column,
+            ));
+        }
+
+        if ($this->by !== null && $this->by === '') {
+            throw new AggregateConfigurationException(sprintf(
+                'NestedSetAggregate for column "%s": topK `by` must not be an empty string when provided.',
+                $this->column,
+            ));
+        }
+
+        return new AggregateDefinition(
+            column: $this->column,
+            function: AggregateFunction::TopK,
+            source: $source,
+            inclusive: ! $this->exclusive,
+            filter: $this->resolveFilter(),
+            k: $this->k,
+            topKBy: $this->by ?? $source,
         );
     }
 

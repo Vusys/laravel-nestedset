@@ -74,8 +74,9 @@ final class FreshAggregateProjector
         // aggregate kinds, and handle quantiles as individual correlated
         // subqueries regardless of which backend we're on.
         ['quantiles' => $quantiles, 'rest' => $resolved] = self::splitQuantiles($resolved);
+        ['topks' => $topks, 'rest' => $resolved] = self::splitTopKs($resolved);
 
-        if ($resolved === [] && $quantiles === []) {
+        if ($resolved === [] && $quantiles === [] && $topks === []) {
             return;
         }
 
@@ -146,6 +147,25 @@ final class FreshAggregateProjector
                 $lftCol,
                 $rgtCol,
                 "({$sql})",
+                $softDeletedColumn,
+                $connection,
+            );
+
+            $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
+        }
+
+        // TopK also needs a dedicated subquery shape — the JSON aggregator
+        // can't apply LIMIT directly, so we wrap an ORDER BY + LIMIT
+        // derived table inside the correlated subquery. Same per-backend
+        // dispatch as JsonAgg, but with the top-K winnowing baked in.
+        foreach ($topks as $alias => $definition) {
+            $sql = self::buildTopKSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+            $cased = AggregateSqlFragments::wrapLeafFastPath(
+                $definition,
+                "{$table}.",
+                $lftCol,
+                $rgtCol,
+                $sql,
                 $softDeletedColumn,
                 $connection,
             );
@@ -532,6 +552,43 @@ final class FreshAggregateProjector
             return $connection->scalar($sql, $bindings);
         }
 
+        // TopK needs an ORDER BY + LIMIT subquery shape that doesn't fit
+        // into the scalar aggregateExpression() pattern. The emitter
+        // assumes the inner alias `inner_a`, so rebuild the bounds /
+        // scope predicate against `inner_a` using `?` placeholders that
+        // share the same bindings list as the rest of the scalar path.
+        if ($definition->function === AggregateFunction::TopK) {
+            $innerBoundsClause = $definition->inclusive
+                ? "inner_a.{$lftCol} >= ? AND inner_a.{$rgtCol} <= ?"
+                : "inner_a.{$lftCol} > ? AND inner_a.{$rgtCol} < ?";
+
+            $innerBindings = [$bounds->lft, $bounds->rgt];
+
+            $innerScopeClause = '';
+            foreach ($scopeValues as $column => $value) {
+                $innerScopeClause .= " AND inner_a.{$column} = ?";
+                $innerBindings[] = $value;
+            }
+
+            $innerSoftClause = $softDeletedColumn === null
+                ? ''
+                : " AND inner_a.{$softDeletedColumn} IS NULL";
+
+            $filterSql = $definition->filter instanceof FilterPredicate
+                ? AggregateSqlFragments::filterPredicateSql($connection, $definition->filter, 'inner_a.')
+                : null;
+
+            $sql = 'SELECT '.AggregateSqlEmitter::emitTopKCorrelatedSubquery(
+                $connection,
+                $definition,
+                $table,
+                $innerBoundsClause.$innerScopeClause.$innerSoftClause,
+                $filterSql,
+            ).' AS aggregate';
+
+            return $connection->scalar($sql, $innerBindings);
+        }
+
         $aggregateExpr = AggregateSqlFragments::aggregateExpression($definition, qualifier: '', connection: $connection);
         $sql = "SELECT {$aggregateExpr} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
@@ -675,6 +732,31 @@ final class FreshAggregateProjector
     }
 
     /**
+     * Same shape as {@see splitQuantiles()} — pulls TopK definitions
+     * out so they can be projected as standalone correlated subqueries
+     * instead of routed through the LATERAL / derived shapes that
+     * assume a scalar aggregator.
+     *
+     * @param  array<string, AggregateDefinition>  $resolved
+     * @return array{topks: array<string, AggregateDefinition>, rest: array<string, AggregateDefinition>}
+     */
+    private static function splitTopKs(array $resolved): array
+    {
+        $topks = [];
+        $rest = [];
+
+        foreach ($resolved as $alias => $definition) {
+            if ($definition->function === AggregateFunction::TopK) {
+                $topks[$alias] = $definition;
+            } else {
+                $rest[$alias] = $definition;
+            }
+        }
+
+        return ['topks' => $topks, 'rest' => $rest];
+    }
+
+    /**
      * Correlated subquery that computes one quantile value for the outer
      * row's subtree. On PostgreSQL, emits the native ordered-set aggregate
      * `PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY col)`. On MySQL / MariaDB /
@@ -727,6 +809,55 @@ final class FreshAggregateProjector
         }
 
         return AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, 'd.', $filterSql);
+    }
+
+    /**
+     * Correlated subquery for a TopK aggregate. Reuses
+     * {@see AggregateSqlEmitter::emitTopKCorrelatedSubquery()} so the
+     * SQL shape matches what the maintenance path writes — drift between
+     * fresh-read and maintained values is identical to a same-named
+     * function call.
+     *
+     * The emitter assumes the inner alias `inner_a`, so we build the
+     * bounds clause against `inner_a` correlated to the outer `{$table}.`
+     * prefix used by the fresh-read projector.
+     *
+     * @param  list<string>  $scopeCols
+     */
+    private static function buildTopKSubquery(
+        Connection $connection,
+        string $table,
+        string $lftCol,
+        string $rgtCol,
+        array $scopeCols,
+        AggregateDefinition $definition,
+        ?string $softDeletedColumn,
+    ): string {
+        $boundsClause = $definition->inclusive
+            ? "inner_a.{$lftCol} >= {$table}.{$lftCol} AND inner_a.{$rgtCol} <= {$table}.{$rgtCol}"
+            : "inner_a.{$lftCol} > {$table}.{$lftCol} AND inner_a.{$rgtCol} < {$table}.{$rgtCol}";
+
+        $scopeClause = '';
+        foreach ($scopeCols as $col) {
+            $scopeClause .= " AND inner_a.{$col} = {$table}.{$col}";
+        }
+
+        $softClause = $softDeletedColumn === null
+            ? ''
+            : " AND inner_a.{$softDeletedColumn} IS NULL";
+
+        $filterSql = null;
+        if ($definition->filter instanceof FilterPredicate) {
+            $filterSql = AggregateSqlFragments::filterPredicateSql($connection, $definition->filter, 'inner_a.');
+        }
+
+        return AggregateSqlEmitter::emitTopKCorrelatedSubquery(
+            $connection,
+            $definition,
+            $table,
+            $boundsClause.$scopeClause.$softClause,
+            $filterSql,
+        );
     }
 
     /**

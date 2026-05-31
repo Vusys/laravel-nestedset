@@ -88,7 +88,8 @@ final class AggregateValueComparator
     {
         return match ($def->function) {
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => self::jsonValuesEqual($stored, $computed),
+            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::TopK => self::jsonValuesEqual($stored, $computed),
             AggregateFunction::StringAgg => $def->distinct
                 ? self::distinctStringAggEqual($def, $stored, $computed)
                 : self::aggregatesEqual($stored, $computed),

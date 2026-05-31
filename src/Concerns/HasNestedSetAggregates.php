@@ -267,7 +267,8 @@ trait HasNestedSetAggregates
             AggregateFunction::JsonAgg,
             AggregateFunction::JsonObjectAgg,
             AggregateFunction::Median,
-            AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
+            AggregateFunction::Percentile,
+            AggregateFunction::TopK => throw new AggregateConfigurationException(sprintf(
                 'Listener aggregates do not support %s; declare it via #[NestedSetAggregate] (column-based) instead.',
                 $definition->operation->value,
             )),

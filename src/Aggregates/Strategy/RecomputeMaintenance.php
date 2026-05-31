@@ -185,6 +185,29 @@ final class RecomputeMaintenance
             }
 
             $filterPredicate = $spec['filter'] ?? null;
+            $filterSql = $filterPredicate instanceof FilterPredicate
+                ? self::filterPredicateSql($connection, $filterPredicate, 'inner_a.')
+                : null;
+
+            // TopK can't be expressed as a single scalar aggregate
+            // function over the wrapped FROM/WHERE — it needs a
+            // derived table with ORDER BY + LIMIT so the JSON aggregator
+            // sees only the K winners. Build the complete correlated
+            // subquery here instead of routing through
+            // innerAggregateExpression().
+            if ($spec['function'] === AggregateFunction::TopK) {
+                $subquery = AggregateSqlEmitter::emitTopKCorrelatedSubquery(
+                    $connection,
+                    self::requireDefinitionFromSpec($spec),
+                    $table,
+                    $boundsClause.$scopeJoin.$exclusionClause.$softInner,
+                    $filterSql,
+                );
+                $selects[] = "{$subquery} AS {$alias}";
+
+                continue;
+            }
+
             $aggExpr = self::innerAggregateExpression($connection, $spec, $filterPredicate);
 
             $selects[] = "(SELECT {$aggExpr} FROM {$table} AS inner_a "
@@ -389,6 +412,10 @@ final class RecomputeMaintenance
                     .'in DeltaMaintenance and should never reach this inner-expression builder.',
                     strtoupper($spec['function']->value),
                 )),
+                AggregateFunction::TopK => throw new AggregateConfigurationException(
+                    'RecomputeMaintenance: TopK columns are emitted via emitTopKCorrelatedSubquery() '
+                    .'in candidatesForRecompute() and should never reach this inner-expression builder.',
+                ),
                 AggregateFunction::DistinctCount,
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -439,6 +466,10 @@ final class RecomputeMaintenance
                 .'in DeltaMaintenance and should never reach this inner-expression builder.',
                 strtoupper($spec['function']->value),
             )),
+            AggregateFunction::TopK => throw new AggregateConfigurationException(
+                'RecomputeMaintenance: TopK columns are emitted via emitTopKCorrelatedSubquery() '
+                .'in candidatesForRecompute() and should never reach this inner-expression builder.',
+            ),
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
