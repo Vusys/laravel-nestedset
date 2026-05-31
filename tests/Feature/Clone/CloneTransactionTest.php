@@ -40,7 +40,7 @@ final class CloneTransactionTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('rollback');
         try {
-            DB::transaction(function () use ($source, $destination): void {
+            DB::transaction(function () use ($source, $destination): never {
                 $source->cloneSubtreeTo($destination);
                 throw new \RuntimeException('rollback');
             });
