@@ -97,7 +97,7 @@ final class CloneSubtreeTest extends TestCase
         $source->refresh();
         $this->assertSame(2, Category::query()->where('parent_id', $source->getKey())->count());
 
-        // 4 rows added (a, a1, a2 clones — plus none extra) → total before was 5, after 8.
+        // 3 rows added (a, a1, a2 clones) → total before was 5, after 8.
         $this->assertSame(8, Category::query()->count());
         $this->assertTreeIsIntact(Category::class);
     }

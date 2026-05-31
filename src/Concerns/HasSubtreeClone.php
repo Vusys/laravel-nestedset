@@ -257,15 +257,23 @@ trait HasSubtreeClone
 
         $cloneRoot->refresh();
 
-        EventDispatcher::dispatch(new SubtreeCloned(
-            modelClass: static::class,
-            source: $this,
-            clone: $cloneRoot,
-            rowCount: $rowCount,
-            includeTrashed: $includeTrashed,
-        ));
+        // Defer the SubtreeCloned dispatch until the outermost
+        // transaction commits. With no caller transaction this fires
+        // immediately (afterCommit runs the callback when no current
+        // transaction is open); with a caller transaction it waits
+        // for the outer commit so listeners never see clone state
+        // that may still roll back.
+        $source = $this;
+        $connection->afterCommit(static function () use ($source, $cloneRoot, $rowCount, $includeTrashed): void {
+            EventDispatcher::dispatch(new SubtreeCloned(
+                modelClass: $source::class,
+                source: $source,
+                clone: $cloneRoot,
+                rowCount: $rowCount,
+                includeTrashed: $includeTrashed,
+            ));
+        });
 
-        /** @var static $cloneRoot */
         return $cloneRoot;
     }
 
@@ -608,20 +616,34 @@ trait HasSubtreeClone
             return $rawAttributes;
         }
 
+        // PHP's @phpdoc contract narrows $transform's return type to
+        // `array`, but PHP itself doesn't enforce phpdoc at runtime —
+        // a caller could declare `mixed` (or no return type at all)
+        // and return anything. Re-widen to mixed before the runtime
+        // guard so the `is_array` check is a legitimate type narrow
+        // for both PHPStan and runtime.
+        /** @var mixed $result */
         $result = $transform($rawAttributes, $destinationDepth);
 
-        // PHP's type system enforces `array` via the Closure phpdoc but
-        // not at runtime (a caller's closure could declare `mixed` and
-        // return anything). The bulk-insert path requires an array.
-        // Cast to array for runtime safety, but the assert documents
-        // the contract for static analysis.
-        /** @phpstan-ignore-next-line function.alreadyNarrowedType */
         if (! is_array($result)) {
             throw new LogicException(sprintf(
                 'cloneSubtreeTo: $transform must return an array, got %s.',
                 get_debug_type($result),
             ));
         }
+
+        /** @var array<string, mixed> $stringKeyed */
+        $stringKeyed = [];
+        foreach ($result as $key => $value) {
+            if (! is_string($key)) {
+                throw new LogicException(sprintf(
+                    'cloneSubtreeTo: $transform must return an array keyed by column name (string), got %s key.',
+                    get_debug_type($key),
+                ));
+            }
+            $stringKeyed[$key] = $value;
+        }
+        $result = $stringKeyed;
 
         $this->assertTransformReturnIsStructurallyClean($result, $reservedColumns);
 
