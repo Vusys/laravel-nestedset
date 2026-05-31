@@ -21,11 +21,17 @@ use Vusys\NestedSet\Aggregates\AggregateFixResult;
  */
 readonly class TreeFixResult
 {
-    /** @param array<string, int> $errors */
+    /**
+     * @param  array<string, int>  $errors
+     * @param  array<string, int>  $materialisedPathsRepaired  Column => row-count touched by the
+     *                                                         materialised-path repair pass. Populated only when the
+     *                                                         model declares at least one path column.
+     */
     public function __construct(
         public int $nodesUpdated,
         public array $errors,
         public ?AggregateFixResult $aggregatesFixed = null,
+        public array $materialisedPathsRepaired = [],
     ) {}
 
     /**
