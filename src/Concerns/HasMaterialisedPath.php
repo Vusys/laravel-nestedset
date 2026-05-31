@@ -492,9 +492,16 @@ trait HasMaterialisedPath
         $lftQ = $grammar->wrap($lftCol);
         $keyQ = $grammar->wrap($keyName);
 
+        // PG's parameter-type inference can't resolve a positional `?`
+        // inside `SUBSTRING(col FROM ?)` — it defaults to text and the
+        // expression evaluates to NULL. SUBSTR(text, int) has a single
+        // overload PG can match, so the second placeholder is inferred
+        // as integer there. SQLite accepts SUBSTR too; MySQL/MariaDB
+        // stays on CONCAT() + SUBSTRING(col, n) (where `||` is logical
+        // OR by default).
         $concatExpr = match (true) {
             $connection instanceof MySqlConnection => 'CONCAT(?, SUBSTRING('.$colQ.', ?))',
-            $connection instanceof PostgresConnection => '? || SUBSTRING('.$colQ.' FROM ?)',
+            $connection instanceof PostgresConnection => '? || SUBSTR('.$colQ.', ?)',
             $connection instanceof SQLiteConnection => '? || SUBSTR('.$colQ.', ?)',
             default => '? || SUBSTR('.$colQ.', ?)',
         };
