@@ -126,6 +126,21 @@ The package can't pick the right answer because the right answer is domain-speci
 
 **Repair.** Automatic. `Category::fixAggregates()` overwrites stored values with freshly-computed ones from the source. The structural tree must already be intact — drift is computed by joining each row to its subtree, so corrupt bounds give garbage results. Run `fixTree()` first if both have happened.
 
+### Materialised-path drift
+
+**Symptom.** A declared materialised-path column (`url_path`, `crumb_path`, etc.) holds a value that doesn't match the path derived by walking `parent_id` to the root.
+
+**Meaning.** The stored path has diverged from the structural tree. The structural columns themselves may still be intact.
+
+**Typical causes.**
+
+- Direct `DB::table('categories')->update(['url_path' => …])` that bypassed the saving listener.
+- A bulk job wrapped in `withoutMaterialisedPathMaintenance()` that didn't run a follow-up repair.
+- Backfill rows imported from a pre-feature dataset.
+- An edit to the source attribute (`name`, `display_name`, …) inside a transaction that rolled back, leaving descendants' paths inconsistent.
+
+**Repair.** Automatic. `Category::fixMaterialisedPaths()` walks parent_id and rebuilds every declared column for every row. Pass a column name to limit the scope. The structural tree must already be intact — the rebuild reads `parent_id` and trusts it. Run `fixTree()` first if both have happened (`fixTree()` calls the path rebuild as its final step, so a single `fixTree()` covers both kinds of drift). See [Materialised Paths](../tree-operations/materialised-paths.md) for the wider feature reference.
+
 ## Recovery
 
 ### What `fixTree()` actually does
@@ -184,6 +199,7 @@ Idempotent: running it twice in a row, the second invocation finds zero drift an
 | `isBroken() === true` | `fixTree()` | Re-run `countErrors()` — orphans/cycles will still show. |
 | `aggregatesAreBroken() === true`, structure intact | `fixAggregates()` | Done. |
 | Both broken | `fixTree()`, then `fixAggregates()` | `fixTree()` calls `fixAggregates()` for you internally — but only on the post-rebuild structure, so the order is important. |
+| Materialised-path columns disagree with the tree | `fixMaterialisedPaths()` | Pass a column name to limit; `fixTree()` already runs this as its final step. |
 | Orphans after `fixTree()` | Re-parent, root-ify, or delete per [orphans](#orphans) | Then `fixTree()`. |
 | Cycles after `fixTree()` | See [`parent_id` cycles](#parentid-cycles) | Diagnostic SQL in [Diagnostic SQL](#diagnostic-sql). |
 
