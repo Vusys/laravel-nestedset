@@ -88,10 +88,13 @@ The `NodeMoved` / `SubtreeMoved` pair exists because moving an interior node ren
 | `DeferredMaintenanceStarting` | outermost entry of `withDeferredAggregateMaintenance()` | `anchorId` |
 | `DeferredAggregateMaintenanceCompleted` | outermost exit of `withDeferredAggregateMaintenance()` after the closing repair | `anchorId`, `rowsFixed`, `closureDurationMs`, `repairDurationMs` |
 | `NodeAggregatesRecomputed` | once per lifecycle hook (`on_create` / `on_delete` / `on_restore` / `move`) when the model declares aggregates | `nodeId`, `columns`, `stage` |
+| `NestedSetAggregateChanged` | per-row, per-column CDC-style diff — fires once for every (ancestor row, aggregate column) pair whose stored value actually moved during a maintenance pass. **Opt-in by listener presence.** | `nodeId`, `column`, `oldValue`, `newValue`, `ancestorChain`, `stage` |
 | `AggregateDriftDetected` | `aggregateErrors()` finds at least one column with non-zero drift | `anchorId`, `perColumn`, `totalDrift` |
 | `AggregateMaintenanceFailed` | exception escapes one of the trait's aggregate-maintenance hooks; the original is rethrown | `anchorId`, `stage`, `exception` |
 
 `NodeAggregatesRecomputed` is the cache-invalidation signal: when an aggregate column on the ancestor chain has just been recomputed for this node, invalidate cached rollups under the same ancestor scope.
+
+`NestedSetAggregateChanged` is the per-row change feed: use it to mirror aggregate values to an external store (Redis, Kafka, Reverb, search index) without polling. The firing site short-circuits when no listener is registered, so the package pays no SELECT cost for users who don't want the feed; when at least one listener is attached, each maintenance pass issues one extra `SELECT id, lft, col…` over the targeted ancestor chain before and after the UPDATE to capture old / new values. Five stages: `on_create`, `on_update` (source-column changes), `on_delete`, `move`, `on_restore`. Internal companion columns (the `__sum` / `__count` auto-promotions behind AVG, Variance, WeightedAvg, etc.) are excluded — only user-declared aggregate columns produce events.
 
 `AggregateDriftDetected` only fires when drift exists — pair it with a periodic monitoring job that calls `aggregateErrors()` to get an alert when something actually goes wrong.
 
@@ -182,6 +185,42 @@ Event::listen(FixAggregatesChunkCompleted::class, function (FixAggregatesChunkCo
     Log::info("nestedset chunk {$e->chunkIndex}: {$e->rowsUpdated} rows in {$e->durationMs}ms");
 });
 ```
+
+### Mirror aggregate columns to Redis / Kafka / Reverb
+
+`NestedSetAggregateChanged` is a CDC-style change feed for maintained aggregate columns. Listen for it to mirror per-row aggregate values to any external store — no polling, no extra read-side query.
+
+```php
+use Vusys\NestedSet\Events\Aggregates\NestedSetAggregateChanged;
+
+Event::listen(NestedSetAggregateChanged::class, function (NestedSetAggregateChanged $e): void {
+    Redis::hset(
+        "aggregates:{$e->modelClass}:{$e->nodeId}",
+        $e->column,
+        is_scalar($e->newValue) ? (string) $e->newValue : '',
+    );
+});
+```
+
+The event is **opt-in by listener presence** — without a registered listener, the firing site short-circuits before issuing the snapshot SELECTs, so the package's hot path stays at the same cost as before. As soon as any listener attaches, every maintenance pass pays the cost of one extra SELECT pre- and post-update over the ancestor chain (plus one event dispatch per (row, column) that actually moved).
+
+For Kafka / Reverb broadcast, just hand the event object straight to your publisher — the payload is scalar and queue-safe:
+
+```php
+Event::listen(NestedSetAggregateChanged::class, function (NestedSetAggregateChanged $e): void {
+    Kafka::publish('nestedset.aggregates', [
+        'model' => $e->modelClass,
+        'node' => $e->nodeId,
+        'column' => $e->column,
+        'old' => $e->oldValue,
+        'new' => $e->newValue,
+        'chain' => $e->ancestorChain,
+        'stage' => $e->stage,
+    ]);
+});
+```
+
+`ancestorChain` is the same across every event emitted by a single mutation (it's the chain of node ids the maintenance pass touched, deepest first). Consumers that want to coalesce sibling events — e.g. roll up "five columns changed on these three rows" into one downstream message — can key on it.
 
 ### Sentry for hook failures
 

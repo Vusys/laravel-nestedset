@@ -30,6 +30,7 @@ use Vusys\NestedSet\Events\Aggregates\DeferredMaintenanceStarting;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesCompleted;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesJobDispatched;
+use Vusys\NestedSet\Events\Aggregates\NestedSetAggregateChanged;
 use Vusys\NestedSet\Events\Aggregates\NodeAggregatesRecomputed;
 use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 use Vusys\NestedSet\Events\EventDispatcher;
@@ -776,6 +777,12 @@ trait HasNestedSetAggregates
             return;
         }
 
+        $this->captureAggregateChangeFeedPreSnapshot(
+            stage: 'on_update',
+            bounds: $this->getBounds(),
+            includeSelf: true,
+        );
+
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         DeltaMaintenance::apply(
@@ -813,6 +820,8 @@ trait HasNestedSetAggregates
                 includeSelf: true,
             );
         }
+
+        $this->dispatchAggregateChangeFeed();
     }
 
     /**
@@ -949,6 +958,308 @@ trait HasNestedSetAggregates
             columns: $columns,
             stage: $stage,
         ));
+    }
+
+    /**
+     * Per-row, per-column aggregate change-feed snapshot taken at
+     * the start of a lifecycle hook (when at least one listener is
+     * attached to {@see NestedSetAggregateChanged}). The matching
+     * post-snapshot + diff is taken in
+     * {@see self::dispatchAggregateChangeFeed()}. NULL means "no
+     * listener; skip the work entirely" — every lifecycle hook
+     * pays zero overhead when nobody is subscribed.
+     *
+     * Keyed by the four tuple of identifiers the snapshot helper
+     * needs to re-read the same rows post-update; the snapshot
+     * itself is `[id => [column => value]]`.
+     *
+     * @var array{
+     *     stage: string,
+     *     bounds: NodeBounds,
+     *     scope: array<string, mixed>,
+     *     columns: list<string>,
+     *     includeSelf: bool,
+     *     includeSubtree: bool,
+     *     applySoftDeleteFilter: bool,
+     *     values: array<int|string, array<string, int|float|bool|string|null>>,
+     *     chain: list<int|string>,
+     * }|null
+     */
+    private ?array $aggregateChangeFeedPreSnapshot = null;
+
+    /**
+     * Captures the user-facing aggregate columns on every ancestor
+     * row (and optionally self / subtree) before a maintenance pass.
+     * Stores the result on `$this` so the matching post-snapshot at
+     * the end of the lifecycle hook can diff against it.
+     *
+     * Short-circuits when no {@see NestedSetAggregateChanged}
+     * listener is registered, when the model declares no user-facing
+     * aggregates, or when there's no primary key on the bound row.
+     * The matching {@see self::dispatchAggregateChangeFeed()} call
+     * also short-circuits when this returned without capturing.
+     */
+    private function captureAggregateChangeFeedPreSnapshot(
+        string $stage,
+        NodeBounds $bounds,
+        bool $includeSelf,
+        bool $includeSubtree = false,
+    ): void {
+        $this->aggregateChangeFeedPreSnapshot = null;
+
+        if (! EventDispatcher::hasListeners(NestedSetAggregateChanged::class)) {
+            return;
+        }
+
+        $columns = $this->aggregateChangeFeedColumns();
+        if ($columns === []) {
+            return;
+        }
+
+        $scope = NestedSetScopeResolver::valuesFor($this);
+        // Soft-delete restore needs to see trashed subtree rows in the
+        // pre-snapshot because the cascade un-trashes them before the
+        // restored hook reaches `applyAggregateOnRestore()`; without
+        // disabling the filter the diff would miss the subtree entirely.
+        $applySoftDeleteFilter = ! $includeSubtree;
+        $snapshot = $this->readAggregateChangeFeedSnapshot(
+            $bounds,
+            $scope,
+            $columns,
+            $includeSelf,
+            $includeSubtree,
+            $applySoftDeleteFilter,
+        );
+
+        $this->aggregateChangeFeedPreSnapshot = [
+            'stage' => $stage,
+            'bounds' => $bounds,
+            'scope' => $scope,
+            'columns' => $columns,
+            'includeSelf' => $includeSelf,
+            'includeSubtree' => $includeSubtree,
+            'applySoftDeleteFilter' => $applySoftDeleteFilter,
+            'values' => $snapshot['values'],
+            'chain' => $snapshot['chain'],
+        ];
+    }
+
+    /**
+     * Re-reads the same rows the pre-snapshot captured, diffs them
+     * column-by-column, and dispatches one
+     * {@see NestedSetAggregateChanged} per (row, column) whose value
+     * actually moved. No-op when {@see captureAggregateChangeFeedPreSnapshot()}
+     * decided not to capture.
+     */
+    private function dispatchAggregateChangeFeed(): void
+    {
+        $pre = $this->aggregateChangeFeedPreSnapshot;
+        $this->aggregateChangeFeedPreSnapshot = null;
+
+        if ($pre === null) {
+            return;
+        }
+
+        $post = $this->readAggregateChangeFeedSnapshot(
+            $pre['bounds'],
+            $pre['scope'],
+            $pre['columns'],
+            $pre['includeSelf'],
+            $pre['includeSubtree'],
+            $pre['applySoftDeleteFilter'],
+        );
+
+        // Union pre / post chain so rows that appeared in only one
+        // (e.g. soft-delete-restore subtree row appearing in post)
+        // still emit "value changed from null" events.
+        $chain = $post['chain'];
+        foreach ($pre['chain'] as $id) {
+            if (! in_array($id, $chain, true)) {
+                $chain[] = $id;
+            }
+        }
+
+        if ($chain === []) {
+            return;
+        }
+
+        foreach ($chain as $id) {
+            $beforeValues = $pre['values'][$id] ?? [];
+            $afterValues = $post['values'][$id] ?? [];
+
+            foreach ($pre['columns'] as $column) {
+                $old = $beforeValues[$column] ?? null;
+                $new = $afterValues[$column] ?? null;
+
+                if (self::aggregateChangeFeedValuesEqual($old, $new)) {
+                    continue;
+                }
+
+                EventDispatcher::dispatch(new NestedSetAggregateChanged(
+                    modelClass: static::class,
+                    nodeId: $id,
+                    column: $column,
+                    oldValue: $old,
+                    newValue: $new,
+                    ancestorChain: $chain,
+                    stage: $pre['stage'],
+                ));
+            }
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function aggregateChangeFeedColumns(): array
+    {
+        $columns = [];
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if ($definition->isInternal()) {
+                continue;
+            }
+            $columns[] = $definition->getColumn();
+        }
+
+        return array_values(array_unique($columns));
+    }
+
+    /**
+     * @param  array<string, mixed>  $scope
+     * @param  list<string>  $columns
+     * @return array{
+     *     chain: list<int|string>,
+     *     values: array<int|string, array<string, int|float|bool|string|null>>,
+     * }
+     */
+    private function readAggregateChangeFeedSnapshot(
+        NodeBounds $bounds,
+        array $scope,
+        array $columns,
+        bool $includeSelf,
+        bool $includeSubtree,
+        bool $applySoftDeleteFilter,
+    ): array {
+        $idCol = $this->getKeyName();
+        $lftCol = $this->getLftName();
+        $rgtCol = $this->getRgtName();
+
+        $query = $this->getConnection()->table($this->getTable());
+
+        // WHERE matches the maintenance UPDATE's ancestor-targeting
+        // shape: ancestors + optionally self, optionally plus strict
+        // descendants for restore-style passes. Same row set ⇒ the
+        // diff captures every value the UPDATE could touch.
+        if ($includeSubtree) {
+            $query->where(function ($q) use ($lftCol, $rgtCol, $bounds, $includeSelf): void {
+                $q->where(function ($q2) use ($lftCol, $rgtCol, $bounds, $includeSelf): void {
+                    $q2->where($lftCol, '<=', $bounds->lft)
+                        ->where($rgtCol, '>=', $bounds->rgt);
+                    if (! $includeSelf) {
+                        $q2->where(function ($q3) use ($lftCol, $rgtCol, $bounds): void {
+                            $q3->where($lftCol, '!=', $bounds->lft)
+                                ->orWhere($rgtCol, '!=', $bounds->rgt);
+                        });
+                    }
+                })->orWhere(function ($q2) use ($lftCol, $rgtCol, $bounds): void {
+                    $q2->where($lftCol, '>', $bounds->lft)
+                        ->where($rgtCol, '<', $bounds->rgt);
+                });
+            });
+        } else {
+            $query->where($lftCol, '<=', $bounds->lft)
+                ->where($rgtCol, '>=', $bounds->rgt);
+
+            if (! $includeSelf) {
+                $query->where(function ($q) use ($lftCol, $rgtCol, $bounds): void {
+                    $q->where($lftCol, '!=', $bounds->lft)
+                        ->orWhere($rgtCol, '!=', $bounds->rgt);
+                });
+            }
+        }
+
+        foreach ($scope as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        if ($applySoftDeleteFilter) {
+            $softDeletedColumn = $this->softDeleteColumn();
+            if ($softDeletedColumn !== null) {
+                $query->whereNull($softDeletedColumn);
+            }
+        }
+
+        $selectCols = array_values(array_unique(array_merge([$idCol, $lftCol], $columns)));
+        $rows = $query->orderBy($lftCol, 'desc')->get($selectCols);
+
+        $chain = [];
+        $values = [];
+        foreach ($rows as $row) {
+            $rowArray = (array) $row;
+            $id = $rowArray[$idCol] ?? null;
+            if (! is_int($id) && ! is_string($id)) {
+                continue;
+            }
+
+            $chain[] = $id;
+            $colValues = [];
+            foreach ($columns as $col) {
+                $raw = $rowArray[$col] ?? null;
+                $colValues[$col] = self::normaliseAggregateChangeFeedValue($raw);
+            }
+            $values[$id] = $colValues;
+        }
+
+        return ['chain' => $chain, 'values' => $values];
+    }
+
+    /**
+     * Loose equality for change-feed diffing. NULL is distinct from
+     * any concrete value (we want to emit "0 → null" and "null → 0"
+     * as real changes). For numeric values we compare as floats so
+     * driver-side type variation (PG DECIMAL strings, MySQL ints)
+     * does not produce spurious diffs.
+     */
+    private static function aggregateChangeFeedValuesEqual(
+        int|float|bool|string|null $a,
+        int|float|bool|string|null $b,
+    ): bool {
+        if ($a === null && $b === null) {
+            return true;
+        }
+        if ($a === null || $b === null) {
+            return false;
+        }
+        if (is_bool($a) || is_bool($b)) {
+            return $a === $b;
+        }
+        if (is_numeric($a) && is_numeric($b)) {
+            return (float) $a === (float) $b;
+        }
+
+        return $a === $b;
+    }
+
+    /**
+     * Coerces a raw column value into the change-feed event payload
+     * type union. Stdclass / objects are flattened to string;
+     * everything else passes through. Keeps the event constructor's
+     * type contract honest without forcing a numeric cast that would
+     * lose driver-native types (e.g. PG returns DECIMAL as string).
+     */
+    private static function normaliseAggregateChangeFeedValue(mixed $value): int|float|bool|string|null
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value) || is_float($value) || is_bool($value) || is_string($value)) {
+            return $value;
+        }
+        if (is_object($value) && method_exists($value, '__toString')) {
+            return (string) $value;
+        }
+
+        return null;
     }
 
     /**
@@ -1145,6 +1456,12 @@ trait HasNestedSetAggregates
             return;
         }
 
+        $this->captureAggregateChangeFeedPreSnapshot(
+            stage: 'on_create',
+            bounds: $this->getBounds(),
+            includeSelf: true,
+        );
+
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         if ($deltas !== [] || $extremes !== [] || $bitwise !== []) {
@@ -1180,6 +1497,7 @@ trait HasNestedSetAggregates
             );
         }
 
+        $this->dispatchAggregateChangeFeed();
         $this->dispatchAggregatesRecomputed('on_create');
     }
 
@@ -1204,6 +1522,12 @@ trait HasNestedSetAggregates
         if (! $this->isPlacedInTree()) {
             return;
         }
+
+        $this->captureAggregateChangeFeedPreSnapshot(
+            stage: 'on_delete',
+            bounds: $this->getBounds(),
+            includeSelf: false,
+        );
 
         $deltas = [];
         $minMaxRecomputes = [];
@@ -1392,6 +1716,7 @@ trait HasNestedSetAggregates
             );
         }
 
+        $this->dispatchAggregateChangeFeed();
         $this->dispatchAggregatesRecomputed('on_delete');
     }
 
@@ -1409,6 +1734,12 @@ trait HasNestedSetAggregates
         if (self::$deferredDepth > 0) {
             return;
         }
+
+        $this->captureAggregateChangeFeedPreSnapshot(
+            stage: 'move',
+            bounds: $from,
+            includeSelf: false,
+        );
 
         [$sumCountDeltas, $minMaxByFunction] = $this->collectMoveSubtreeContribution();
 
@@ -1499,6 +1830,8 @@ trait HasNestedSetAggregates
                 excludeBounds: $from,
             );
         }
+
+        $this->dispatchAggregateChangeFeed();
     }
 
     /**
@@ -1544,6 +1877,12 @@ trait HasNestedSetAggregates
             return;
         }
 
+        $this->captureAggregateChangeFeedPreSnapshot(
+            stage: 'move',
+            bounds: $to,
+            includeSelf: false,
+        );
+
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         if ($sumCountDeltas !== [] || $candidateExtremes !== []) {
@@ -1587,6 +1926,7 @@ trait HasNestedSetAggregates
             );
         }
 
+        $this->dispatchAggregateChangeFeed();
         $this->dispatchAggregatesRecomputed('move');
     }
 
@@ -1777,6 +2117,16 @@ trait HasNestedSetAggregates
         $usesSoftDeletes = in_array(SoftDeletes::class, class_uses_recursive(static::class), true);
 
         if ($usesSoftDeletes) {
+            // Soft-delete restore rewrites self's subtree via fixAggregates(self)
+            // before the ancestor chain recompute; include the subtree in the
+            // snapshot so per-row events fire for restored descendants too.
+            $this->captureAggregateChangeFeedPreSnapshot(
+                stage: 'on_restore',
+                bounds: $this->getBounds(),
+                includeSelf: true,
+                includeSubtree: true,
+            );
+
             // Step 1: recompute self's subtree from the current live
             // set. Cascade restore has already un-trashed matching
             // descendants, so the live subtree is final.
@@ -1813,6 +2163,7 @@ trait HasNestedSetAggregates
                 );
             }
 
+            $this->dispatchAggregateChangeFeed();
             $this->dispatchAggregatesRecomputed('on_restore');
 
             return;
@@ -1929,6 +2280,12 @@ trait HasNestedSetAggregates
             return;
         }
 
+        $this->captureAggregateChangeFeedPreSnapshot(
+            stage: 'on_restore',
+            bounds: $this->getBounds(),
+            includeSelf: false,
+        );
+
         $scope = NestedSetScopeResolver::valuesFor($this);
 
         if ($deltas !== [] || $extremes !== []) {
@@ -1963,6 +2320,7 @@ trait HasNestedSetAggregates
             );
         }
 
+        $this->dispatchAggregateChangeFeed();
         $this->dispatchAggregatesRecomputed('on_restore');
     }
 
