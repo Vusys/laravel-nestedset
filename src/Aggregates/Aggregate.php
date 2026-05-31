@@ -55,6 +55,8 @@ final readonly class Aggregate
         public ?string $weight = null,
         public bool $allowNonPositive = false,
         public float $percentilePoint = 0.5,
+        public ?int $k = null,
+        public ?string $topKBy = null,
     ) {}
 
     /**
@@ -333,6 +335,46 @@ final readonly class Aggregate
     }
 
     /**
+     * Top-K rollup — the `$k` descendant rows with the largest `$by`
+     * value, materialised as a JSON array of `[source_value, by_value]`
+     * pairs. Recompute-only: a single removal can promote a runner-up
+     * not tracked by the stored column, so no signed delta exists.
+     *
+     * `$source` names the column whose value goes in position 0 of each
+     * stored pair (typically `id` or a foreign-key column). `$by` names
+     * the ranking column; defaults to `$source` when omitted (e.g.
+     * "top 5 prices" trivially ranks itself).
+     */
+    public static function topK(string $source, int $k, ?string $by = null): self
+    {
+        if ($source === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::topK(): source column must not be empty.',
+            );
+        }
+
+        if ($k < 1) {
+            throw new AggregateConfigurationException(
+                'Aggregate::topK(): k must be >= 1.',
+            );
+        }
+
+        if ($by !== null && $by === '') {
+            throw new AggregateConfigurationException(
+                'Aggregate::topK(): by column must not be empty when provided.',
+            );
+        }
+
+        return new self(
+            function: AggregateFunction::TopK,
+            source: $source,
+            inclusive: true,
+            k: $k,
+            topKBy: $by ?? $source,
+        );
+    }
+
+    /**
      * Opt into silent-skip semantics for source values that violate the
      * positivity / non-zero constraint of geometric and harmonic mean
      * aggregates. By default a save that writes a non-positive (geomMean)
@@ -359,6 +401,8 @@ final readonly class Aggregate
             weight: $this->weight,
             allowNonPositive: true,
             percentilePoint: $this->percentilePoint,
+            k: $this->k,
+            topKBy: $this->topKBy,
         );
     }
 
@@ -585,6 +629,8 @@ final readonly class Aggregate
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
             percentilePoint: $this->percentilePoint,
+            k: $this->k,
+            topKBy: $this->topKBy,
         );
     }
 
@@ -627,6 +673,8 @@ final readonly class Aggregate
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
             percentilePoint: $this->percentilePoint,
+            k: $this->k,
+            topKBy: $this->topKBy,
         );
     }
 
@@ -706,6 +754,8 @@ final readonly class Aggregate
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
             percentilePoint: $this->percentilePoint,
+            k: $this->k,
+            topKBy: $this->topKBy,
         );
     }
 
@@ -774,6 +824,8 @@ final readonly class Aggregate
             weight: $this->weight,
             allowNonPositive: $this->allowNonPositive,
             percentilePoint: $this->percentilePoint,
+            k: $this->k,
+            topKBy: $this->topKBy,
         );
     }
 
