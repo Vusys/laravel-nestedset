@@ -8,6 +8,10 @@ Reference for nested-set jargon, acronyms, and package-specific names used throu
 
 A tree traversal that visits every node at depth `d` before any node at depth `d + 1` — the queue-based "across, then down" walk. See [Tree traversal → BFS](#bfs) for the visit order and the walker's BFS strategy.
 
+### CDC — change data capture
+
+A pattern where every row-level change in a database (insert / update / delete) is emitted as a stream of events so downstream systems can mirror state without polling. Tools like Debezium and Postgres logical replication are the canonical examples. The package's [`NestedSetAggregateChanged`](events.html#aggregate-maintenance) event applies the same shape to maintained aggregate columns: one event per `(row, column)` whose stored value moved, carrying `oldValue` / `newValue` so a consumer (Redis, Kafka, Reverb, search index) can mirror the rollup without re-querying.
+
 ### CTE — common table expression
 
 A `WITH` clause that defines a named query reusable within the surrounding statement. The recursive form (`WITH RECURSIVE`) walks adjacency lists, which is how non-nested-set hierarchies are typically queried. This package avoids recursive CTEs entirely — every ancestor/descendant query is a single `BETWEEN` thanks to the nested-set encoding.
