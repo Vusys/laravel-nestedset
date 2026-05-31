@@ -21,7 +21,6 @@ final class MaterialisedPathBypassTest extends TestCase
             $root->save();
         });
         $root->refresh();
-        // Path was NOT updated by the bypass.
         $this->assertSame('/root/', $root->url_path);
         $this->assertSame('Renamed', $root->name);
     }

@@ -164,11 +164,11 @@ trait HasMaterialisedPath
                 continue;
             }
 
-            $segment = $this->computeSegment($column, $path);
+            $segment = $path->segmentFor($this);
 
             if ($this->isPathDeterminismGuarded()) {
                 $second = $path->segmentFor($this);
-                if ($second !== $path->segmentFor($this)) {
+                if ($second !== $segment) {
                     throw new NonDeterministicPathSegment(sprintf(
                         '%s: materialised-path builder for column "%s" returned different values on '
                         .'repeated calls within one save. The builder must be a pure function of the '
@@ -183,7 +183,7 @@ trait HasMaterialisedPath
 
             $segment = $this->validateSegment($column, $path, $segment);
 
-            $parentPath = $this->resolveParentPath($column, $path);
+            $parentPath = $this->resolveParentPath($column);
             $newFullPath = $this->assemblePath($parentPath, $segment, $path);
 
             if (strlen((string) $newFullPath) > $path->getMaxLength()) {
@@ -263,9 +263,9 @@ trait HasMaterialisedPath
                 continue;
             }
 
-            $segment = $this->computeSegment($column, $path);
+            $segment = $path->segmentFor($this);
             $segment = $this->validateSegment($column, $path, $segment);
-            $parentPath = $this->resolveParentPath($column, $path);
+            $parentPath = $this->resolveParentPath($column);
             $newFullPath = $this->assemblePath($parentPath, $segment, $path);
 
             if (strlen((string) $newFullPath) > $path->getMaxLength()) {
@@ -293,16 +293,6 @@ trait HasMaterialisedPath
                 ->where($this->getKeyName(), $this->getKey())
                 ->update($keyDependentUpdates);
         }
-    }
-
-    /**
-     * Computes the raw segment for a single column, applying any
-     * separator-strip behaviour but not validation (validation happens
-     * after).
-     */
-    private function computeSegment(string $column, MaterialisedPath $path): string
-    {
-        return $path->segmentFor($this);
     }
 
     /**
@@ -354,7 +344,7 @@ trait HasMaterialisedPath
      * in-memory parent relation when loaded; otherwise issues one
      * targeted SELECT keyed by parent_id (cached per save).
      */
-    private function resolveParentPath(string $column, MaterialisedPath $path): ?string
+    private function resolveParentPath(string $column): ?string
     {
         $parentIdName = $this->getParentIdName();
         /** @var int|string|null $parentId */
@@ -412,21 +402,6 @@ trait HasMaterialisedPath
         }
 
         return $parentPath.$sep.$segment;
-    }
-
-    /**
-     * True when this row has at least one descendant — used to gate the
-     * subtree-rewrite UPDATE. Cheap: reads in-memory lft/rgt only.
-     */
-    private function hasDescendants(): bool
-    {
-        $lft = $this->getAttribute($this->getLftName());
-        $rgt = $this->getAttribute($this->getRgtName());
-        if (! is_numeric($lft) || ! is_numeric($rgt)) {
-            return false;
-        }
-
-        return ((int) $rgt) - ((int) $lft) > 1;
     }
 
     /**

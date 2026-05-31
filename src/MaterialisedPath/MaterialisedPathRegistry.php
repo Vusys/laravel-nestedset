@@ -174,12 +174,15 @@ final class MaterialisedPathRegistry
             return MaterialisedPath::from($entry);
         }
 
-        if (is_callable($entry)) {
-            return MaterialisedPath::from(Closure::fromCallable($entry));
-        }
-
+        // String check must precede is_callable() — a column name that
+        // matches a global function name (e.g. 'count', 'strlen') would
+        // otherwise be wrapped as a closure instead of an attribute source.
         if (is_string($entry)) {
             return MaterialisedPath::attribute($entry);
+        }
+
+        if (is_callable($entry)) {
+            return MaterialisedPath::from(Closure::fromCallable($entry));
         }
 
         throw new MaterialisedPathConfigurationException(sprintf(
