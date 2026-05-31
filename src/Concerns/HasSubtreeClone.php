@@ -17,6 +17,7 @@ use Vusys\NestedSet\Events\Subtree\SubtreeCloned;
 use Vusys\NestedSet\Exceptions\InvalidCloneTargetException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
+use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -256,6 +257,16 @@ trait HasSubtreeClone
         });
 
         $cloneRoot->refresh();
+
+        // Bulk insert ran under withoutEvents() so the materialised-path
+        // saving listener never fired for the cloned rows. Recompute
+        // each declared column over the new subtree in PHP. Same
+        // anchor + transaction model as the deferred aggregate
+        // recompute that already runs inside bulkInsertTree.
+        if (MaterialisedPathRegistry::columnsFor(static::class) !== []) {
+            static::fixMaterialisedPaths(null, $cloneRoot);
+            $cloneRoot->refresh();
+        }
 
         // Defer the SubtreeCloned dispatch until the outermost
         // transaction commits. With no caller transaction this fires
@@ -747,6 +758,13 @@ trait HasSubtreeClone
         ];
 
         foreach (NestedSetScopeResolver::columns(static::class) as $column) {
+            $columns[] = $column;
+        }
+
+        // Materialised-path columns are regenerated per-row from the
+        // destination parent's stored path; allowing $transform to set
+        // one would silently mask the package's recomputation.
+        foreach (MaterialisedPathRegistry::columnsFor(static::class) as $column) {
             $columns[] = $column;
         }
 

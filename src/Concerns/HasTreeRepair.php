@@ -12,6 +12,8 @@ use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\Repair\FixTreeCompleted;
 use Vusys\NestedSet\Events\Repair\TreeIntegrityChecked;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
+use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
+use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Query\TreeRepairBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -127,15 +129,17 @@ trait HasTreeRepair
 
         $treeResult = $builder->fixTree($rootId);
         $aggregatesFixed = self::runFixAggregates($anchor, $rootId);
+        $pathsRepaired = self::runFixMaterialisedPaths($anchor);
 
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
-        $result = $aggregatesFixed === null
+        $result = ($aggregatesFixed === null && $pathsRepaired === [])
             ? $treeResult
             : new TreeFixResult(
                 nodesUpdated: $treeResult->nodesUpdated,
                 errors: $treeResult->errors,
                 aggregatesFixed: $aggregatesFixed,
+                materialisedPathsRepaired: $pathsRepaired,
             );
 
         EventDispatcher::dispatch(new FixTreeCompleted(
@@ -147,6 +151,202 @@ trait HasTreeRepair
         ));
 
         return $result;
+    }
+
+    /**
+     * Rebuilds materialised-path columns without touching lft/rgt/depth.
+     * Useful when the structural tree is consistent but a path column
+     * has drifted — manual SQL edits, pre-feature backfill rows, or a
+     * bulk job run inside {@see HasMaterialisedPath::withoutMaterialisedPathMaintenance()}.
+     * Pass a column name to limit the rebuild to one column; null
+     * rebuilds every declared column.
+     *
+     * @return array<string, int> Column name => row-count updated.
+     *
+     * @throws ScopeViolationException When called without an anchor on a scoped model.
+     */
+    public static function fixMaterialisedPaths(
+        ?string $column = null,
+        ?HasNestedSet $anchor = null,
+    ): array {
+        $scopeColumns = NestedSetScopeResolver::columns(static::class);
+        if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
+            throw new ScopeViolationException(sprintf(
+                '%s declares a scope (%s); pass an anchor node to scope this operation.',
+                static::class,
+                implode(', ', $scopeColumns),
+            ));
+        }
+
+        $paths = MaterialisedPathRegistry::for(static::class);
+        if ($paths === []) {
+            return [];
+        }
+
+        if ($column !== null) {
+            if (! isset($paths[$column])) {
+                throw new InvalidArgumentException(sprintf(
+                    '%s::fixMaterialisedPaths: column "%s" is not declared. Known: %s.',
+                    static::class,
+                    $column,
+                    implode(', ', array_keys($paths)),
+                ));
+            }
+            $paths = [$column => $paths[$column]];
+        }
+
+        return self::rebuildMaterialisedPaths($paths, $anchor);
+    }
+
+    /**
+     * Called from {@see self::fixTree()} after the structural rebuild
+     * completes. Skips models without declared path columns; returns
+     * an empty array in that case so the caller's TreeFixResult
+     * default stays accurate.
+     *
+     * @return array<string, int>
+     */
+    private static function runFixMaterialisedPaths(?HasNestedSet $anchor): array
+    {
+        $paths = MaterialisedPathRegistry::for(static::class);
+        if ($paths === []) {
+            return [];
+        }
+
+        return self::rebuildMaterialisedPaths($paths, $anchor);
+    }
+
+    /**
+     * In-PHP parent-id walk that recomputes each path column for every
+     * reachable row. One batched UPDATE per column.
+     *
+     * @param  array<string, MaterialisedPath>  $paths
+     * @return array<string, int>
+     */
+    private static function rebuildMaterialisedPaths(array $paths, ?HasNestedSet $anchor): array
+    {
+        $instance = new static;
+        $connection = $instance->getConnection();
+        $table = $instance->getTable();
+        $keyName = $instance->getKeyName();
+        $parentIdName = $instance->getParentIdName();
+        $lftName = $instance->getLftName();
+        $rgtName = $instance->getRgtName();
+        $depthName = $instance->getDepthName();
+
+        $columns = [$keyName, $parentIdName, $lftName, $rgtName, $depthName];
+        $sourceCols = [];
+        foreach ($paths as $path) {
+            $src = $path->sourceColumn();
+            if ($src !== null && ! in_array($src, $columns, true)) {
+                $columns[] = $src;
+                $sourceCols[$src] = true;
+            }
+        }
+        foreach (array_keys($paths) as $pathColumn) {
+            if (! in_array($pathColumn, $columns, true)) {
+                $columns[] = $pathColumn;
+            }
+        }
+
+        $query = $connection->table($table);
+        if ($anchor instanceof Model) {
+            $query->where($lftName, '>=', $anchor->getLft())
+                ->where($rgtName, '<=', $anchor->getRgt());
+            foreach (NestedSetScopeResolver::valuesFor($anchor) as $col => $value) {
+                $query->where($col, $value);
+            }
+        }
+        $rows = $query->orderBy($lftName)->get($columns);
+
+        $rowsById = [];
+        foreach ($rows as $row) {
+            $id = $row->{$keyName} ?? null;
+            if ($id === null) {
+                continue;
+            }
+            $rowsById[(string) $id] = $row;
+        }
+
+        $repaired = [];
+        foreach ($paths as $pathColumn => $path) {
+            $updatesByValue = [];
+            foreach ($rows as $row) {
+                $instanceForRow = new static;
+                foreach ($columns as $col) {
+                    if (property_exists($row, $col) || isset($row->{$col})) {
+                        $instanceForRow->setAttribute($col, $row->{$col} ?? null);
+                    }
+                }
+                $instanceForRow->exists = true;
+
+                $segment = $path->segmentFor($instanceForRow);
+                if ($segment === '') {
+                    continue;
+                }
+                $sep = $path->getSeparator();
+                if ($sep !== '' && str_contains($segment, $sep) && ! $path->getRejectSeparatorInSegment()) {
+                    $segment = str_replace($sep, '', $segment);
+                }
+
+                $parentId = $row->{$parentIdName} ?? null;
+                $parentPath = null;
+                if ($parentId !== null && isset($rowsById[(string) $parentId])) {
+                    $parentPathValue = $rowsById[(string) $parentId]->{$pathColumn} ?? null;
+                    if (is_string($parentPathValue) && $parentPathValue !== '') {
+                        $parentPath = $parentPathValue;
+                    }
+                } elseif ($parentId !== null) {
+                    // Anchored rebuild: parent sits outside the range we
+                    // loaded, so read its current stored value directly.
+                    // Trusts the parent's stored value to be correct —
+                    // the rebuild is bounded by the anchor.
+                    $parentRow = $connection->table($table)
+                        ->where($keyName, $parentId)
+                        ->first([$pathColumn]);
+                    if ($parentRow !== null) {
+                        $parentPathValue = $parentRow->{$pathColumn} ?? null;
+                        if (is_string($parentPathValue) && $parentPathValue !== '') {
+                            $parentPath = $parentPathValue;
+                        }
+                    }
+                }
+
+                $sep = $path->getSeparator();
+                $wrap = $path->getWrap();
+                if ($parentPath === null) {
+                    $newFullPath = $wrap ? $sep.$segment.$sep : $segment;
+                } else {
+                    $newFullPath = $wrap ? $parentPath.$segment.$sep : $parentPath.$sep.$segment;
+                }
+
+                $currentValue = $row->{$pathColumn} ?? null;
+
+                // Write the recomputed value back into the in-memory row
+                // map so subsequent siblings/descendants resolve against
+                // the freshly-rebuilt parent path even when the parent's
+                // stored value was corrupt.
+                $rowsById[(string) ($row->{$keyName})]->{$pathColumn} = $newFullPath;
+
+                if ($currentValue === $newFullPath) {
+                    continue;
+                }
+
+                $updatesByValue[$newFullPath] ??= [];
+                $updatesByValue[$newFullPath][] = $row->{$keyName};
+            }
+
+            $count = 0;
+            foreach ($updatesByValue as $value => $ids) {
+                $connection->table($table)
+                    ->whereIn($keyName, $ids)
+                    ->update([$pathColumn => $value]);
+                $count += count($ids);
+            }
+            $repaired[$pathColumn] = $count;
+        }
+
+        return $repaired;
     }
 
     private static function repairBuilder(?HasNestedSet $anchor): TreeRepairBuilder

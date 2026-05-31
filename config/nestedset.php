@@ -95,4 +95,34 @@ return [
 
     'events_enabled' => true,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Materialised path defaults
+    |--------------------------------------------------------------------------
+    | Default formatting for `#[NestedSetMaterialisedPath]` columns.
+    | Resolution order, most specific wins:
+    |   1. Per-path explicit value (attribute arg or fluent setter)
+    |   2. `#[NestedSetMaterialisedPathDefaults]` on the model class
+    |   3. `class_defaults` block below (exact FQCN match)
+    |   4. `defaults` block below (global fallback)
+    |   5. Package hard-coded fallback (matches the `defaults` shipped here)
+    */
+
+    'materialised_path' => [
+        'defaults' => [
+            'separator' => '/',
+            'wrap' => true,
+            'maxLength' => 1024,
+            'rejectSeparatorInSegment' => true,
+            'uniquePerParent' => true,
+        ],
+
+        /*
+        | Exact FQCN keys; no `is_a` walk. List each subclass explicitly
+        | if you want different defaults per concrete model. Strong use
+        | case: overriding a vendor model whose class you can't decorate.
+        */
+        'class_defaults' => [],
+    ],
+
 ];

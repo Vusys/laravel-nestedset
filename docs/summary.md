@@ -22,6 +22,7 @@ Format:
 - [Reordering Siblings](tree-operations/reordering.md)
 - [Soft Deletes](tree-operations/soft-deletes.md)
 - [Bulk Insertion](tree-operations/bulk-insertion.md)
+- [Materialised Paths](tree-operations/materialised-paths.md)
 
 # Querying
 

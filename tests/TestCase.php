@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use stdClass;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
+use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NestedSetServiceProvider;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -60,8 +61,9 @@ abstract class TestCase extends OrchestraTestCase
         // Cost: one reflection pass per fixture, paid lazily on
         // first `for()` call — negligible alongside test setUp.
         AggregateRegistry::flush();
+        MaterialisedPathRegistry::forgetCache();
 
-        $tables = ['areas', 'archived_branches', 'bitwise_areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags', 'uuid_tags', 'uuid_menu_items', 'uuid_menus', 'metric_areas', 'text_json_areas', 'weighted_areas', 'flag_areas', 'mean_areas', 'scoped_areas', 'multi_scoped_branches'];
+        $tables = ['areas', 'archived_branches', 'bitwise_areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags', 'uuid_tags', 'uuid_menu_items', 'uuid_menus', 'metric_areas', 'text_json_areas', 'weighted_areas', 'flag_areas', 'mean_areas', 'scoped_areas', 'multi_scoped_branches', 'slugged_categories', 'multi_path_categories', 'key_path_categories', 'closure_path_articles', 'scoped_slugged_menu_items'];
 
         foreach ($tables as $table) {
             if (DB::connection()->getSchemaBuilder()->hasTable($table)) {
