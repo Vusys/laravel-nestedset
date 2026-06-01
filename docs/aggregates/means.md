@@ -5,6 +5,33 @@ Two delta-maintainable mean aggregates for source columns where the arithmetic m
 - **Geometric mean** — `EXP(Σ LN(source) / n)`. Reach for it when source values multiply rather than add (compound growth rates, ratios, scale factors). The geometric mean of two numbers `a` and `b` is `sqrt(a · b)` — closer to the smaller of the two than the arithmetic mean.
 - **Harmonic mean** — `n / Σ(1/source)`. Reach for it when source values are rates over a common unit and you want the average rate (parallel resistance, average speed across equal distances). The harmonic mean weighs small values more heavily than the arithmetic mean.
 
+## When the arithmetic mean is wrong
+
+A portfolio of investments, each row carrying its yearly growth rate as a multiplier (`1.10` = +10%, `0.80` = −20%):
+
+```ns-tree
+Portfolio
+  Tech ETF {growth_rate=1.30}
+  Bonds {growth_rate=0.90}
+  Real Estate {growth_rate=1.20}
+  Commodities {growth_rate=0.80}
+```
+
+The arithmetic mean of those rates is `1.05` — but that's the wrong answer for "average compound growth across these positions." Compounding is multiplicative, so the right mean is the **geometric** one: `(1.30 · 0.90 · 1.20 · 0.80)^(1/4) ≈ 1.030`. The portfolio's *actual* compound rate per position is 3.0%, not 5%. That gap widens as variance grows — the arithmetic mean over-reports compound growth whenever the underlying values are dispersed.
+
+The maintained `growth_geomean` column on `Portfolio` holds 1.030 directly; the package writes that value from the `__sum_log` and `__count` companions on every relevant mutation. One delta UPDATE per ancestor chain; no PHP-side arithmetic.
+
+A harmonic example: average speed across road segments of equal length (a key fact — equal distances, varying speeds). A driver covers each segment at a different speed:
+
+```ns-tree
+Commute
+  Highway {speed_kph=120}
+  City {speed_kph=40}
+  Suburban {speed_kph=60}
+```
+
+Arithmetic mean: `73.3 kph`. But that overstates the actual average speed across the commute — the slow segment dominates the trip time. The harmonic mean handles the rate-aggregation correctly: `3 / (1/120 + 1/40 + 1/60) = 60 kph`. That's the speed you'd see if you divided total distance by total time. The maintained `speed_harmean` column on `Commute` is what the package stores.
+
 ```php
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 

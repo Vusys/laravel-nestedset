@@ -75,6 +75,50 @@ $child->save();               // invalidates ancestors
 $root->articles_total;        // recompute + stamp again
 ```
 
+### The lifecycle visualised
+
+A small tree, eager-equivalent SUM. Leaves carry `articles=N`. Ancestor rows carry display chips showing what's *actually stored* in the `articles_total` column right now, plus the `stamp` (`articles_total_computed_at`) — read these against the widget's `Σ articles` rollup, which always shows the correct rolled-up value.
+
+**Just after a `fixAggregates()` or recent read** — every ancestor is fresh, stored matches the rollup, stamp is set:
+
+```ns-tree
+Electronics {stored=fresh, stamp=12:00:00}
+  Computers {stored=fresh, stamp=12:00:00}
+    Laptops {articles=8}
+    Desktops {articles=3}
+  Phones {stored=fresh, stamp=12:00:00}
+    iPhone {articles=12}
+    Android {articles=7}
+```
+
+**After a write hits `Laptops`** — the package issues one `UPDATE … SET articles_total = NULL, articles_total_computed_at = NULL WHERE lft <= Laptops.lft AND rgt >= Laptops.rgt` over the ancestor chain. The rollup the widget shows is what the column *will* become on next read — the actual stored value right now is `NULL`:
+
+```ns-tree
+Electronics {stored=NULL, stamp=NULL}
+  Computers {stored=NULL, stamp=NULL}
+    Laptops {articles=10}
+    Desktops {articles=3}
+  Phones {stored=fresh, stamp=12:00:00}
+    iPhone {articles=12}
+    Android {articles=7}
+```
+
+Note `Phones` is **untouched** — its subtree didn't include the write, so its cache is still valid. Lazy invalidation walks the ancestor chain only.
+
+**After `$electronics->articles_total` is read** — the accessor sees `NULL`, runs the same correlated SQL as `withFreshAggregates()`, writes the result back, and stamps the companion. Subsequent reads return the stored value with no extra work:
+
+```ns-tree
+Electronics {stored=fresh, stamp=12:05:00}
+  Computers {stored=NULL, stamp=NULL}
+    Laptops {articles=10}
+    Desktops {articles=3}
+  Phones {stored=fresh, stamp=12:00:00}
+    iPhone {articles=12}
+    Android {articles=7}
+```
+
+Reading `$electronics` only refreshed `Electronics`. `Computers` stays stale until its column is actually read — that's the trade-off: lazy maintenance defers work to the read site, so columns that nobody reads never pay the recompute cost.
+
 The recompute uses the same correlated SQL as `withFreshAggregates()` and respects scope columns, soft-delete filters, and the aggregate's declared filter clause. It runs inside the read query's connection, not a new transaction.
 
 To bypass the cache for one read (without invalidating the stored value), use `withFreshAggregates()`:

@@ -1,5 +1,35 @@
 # Repairing Aggregates
 
+`fixAggregates()` is the recompute-from-source pass that restores stored aggregate columns to the values a fresh recomputation would yield. It's the dual of [drift](../aggregates/drift.html): drift describes what goes wrong, `fixAggregates` describes how to put it right.
+
+## What the repair does
+
+Before — a tree where `cost_total` has drifted on the ancestor chain (a raw `UPDATE` to `Bonuses.cost` skipped the trait):
+
+```ns-tree
+Engineering {stale}
+  Salaries {cost=26000}
+  Bonuses {cost=4000}
+  Tools {cost=1500}
+```
+
+Calling:
+
+```php
+Category::fixAggregates();
+```
+
+…walks the tree from `parent_id`, recomputes every aggregate column from the source data, and writes back any row whose stored value disagrees. After the call, the stored columns match the Σ on every row, and the `{stale}` chip drops away:
+
+```ns-tree
+Engineering
+  Salaries {cost=26000}
+  Bonuses {cost=4000}
+  Tools {cost=1500}
+```
+
+The returned `AggregateFixResult` reports `totalRowsUpdated = 1` (just `Engineering` — `Salaries`, `Bonuses`, `Tools` were already correct; they're leaves with no descendants to roll up over). Running the same call a second time finds zero drift and writes nothing — `fixAggregates()` is idempotent, which is why it's safe to schedule defensively.
+
 `fixAggregates()` is fast on most trees but a heavily-drifted 1M-row table still measures in tens of seconds — not the kind of work you want on the synchronous response path. `queueFixAggregates()` hands it to a worker instead:
 
 ```php

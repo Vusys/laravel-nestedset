@@ -16,6 +16,36 @@ $electronics->reorderChildren([
 ]);
 ```
 
+### What the reorder actually does
+
+Look at the `lft` / `rgt` pill badges on each row. Before the call, the children are ordered `phones, tablets, laptops`:
+
+```ns-tree
+Electronics
+  Phones
+    iPhone
+    Android
+  Tablets
+  Laptops
+    MacBook
+    ThinkPad
+```
+
+After the call, the same rows carry the same `name`, `depth`, and `parent_id` — but their `lft` / `rgt` slots have been swapped to match the requested order. Each subtree slides as a block; `iPhone` stays under `Phones`, `MacBook` stays under `Laptops`:
+
+```ns-tree
+Electronics
+  Laptops
+    MacBook
+    ThinkPad
+  Phones
+    iPhone
+    Android
+  Tablets
+```
+
+This is **one** `CASE WHEN UPDATE`, bounded by `Electronics`'s `lft` / `rgt` window — one round-trip, no ancestor-chain work, no aggregate maintenance (`SUM(cost)` etc. stays correct because no subtree composition changed). Compare to `moveTo($differentParent, ...)`, which would shift every row in *two* ancestor chains; that asymmetry is why reorder and move are separate primitives.
+
 After the call, `Category::where('parent_id', $electronics->id)->orderBy('lft')->pluck('id')` matches `[laptops, tablets, phones]`. Each sibling's descendants shift with it — `depth` and `parent_id` are unchanged for every row.
 
 The membership must match exactly: every direct child appears once, no unknown keys, no duplicates. Any deviation throws `InvalidSiblingOrderException` with a message naming the offending keys.

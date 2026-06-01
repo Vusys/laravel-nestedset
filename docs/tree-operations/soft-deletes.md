@@ -13,6 +13,44 @@ $category->restore();     // restores only descendants stamped with that exact s
 $category->forceDelete(); // hard-deletes the whole subtree
 ```
 
+## What the cascade looks like
+
+Start with a live tree. No `deleted_at` set anywhere:
+
+```ns-tree
+Electronics
+  Computers
+    Laptops
+    Desktops
+  Phones
+    iPhone
+    Android
+Books
+```
+
+Soft-delete the `Computers` interior node:
+
+```php
+$computers->delete();
+```
+
+`Computers` and every descendant get the same `deleted_at` stamp — the `Phones` subtree is untouched, `Books` is untouched, but `Laptops` and `Desktops` are now hidden behind the soft-delete scope alongside their parent:
+
+```ns-tree
+Electronics
+  Computers {trashed=2026-06-01T12:00:00.000000}
+    Laptops {trashed=2026-06-01T12:00:00.000000}
+    Desktops {trashed=2026-06-01T12:00:00.000000}
+  Phones
+    iPhone
+    Android
+Books
+```
+
+This is **one** cascade `UPDATE`: every row in the `Computers` subtree where `deleted_at IS NULL` gets the same microsecond-precision stamp. No per-row Eloquent `deleted` event fires for `Laptops` or `Desktops` — only for `Computers` itself. The package's [`SubtreeSoftDeleted`](../reference/events.html#cascade-events-soft-delete--restore--force-delete) event carries the full descendant id list so listeners (search index pruning, cache invalidation) can react in one round.
+
+The structural columns (`lft` / `rgt` / `depth`) are **untouched** by the soft-delete — the trashed rows still occupy their slots in the index, they just disappear from default queries. A subsequent `restore()` simply nulls `deleted_at` back out and the subtree pops back in place.
+
 ## Soft-delete cascade
 
 Calling `delete()` on a node with descendants stamps the same `deleted_at` value across the whole subtree in a single UPDATE — no per-row `delete()` calls, no recursion. A descendant that was independently trashed before the parent gets a different `deleted_at` value and is left alone; the cascade's `WHERE deleted_at IS NULL` makes this safe by design.

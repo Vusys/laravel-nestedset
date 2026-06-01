@@ -26,19 +26,24 @@ For dynamic scopes that need runtime resolution, override `getScopeAttributes()`
 
 ## Picturing the table
 
-A `menu_items` table for two menus might hold:
+Each menu is a fully independent nested-set tree, starting its `lft` numbering at 1. They share the table but never overlap because every internal query filters by `menu_id` first.
 
-```text
-id  menu_id  name        lft  rgt  parent_id
---  -------  ----------  ---  ---  ---------
-1   1        Home        1    6    null         ← menu 1's root
-2   1        About       2    3    1
-3   1        Contact     4    5    1
-4   2        Dashboard   1    4    null         ← menu 2's root
-5   2        Profile     2    3    4
+Menu 1 (`menu_id = 1`):
+
+```ns-tree
+Home {menu_id=1}
+  About {menu_id=1}
+  Contact {menu_id=1}
 ```
 
-Both menus start their `lft` at 1 — they're independent trees, partitioned by `menu_id`.
+Menu 2 (`menu_id = 2`):
+
+```ns-tree
+Dashboard {menu_id=2}
+  Profile {menu_id=2}
+```
+
+The `lft` / `rgt` badges on each row show that both trees number their slots from 1 — that's the whole point of the scope: every tree gets its own slot space within the shared table. A `whereDescendantOf($home)` query is bounded by `home.lft <= lft AND home.rgt >= rgt AND menu_id = 1`, so it can never pick up a Menu 2 row even though `Home.lft = 1 = Dashboard.lft`.
 
 ## Reading
 

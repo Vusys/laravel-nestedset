@@ -32,6 +32,25 @@ protected function nestedSetAggregates(): array
 - **`bitAnd`** — "**do all** descendants have feature X?" `parent.features_and = AND of every descendant's feature_bits`. Reading `($parent->features_and & FEATURE_PREMIUM) !== 0` tells you every node in the subtree has premium.
 - **`bitXor`** — order-independent subtree fingerprint. `parent.features_xor = XOR of every descendant's source value`. Two subtrees with the same set of descendant values produce the same XOR, regardless of which order they were inserted. Useful as a cheap "did anything in this subtree change?" check.
 
+### Reading the three rollups at once
+
+Four feature bits — admin (8), billing (4), search (2), storage (1) — packed into `feature_bits` on each module:
+
+```ns-tree
+All Modules {features_or=0b1011, features_and=0b0000, features_xor=0b0011}
+  Auth {flags=0b1010}
+  Search {flags=0b0001}
+  Storage {flags=0b1000}
+```
+
+Read the three chips on `All Modules` against the bits each module carries:
+
+- `features_or = 0b1011` — at least one module has admin (8), search (2), or storage (1). Nobody has billing (4); that bit is `0`.
+- `features_and = 0b0000` — no bit is set on every module (Auth has admin+search, Search has only storage, Storage has only admin — no overlap).
+- `features_xor = 0b0011` — `1010 ^ 0001 ^ 1000`. Auth's admin bit and Storage's admin bit cancel; search and storage remain.
+
+Reading the question "is any module premium?" is now `($module->features_or & FEATURE_PREMIUM) !== 0` — a column lookup, not a recursive `EXISTS` query.
+
 ## Schema
 
 ```php

@@ -36,6 +36,22 @@ class Monster extends Model implements HasNestedSet { use NodeTrait; }
 
 Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`. `Avg` is auto-promoted into a pair of internal `Sum` + `Count` companions plus the display column — see [Listener AVG](#listener-avg) below.
 
+### What the rollup looks like
+
+Take a monster squad. Each row carries `base_power` and `level`; the listener's `contribution()` returns the product, and `weighted_power` rolls that up the chain. The `weighted_power` chip on every node is the **per-node** contribution (what `contribution($node)` returned), and `Σ weighted_power` on each subtree is the maintained `weighted_power` column on that row:
+
+```ns-tree
+Boss Squad
+  Champion {weighted_power=50, base_power=10, level=5}
+    Lieutenant A {weighted_power=12, base_power=4, level=3}
+    Lieutenant B {weighted_power=8, base_power=4, level=2}
+  Sergeant {weighted_power=8, base_power=2, level=4}
+    Grunt 1 {weighted_power=1, base_power=1, level=1}
+    Grunt 2 {weighted_power=2, base_power=1, level=2}
+```
+
+Boss Squad itself has no `base_power` / `level` (it's a container), so its own contribution is `null` — but the `Σ weighted_power = 81` on its row is the rollup over the whole squad. Change either `base_power` or `level` on any single row and the package recomputes that row's contribution (via the same PHP call), takes the delta against the stored value, and applies it as one `UPDATE` against the ancestor chain — same shape as a delta-maintainable SQL aggregate.
+
 ## Migration
 
 Listener columns use the same macro as SQL aggregates:

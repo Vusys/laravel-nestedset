@@ -1,6 +1,36 @@
 # Filtered Aggregates
 
-Add a filter to any `#[NestedSetAggregate]` declaration so only nodes that match a condition contribute to the rollup:
+Add a filter to any `#[NestedSetAggregate]` declaration so only nodes that match a condition contribute to the rollup.
+
+## What it looks like
+
+Take a category tree where some entries are `public` and others are `private`, and every node has an `articles` count.
+
+The **unfiltered** `SUM(articles)` rolls up every row's contribution — public and private alike:
+
+```ns-tree
+Electronics {visibility=public, articles=4}
+  Computers {visibility=private, articles=2}
+    Laptops {visibility=public, articles=8}
+    Desktops {visibility=private, articles=3}
+  Phones {visibility=public, articles=12}
+Books {visibility=public, articles=4}
+```
+
+Now add `filter: ['visibility' => 'public']`. The same tree, but private rows stop contributing — their `articles` aren't counted in any ancestor's rollup. To make that visible, the diagram below shows only the contributing values; private rows carry just their `visibility` chip:
+
+```ns-tree
+Electronics {visibility=public, articles=4}
+  Computers {visibility=private}
+    Laptops {visibility=public, articles=8}
+    Desktops {visibility=private}
+  Phones {visibility=public, articles=12}
+Books {visibility=public, articles=4}
+```
+
+Read each rollup chip (`Σ articles`) on the second tree against the first: `Electronics` drops from 33 to 28 (lost private Computers + Desktops), `Computers` drops from 13 to 8 (lost itself + Desktops). Private rows still exist — they just don't *contribute*. That's the whole feature.
+
+## Declaring
 
 ```php
 #[NestedSetAggregate(column: 'published_articles', sum:   'articles', filter: ['visibility' => 'public'])]
@@ -9,6 +39,8 @@ Add a filter to any `#[NestedSetAggregate]` declaration so only nodes that match
 #[NestedSetAggregate(column: 'has_articles',       count: true,        filterNotNull: 'articles')]
 class Category extends Model implements HasNestedSet { use NodeTrait; }
 ```
+
+Filtered and unfiltered columns can coexist on the same model — declare `articles_total` (unfiltered SUM) alongside `published_articles` (filtered SUM) and you get both rollups maintained independently.
 
 ## Filter forms
 
@@ -42,6 +74,36 @@ Write raw predicates with **bare column names** — the package emits them insid
 Filtered columns use the same `$table->nestedSetAggregate(...)` migration macro as unfiltered ones — the migration doesn't know about filter logic.
 
 > **⚠️ Security note: filter values are inlined into SQL.** The package inlines filter values directly into generated SQL — equality values are single-quote-escaped (SQL standard); raw SQL fragments are concatenated verbatim with no escaping or parameter binding. This is fine for **trusted, code-level constants** (class attribute values, config files you control, hard-coded fragments in your own code). **Never pass user-supplied input** to any filter form. A `filterRaw('user_field = '.$request->input('foo'))` would render the input as a SQL fragment; a `filter(['col' => $request->...])` equality value escapes single quotes but does not protect against backslash interpretation on MySQL's default `sql_mode`. In the attribute form `#[NestedSetAggregate(..., filter: [...])]`, PHP requires attribute values to be compile-time constants — so the concern only applies to the fluent builder (`Aggregate::sum(...)->filter(...)`) and method-override (`nestedSetAggregates()`) forms.
+
+## Watching a write change the filtered total
+
+To see the maintenance shape, follow one row flipping in and out of the filter. Starting state — `Desktops` is private, contributes nothing to `published_articles` (private rows shown without their numeric chip to make the contribution visible):
+
+```ns-tree
+Electronics {visibility=public, articles=4}
+  Computers {visibility=private}
+    Laptops {visibility=public, articles=8}
+    Desktops {visibility=private}
+  Phones {visibility=public, articles=12}
+```
+
+A single column update flips Desktops public:
+
+```php
+Category::query()->where('name', 'Desktops')->first()->update(['visibility' => 'public']);
+```
+
+After the write, Desktops' `articles=3` now contribute up the chain — `Computers` gains 3, `Electronics` gains 3:
+
+```ns-tree
+Electronics {visibility=public, articles=4}
+  Computers {visibility=private}
+    Laptops {visibility=public, articles=8}
+    Desktops {visibility=public, articles=3}
+  Phones {visibility=public, articles=12}
+```
+
+Computers is still private (so its own value is still excluded) but it's no longer a dead-end on the filter — the rollup propagates through it to Electronics. That's the **delta** path described in the next section: one `UPDATE` against the ancestor chain, no scan of the subtree.
 
 ## Maintenance cost
 

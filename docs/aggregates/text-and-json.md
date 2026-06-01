@@ -12,6 +12,28 @@ Beyond the SQL-standard SUM / COUNT / AVG / MIN / MAX, the package supports four
 
 All four are **recompute-only**: every contributing mutation triggers a full subtree recompute over the ancestor chain. There is no delta fast path (the way SUM/COUNT have one) because removing a value from the subtree can't be expressed as a signed delta on the aggregate.
 
+### What the rollups look like
+
+A small product tree with `name` and `tag` columns. The chips on each ancestor show what the maintained `distinct_tags` and `child_names` columns actually hold:
+
+```ns-tree
+Catalog {distinct_tags=red, blue, green, child_names=Boots, Cap, Coat, Mittens, Scarf}
+  Footwear {distinct_tags=red, blue, child_names=Boots, Cap}
+    Boots {tag=red}
+    Cap {tag=blue}
+  Outerwear {distinct_tags=blue, green, child_names=Coat, Mittens, Scarf}
+    Coat {tag=blue}
+    Mittens {tag=green}
+    Scarf {tag=green}
+```
+
+Read the chips as the *contents* of the stored aggregate columns:
+
+- `distinct_tags` on `Outerwear` holds `'blue, green'` — `Mittens` and `Scarf` both have `green` (deduplicated). Adding a row with `tag = 'orange'` under `Outerwear` would trigger a subtree recompute on `Outerwear` and `Catalog`, and the stored value on both would gain `orange` in one UPDATE.
+- `child_names` on `Catalog` holds the alphabetised list across the whole subtree. `Catalog.child_names` is a column read — no `GROUP_CONCAT` at query time, no recursive walk.
+
+Every contributing mutation re-runs the subtree aggregate on the ancestor chain. There's no delta path: removing `Mittens` can't subtract from a comma-separated string without scanning what's still there.
+
 ## Quick examples
 
 ```php

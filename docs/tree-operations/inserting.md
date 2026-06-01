@@ -22,11 +22,13 @@ $phones->appendToNode($electronics->refresh())->save();
 
 After step 3:
 
-```text
+```ns-tree
 Electronics
-├── Computers     ← first child (was appended first)
-└── Phones        ← last child
+  Computers
+  Phones
 ```
+
+`Computers` was appended first (becomes the first child); `Phones` was appended next (becomes the last child). The `lft` / `rgt` badges on each row show the slot range — Electronics now spans 1..6, with Computers at (2, 3) and Phones at (4, 5).
 
 ## prependToNode — insert as first child
 
@@ -35,12 +37,14 @@ $audio = new Category(['name' => 'Audio']);
 $audio->prependToNode($electronics->refresh())->save();
 ```
 
-```text
+```ns-tree
 Electronics
-├── Audio         ← prepended in front
-├── Computers
-└── Phones
+  Audio
+  Computers
+  Phones
 ```
+
+Audio takes the first-child slot (lft=2). Computers and Phones shifted right by 2 slots each to make room — that's the single `CASE WHEN UPDATE` happening under the surface.
 
 ## insertBeforeNode / insertAfterNode — siblings
 
@@ -52,14 +56,16 @@ $tablets = new Category(['name' => 'Tablets']);
 $tablets->insertAfterNode($phones->refresh())->save();
 ```
 
-```text
+```ns-tree
 Electronics
-├── Audio
-├── Computers
-├── Accessories   ← inserted before Phones
-├── Phones
-└── Tablets       ← inserted after Phones
+  Audio
+  Computers
+  Accessories
+  Phones
+  Tablets
 ```
+
+Accessories landed at Phones' old slot; Phones shifted right. Tablets landed in the new slot just past Phones. Electronics' `rgt` grew by 4 (two inserts × 2 slots each) but `Audio` / `Computers` stayed where they were — they're left of the insertion point.
 
 ## moveTo — pick a destination by position
 
@@ -81,14 +87,16 @@ The integer index is **0-based** and counted *after* removing `$node` from its c
 $audio->refresh()->moveTo($audio->parent, 3);   // move Audio so it lands at index 3
 ```
 
-```text
+```ns-tree
 Electronics
-├── Computers
-├── Accessories
-├── Phones
-├── Audio          ← was index 0, now index 3
-└── Tablets
+  Computers
+  Accessories
+  Phones
+  Audio
+  Tablets
 ```
+
+Audio's lft/rgt have shifted from the very start of the subtree to slot index 3. Computers, Accessories, Phones each gained 2 slots of "lower" position (their lft/rgt values dropped because Audio's 2-slot subtree moved past them); Tablets' values are unchanged (right of the destination, unaffected by Audio's removal-then-reinsertion at index 3).
 
 ### moveBefore / moveAfter — sibling-relative aliases
 
@@ -126,14 +134,16 @@ Integer positions ≥ 1 do an eager `assertSameScope` (the sibling lookup needs 
 $audio->refresh()->down();    // Audio swaps places with Computers
 ```
 
-```text
+```ns-tree
 Electronics
-├── Computers     ← was second, now first
-├── Audio         ← was first, now second
-├── Accessories
-├── Phones
-└── Tablets
+  Computers
+  Audio
+  Accessories
+  Phones
+  Tablets
 ```
+
+Computers (was second, lft=4) and Audio (was first, lft=2) swap slot ranges. Subtrees ride with their roots: anything under Computers or Audio would shift with them. The other siblings' bounds are untouched — the swap is bounded by the two participants' combined slot range.
 
 ## makeRoot — detach into a new tree
 
@@ -143,15 +153,16 @@ Electronics
 $phones->refresh()->makeRoot()->save();
 ```
 
-```text
+```ns-tree
 Electronics
-├── Computers
-├── Audio
-├── Accessories
-└── Tablets
-
-Phones             ← own tree now
+  Computers
+  Audio
+  Accessories
+  Tablets
+Phones
 ```
+
+Phones is now a sibling root of Electronics — same forest, but its `parent_id` is null and `depth` is 0. Its `lft` / `rgt` start fresh after Electronics' subtree ends (it's appended at the end of the forest, not inserted between existing roots). The Electronics subtree shrank by Phones' two slots; everything to the right (which was just Tablets) shifted left.
 
 ## Sibling lookups (read-only)
 
