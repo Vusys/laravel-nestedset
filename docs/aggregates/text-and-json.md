@@ -12,7 +12,7 @@ Beyond the SQL-standard SUM / COUNT / AVG / MIN / MAX, the package supports four
 
 All four are **recompute-only**: every contributing mutation triggers a full subtree recompute over the ancestor chain. There is no delta fast path (the way SUM/COUNT have one) because removing a value from the subtree can't be expressed as a signed delta on the aggregate.
 
-### What the rollups look like
+## What the rollups look like
 
 A small product tree with `name` and `tag` columns. The chips on each ancestor show what the maintained `distinct_tags` and `child_names` columns actually hold:
 

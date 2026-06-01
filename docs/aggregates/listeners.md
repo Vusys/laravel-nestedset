@@ -36,7 +36,7 @@ class Monster extends Model implements HasNestedSet { use NodeTrait; }
 
 Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`. `Avg` is auto-promoted into a pair of internal `Sum` + `Count` companions plus the display column — see [Listener AVG](#listener-avg) below.
 
-### What the rollup looks like
+## What the rollup looks like
 
 Take a monster squad. Each row carries `base_power` and `level`; the listener's `contribution()` returns the product, and `weighted_power` rolls that up the chain. The `weighted_power` chip on every node is the **per-node** contribution (what `contribution($node)` returned), and `Σ weighted_power` on each subtree is the maintained `weighted_power` column on that row:
 

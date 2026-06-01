@@ -27,7 +27,7 @@ Mixed Line
 Read off the `Σ` chip on each root and you'll see they match (400). But the variance the package maintains in `price_variance` differs by two orders of magnitude:
 
 - `Premium Line` — variance ≈ 2 (every price within ±2 of the mean).
-- `Mixed Line` — variance ≈ 4063 (prices range across 25..175).
+- `Mixed Line` — variance ≈ 4063 (prices range across 25–175).
 
 The package keeps both columns coherent through the same one-`UPDATE`-per-mutation shape as Sum: three companions (`__sum`, `__sum_sq`, `__count`) get the delta, and `price_variance = (n·SumSq − Sum²) / n²` is rewritten in the same SET clause.
 
