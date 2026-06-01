@@ -20,6 +20,7 @@ use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
+use Vusys\NestedSet\Aggregates\Strategy\LazyInvalidation;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
 use Vusys\NestedSet\Contracts\HasNestedSet;
@@ -69,6 +70,16 @@ trait HasNestedSetAggregates
      * affect `Category::create()` etc.
      */
     private static int $deferredDepth = 0;
+
+    /**
+     * Per-instance re-entry guard for {@see self::getAttribute()} so the
+     * lazy-aggregate refresh path doesn't recurse when it reads the
+     * source / stamp / scope attributes via `parent::getAttribute()`.
+     * Listener `contribution()` callbacks invoked during the refresh
+     * could also read the same column on the same node; the guard
+     * prevents a runaway recompute loop.
+     */
+    private bool $refreshingLazyAggregate = false;
 
     /**
      * Source-column deltas captured in `saving` and applied in `saved`.
@@ -143,6 +154,18 @@ trait HasNestedSetAggregates
     private array $capturedChainRecomputes = [];
 
     /**
+     * Lazy aggregate columns whose watched columns went dirty on the
+     * current save. Used by {@see self::applyAggregateDeltas()} to issue
+     * one {@see LazyInvalidation}
+     * UPDATE per save instead of the eager delta / recompute paths.
+     * Stored as a list of value-column names; inclusivity and stamp
+     * column derive from the registry at apply time.
+     *
+     * @var list<string>
+     */
+    private array $capturedLazyInvalidations = [];
+
+    /**
      * The user-facing aggregate definitions declared on this model.
      * Excludes internal companions auto-promoted alongside AVG
      * declarations — those are an implementation detail of the
@@ -161,6 +184,143 @@ trait HasNestedSetAggregates
         }
 
         return $userFacing;
+    }
+
+    /**
+     * Override of {@see Model::getAttribute()} that intercepts reads of
+     * lazy aggregate columns. When the requested column is declared
+     * `lazy: true` and its stamp companion is NULL (or past its TTL),
+     * the value is recomputed via {@see self::freshAggregate()},
+     * written back to the row alongside `<column>_computed_at = NOW()`,
+     * and reflected in the in-memory attributes before returning.
+     *
+     * Race: a mutation between read and write-back can result in the
+     * stored value being stale for one ancestor chain pass — the next
+     * mutation or read past the TTL re-stales it. The package documents
+     * this as a known boundary of the lazy semantics; users who need
+     * strict consistency should opt out of lazy or wrap reads in a
+     * lock.
+     *
+     * Returns whatever the underlying `Model::getAttribute()` would
+     * return — casts and accessors are respected after the refresh.
+     */
+    public function getAttribute($key)
+    {
+        // Mirror Eloquent's own falsy-key short-circuit. The lazy
+        // discriminator below narrows $key to string for
+        // lazyDefinitionForColumn(), so null / false / 0 / '' / '0'
+        // must skip past it before that call.
+        if (! $key) {
+            return parent::getAttribute($key);
+        }
+
+        if (! $this->exists || $this->refreshingLazyAggregate) {
+            return parent::getAttribute($key);
+        }
+
+        $definition = $this->lazyDefinitionForColumn($key);
+        if ($definition === null) {
+            return parent::getAttribute($key);
+        }
+
+        if ($this->isLazyAggregateStale($definition) && $this->isPlacedInTree()) {
+            $this->refreshingLazyAggregate = true;
+            try {
+                $this->refreshLazyAggregateRow($definition);
+            } finally {
+                $this->refreshingLazyAggregate = false;
+            }
+        }
+
+        return parent::getAttribute($key);
+    }
+
+    /**
+     * Returns the lazy aggregate definition (SQL or listener) declared
+     * on this model for the named column, or null if `$column` does not
+     * name a lazy aggregate. Used by {@see self::getAttribute()} as the
+     * fast-path discriminator on every attribute read.
+     */
+    private function lazyDefinitionForColumn(string $column): ?AggregateDefinitionContract
+    {
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if ($definition->isLazy() && $definition->getColumn() === $column) {
+                return $definition;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * True when a lazy aggregate column needs a fresh recompute on read.
+     * Two cases:
+     *  - the stamp companion is NULL — the column has been invalidated
+     *    by a mutation since the last refresh, or has never been
+     *    populated;
+     *  - the stamp companion is older than the definition's TTL.
+     */
+    private function isLazyAggregateStale(AggregateDefinitionContract $definition): bool
+    {
+        $stampColumn = $definition->lazyStampColumn();
+        // Read directly from the raw attribute array so we don't recurse
+        // back into getAttribute() for the stamp column itself, and so a
+        // user-defined timestamp cast doesn't change the staleness math.
+        $raw = $this->getAttributes()[$stampColumn] ?? null;
+
+        if ($raw === null) {
+            return true;
+        }
+
+        $ttl = $definition->lazyTtlSeconds();
+        if ($ttl === null) {
+            return false;
+        }
+
+        if (is_int($raw) || is_float($raw)) {
+            $stampUnix = (int) $raw;
+        } elseif (is_string($raw)) {
+            $parsed = strtotime($raw);
+            if ($parsed === false) {
+                return true;
+            }
+            $stampUnix = $parsed;
+        } else {
+            // Carbon / DateTimeInterface raw (when a cast widens the
+            // stamp before this point) — fall back to "stale" rather
+            // than silently miscomputing.
+            return true;
+        }
+
+        return ($stampUnix + $ttl) < time();
+    }
+
+    /**
+     * Recomputes a single lazy aggregate column for this node via
+     * {@see self::freshAggregate()} and writes the new value plus the
+     * stamp companion to both the database row and the in-memory model.
+     * Skipped silently when the row isn't placed in the tree — an
+     * unplaced lazy aggregate is structurally meaningless until placement.
+     */
+    private function refreshLazyAggregateRow(AggregateDefinitionContract $definition): void
+    {
+        $column = $definition->getColumn();
+        $stampColumn = $definition->lazyStampColumn();
+
+        $value = $this->freshAggregate($column);
+        $now = $this->freshTimestampString();
+
+        $this->getConnection()->table($this->getTable())
+            ->where($this->getKeyName(), $this->getKey())
+            ->update([
+                $column => $value,
+                $stampColumn => $now,
+            ]);
+
+        $this->setAttribute($column, $value);
+        $this->setAttribute($stampColumn, $now);
+        $this->syncOriginalAttribute($column);
+        $this->syncOriginalAttribute($stampColumn);
     }
 
     /**
@@ -326,6 +486,7 @@ trait HasNestedSetAggregates
         $this->capturedListenerRecomputes = [];
         $this->capturedChainRecomputes = [];
         $this->capturedBitwise = [];
+        $this->capturedLazyInvalidations = [];
 
         if (! $this->exists) {
             return;
@@ -333,6 +494,22 @@ trait HasNestedSetAggregates
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+
+            // Lazy aggregates short-circuit every eager path below —
+            // their stored column and `<column>_computed_at` stamp are
+            // nulled on every affected ancestor and recomputed on the
+            // next read (see {@see LazyInvalidation}). The dirty check
+            // here over-approximates safely: missing a dirty signal
+            // would leak stale data, but invalidating an already-NULL
+            // column is a no-op.
+            if ($definition->lazy) {
+                $watchCols = $this->lazyWatchColumnsForSql($definition);
+                if ($watchCols !== [] && $this->isDirty($watchCols)) {
+                    $this->capturedLazyInvalidations[] = $definition->column;
+                }
+
                 continue;
             }
 
@@ -576,6 +753,16 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Lazy listener aggregate: route through the invalidation
+            // path same as SQL lazy. The listener's contribution()
+            // doesn't run here at all — the value is computed on the
+            // next read instead.
+            if ($definition->lazy) {
+                $this->capturedLazyInvalidations[] = $definition->column;
+
+                continue;
+            }
+
             // Exclusive listener: route to chain recompute (uniform
             // across operations; subtree-contribution composition is
             // function-specific and we don't want to duplicate that
@@ -760,6 +947,7 @@ trait HasNestedSetAggregates
         $listenerRecomputes = $this->capturedListenerRecomputes;
         $chainRecomputes = $this->capturedChainRecomputes;
         $bitwise = $this->capturedBitwise;
+        $lazyInvalidations = $this->capturedLazyInvalidations;
 
         $this->capturedAggregateDeltas = [];
         $this->capturedExtremes = [];
@@ -767,8 +955,9 @@ trait HasNestedSetAggregates
         $this->capturedListenerRecomputes = [];
         $this->capturedChainRecomputes = [];
         $this->capturedBitwise = [];
+        $this->capturedLazyInvalidations = [];
 
-        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $bitwise === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $bitwise === [] && $lazyInvalidations === []) {
             return;
         }
 
@@ -820,6 +1009,10 @@ trait HasNestedSetAggregates
                 definitions: $listenerRecomputes,
                 includeSelf: true,
             );
+        }
+
+        if ($lazyInvalidations !== []) {
+            $this->invalidateLazyAggregates($lazyInvalidations, $this->getBounds(), $scope);
         }
 
         $this->dispatchAggregateChangeFeed();
@@ -1347,6 +1540,15 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Lazy aggregates skip the eager create path entirely; the
+            // ancestor-chain invalidation at the end of this method
+            // takes care of them. The dirty check used by the save path
+            // doesn't apply on create — every aggregate's contribution
+            // changes when the row first appears.
+            if ($definition->lazy) {
+                continue;
+            }
+
             // Exclusive aggregates: route through the chain-recompute
             // path. The delta math differs per-function and per-filter
             // (subtree contribution is `descendants-only + self` for
@@ -1458,6 +1660,12 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Lazy listener aggregate: skip eager contribution and
+            // delta; the post-loop invalidation handles it.
+            if ($definition->lazy) {
+                continue;
+            }
+
             if (! $definition->isInclusive()) {
                 // Exclusive listener defs use the chain-recompute path —
                 // delta math would need per-function subtree-contribution
@@ -1508,7 +1716,9 @@ trait HasNestedSetAggregates
             }
         }
 
-        if ($deltas === [] && $extremes === [] && $bitwise === [] && $chainRecomputes === [] && $exclusiveListenerDefs === []) {
+        $lazyColumns = $this->allLazyAggregateColumns();
+
+        if ($deltas === [] && $extremes === [] && $bitwise === [] && $chainRecomputes === [] && $exclusiveListenerDefs === [] && $lazyColumns === []) {
             return;
         }
 
@@ -1553,7 +1763,12 @@ trait HasNestedSetAggregates
             );
         }
 
+        if ($lazyColumns !== []) {
+            $this->invalidateLazyAggregates($lazyColumns, $this->getBounds(), $scope);
+        }
+
         $this->dispatchAggregateChangeFeed();
+
         $this->dispatchAggregatesRecomputed('on_create');
     }
 
@@ -1594,6 +1809,13 @@ trait HasNestedSetAggregates
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+
+            // Lazy aggregate: skip the eager subtract / recompute paths
+            // entirely; the post-loop invalidation nulls every ancestor
+            // and the next read recomputes.
+            if ($definition->lazy) {
                 continue;
             }
 
@@ -1695,6 +1917,12 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Lazy listener: skip eager subtract / chain recompute;
+            // post-loop invalidation handles it.
+            if ($definition->lazy) {
+                continue;
+            }
+
             if (! $definition->isInclusive()) {
                 // Exclusive listener: chain recompute (any function).
                 $listenerChainDefs[$definition->column] = $definition;
@@ -1772,7 +2000,13 @@ trait HasNestedSetAggregates
             );
         }
 
+        $lazyColumns = $this->allLazyAggregateColumns();
+        if ($lazyColumns !== []) {
+            $this->invalidateLazyAggregates($lazyColumns, $this->getBounds(), $scope);
+        }
+
         $this->dispatchAggregateChangeFeed();
+
         $this->dispatchAggregatesRecomputed('on_delete');
     }
 
@@ -1841,6 +2075,10 @@ trait HasNestedSetAggregates
             if (! $def instanceof ListenerAggregateDefinition) {
                 continue;
             }
+            // Lazy listeners ride the invalidation path, not chain recompute.
+            if ($def->lazy) {
+                continue;
+            }
             // Exclusive listener defs (any function), and inclusive
             // Min/Max listener defs (extremum may have been held by
             // the moving subtree) both need a chain recompute on the
@@ -1867,6 +2105,10 @@ trait HasNestedSetAggregates
             if (! $def instanceof AggregateDefinition) {
                 continue;
             }
+            // Lazy SQL aggregates ride the invalidation path, not chain recompute.
+            if ($def->lazy) {
+                continue;
+            }
             // Exclusive defs (any function/filter), inclusive defs with
             // a raw filter, and bitwise rollups all ride the
             // chain-recompute path on the old chain. The moving
@@ -1885,6 +2127,14 @@ trait HasNestedSetAggregates
                 definitions: $chainRecomputes,
                 excludeBounds: $from,
             );
+        }
+
+        $lazyColumns = $this->allLazyAggregateColumns();
+        if ($lazyColumns !== []) {
+            // Invalidate the OLD chain — every ancestor of the moving
+            // subtree just lost its contribution; their lazy columns are
+            // now stale.
+            $this->invalidateLazyAggregates($lazyColumns, $from, $scope);
         }
 
         $this->dispatchAggregateChangeFeed();
@@ -1914,12 +2164,19 @@ trait HasNestedSetAggregates
 
         foreach (AggregateRegistry::for(static::class) as $def) {
             if ($def instanceof AggregateDefinition) {
+                // Lazy ones ride the invalidation path further down.
+                if ($def->lazy) {
+                    continue;
+                }
                 $isRawFilter = $def->filter instanceof FilterPredicate
                     && $def->filter->getKind() === FilterPredicateKind::Raw;
                 if (! $def->inclusive || $isRawFilter || $def->function->requiresChainRecompute()) {
                     $chainRecomputes[$def->column] = $def;
                 }
             } elseif ($def instanceof ListenerAggregateDefinition) {
+                if ($def->lazy) {
+                    continue;
+                }
                 if (! $def->isInclusive()
                     || $def->operation === AggregateFunction::Max
                     || $def->operation === AggregateFunction::Min) {
@@ -1928,8 +2185,10 @@ trait HasNestedSetAggregates
             }
         }
 
+        $lazyColumns = $this->allLazyAggregateColumns();
+
         if ($sumCountDeltas === [] && $candidateExtremes === []
-            && $chainRecomputes === [] && $listenerChainSpecs === []) {
+            && $chainRecomputes === [] && $listenerChainSpecs === [] && $lazyColumns === []) {
             return;
         }
 
@@ -1982,7 +2241,15 @@ trait HasNestedSetAggregates
             );
         }
 
+        if ($lazyColumns !== []) {
+            // Invalidate the NEW chain — every new ancestor of the
+            // moved subtree just gained its contribution; their lazy
+            // columns are now stale.
+            $this->invalidateLazyAggregates($lazyColumns, $to, $scope);
+        }
+
         $this->dispatchAggregateChangeFeed();
+
         $this->dispatchAggregatesRecomputed('move');
     }
 
@@ -2010,6 +2277,12 @@ trait HasNestedSetAggregates
                 continue;
             }
             if (! $definition->inclusive) {
+                continue;
+            }
+            // Lazy aggregates feed the invalidation path, not delta
+            // arithmetic — their stored value is NULL between mutations
+            // and would poison the SUM/COUNT delta if forwarded here.
+            if ($definition->lazy) {
                 continue;
             }
 
@@ -2200,6 +2473,13 @@ trait HasNestedSetAggregates
             /** @var array<string, ListenerAggregateDefinition> $listenerDefs */
             $listenerDefs = [];
             foreach (AggregateRegistry::for(static::class) as $def) {
+                // Lazy aggregates are populated on self by the
+                // fixAggregates() call above and invalidated on the
+                // ancestor chain after the chain recomputes; skip them
+                // here so they're not double-walked over the chain.
+                if ($def->isLazy()) {
+                    continue;
+                }
                 if ($def instanceof AggregateDefinition) {
                     $sqlDefs[$def->column] = $def;
                 } elseif ($def instanceof ListenerAggregateDefinition) {
@@ -2219,7 +2499,22 @@ trait HasNestedSetAggregates
                 );
             }
 
+            $lazyColumns = $this->allLazyAggregateColumns();
+            if ($lazyColumns !== []) {
+                // Invalidate proper ancestors only — fixAggregates() above
+                // populated self's lazy columns and stamp. The chain
+                // ancestors are the ones that need to re-pick up self's
+                // restored contribution; they're flagged for the next read.
+                $this->invalidateLazyAggregates(
+                    $lazyColumns,
+                    $this->getBounds(),
+                    $scope,
+                    excludeSelf: true,
+                );
+            }
+
             $this->dispatchAggregateChangeFeed();
+
             $this->dispatchAggregatesRecomputed('on_restore');
 
             return;
@@ -2236,6 +2531,12 @@ trait HasNestedSetAggregates
 
         foreach (AggregateRegistry::for(static::class) as $definition) {
             if (! $definition instanceof AggregateDefinition) {
+                continue;
+            }
+
+            // Lazy: skip eager add-back / chain recompute; the post-loop
+            // invalidation re-stales the ancestor chain for next read.
+            if ($definition->lazy) {
                 continue;
             }
 
@@ -2301,6 +2602,11 @@ trait HasNestedSetAggregates
                 continue;
             }
 
+            // Lazy listener: skip; invalidation handles it.
+            if ($definition->lazy) {
+                continue;
+            }
+
             if (! $definition->isInclusive()) {
                 // Exclusive listener (any function): chain recompute.
                 $listenerChainSpecs[$definition->column] = $definition;
@@ -2332,7 +2638,9 @@ trait HasNestedSetAggregates
             $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
 
-        if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $listenerChainSpecs === []) {
+        $lazyColumns = $this->allLazyAggregateColumns();
+
+        if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $listenerChainSpecs === [] && $lazyColumns === []) {
             return;
         }
 
@@ -2376,7 +2684,16 @@ trait HasNestedSetAggregates
             );
         }
 
+        if ($lazyColumns !== []) {
+            // Non-soft-delete restore: the previous delete already
+            // invalidated lazy ancestors and self stayed stamped (or
+            // got nulled). Re-invalidate the chain (and self) so the
+            // next read sees the restored contribution.
+            $this->invalidateLazyAggregates($lazyColumns, $this->getBounds(), $scope);
+        }
+
         $this->dispatchAggregateChangeFeed();
+
         $this->dispatchAggregatesRecomputed('on_restore');
     }
 
@@ -2610,6 +2927,91 @@ trait HasNestedSetAggregates
         ));
     }
 
+    /**
+     * Returns the columns whose dirty state should trigger lazy
+     * invalidation for a SQL aggregate definition. Unions {@see
+     * AggregateDefinition::triggerColumns()} (source + filter + weight)
+     * with {@see AggregateSqlEmitter::watchColumns()} so collection
+     * aggregates (JsonAgg/JsonObjectAgg/StringAgg) catch their per-row
+     * field columns and multi-source JsonAgg catches every named source.
+     *
+     * @return list<string>
+     */
+    private function lazyWatchColumnsForSql(AggregateDefinition $definition): array
+    {
+        return array_values(array_unique(array_merge(
+            $definition->triggerColumns(),
+            AggregateSqlEmitter::watchColumns($definition),
+        )));
+    }
+
+    /**
+     * Issues one {@see LazyInvalidation::apply()} call for the named
+     * lazy aggregate columns over the supplied bounds and scope.
+     * Resolves stamp column and inclusivity from the registry for each
+     * listed column; entries that aren't lazy or aren't declared on
+     * this model are silently skipped (the lazy capture path won't
+     * produce those, but defensive filtering keeps the helper robust
+     * against external callers).
+     *
+     * `$excludeSelf` forces strict bounds for every spec — used by the
+     * restore hook, where self's lazy columns have already been
+     * populated by a prior `fixAggregates()` pass and only the
+     * proper ancestors are stale.
+     *
+     * @param  list<string>  $columnNames
+     * @param  array<string, mixed>  $scope
+     */
+    private function invalidateLazyAggregates(
+        array $columnNames,
+        NodeBounds $bounds,
+        array $scope,
+        bool $excludeSelf = false,
+    ): void {
+        if ($columnNames === []) {
+            return;
+        }
+
+        $specs = AggregateRegistry::lazySpecsForColumns(static::class, $columnNames);
+
+        if ($specs === []) {
+            return;
+        }
+
+        LazyInvalidation::apply(
+            connection: $this->getConnection(),
+            table: $this->getTable(),
+            lftCol: $this->getLftName(),
+            rgtCol: $this->getRgtName(),
+            bounds: $bounds,
+            columns: $specs,
+            scope: $scope,
+            softDeletedColumn: $this->softDeleteColumn(),
+            excludeSelf: $excludeSelf,
+        );
+    }
+
+    /**
+     * Returns the names of every lazy aggregate column declared on this
+     * model. Used by lifecycle hooks (create / delete / restore / move)
+     * where the mutation invalidates uniformly — the per-column dirty
+     * check that gates the save path doesn't apply because the row
+     * itself appeared, disappeared, moved, or restored.
+     *
+     * @return list<string>
+     */
+    private function allLazyAggregateColumns(): array
+    {
+        $names = [];
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if ($definition->isLazy()) {
+                $names[] = $definition->getColumn();
+            }
+        }
+
+        return $names;
+    }
+
     /** @return list<ListenerAggregateDefinition> */
     private static function listenerDefinitions(): array
     {
@@ -2764,6 +3166,8 @@ trait HasNestedSetAggregates
             outerIds: null,
         );
 
+        self::stampLazyAggregatesForFix($instance, $scope, $rootId, null);
+
         $result = ListenerMaintenance::mergeFixResults($sqlResult, $listenerResult);
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
@@ -2778,6 +3182,107 @@ trait HasNestedSetAggregates
         ));
 
         return $result;
+    }
+
+    /**
+     * Stamps every lazy aggregate's `<column>_computed_at` companion to
+     * NOW across the rows fixAggregates() (or fixAggregatesChunk) just
+     * repaired. `fixAggregates` writes fresh values to the value
+     * columns; without an accompanying stamp, the next read would treat
+     * those rows as stale and immediately recompute, wasting the repair.
+     *
+     * Bounded to the same anchor / scope / chunk subset the differ
+     * touched, so per-chunk calls only stamp their own rows.
+     *
+     * @param  array<string, mixed>  $scope
+     * @param  list<int|string>|null  $outerIds  When non-null, restricts
+     *                                           the stamp pass to this
+     *                                           chunk's outer rows.
+     */
+    private static function stampLazyAggregatesForFix(
+        self $instance,
+        array $scope,
+        int|string|null $rootId,
+        ?array $outerIds,
+    ): void {
+        $stampColumns = [];
+        foreach (AggregateRegistry::for(static::class) as $definition) {
+            if ($definition->isLazy()) {
+                $stampColumns[$definition->lazyStampColumn()] = true;
+            }
+        }
+        if ($stampColumns === []) {
+            return;
+        }
+
+        // Empty chunk: nothing to stamp, otherwise the SQL becomes `id IN ()`.
+        if ($outerIds !== null && $outerIds === []) {
+            return;
+        }
+
+        $stamp = $instance->freshTimestampString();
+        $updates = array_map(static fn (): string => $stamp, $stampColumns);
+
+        $query = $instance->getConnection()->table($instance->getTable());
+
+        if ($rootId !== null) {
+            $bounds = self::anchorBoundsRow($instance, $rootId);
+            if ($bounds === null) {
+                // Anchor disappeared between the differ pass and the
+                // stamp pass (a parallel hard-delete, say). Bail out
+                // rather than fall through to a query whose only
+                // remaining constraints are scope — that would stamp
+                // every other tree in the table.
+                return;
+            }
+            $query->where($instance->getLftName(), '>=', $bounds['lft'])
+                ->where($instance->getRgtName(), '<=', $bounds['rgt']);
+        }
+
+        foreach ($scope as $col => $value) {
+            $query->where($col, '=', $value);
+        }
+
+        $softDeletedColumn = $instance->softDeleteColumn();
+        if ($softDeletedColumn !== null) {
+            $query->whereNull($softDeletedColumn);
+        }
+
+        if ($outerIds !== null) {
+            $query->whereIn($instance->getKeyName(), $outerIds);
+        }
+
+        $query->update($updates);
+    }
+
+    /**
+     * Fetches just the `lft` / `rgt` of the row whose primary key equals
+     * `$rootId`. Returns null when the row no longer exists — the differ
+     * already ran, so the missing-row case would have been a no-op
+     * anyway. Reads raw integers off the connection to keep the lazy-
+     * stamp UPDATE path free of model hydration, casts, and events.
+     *
+     * @return array{lft: int, rgt: int}|null
+     */
+    private static function anchorBoundsRow(self $instance, int|string $rootId): ?array
+    {
+        $row = $instance->getConnection()
+            ->table($instance->getTable())
+            ->where($instance->getKeyName(), $rootId)
+            ->first([$instance->getLftName(), $instance->getRgtName()]);
+
+        if ($row === null) {
+            return null;
+        }
+
+        $lft = $row->{$instance->getLftName()} ?? null;
+        $rgt = $row->{$instance->getRgtName()} ?? null;
+
+        if (! is_numeric($lft) || ! is_numeric($rgt)) {
+            return null;
+        }
+
+        return ['lft' => (int) $lft, 'rgt' => (int) $rgt];
     }
 
     /**
@@ -2972,6 +3477,8 @@ trait HasNestedSetAggregates
             rootId: $rootId,
             outerIds: $ids,
         );
+
+        self::stampLazyAggregatesForFix($instance, $scope, $rootId, $ids);
 
         $result = ListenerMaintenance::mergeFixResults($result, $listenerChunkResult);
 

@@ -11,6 +11,7 @@ use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
+use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 /**
  * A fully-resolved aggregate declaration: target column, function,
@@ -35,6 +36,18 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
     /**
      * @param  array<string,string>  $sources  multi-column source map for JsonAgg
      *                                         (JSON key => source column). Empty for scalar / non-JSON kinds.
+     * @param  bool  $lazy  When true, mutations invalidate this column
+     *                      (set it and its `<column>_computed_at` stamp
+     *                      companion to NULL on every affected ancestor)
+     *                      instead of eagerly recomputing. The first read
+     *                      past the invalidation recomputes via
+     *                      {@see HasNestedSetAggregates::freshAggregate()}
+     *                      and stamps the companion. The stamp column
+     *                      must exist on the table as a nullable timestamp.
+     * @param  int|null  $ttl  Seconds after which a stamped value is
+     *                         treated as stale (read triggers recompute).
+     *                         `null` means "no time-based expiry — only
+     *                         invalidate on mutation".
      */
     public function __construct(
         public string $column,
@@ -58,7 +71,64 @@ final readonly class AggregateDefinition implements AggregateDefinitionContract
         public float $percentilePoint = 0.5,
         public ?int $k = null,
         public ?string $topKBy = null,
-    ) {}
+        public bool $lazy = false,
+        public ?int $ttl = null,
+    ) {
+        if ($this->lazy && ! $this->function->supportsLazy()) {
+            throw new AggregateConfigurationException(sprintf(
+                'AggregateDefinition for column "%s": lazy is not supported on %s — '
+                .'companion-derived display kinds (Avg / Variance / Stddev / WeightedAvg / '
+                .'BoolOr / BoolAnd / GeometricMean / HarmonicMean) and fresh-read-only '
+                .'kinds (Median / Percentile) cannot be lazy. Use lazy on the supporting '
+                .'Sum / Count companions if you need their maintenance deferred.',
+                $this->column,
+                $this->function->value,
+            ));
+        }
+
+        if ($this->lazy && $this->internal) {
+            throw new AggregateConfigurationException(sprintf(
+                'AggregateDefinition for column "%s": auto-promoted internal companion '
+                .'cannot be lazy. Set `lazy: true` on the user-facing declaration instead.',
+                $this->column,
+            ));
+        }
+
+        if (! $this->lazy && $this->ttl !== null) {
+            throw new AggregateConfigurationException(sprintf(
+                'AggregateDefinition for column "%s": `ttl` only applies when `lazy: true`.',
+                $this->column,
+            ));
+        }
+
+        if ($this->ttl !== null && $this->ttl <= 0) {
+            throw new AggregateConfigurationException(sprintf(
+                'AggregateDefinition for column "%s": `ttl` must be a positive integer (seconds), got %d.',
+                $this->column,
+                $this->ttl,
+            ));
+        }
+    }
+
+    /**
+     * Stamp companion column for lazy aggregates — `<column>_computed_at`.
+     * NULL means stale (recompute on next read); non-NULL means fresh
+     * as of that timestamp (subject to TTL).
+     */
+    public function lazyStampColumn(): string
+    {
+        return $this->column.'_computed_at';
+    }
+
+    public function isLazy(): bool
+    {
+        return $this->lazy;
+    }
+
+    public function lazyTtlSeconds(): ?int
+    {
+        return $this->ttl;
+    }
 
     public function getColumn(): string
     {

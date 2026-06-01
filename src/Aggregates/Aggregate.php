@@ -57,6 +57,8 @@ final readonly class Aggregate
         public float $percentilePoint = 0.5,
         public ?int $k = null,
         public ?string $topKBy = null,
+        public bool $lazy = false,
+        public ?int $ttl = null,
     ) {}
 
     /**
@@ -403,6 +405,8 @@ final readonly class Aggregate
             percentilePoint: $this->percentilePoint,
             k: $this->k,
             topKBy: $this->topKBy,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -631,6 +635,8 @@ final readonly class Aggregate
             percentilePoint: $this->percentilePoint,
             k: $this->k,
             topKBy: $this->topKBy,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -675,6 +681,54 @@ final readonly class Aggregate
             percentilePoint: $this->percentilePoint,
             k: $this->k,
             topKBy: $this->topKBy,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
+        );
+    }
+
+    /**
+     * Mark this aggregate as lazily maintained — mutations invalidate
+     * (set the column and its `<column>_computed_at` stamp to NULL on
+     * every ancestor) instead of recomputing. The first read past the
+     * invalidation runs {@see HasNestedSetAggregates::freshAggregate()}
+     * and stamps the companion. The stamp column must exist on the
+     * model's table as a nullable timestamp.
+     *
+     * `$ttl` (seconds) sets a freshness window: stamped values older
+     * than `$ttl` are treated as stale and trigger a recompute on next
+     * read. Pass `null` (the default) to disable time-based expiry —
+     * the column then refreshes only on read-after-mutation.
+     *
+     * Only valid on functions whose
+     * {@see AggregateFunction::supportsLazy()} returns true (Sum,
+     * Count, Min, Max, BitOr/And/Xor, DistinctCount, StringAgg,
+     * JsonAgg, JsonObjectAgg). Calling on Avg / Variance / Stddev /
+     * WeightedAvg / Bool*  / GeoMean / HarmMean throws at
+     * {@see self::into()} time.
+     */
+    public function lazy(?int $ttl = null): self
+    {
+        return new self(
+            function: $this->function,
+            source: $this->source,
+            inclusive: $this->inclusive,
+            filter: $this->filter,
+            sample: $this->sample,
+            separator: $this->separator,
+            limit: $this->limit,
+            orderBy: $this->orderBy,
+            distinct: $this->distinct,
+            allowNullKeys: $this->allowNullKeys,
+            keyColumn: $this->keyColumn,
+            valueColumn: $this->valueColumn,
+            sources: $this->sources,
+            weight: $this->weight,
+            allowNonPositive: $this->allowNonPositive,
+            percentilePoint: $this->percentilePoint,
+            k: $this->k,
+            topKBy: $this->topKBy,
+            lazy: true,
+            ttl: $ttl,
         );
     }
 
@@ -756,6 +810,8 @@ final readonly class Aggregate
             percentilePoint: $this->percentilePoint,
             k: $this->k,
             topKBy: $this->topKBy,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
@@ -826,6 +882,8 @@ final readonly class Aggregate
             percentilePoint: $this->percentilePoint,
             k: $this->k,
             topKBy: $this->topKBy,
+            lazy: $this->lazy,
+            ttl: $this->ttl,
         );
     }
 
