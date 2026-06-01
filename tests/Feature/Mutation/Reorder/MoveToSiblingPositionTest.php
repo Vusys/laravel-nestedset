@@ -6,7 +6,6 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
 use LogicException;
-use OutOfRangeException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -92,7 +91,7 @@ final class MoveToSiblingPositionTest extends TestCase
 
     public function test_position_zero_throws(): void
     {
-        $this->expectException(OutOfRangeException::class);
+        $this->expectException(LogicException::class);
         $this->expectExceptionMessage('position must be in [1, 4]');
 
         Category::query()->findOrFail(2)->moveToSiblingPosition(0);
@@ -100,7 +99,7 @@ final class MoveToSiblingPositionTest extends TestCase
 
     public function test_position_past_end_throws(): void
     {
-        $this->expectException(OutOfRangeException::class);
+        $this->expectException(LogicException::class);
         $this->expectExceptionMessage('position must be in [1, 4]');
 
         Category::query()->findOrFail(2)->moveToSiblingPosition(99);
@@ -108,7 +107,7 @@ final class MoveToSiblingPositionTest extends TestCase
 
     public function test_negative_position_throws(): void
     {
-        $this->expectException(OutOfRangeException::class);
+        $this->expectException(LogicException::class);
 
         Category::query()->findOrFail(2)->moveToSiblingPosition(-1);
     }

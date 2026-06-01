@@ -11,7 +11,7 @@ use Vusys\NestedSet\Tests\TestCase;
 /**
  * Direct tests for the inspection methods on `HasNodeInspection` — the
  * `isRoot` / `isLeaf` / `isChild` / `isDescendantOf` / `isAncestorOf` /
- * `getNodeHeight` / `getDescendantCount` / `hasMoved` API the README
+ * `getSubtreeSize` / `getDescendantCount` / `hasMoved` API the README
  * features. These methods were exercised only indirectly via mutation
  * and relation tests; the bodies are simple, but they're public
  * surface so worth a direct check.
@@ -118,16 +118,6 @@ final class NodeInspectionTest extends TestCase
         $this->assertSame(6, $this->find(2)->getSubtreeSize());    // Child A: 7-2+1
         $this->assertSame(2, $this->find(3)->getSubtreeSize());    // AA leaf: 4-3+1
         $this->assertSame(2, $this->find(5)->getSubtreeSize());    // Child B leaf: 9-8+1
-    }
-
-    public function test_get_node_height_is_a_backwards_compatible_alias(): void
-    {
-        // Legacy name. Kept for users on the old API; delegates to
-        // getSubtreeSize() — removal scheduled for 1.0.
-        $this->assertSame(
-            $this->find(1)->getSubtreeSize(),
-            $this->find(1)->getNodeHeight(),
-        );
     }
 
     public function test_get_descendant_count_derives_count_from_bounds(): void

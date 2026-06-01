@@ -34,7 +34,7 @@ use Vusys\NestedSet\Tests\TestCase;
  *      (`children`, `descendants`, `ancestors`, `parent`) and every
  *      inspection method (`isRoot`, `isLeaf`, `isChild`,
  *      `isDescendantOf`, `isAncestorOf`, `isSiblingOf`,
- *      `getDescendantCount`, `getNodeHeight`).
+ *      `getDescendantCount`, `getSubtreeSize`).
  *   3. Asserts each result against a PHP-side "oracle" computed
  *      directly from lft/rgt — the ground truth.
  *
@@ -148,8 +148,7 @@ final class QuerySemanticsFuzzerTest extends TestCase
             $depth[$id] = count($ancestors[$id]);
         }
 
-        // `getNodeHeight()` is documented as `rgt - lft + 1` (slot
-        // count), NOT tree-theory height. Mirror that.
+        // `getSubtreeSize()` is `rgt - lft + 1` (slot count).
         foreach ($all as $node) {
             $id = (int) $node->id;
             $height[$id] = $node->rgt - $node->lft + 1;

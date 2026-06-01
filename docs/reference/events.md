@@ -54,6 +54,16 @@ When the package cascades soft-delete, restore, or hard-delete through a subtree
 
 `descendantIds` is the *strict* descendant set (excludes the anchor). The anchor itself fires Eloquent's normal `deleted` / `restored` events in addition to the `Subtree*` pair.
 
+### Subtree cloning
+
+`cloneSubtreeTo()` / `cloneSubtreeAsRoot()` suppress per-row Eloquent `creating` / `created` / `saving` / `saved` events for cloned rows (they ride on top of `bulkInsertTree`). The single signal listeners hook is `SubtreeCloned`.
+
+| Event | Fires when | Payload |
+|---|---|---|
+| `SubtreeCloned` | after a successful `cloneSubtreeTo()` / `cloneSubtreeAsRoot()` — deferred to the outermost transaction commit | `modelClass`, `source`, `clone`, `rowCount`, `includeTrashed` |
+
+`source` is the original (re-read) root; `clone` is the new root of the cloned subtree. `rowCount` is the number of rows actually materialised on the destination side — equal to the source subtree size when `includeTrashed` is `true`, otherwise reduced by any trashed descendants that were silently skipped. Not queue-safe: it carries live model instances.
+
 ### Subtree movement
 
 | Event | Fires when | Payload |
