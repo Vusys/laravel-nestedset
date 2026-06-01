@@ -37,7 +37,7 @@ $phones->moveToSiblingPosition(1);   // become first sibling
 $phones->moveToSiblingPosition(3);   // become third sibling
 ```
 
-Position semantics match `up()` / `down()`: position 1 is the first sibling, `count(siblings)` is the last. Out-of-range positions throw `OutOfRangeException`. A root (no parent) throws `UnplacedNodeException` — roots have no sibling group to reorder within.
+Position semantics match `up()` / `down()`: position 1 is the first sibling, `count(siblings)` is the last. Out-of-range positions throw `LogicException`. A root (no parent) throws `UnplacedNodeException` — roots have no sibling group to reorder within.
 
 Equivalent to calling `$parent->reorderChildren(...)` with everyone else's order preserved.
 

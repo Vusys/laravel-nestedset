@@ -87,17 +87,6 @@ trait HasNodeInspection
     }
 
     /**
-     * @deprecated Use {@see getSubtreeSize()} — the old name suggested
-     *             tree-theory "height" (max depth of a descendant)
-     *             but the method actually returns the lft/rgt slot
-     *             count. Will be removed before 1.0.
-     */
-    public function getNodeHeight(): int
-    {
-        return $this->getSubtreeSize();
-    }
-
-    /**
      * Derived from lft/rgt: a subtree of N nodes occupies 2N slots, so the
      * count of strict descendants is (rgt - lft - 1) / 2.
      */

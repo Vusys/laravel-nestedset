@@ -152,7 +152,10 @@ final readonly class NestedSetAggregate
         if (count($declared) > 1) {
             throw new AggregateConfigurationException(sprintf(
                 'NestedSetAggregate for column "%s": multiple aggregate functions declared (%s). '
-                .'Each declaration must use exactly one function.',
+                .'Provide exactly one of sum, count, avg, min, max, variance, stddev, '
+                .'weightedAvg, boolOr, boolAnd, geometricMean, harmonicMean, '
+                .'bitOr, bitAnd, bitXor, '
+                .'distinctCount, stringAgg, jsonAgg, jsonObjectAgg, topK.',
                 $this->column,
                 implode(', ', array_keys($declared)),
             ));

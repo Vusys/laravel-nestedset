@@ -21,6 +21,17 @@ return [
     ],
 
     'events_enabled' => true,
+
+    'materialised_path' => [
+        'defaults' => [
+            'separator'                => '/',
+            'wrap'                     => true,
+            'maxLength'                => 1024,
+            'rejectSeparatorInSegment' => true,
+            'uniquePerParent'          => true,
+        ],
+        'class_defaults' => [],
+    ],
 ];
 ```
 
@@ -94,3 +105,56 @@ page for the full catalogue, payloads, and recipes.
 Set to `false` to short-circuit every firing site. Useful only on
 genuinely hot paths where you've measured the cost of constructing
 event objects you'll never observe.
+
+## `materialised_path`
+
+Global defaults for `#[NestedSetMaterialisedPath]` columns. See
+[Materialised Paths](../tree-operations/materialised-paths.html) for the
+full feature surface; this section documents only the config knobs.
+
+### Resolution order
+
+For any given path on any given model, the effective value of each knob is
+resolved most-specific-first:
+
+1. Per-path explicit value (attribute arg or fluent setter on the column).
+2. `#[NestedSetMaterialisedPathDefaults(...)]` on the model class
+   (walked through parent classes).
+3. `nestedset.materialised_path.class_defaults.<FQCN>` — exact FQCN
+   match, no `is_a` walk.
+4. `nestedset.materialised_path.defaults` — global fallback.
+5. Package hard-coded fallback (matches the shipped `defaults` block).
+
+### `defaults`
+
+The fallback applied when no more-specific value is set. Defaults match
+the values shipped in `config/nestedset.php`:
+
+| Key | Default | What it does |
+|---|---|---|
+| `separator` | `'/'` | Character (or short string) joining segments. Forbidden inside any segment when `rejectSeparatorInSegment` is true. |
+| `wrap` | `true` | Wrap the path in leading + trailing separator. `true` → `/a/b/c/`; `false` → `a/b/c`. `LIKE 'a/b/%'` queries work on either, but a wrapped path makes "starts with" tests unambiguous. |
+| `maxLength` | `1024` | Maximum stored path length. Writes that would exceed this throw `MaterialisedPathTooLongException` at save time, before the row is written. Match it to the underlying column width. |
+| `rejectSeparatorInSegment` | `true` | When `true`, a segment that itself contains the separator throws `MaterialisedPathInvalidSegmentException`. Catches a class of silent data corruption (a slug like `a/b/c` would split into three segments on read). Disable only if you really need separators in your data. |
+| `uniquePerParent` | `true` | When `true`, two siblings of the same parent are not allowed to produce the same segment. Collisions throw `MaterialisedPathSegmentCollisionException` on save. Disable for paths where collisions are tolerable (key paths can't collide; slug paths usually shouldn't). |
+
+### `class_defaults`
+
+A map of fully-qualified model class names to per-class default
+overrides. Useful for layering defaults onto vendor models you can't
+decorate with a `#[NestedSetMaterialisedPathDefaults]` attribute:
+
+```php
+'class_defaults' => [
+    \App\Models\Category::class => [
+        'separator' => '.',
+        'wrap'      => false,
+    ],
+],
+```
+
+Keys are matched **exactly** — there is no `is_a` walk. Subclasses do not
+inherit a parent's `class_defaults` entry; list each concrete class
+explicitly. The values are merged onto the global `defaults` block at
+resolution time, so you only need to override the knobs you want to
+change.

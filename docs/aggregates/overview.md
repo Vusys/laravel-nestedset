@@ -54,6 +54,7 @@ Every node carries its own subtree's rollup — `Computers` independently report
 - [Geometric & Harmonic Mean](means.html) — `geometricMean` / `harmonicMean` with the positivity / non-zero constraint
 - [Median, Percentile & Quantiles](quantiles.html) — fresh-read-only quantiles via `withFreshAggregates()`
 - [Bitwise Aggregates](bitwise.html) — bitOr / bitAnd / bitXor over integer source columns
+- [Lazy Aggregates](lazy.html) — defer recompute to first read with `lazy: true` and an optional `ttl`
 - [Recipes](recipes.html) — common shapes
 - [Maintenance](maintenance.html) — what runs when, plus integrity tooling
 - [Drift & Limitations](drift.html) — when stored values can lag and how to mitigate

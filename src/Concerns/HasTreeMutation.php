@@ -385,8 +385,8 @@ trait HasTreeMutation
      * Position semantics match `up()` / `down()`: position 1 is the
      * first sibling, position `count(siblings)` is the last.
      *
-     * @throws \OutOfRangeException
-     *                              When `$position` is outside `[1, count(siblings)]`.
+     * @throws LogicException
+     *                         When `$position` is outside `[1, count(siblings)]`.
      * @throws UnplacedNodeException
      *                               When this node has no parent (a root has no sibling group to reorder within).
      */
@@ -416,7 +416,7 @@ trait HasTreeMutation
         $count = count($siblings);
 
         if ($position < 1 || $position > $count) {
-            throw new \OutOfRangeException(sprintf(
+            throw new LogicException(sprintf(
                 '%s::moveToSiblingPosition(%d): position must be in [1, %d].',
                 static::class,
                 $position,
