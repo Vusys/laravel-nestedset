@@ -386,7 +386,7 @@ trait HasTreeMutation
      * first sibling, position `count(siblings)` is the last.
      *
      * @throws LogicException
-     *                         When `$position` is outside `[1, count(siblings)]`.
+     *                        When `$position` is outside `[1, count(siblings)]`.
      * @throws UnplacedNodeException
      *                               When this node has no parent (a root has no sibling group to reorder within).
      */
