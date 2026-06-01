@@ -111,11 +111,36 @@ The harmonic mean is computed as `count / Σ(1/x)`. Floating-point precision on 
 
 Both compose with the standard filter modifiers — `filter`, `filterNotNull`, `filterRaw` — and the package watches the source column for delta maintenance automatically. The same `filterRawWatches` rule applies: list every column the raw SQL references or the stored mean will silently drift.
 
+## Listener form
+
+`GeometricMean` and `HarmonicMean` are also available on `#[NestedSetAggregateListener]` when the per-row contribution is computed in PHP. The companion shape mirrors the SQL form:
+
+```php
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
+
+#[NestedSetAggregateListener(column: 'score_geomean',  listener: ScoreListener::class, operation: AggregateFunction::GeometricMean)]
+#[NestedSetAggregateListener(column: 'score_harmean',  listener: ScoreListener::class, operation: AggregateFunction::HarmonicMean)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The migration declares the display column plus the auto-promoted Ln / Recip companions:
+
+```php
+$table->decimal('score_geomean', 16, 8)->nullable();
+$table->decimal('score_geomean__sum_log', 30, 10)->default(0);
+$table->nestedSetAggregate('score_geomean__count');
+
+$table->decimal('score_harmean', 16, 8)->nullable();
+$table->decimal('score_harmean__sum_recip', 30, 10)->default(0);
+$table->nestedSetAggregate('score_harmean__count');
+```
+
+The domain constraint maps onto the listener contract: return `null` from `contribution()` for out-of-domain rows (non-positive for geomean, zero for harmonic) and they are excluded from both the relevant companion sum and the matching count. The display formula then divides by the right `n` and reflects only contributing rows. (Listener mode does not raise `AggregateSourceConstraintViolationException` the way the SQL form does — return `null` upstream if you need fail-loud semantics; otherwise out-of-domain rows are silently skipped.)
+
+`filter:` / `filterNotNull:` parameters compose with the means exactly as in the SQL form.
+
 ## Limitations
-
-### Listener aggregates do not support geometric / harmonic mean
-
-The contribution-per-row contract carries one numeric value with no positivity context; declare these over a real SQL source column.
 
 ### `exclusive: true` routes through chain recompute
 

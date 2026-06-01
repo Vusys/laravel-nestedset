@@ -34,7 +34,7 @@ class Monster extends Model implements HasNestedSet { use NodeTrait; }
 
 `contribution()` returns this node's value. `null` means "exclude this node" — useful for Min/Max where some nodes have no meaningful value. `watchColumns()` declares which attribute changes trigger incremental maintenance.
 
-Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`. `Avg` is auto-promoted into a pair of internal `Sum` + `Count` companions plus the display column — see [Listener AVG](#listener-avg) below.
+Supported operations: `Sum`, `Count`, `Min`, `Max`, `Avg`, `Variance`, `Stddev`, `GeometricMean`, `HarmonicMean`. The companion-derived operations (`Avg`, `Variance`, `Stddev`, `GeometricMean`, `HarmonicMean`) are auto-promoted into internal companion columns plus the display column — see [Listener AVG](#listener-avg) and [Listener variance / stddev / geometric / harmonic mean](#listener-variance-stddev-geometric-mean-harmonic-mean) below.
 
 ## Migration
 
@@ -150,6 +150,86 @@ protected function nestedSetListenerAggregates(): array
 }
 ```
 
+## Filters
+
+Listener aggregates accept the same `filter:` and `filterNotNull:` parameters as SQL aggregates. Filtered rows are excluded from the ancestor roll-up exactly as if `contribution()` had returned `null` for them — the filter just lifts the decision out of the listener so a single listener class can drive multiple per-condition aggregates without branching internally.
+
+```php
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
+
+#[NestedSetAggregateListener(
+    column: 'fire_power',
+    listener: WeightedPowerListener::class,
+    operation: AggregateFunction::Sum,
+    filter: ['type' => 'fire'],
+)]
+#[NestedSetAggregateListener(
+    column: 'non_null_score_avg',
+    listener: ScoreListener::class,
+    operation: AggregateFunction::Avg,
+    filterNotNull: 'score',
+)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+In the method-override form, chain `->filter([...])` or `->filterNotNull('col')` before `->into()`:
+
+```php
+ListenerAggregate::sum(WeightedPowerListener::class)
+    ->filter(['type' => 'fire'])
+    ->into('fire_power');
+```
+
+Filter watch columns are unioned with the listener's own `watchColumns()`, so a change to a filter column — even one the listener never reads — re-triggers ancestor maintenance on the next save. Auto-promoted companions (the `__sum` / `__count` for AVG, the variance / mean companion shapes covered below) inherit the parent's filter automatically; the row-membership decision stays consistent across the display column and every companion that backs it.
+
+**No `filterRaw:` on listener attributes.** Listener mode has no SQL evaluation path, so a raw SQL predicate has nowhere to run. Use `filter:` / `filterNotNull:` for column-level conditions, or fold arbitrary predicates into `contribution()` and return `null` for excluded rows.
+
+## Listener variance, stddev, geometric mean, harmonic mean
+
+Companion-derived statistical operations work on listener contributions the same way they work on SQL source columns. Declare the display column with the right operation and the registry auto-promotes the internal companions over the same listener class:
+
+```php
+#[NestedSetAggregateListener(column: 'score_variance', listener: ScoreListener::class, operation: AggregateFunction::Variance)]
+#[NestedSetAggregateListener(column: 'score_stddev',   listener: ScoreListener::class, operation: AggregateFunction::Stddev)]
+#[NestedSetAggregateListener(column: 'score_geomean',  listener: ScoreListener::class, operation: AggregateFunction::GeometricMean)]
+#[NestedSetAggregateListener(column: 'score_harmean',  listener: ScoreListener::class, operation: AggregateFunction::HarmonicMean)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The companion shape mirrors the SQL aggregates:
+
+| Display column          | Companions allocated                                |
+|-------------------------|-----------------------------------------------------|
+| `variance(listener)`    | `*__sum`, `*__sum_sq`, `*__count`                   |
+| `stddev(listener)`      | `*__sum`, `*__sum_sq`, `*__count`                   |
+| `geometricMean(listener)` | `*__sum_log`, `*__count` (Ln-transformed)         |
+| `harmonicMean(listener)`  | `*__sum_recip`, `*__count` (Recip-transformed)    |
+
+Declare each display column **and** its companions in the migration. The companions are integer-counted (`__count`) and decimal-summed; pick widths that fit your contribution range:
+
+```php
+// Variance / stddev — three companions per display column.
+$table->decimal('score_variance', 16, 8)->nullable();
+$table->decimal('score_variance__sum',    20, 4)->default(0);
+$table->decimal('score_variance__sum_sq', 30, 8)->default(0);
+$table->nestedSetAggregate('score_variance__count');   // bigint
+
+// Geometric mean — sum_log + count.
+$table->decimal('score_geomean', 16, 8)->nullable();
+$table->decimal('score_geomean__sum_log', 30, 10)->default(0);
+$table->nestedSetAggregate('score_geomean__count');
+
+// Harmonic mean — sum_recip + count.
+$table->decimal('score_harmean', 16, 8)->nullable();
+$table->decimal('score_harmean__sum_recip', 30, 10)->default(0);
+$table->nestedSetAggregate('score_harmean__count');
+```
+
+The numerical formulas, precision caveats, and exclusive-routes-through-recompute trade-offs documented in [maths.md](maths.md) (variance / stddev) and [means.md](means.md) (geometric / harmonic) apply identically — only the contribution source differs.
+
+**Domain constraints on the means.** `GeometricMean` requires positive contributions (ln of a non-positive value is undefined); `HarmonicMean` requires non-zero contributions (1/0 is undefined). On the listener side the contract is the same as for any other excluded row: return `null` from `contribution()` for out-of-domain rows and they are skipped from both the relevant companion sum and the matching count. The display formula then uses the right `n` and the result reflects only contributing rows. (Unlike the SQL side, listener-mode does not raise `AggregateSourceConstraintViolationException` for out-of-domain values — return `null` upstream if you want the same fail-loud behaviour.)
+
 ## Maintenance
 
 Listener aggregates ride the same lifecycle hooks as SQL aggregates. On each save the package calls `contribution()` on the changed node, computes a delta, and propagates it up the ancestor chain. Min/Max listener columns that may have been invalidated trigger a PHP-based ancestor recompute — the package issues exactly two SELECTs (one to load the ancestor chain, one to load every in-scope node under the topmost ancestor) regardless of chain depth, then computes each ancestor's new extremum in PHP. Listener contributions are cached per node across all Min/Max definitions, so each `contribution()` call runs once per node per recompute.
@@ -170,14 +250,10 @@ $node->freshAggregate('weighted_power'); // PHP-computed fresh value for one nod
 
 The collection-level fresh-read path is SQL-only and does not cover listener columns. Use `freshAggregate('col')` for a single node, or repair the whole set with `fixAggregates()`.
 
-### `fixAggregates()` is O(N²) for listener columns
-
-It loads every in-scope node and scans each node's subtree in PHP. Use `withDeferredAggregateMaintenance()` for batch mutations to amortise the cost down to one pass.
-
 ### Repair / Min-Max recompute holds the bounding-box subtree in PHP memory
 
-`fixAggregates()` loads every in-scope Eloquent model; the Min/Max recompute path loads every in-scope node under the topmost affected ancestor. At N > ~100K nodes this is the more pressing constraint than CPU. Anchored `fixAggregates($subtreeRoot)` and chunked `fixAggregates(chunkSize: …)` both bound the working set.
+`fixAggregates()` streams every in-scope row through one cursor pass (peak hydrated memory is O(1)) but still keeps a small scalar meta entry per node — bounds + per-definition contribution — alive for the DFS pass. The Min/Max per-mutation recompute path holds the bounding-box subtree's scalar meta similarly. At N > ~100K nodes the meta list (~150 bytes per node) becomes the constraint rather than CPU. Anchored `fixAggregates($subtreeRoot)` and chunked `fixAggregates(chunkSize: …)` both bound the working set.
 
-### Filters are encoded in the listener itself
+### No `filterRaw:` on listener attributes
 
-There is no `filter:` param on `#[NestedSetAggregateListener]`. Return `null` from `contribution()` to exclude a node, or `0` / `1` to count conditionally.
+Listener mode has no SQL evaluation path, so a raw SQL predicate has nowhere to run. `filter:` (equality) and `filterNotNull:` are evaluable in PHP and supported; for arbitrary predicates, return `null` from `contribution()`.

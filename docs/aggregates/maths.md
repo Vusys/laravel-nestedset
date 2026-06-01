@@ -81,11 +81,31 @@ $rows = Product::query()
 
 The SQL guards against the closely related "tiny negative variance" case (a near-zero `n·SumSq − Sum²` that floating-point rounds below zero) by clamping with `CASE WHEN var < 0 THEN 0 ELSE var END` before taking the square root — without it, PostgreSQL would error on `SQRT(-0.0000001)` while the other backends would silently return `NULL`. The clamp produces `0`, which is also what Welford would compute for a constant sequence.
 
+## Listener form
+
+`Variance` and `Stddev` are also available on `#[NestedSetAggregateListener]` when the per-row contribution is computed in PHP rather than read from a SQL column. The companion shape and formula are identical — only the contribution source differs:
+
+```php
+use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
+
+#[NestedSetAggregateListener(column: 'score_variance', listener: ScoreListener::class, operation: AggregateFunction::Variance)]
+#[NestedSetAggregateListener(column: 'score_stddev',   listener: ScoreListener::class, operation: AggregateFunction::Stddev)]
+class Monster extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+The migration declares the display column plus the three auto-promoted companions (Sum, SumSq, Count) under the same `__sum` / `__sum_sq` / `__count` naming convention as the SQL form:
+
+```php
+$table->decimal('score_variance', 16, 8)->nullable();
+$table->decimal('score_variance__sum',    20, 4)->default(0);
+$table->decimal('score_variance__sum_sq', 30, 8)->default(0);
+$table->nestedSetAggregate('score_variance__count');
+```
+
+Maintenance and `fixAggregates()` work identically to the SQL form — same `(n·SumSq − Sum²) / n²` formula, same numerical-stability caveat (the listener path also uses the textbook form rather than Welford). The only difference is that contributions come from `contribution()` calls in PHP. See [listeners.md](listeners.md#listener-variance-stddev-geometric-mean-harmonic-mean) for the full listener migration layout. The `filter:` / `filterNotNull:` parameters gate which rows enter the companion sums, exactly as in the SQL form.
+
 ## Limitations
-
-### Listener aggregates are not supported
-
-Variance over a PHP-computed contribution is not supported in this milestone. Use SQL aggregates for variance and stddev, or maintain Sum + SumSq + Count manually and derive the variance in your application code.
 
 ### Exclusive variance / stddev route through chain recompute
 

@@ -243,6 +243,11 @@ final class AggregateRegistry
                     continue;   // exclusive listener AVG handled via chain recompute
                 }
 
+                // Match Identity-transform companions with the same filter as
+                // the parent AVG. Without the transform check, a sibling
+                // Variance declaration's __sum_sq (Sum/Square) would qualify
+                // as the AVG's numerator and feed sum-of-squares into the
+                // mean formula.
                 $key = $definition->listenerClass.'|inc';
                 $companions = $listenerBySource[$key] ?? [];
 
@@ -250,6 +255,12 @@ final class AggregateRegistry
                 $countColumn = null;
                 foreach ($companions as $companion) {
                     if ($companion->lazy) {
+                        continue;
+                    }
+                    if ($companion->sourceTransform !== CompanionSourceTransform::Identity) {
+                        continue;
+                    }
+                    if (! self::filtersMatch($companion->filter, $definition->filter)) {
                         continue;
                     }
                     if ($companion->operation === AggregateFunction::Sum && $sumColumn === null) {
@@ -846,17 +857,23 @@ final class AggregateRegistry
                 $companions = $listenerBySource[$key] ?? [];
 
                 foreach ($companionSet as $spec) {
+                    // Variance / geomean / harmonic spawn multiple Sum-family
+                    // companions distinguished only by source transform
+                    // (Sum/Identity vs Sum/Square vs Sum/Ln vs Sum/Recip), and
+                    // by parent filter. A plain user Sum on the same listener
+                    // must not be adopted as a Sum_sq companion. Match the
+                    // full triple (operation, transform, filter) plus
+                    // non-lazy (lazy companions stay NULL between mutations
+                    // and would leak that NULL into the parent display).
                     $alreadyDeclared = false;
                     foreach ($companions as $companion) {
-                        // Skip lazy candidates: their stored value is
-                        // NULL between mutations, and the parent display
-                        // column would inherit that NULL. Auto-promotion
-                        // creates a fresh non-lazy internal companion
-                        // alongside.
                         if ($companion->lazy) {
                             continue;
                         }
-                        if ($companion->operation === $spec->function) {
+                        if ($companion->operation === $spec->function
+                            && $companion->sourceTransform === $spec->sourceTransform
+                            && self::filtersMatch($companion->filter, $definition->filter)
+                        ) {
                             $alreadyDeclared = true;
                             break;
                         }
@@ -872,6 +889,8 @@ final class AggregateRegistry
                         operation: $spec->function,
                         inclusive: $definition->inclusive,
                         internal: true,
+                        filter: $definition->filter,
+                        sourceTransform: $spec->sourceTransform,
                     );
                 }
             }

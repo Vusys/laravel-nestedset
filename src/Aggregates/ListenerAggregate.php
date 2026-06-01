@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates;
 
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
@@ -36,6 +37,7 @@ final readonly class ListenerAggregate
         private bool $inclusive,
         private bool $lazy = false,
         private ?int $ttl = null,
+        private ?FilterPredicate $filter = null,
     ) {}
 
     /**
@@ -83,12 +85,51 @@ final readonly class ListenerAggregate
     }
 
     /**
+     * Population variance of listener contributions over the subtree.
+     * Companion-derived: the registry auto-promotes Sum / Sum_sq / Count
+     * companions over the same listener class; the display column is
+     * computed from `(n·SumSq − Sum²) / n²` during maintenance.
+     */
+    public static function variance(string $listenerClass): self
+    {
+        return new self($listenerClass, AggregateFunction::Variance, true);
+    }
+
+    /**
+     * Population standard deviation — square root of {@see variance()}.
+     */
+    public static function stddev(string $listenerClass): self
+    {
+        return new self($listenerClass, AggregateFunction::Stddev, true);
+    }
+
+    /**
+     * Geometric mean of listener contributions over the subtree.
+     * Companion-derived: requires the listener's contribution() to return
+     * strictly positive values; non-positive contributions are excluded.
+     */
+    public static function geometricMean(string $listenerClass): self
+    {
+        return new self($listenerClass, AggregateFunction::GeometricMean, true);
+    }
+
+    /**
+     * Harmonic mean of listener contributions over the subtree.
+     * Companion-derived: requires the listener's contribution() to return
+     * non-zero values; zero contributions are excluded.
+     */
+    public static function harmonicMean(string $listenerClass): self
+    {
+        return new self($listenerClass, AggregateFunction::HarmonicMean, true);
+    }
+
+    /**
      * Self-inclusive aggregation — the node's own contribution participates
      * in its stored aggregate. This is the default.
      */
     public function inclusive(): self
     {
-        return new self($this->listenerClass, $this->operation, true, $this->lazy, $this->ttl);
+        return new self($this->listenerClass, $this->operation, true, $this->lazy, $this->ttl, $this->filter);
     }
 
     /**
@@ -98,7 +139,7 @@ final readonly class ListenerAggregate
      */
     public function exclusive(): self
     {
-        return new self($this->listenerClass, $this->operation, false, $this->lazy, $this->ttl);
+        return new self($this->listenerClass, $this->operation, false, $this->lazy, $this->ttl, $this->filter);
     }
 
     /**
@@ -109,15 +150,51 @@ final readonly class ListenerAggregate
      * stamps the companion. Use when listener contributions are
      * expensive and reads are rarer than mutations.
      *
-     * Allowed on Sum / Count / Min / Max only — Avg routes through
-     * companion-derived display columns and rejects lazy at definition
-     * build time. `$ttl` (seconds) sets a freshness window; pass
-     * `null` to disable time-based expiry (refresh only on
+     * Allowed on Sum / Count / Min / Max only — companion-derived
+     * operations (Avg / Variance / Stddev / GeometricMean / HarmonicMean)
+     * route through derived display columns and reject lazy at
+     * definition build time. `$ttl` (seconds) sets a freshness window;
+     * pass `null` to disable time-based expiry (refresh only on
      * read-after-mutation).
      */
     public function lazy(?int $ttl = null): self
     {
-        return new self($this->listenerClass, $this->operation, $this->inclusive, true, $ttl);
+        return new self($this->listenerClass, $this->operation, $this->inclusive, true, $ttl, $this->filter);
+    }
+
+    /**
+     * Restrict contributing rows to those matching every (column => value)
+     * pair via strict equality. Mutually exclusive with
+     * {@see filterNotNull()}.
+     *
+     * @param  array<string,mixed>  $conditions
+     */
+    public function filter(array $conditions): self
+    {
+        return new self(
+            $this->listenerClass,
+            $this->operation,
+            $this->inclusive,
+            $this->lazy,
+            $this->ttl,
+            FilterPredicate::equality($conditions),
+        );
+    }
+
+    /**
+     * Restrict contributing rows to those where the named column is non-null.
+     * Mutually exclusive with {@see filter()}.
+     */
+    public function filterNotNull(string $column): self
+    {
+        return new self(
+            $this->listenerClass,
+            $this->operation,
+            $this->inclusive,
+            $this->lazy,
+            $this->ttl,
+            FilterPredicate::notNull($column),
+        );
     }
 
     /**
@@ -141,6 +218,7 @@ final readonly class ListenerAggregate
             inclusive: $this->inclusive,
             lazy: $this->lazy,
             ttl: $this->ttl,
+            filter: $this->filter,
         );
     }
 }
