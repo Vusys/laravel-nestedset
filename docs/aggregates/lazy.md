@@ -146,6 +146,6 @@ Eager columns are still the right default for read-heavy hierarchies — every r
 
 - A single write triggers maintenance over a deep ancestor chain you rarely read.
 - You're importing thousands of nodes in a tight loop and read-time recompute is cheaper than eager-per-row.
-- You're rebuilding a subtree under [`withDeferredAggregateMaintenance()`](maintenance.html#deferred-maintenance) and want subtree reads outside the deferred block to remain fast without forcing a full repair.
+- You're rebuilding a subtree under [`withDeferredAggregateMaintenance()`](../maintenance/fix-aggregates.html#deferred-maintenance-for-batch-mutations) and want subtree reads outside the deferred block to remain fast without forcing a full repair.
 
 If reads are frequent and writes are sparse, the lazy invalidation cost (still one `UPDATE` per write) doesn't earn its keep — stay eager.

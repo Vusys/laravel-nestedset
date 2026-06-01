@@ -149,7 +149,7 @@ $clauses[$avgCol] = new TreeExpression(
 
 where each `$sumExpression` is `sum_col + Δ`. The `1.0 *` forces decimal division (SQLite/PG truncate integer division otherwise), and `NULLIF(..., 0)` yields NULL on an empty subtree. PostgreSQL and SQLite evaluate all `SET` clauses against pre-update values regardless of order, so the same emission order is correct everywhere.
 
-## Recompute maintenance — `SELECT` then `UPDATE`
+## Recompute maintenance — `SELECT` then `UPDATE` {#recompute-maintenance}
 
 When no signed delta exists — MIN/MAX (a deleted extremum might be held by another row), raw filters, collection aggregates — the column routes through `RecomputeMaintenance::apply()` (`src/Aggregates/Strategy/RecomputeMaintenance.php`). It is two statements: a `SELECT` that recomputes each affected ancestor's value via an inner subtree subquery, then an `UPDATE` per touched ancestor.
 
