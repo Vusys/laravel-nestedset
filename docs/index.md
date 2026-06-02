@@ -9,7 +9,7 @@ use App\Models\BudgetItem;
 $root = new BudgetItem(['name' => 'Engineering']);
 $root->saveAsRoot();
 
-$child = new BudgetItem(['name' => 'Salaries', 'cost' => 28000]);
+$child = new BudgetItem(['name' => 'Salaries', 'cost' => 26000]);
 $child->appendToNode($root)->save();
 
 $child->depth;                       // 1

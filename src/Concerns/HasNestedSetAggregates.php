@@ -651,8 +651,8 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Max && $source !== null) {
-                $newSource = Numeric::asIntOrZero($this->getAttribute($source));
-                $oldSource = Numeric::asIntOrZero($this->getOriginal($source));
+                $newSource = Numeric::asNumericOrZero($this->getAttribute($source));
+                $oldSource = Numeric::asNumericOrZero($this->getOriginal($source));
 
                 if ($newPred && ! $oldPred) {
                     // Entered filter — can only extend the max.
@@ -689,8 +689,8 @@ trait HasNestedSetAggregates
             }
 
             if ($definition->function === AggregateFunction::Min && $source !== null) {
-                $newSource = Numeric::asIntOrZero($this->getAttribute($source));
-                $oldSource = Numeric::asIntOrZero($this->getOriginal($source));
+                $newSource = Numeric::asNumericOrZero($this->getAttribute($source));
+                $oldSource = Numeric::asNumericOrZero($this->getOriginal($source));
 
                 if ($newPred && ! $oldPred) {
                     // Entered filter — can only extend the min.
@@ -1657,7 +1657,10 @@ trait HasNestedSetAggregates
                     && $definition->filter->evaluateFor($this->getAttributes()) !== true) {
                     continue;
                 }
-                $value = Numeric::asIntOrZero($this->getAttribute($definition->source));
+                // Type-preserving read — decimal-cast sources lose the
+                // fractional part under asIntOrZero and the captured
+                // extreme propagates upward as the truncated value.
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->source));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
@@ -1915,8 +1918,10 @@ trait HasNestedSetAggregates
                 // Cheap-skip: only recompute ancestors whose stored extremum
                 // matches this node's stored extremum. Other ancestors held
                 // their MIN/MAX from somewhere else; the deletion can't have
-                // affected them.
-                $stored = Numeric::asIntOrZero($this->getAttribute($definition->column));
+                // affected them. Type-preserving read — decimal-cast sources
+                // would otherwise truncate to int and miss the WHERE-equality
+                // match against the stored fractional value.
+                $stored = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
@@ -2374,11 +2379,14 @@ trait HasNestedSetAggregates
                 // (filtered MIN/MAX with no in-filter descendants, or empty
                 // subtree). Propagating a 0 candidate would clobber the
                 // destination's NULL into 0 via the cheap-delta path.
+                // Type-preserving read — decimal-cast sources would
+                // otherwise truncate to int and miss the WHERE-equality
+                // match against the stored fractional value.
                 $rawStored = $this->getAttribute($definition->column);
                 if ($rawStored === null) {
                     continue;
                 }
-                $stored = Numeric::asIntOrZero($rawStored);
+                $stored = Numeric::asNumericOrZero($rawStored);
                 $minMaxRecomputes[$definition->column] = [
                     'function' => $definition->function,
                     'source' => $definition->source,
