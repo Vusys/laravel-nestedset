@@ -20,24 +20,24 @@ return new class extends Migration
             $table->nestedSet(cover: ['type', 'active']);
 
             // Variance display + Sum / Sum_sq / Count companions.
-            $table->decimal('score_variance', 16, 8)->nullable();
+            $table->decimal('score_variance', 24, 12)->nullable();
             $table->decimal('score_variance__sum', 20, 4)->default(0);
             $table->decimal('score_variance__sum_sq', 30, 8)->default(0);
             $table->nestedSetAggregate('score_variance__count');
 
             // Stddev — shares the same companion shape as variance.
-            $table->decimal('score_stddev', 16, 8)->nullable();
+            $table->decimal('score_stddev', 24, 12)->nullable();
             $table->decimal('score_stddev__sum', 20, 4)->default(0);
             $table->decimal('score_stddev__sum_sq', 30, 8)->default(0);
             $table->nestedSetAggregate('score_stddev__count');
 
             // Geometric mean display + Sum_log / Count companions.
-            $table->decimal('score_geomean', 16, 8)->nullable();
+            $table->decimal('score_geomean', 24, 12)->nullable();
             $table->decimal('score_geomean__sum_log', 30, 10)->default(0);
             $table->nestedSetAggregate('score_geomean__count');
 
             // Harmonic mean display + Sum_recip / Count companions.
-            $table->decimal('score_harmean', 16, 8)->nullable();
+            $table->decimal('score_harmean', 24, 12)->nullable();
             $table->decimal('score_harmean__sum_recip', 30, 10)->default(0);
             $table->nestedSetAggregate('score_harmean__count');
 

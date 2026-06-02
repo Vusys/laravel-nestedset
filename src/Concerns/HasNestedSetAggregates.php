@@ -434,7 +434,7 @@ trait HasNestedSetAggregates
                 ? null
                 : sqrt(max(0.0, ($count * $sumSq - $sum * $sum) / ($count * $count))),
             AggregateFunction::GeometricMean => $countPos === 0 ? null : exp($sumLog / $countPos),
-            AggregateFunction::HarmonicMean => ($countNonZero === 0 || $sumRecip == 0.0)
+            AggregateFunction::HarmonicMean => ($countNonZero === 0 || $sumRecip === 0.0)
                 ? null
                 : $countNonZero / $sumRecip,
             AggregateFunction::BitOr,

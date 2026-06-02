@@ -9,6 +9,7 @@ use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
@@ -427,7 +428,7 @@ final class ListenerMaintenance
             }
         }
 
-        if ($count === 0 || $sumRecip == 0.0) {
+        if ($count === 0 || $sumRecip === 0.0) {
             return null;
         }
 
@@ -554,7 +555,7 @@ final class ListenerMaintenance
         int|float|null $raw,
         array $attributes,
     ): int|float|null {
-        if ($definition->filter !== null && $definition->filter->evaluateFor($attributes) === false) {
+        if ($definition->filter instanceof FilterPredicate && $definition->filter->evaluateFor($attributes) === false) {
             return null;
         }
 

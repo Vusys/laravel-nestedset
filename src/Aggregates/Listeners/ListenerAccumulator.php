@@ -123,7 +123,7 @@ final class ListenerAccumulator
             AggregateFunction::GeometricMean => $this->countPos === 0
                 ? null
                 : exp($this->sumLog / $this->countPos),
-            AggregateFunction::HarmonicMean => ($this->countNonZero === 0 || $this->sumRecip == 0.0)
+            AggregateFunction::HarmonicMean => ($this->countNonZero === 0 || $this->sumRecip === 0.0)
                 ? null
                 : $this->countNonZero / $this->sumRecip,
             default => throw new \LogicException(sprintf(
