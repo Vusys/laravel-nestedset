@@ -1,0 +1,220 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
+
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
+use Vusys\NestedSet\Tests\Fixtures\Models\StatsMonster;
+use Vusys\NestedSet\Tests\TestCase;
+
+/**
+ * Move + restore lifecycle for the listener companion-derived display
+ * ops (Variance / Stddev / GeometricMean / HarmonicMean).
+ *
+ * Before the fix, collectMoveSubtreeContribution() and
+ * applyAggregateOnRestore() (non-soft-delete branch) silently routed
+ * these ops into the Min/Max extremes bucket — DeltaMaintenance then
+ * wrote a corrupted display value via buildExtremeSetClauses(). The
+ * before/after-move hooks also omitted them from the listener chain
+ * recompute selection, so the old/new ancestor chains never got their
+ * Variance/Stddev/GeoMean/HarmonicMean re-derived on a move.
+ *
+ * The assertions here all read the stored display column after a move
+ * or restore and compare to the brute-force value computed by the
+ * same formulas off the live tree state. If maintenance silently
+ * corrupts the column, the deltas are large (orders of magnitude
+ * larger than `1e-9`), so even a tight tolerance catches the bug.
+ */
+final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        AggregateRegistry::flush();
+    }
+
+    private function asFloat(mixed $value): float
+    {
+        if ($value === null || ! is_numeric($value)) {
+            $this->fail('Expected numeric, got '.get_debug_type($value));
+        }
+
+        return (float) $value;
+    }
+
+    /**
+     * Builds a two-branch tree:
+     *
+     *   root (score=10)
+     *     ├── leftRoot (score=2)
+     *     │     ├── (score=4)
+     *     │     └── (score=8)
+     *     └── rightRoot (score=100)
+     *           ├── (score=1)
+     *           └── (score=9)
+     *
+     * Moving leftRoot under rightRoot reshapes both sides, exercising
+     * the before-move (old chain) and after-move (new chain) hooks.
+     *
+     * @return array{root: StatsMonster, leftRoot: StatsMonster, rightRoot: StatsMonster}
+     */
+    private function seedTree(): array
+    {
+        $root = new StatsMonster(['name' => 'root', 'type' => 'fire', 'score' => 10.0]);
+        $root->saveAsRoot();
+
+        $leftRoot = new StatsMonster(['name' => 'L', 'type' => 'fire', 'score' => 2.0]);
+        $leftRoot->appendToNode($root)->save();
+        (new StatsMonster(['name' => 'L1', 'type' => 'fire', 'score' => 4.0]))->appendToNode($leftRoot)->save();
+        (new StatsMonster(['name' => 'L2', 'type' => 'fire', 'score' => 8.0]))->appendToNode($leftRoot)->save();
+
+        $rightRoot = new StatsMonster(['name' => 'R', 'type' => 'fire', 'score' => 100.0]);
+        $rightRoot->appendToNode($root)->save();
+        (new StatsMonster(['name' => 'R1', 'type' => 'fire', 'score' => 1.0]))->appendToNode($rightRoot)->save();
+        (new StatsMonster(['name' => 'R2', 'type' => 'fire', 'score' => 9.0]))->appendToNode($rightRoot)->save();
+
+        return ['root' => $root->refresh(), 'leftRoot' => $leftRoot->refresh(), 'rightRoot' => $rightRoot->refresh()];
+    }
+
+    /**
+     * Brute-force variance / stddev / geomean / harmean over a node's
+     * descendant scores (inclusive). Reads the live tree, so it
+     * naturally reflects post-mutation state.
+     *
+     * @return array{variance: ?float, stddev: ?float, geomean: ?float, harmean: ?float, count: int}
+     */
+    private function expected(StatsMonster $node): array
+    {
+        /** @var list<float> $scores */
+        $scores = [];
+        $self = StatsMonster::query()->find($node->id);
+        $this->assertNotNull($self);
+        if ($self->score !== null) {
+            $scores[] = (float) $self->score;
+        }
+        $descendants = StatsMonster::query()
+            ->where('lft', '>', $self->lft)
+            ->where('rgt', '<', $self->rgt)
+            ->get();
+        foreach ($descendants as $d) {
+            if ($d->score !== null) {
+                $scores[] = (float) $d->score;
+            }
+        }
+
+        $count = count($scores);
+        if ($count === 0) {
+            return ['variance' => null, 'stddev' => null, 'geomean' => null, 'harmean' => null, 'count' => 0];
+        }
+
+        $sum = array_sum($scores);
+        $sumSq = array_sum(array_map(static fn (float $x): float => $x * $x, $scores));
+        $variance = max(0.0, ($count * $sumSq - $sum * $sum) / ($count * $count));
+
+        $positive = array_filter($scores, static fn (float $x): bool => $x > 0);
+        $countPos = count($positive);
+        $geomean = $countPos === 0
+            ? null
+            : exp(array_sum(array_map(log(...), $positive)) / $countPos);
+
+        $nonZero = array_filter($scores, static fn (float $x): bool => $x !== 0.0);
+        $countNonZero = count($nonZero);
+        $sumRecip = array_sum(array_map(static fn (float $x): float => 1.0 / $x, $nonZero));
+        $harmean = ($countNonZero === 0 || $sumRecip === 0.0)
+            ? null
+            : $countNonZero / $sumRecip;
+
+        return [
+            'variance' => $variance,
+            'stddev' => sqrt($variance),
+            'geomean' => $geomean,
+            'harmean' => $harmean,
+            'count' => $count,
+        ];
+    }
+
+    private function assertAggregatesMatch(StatsMonster $node, string $label): void
+    {
+        $node->refresh();
+        $expected = $this->expected($node);
+
+        $this->assertEqualsWithDelta(
+            $expected['variance'],
+            $node->score_variance === null ? null : $this->asFloat($node->score_variance),
+            1e-9,
+            "{$label}: variance",
+        );
+        $this->assertEqualsWithDelta(
+            $expected['stddev'],
+            $node->score_stddev === null ? null : $this->asFloat($node->score_stddev),
+            1e-9,
+            "{$label}: stddev",
+        );
+        $this->assertEqualsWithDelta(
+            $expected['geomean'],
+            $node->score_geomean === null ? null : $this->asFloat($node->score_geomean),
+            1e-9,
+            "{$label}: geomean",
+        );
+        $this->assertEqualsWithDelta(
+            $expected['harmean'],
+            $node->score_harmean === null ? null : $this->asFloat($node->score_harmean),
+            1e-9,
+            "{$label}: harmean",
+        );
+    }
+
+    public function test_move_subtree_recomputes_companion_derived_ops_on_both_chains(): void
+    {
+        ['root' => $root, 'leftRoot' => $leftRoot, 'rightRoot' => $rightRoot] = $this->seedTree();
+
+        $this->assertAggregatesMatch($root, 'pre-move root');
+        $this->assertAggregatesMatch($leftRoot, 'pre-move leftRoot');
+        $this->assertAggregatesMatch($rightRoot, 'pre-move rightRoot');
+
+        $leftRoot->appendToNode($rightRoot)->save();
+
+        $this->assertAggregatesMatch($root, 'post-move root');
+        $this->assertAggregatesMatch($rightRoot, 'post-move rightRoot');
+        $this->assertAggregatesMatch($leftRoot, 'post-move leftRoot (now under rightRoot)');
+    }
+
+    public function test_hard_delete_recomputes_companion_derived_ops_on_chain(): void
+    {
+        ['root' => $root, 'leftRoot' => $leftRoot] = $this->seedTree();
+
+        $leftRoot->forceDelete();
+
+        $this->assertAggregatesMatch($root, 'post-delete root');
+    }
+
+    /**
+     * Non-soft-delete branch of applyAggregateOnRestore() — StatsMonster
+     * does NOT use SoftDeletes, so calling the hook directly is the only
+     * way to reach the branch. Mirrors the StructuralMutationMaintenanceTest
+     * pattern for Area's non-soft-delete restore coverage. Before the
+     * fix, Variance/Stddev/GeoMean/HarmonicMean fell into $extremes and
+     * got rewritten by DeltaMaintenance::buildExtremeSetClauses() —
+     * silently corrupting the display column on every restore.
+     */
+    public function test_non_soft_delete_restore_recomputes_companion_derived_ops(): void
+    {
+        ['root' => $root, 'leftRoot' => $leftRoot] = $this->seedTree();
+
+        // Knock ancestor values out so we can see the restore path
+        // re-derive them. This simulates the state right after a
+        // hypothetical detach where the ancestor chain has lost the
+        // subtree's contribution.
+        StatsMonster::query()->where('id', $root->id)->update([
+            'score_variance' => 0,
+            'score_stddev' => 0,
+            'score_geomean' => 0,
+            'score_harmean' => 0,
+        ]);
+
+        $leftRoot->refresh()->applyAggregateOnRestore();
+
+        $this->assertAggregatesMatch($root, 'after direct applyAggregateOnRestore call');
+    }
+}

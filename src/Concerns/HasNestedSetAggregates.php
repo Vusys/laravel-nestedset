@@ -1997,7 +1997,11 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above.
+            // Remaining ops after Sum/Count/Avg above: Min / Max and
+            // the companion-derived display ops (Variance / Stddev /
+            // GeoMean / HarmonicMean). All ride the chain-recompute
+            // path because their subtree contribution can't be
+            // expressed as a delta off the deleted node's stored value.
             $listenerChainDefs[$definition->column] = $definition;
         }
 
@@ -2127,13 +2131,19 @@ trait HasNestedSetAggregates
             if ($def->lazy) {
                 continue;
             }
-            // Exclusive listener defs (any function), and inclusive
-            // Min/Max listener defs (extremum may have been held by
-            // the moving subtree) both need a chain recompute on the
-            // old chain.
+            // Exclusive listener defs (any function), inclusive Min/Max
+            // listener defs (extremum may have been held by the moving
+            // subtree), and inclusive companion-derived display ops
+            // (Variance / Stddev / GeoMean / HarmonicMean — their
+            // display formula isn't expressible as a per-row delta)
+            // all need a chain recompute on the old chain.
             if (! $def->isInclusive()
                 || $def->operation === AggregateFunction::Max
-                || $def->operation === AggregateFunction::Min) {
+                || $def->operation === AggregateFunction::Min
+                || $def->operation === AggregateFunction::Variance
+                || $def->operation === AggregateFunction::Stddev
+                || $def->operation === AggregateFunction::GeometricMean
+                || $def->operation === AggregateFunction::HarmonicMean) {
                 $listenerChainSpecs[$def->column] = $def;
             }
         }
@@ -2225,9 +2235,18 @@ trait HasNestedSetAggregates
                 if ($def->lazy) {
                     continue;
                 }
+                // Mirror applyAggregateBeforeMove(): exclusive,
+                // inclusive Min/Max, and inclusive companion-derived
+                // display ops (Variance / Stddev / GeoMean /
+                // HarmonicMean) all need chain recompute on the new
+                // chain after the structural move.
                 if (! $def->isInclusive()
                     || $def->operation === AggregateFunction::Max
-                    || $def->operation === AggregateFunction::Min) {
+                    || $def->operation === AggregateFunction::Min
+                    || $def->operation === AggregateFunction::Variance
+                    || $def->operation === AggregateFunction::Stddev
+                    || $def->operation === AggregateFunction::GeometricMean
+                    || $def->operation === AggregateFunction::HarmonicMean) {
                     $listenerChainSpecs[$def->column] = $def;
                 }
             }
@@ -2383,9 +2402,25 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
-            // AVG: maintained via companions; skip in the move-subtree
-            // contribution pass.
-            if ($op === AggregateFunction::Avg) {
+            // AVG and the companion-derived display ops (Variance /
+            // Stddev / GeoMean / HarmonicMean) all skip this pass:
+            // their auto-promoted Sum / Sum_sq / Count / Sum_log /
+            // Sum_recip companions iterate the loop as separate
+            // definitions and produce the delta / candidate-extreme
+            // entries. The display columns themselves are recomputed
+            // by applyListenerChainRecompute(), which the before- and
+            // after-move hooks queue separately. Without this skip,
+            // Variance/etc. would fall into the Min/Max branch below
+            // and the stored value would be (mis)written via
+            // DeltaMaintenance::buildExtremeSetClauses(), corrupting
+            // the column on every move.
+            if (in_array($op, [
+                AggregateFunction::Avg,
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
+            ], true)) {
                 continue;
             }
 
@@ -2400,9 +2435,10 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above.
-            // Use stored extremum for cheap-delta (extend new chain) and
-            // as the recompute filterValue for old chain.
+            // Min / Max — only remaining ops after Sum/Count/Avg/Variance/
+            // Stddev/GeoMean/HarmonicMean above. Use stored extremum for
+            // cheap-delta (extend new chain) and as the recompute
+            // filterValue for old chain.
             // Stored NULL means the moved subtree has no matching
             // contributions; skip so the cheap-delta doesn't propagate
             // a fake 0 candidate (would clobber the destination's NULL).
@@ -2679,9 +2715,28 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above
-            // for SQL listeners. (Bitwise listener aggregates are
-            // rejected at ListenerAggregateDefinition construction.)
+            // Variance / Stddev / GeoMean / HarmonicMean: companion-
+            // derived display ops can't be expressed as a per-row
+            // delta. Route to chain recompute so the ancestors pick
+            // up the restored subtree's contribution via a full pass.
+            // (Without this they fall into the extremes bucket below
+            // and DeltaMaintenance::buildExtremeSetClauses() corrupts
+            // the column.)
+            if (in_array($op, [
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
+            ], true)) {
+                $listenerChainSpecs[$definition->column] = $definition;
+
+                continue;
+            }
+
+            // Min / Max — only remaining ops after Sum/Count/Avg/Variance/
+            // Stddev/GeoMean/HarmonicMean above. (Bitwise listener
+            // aggregates are rejected at ListenerAggregateDefinition
+            // construction.)
             $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
             $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
