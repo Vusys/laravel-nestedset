@@ -2737,7 +2737,18 @@ trait HasNestedSetAggregates
             // Stddev/GeoMean/HarmonicMean above. (Bitwise listener
             // aggregates are rejected at ListenerAggregateDefinition
             // construction.)
-            $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
+            //
+            // Stored NULL means the restored subtree has no matching
+            // listener contributions (filtered Min/Max with no in-filter
+            // rows, or an empty subtree). Skip — propagating a 0
+            // candidate would clobber an ancestor's NULL/legit-Min via
+            // DeltaMaintenance::buildExtremeSetClauses(), exactly like
+            // the move-path guard in collectMoveSubtreeContribution().
+            $rawStored = $this->getAttribute($definition->column);
+            if ($rawStored === null) {
+                continue;
+            }
+            $value = Numeric::asNumericOrZero($rawStored);
             $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
 

@@ -49,6 +49,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\ScoreListener;
  * @property float|null $non_null_score_avg
  * @property float $non_null_score_avg__sum
  * @property int $non_null_score_avg__count
+ * @property float|null $score_min
  */
 #[NestedSetAggregateListener(column: 'score_variance', listener: ScoreListener::class, operation: AggregateFunction::Variance)]
 #[NestedSetAggregateListener(column: 'score_stddev', listener: ScoreListener::class, operation: AggregateFunction::Stddev)]
@@ -56,6 +57,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\ScoreListener;
 #[NestedSetAggregateListener(column: 'score_harmean', listener: ScoreListener::class, operation: AggregateFunction::HarmonicMean)]
 #[NestedSetAggregateListener(column: 'fire_score_sum', listener: ScoreListener::class, operation: AggregateFunction::Sum, filter: ['type' => 'fire'])]
 #[NestedSetAggregateListener(column: 'non_null_score_avg', listener: ScoreListener::class, operation: AggregateFunction::Avg, filterNotNull: 'score')]
+#[NestedSetAggregateListener(column: 'score_min', listener: ScoreListener::class, operation: AggregateFunction::Min)]
 final class StatsMonster extends Model implements HasNestedSet
 {
     use NodeTrait;
@@ -91,5 +93,6 @@ final class StatsMonster extends Model implements HasNestedSet
         'non_null_score_avg' => 'float',
         'non_null_score_avg__sum' => 'float',
         'non_null_score_avg__count' => 'integer',
+        'score_min' => 'float',
     ];
 }

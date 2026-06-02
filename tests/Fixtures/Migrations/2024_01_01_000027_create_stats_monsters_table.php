@@ -50,6 +50,10 @@ return new class extends Migration
             $table->decimal('non_null_score_avg__sum', 20, 4)->default(0);
             $table->nestedSetAggregate('non_null_score_avg__count');
 
+            // Listener Min — nullable so empty / all-null subtrees stay
+            // NULL. Used by the restore-path NULL-guard regression test.
+            $table->decimal('score_min', 14, 4)->nullable();
+
             $table->timestamps();
         });
     }

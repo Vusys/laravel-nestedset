@@ -190,6 +190,42 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
     }
 
     /**
+     * Restore must skip listener Min/Max columns whose stored value is
+     * NULL (filtered Min with no in-filter contributors, or empty
+     * subtree). Before the fix, Numeric::asNumericOrZero coerced NULL
+     * → 0 and wrote that into $extremes; DeltaMaintenance then
+     * compared `0 < col` for every ancestor and clobbered any legit
+     * positive Min down to 0. This mirrors the guard already present
+     * in collectMoveSubtreeContribution().
+     */
+    public function test_non_soft_delete_restore_skips_null_listener_min(): void
+    {
+        // Ancestor with a legit Min of 5.
+        $root = new StatsMonster(['name' => 'root', 'type' => 'fire', 'score' => 5.0]);
+        $root->saveAsRoot();
+
+        // Restored subtree root has all-null scores, so ScoreListener
+        // returns null for every node and score_min stores NULL.
+        $branch = new StatsMonster(['name' => 'branch', 'type' => 'fire', 'score' => null]);
+        $branch->appendToNode($root)->save();
+        (new StatsMonster(['name' => 'leaf', 'type' => 'fire', 'score' => null]))->appendToNode($branch)->save();
+
+        $branch->refresh();
+        $this->assertNull($branch->score_min, 'precondition: branch.score_min must be NULL');
+        $root->refresh();
+        $this->assertSame(5.0, $this->asFloat($root->score_min), 'precondition: root.score_min stays 5');
+
+        $branch->applyAggregateOnRestore();
+
+        $root->refresh();
+        $this->assertSame(
+            5.0,
+            $this->asFloat($root->score_min),
+            'restore must not clobber ancestor.score_min to 0 when restored subtree stores NULL',
+        );
+    }
+
+    /**
      * Non-soft-delete branch of applyAggregateOnRestore() — StatsMonster
      * does NOT use SoftDeletes, so calling the hook directly is the only
      * way to reach the branch. Mirrors the StructuralMutationMaintenanceTest
