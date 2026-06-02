@@ -382,18 +382,27 @@ trait HasNestedSetAggregates
         }
 
         // Stream via cursor and fold into running accumulators — peak
-        // memory is O(1) regardless of subtree size (the pre-cursor
-        // implementation hydrated the full Collection ~3KB/node, the
-        // intermediate cursor-with-list pass still held one int/float
-        // per contributing node). Holds sum/count/min/max for the
-        // currently-streamed values; the final match picks the right
-        // one for the listener's declared operation.
+        // memory is O(1) regardless of subtree size. We carry enough
+        // state for every supported operation (sum, count, min, max,
+        // sum_sq for variance/stddev, sum_log + count_pos for geomean,
+        // sum_recip + count_nonzero for harmonic). The final match
+        // picks the right one for the listener's declared operation.
         $sum = 0;
         $count = 0;
         $min = null;
         $max = null;
+        $sumSq = 0.0;
+        $sumLog = 0.0;
+        $countPos = 0;
+        $sumRecip = 0.0;
+        $countNonZero = 0;
         foreach ($query->cursor() as $node) {
-            $c = $listener->contribution($node);
+            $attributes = $node->getAttributes();
+            $c = ListenerMaintenance::resolveContribution(
+                $definition,
+                $listener->contribution($node),
+                $attributes,
+            );
             if ($c === null) {
                 continue;
             }
@@ -401,6 +410,15 @@ trait HasNestedSetAggregates
             $count++;
             $min = $min === null ? $c : min($min, $c);
             $max = $max === null ? $c : max($max, $c);
+            $sumSq += $c * $c;
+            if ($c > 0) {
+                $sumLog += log((float) $c);
+                $countPos++;
+            }
+            if ($c != 0) {
+                $sumRecip += 1.0 / $c;
+                $countNonZero++;
+            }
         }
 
         return match ($definition->operation) {
@@ -409,10 +427,16 @@ trait HasNestedSetAggregates
             AggregateFunction::Min => $min,
             AggregateFunction::Max => $max,
             AggregateFunction::Avg => $count === 0 ? null : $sum / $count,
-            AggregateFunction::Variance, AggregateFunction::Stddev => throw new \LogicException(
-                'Variance / Stddev are not supported for listener aggregates. '
-                .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
-            ),
+            AggregateFunction::Variance => $count === 0
+                ? null
+                : max(0.0, ($count * $sumSq - $sum * $sum) / ($count * $count)),
+            AggregateFunction::Stddev => $count === 0
+                ? null
+                : sqrt(max(0.0, ($count * $sumSq - $sum * $sum) / ($count * $count))),
+            AggregateFunction::GeometricMean => $countPos === 0 ? null : exp($sumLog / $countPos),
+            AggregateFunction::HarmonicMean => ($countNonZero === 0 || $sumRecip === 0.0)
+                ? null
+                : $countNonZero / $sumRecip,
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
             AggregateFunction::BitXor => throw new \LogicException(
@@ -421,8 +445,6 @@ trait HasNestedSetAggregates
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
-            AggregateFunction::GeometricMean,
-            AggregateFunction::HarmonicMean,
             AggregateFunction::DistinctCount,
             AggregateFunction::StringAgg,
             AggregateFunction::JsonAgg,
@@ -745,7 +767,10 @@ trait HasNestedSetAggregates
             }
 
             $listener = $definition->makeListener();
-            $watchCols = $listener->watchColumns();
+            $watchCols = array_values(array_unique(array_merge(
+                $listener->watchColumns(),
+                $definition->filter?->watchColumns() ?? [],
+            )));
             if ($watchCols === []) {
                 continue;
             }
@@ -775,33 +800,46 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
-            // Variance / Stddev have no listener-side implementation.
-            // Reject early — the update path's final else-branch would
-            // otherwise misroute these into the Min recompute path.
-            if ($op === AggregateFunction::Variance || $op === AggregateFunction::Stddev) {
-                throw new \LogicException(
-                    'Variance / Stddev are not supported for listener aggregates. '
-                    .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
-                );
-            }
-
-            // AVG listener defs maintain themselves through their
-            // auto-promoted Sum + Count companions (separate
-            // ListenerAggregateDefinition entries the registry
-            // generates). The display column is written by
-            // DeltaMaintenance via the `$avgs` SET clauses.
+            // Companion-derived display columns: Avg is composed inline
+            // by DeltaMaintenance from its Sum + Count companions; the
+            // other companion-derived ops (Variance / Stddev / GeoMean /
+            // HarmonicMean) need a chain pass over the subtree because
+            // their display formula isn't expressible as a function of
+            // the per-row delta alone. The auto-promoted companions
+            // (Sum, Sum_sq, Count, Sum_log, Sum_recip) iterate this
+            // loop as separate definitions and produce delta updates.
             if ($op === AggregateFunction::Avg) {
                 continue;
             }
+            if (in_array($op, [
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
+            ], true)) {
+                $this->capturedListenerRecomputes[$definition->column] = $definition;
 
-            // Old contribution: snapshot of pre-save attributes
+                continue;
+            }
+
+            // Old + new contributions, with the definition's filter and
+            // sourceTransform applied. For companion definitions this
+            // is what makes __sum_sq store Σ(x²) and __sum_log skip
+            // non-positive rows on insert / update.
             $oldSnapshot = new static;
             $oldSnapshot->setRawAttributes($this->getOriginal(), true);
-            $oldContrib = $listener->contribution($oldSnapshot);
+            $oldContrib = ListenerMaintenance::resolveContribution(
+                $definition,
+                $listener->contribution($oldSnapshot),
+                $oldSnapshot->getAttributes(),
+            );
             $oldVal = Numeric::contributionOrZero($oldContrib);
 
-            // New contribution: current attributes
-            $newContrib = $listener->contribution($this);
+            $newContrib = ListenerMaintenance::resolveContribution(
+                $definition,
+                $listener->contribution($this),
+                $this->getAttributes(),
+            );
             $newVal = Numeric::contributionOrZero($newContrib);
 
             if ($op === AggregateFunction::Sum) {
@@ -1677,28 +1715,35 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
-            // Variance / Stddev have no listener-side implementation
-            // (the SQL path derives them from companion sums; the
-            // listener path would need n-pass accumulation we don't
-            // model). Fail loudly at the create entry point so a
-            // misconfigured listener does not fall through to the
-            // Min/Max branch below.
-            if ($op === AggregateFunction::Variance || $op === AggregateFunction::Stddev) {
-                throw new \LogicException(
-                    'Variance / Stddev are not supported for listener aggregates. '
-                    .'Use a SQL aggregate (Aggregate::variance / ::stddev) or maintain Sum + Count manually.',
-                );
-            }
+            // Companion-derived display columns (Avg, Variance, Stddev,
+            // GeometricMean, HarmonicMean): maintained by auto-promoted
+            // Sum / Sum_sq / Count companions which iterate this loop as
+            // separate ListenerAggregateDefinition entries. The display
+            // column itself is written by the chain-recompute path,
+            // bucketed alongside exclusive listeners since both shapes
+            // need a full subtree pass to compute the display formula.
+            if (in_array($op, [
+                AggregateFunction::Avg,
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
+            ], true)) {
+                if ($op !== AggregateFunction::Avg) {
+                    // AVG's display is composed inline by DeltaMaintenance
+                    // from the companion Sum + Count, so it does NOT need
+                    // a chain pass. Variance / Stddev / GeoMean / HarmonicMean
+                    // need the per-row contribution list in PHP — bucket
+                    // them here.
+                    $exclusiveListenerDefs[$definition->column] = $definition;
+                }
 
-            // AVG listener: maintained by auto-promoted Sum + Count
-            // companions, which iterate this loop as separate
-            // ListenerAggregateDefinition entries.
-            if ($op === AggregateFunction::Avg) {
                 continue;
             }
 
             $listener = $definition->makeListener();
-            $contrib = $listener->contribution($this);
+            $raw = $listener->contribution($this);
+            $contrib = ListenerMaintenance::resolveContribution($definition, $raw, $this->getAttributes());
             $value = Numeric::contributionOrZero($contrib);
 
             if ($op === AggregateFunction::Sum) {
@@ -1706,12 +1751,15 @@ trait HasNestedSetAggregates
                     $deltas[$definition->column] = $value;
                 }
             } elseif ($op === AggregateFunction::Count) {
-                // Count contributes 1 when contribution() returned non-null.
+                // Count contributes 1 when the (filtered, transformed)
+                // contribution is non-null. Min/Max never need a transform
+                // — companion specs only spawn Sum/Count companions.
                 if ($contrib !== null) {
                     $deltas[$definition->column] = 1;
                 }
             } elseif ($contrib !== null) {
-                // Min / Max — only remaining ops after Sum/Count/Avg above.
+                // Min / Max — only remaining ops after the companion-derived
+                // bucket above.
                 $extremes[$definition->column] = ['function' => $op, 'value' => $value];
             }
         }
@@ -1949,7 +1997,11 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above.
+            // Remaining ops after Sum/Count/Avg above: Min / Max and
+            // the companion-derived display ops (Variance / Stddev /
+            // GeoMean / HarmonicMean). All ride the chain-recompute
+            // path because their subtree contribution can't be
+            // expressed as a delta off the deleted node's stored value.
             $listenerChainDefs[$definition->column] = $definition;
         }
 
@@ -2079,13 +2131,19 @@ trait HasNestedSetAggregates
             if ($def->lazy) {
                 continue;
             }
-            // Exclusive listener defs (any function), and inclusive
-            // Min/Max listener defs (extremum may have been held by
-            // the moving subtree) both need a chain recompute on the
-            // old chain.
+            // Exclusive listener defs (any function), inclusive Min/Max
+            // listener defs (extremum may have been held by the moving
+            // subtree), and inclusive companion-derived display ops
+            // (Variance / Stddev / GeoMean / HarmonicMean — their
+            // display formula isn't expressible as a per-row delta)
+            // all need a chain recompute on the old chain.
             if (! $def->isInclusive()
                 || $def->operation === AggregateFunction::Max
-                || $def->operation === AggregateFunction::Min) {
+                || $def->operation === AggregateFunction::Min
+                || $def->operation === AggregateFunction::Variance
+                || $def->operation === AggregateFunction::Stddev
+                || $def->operation === AggregateFunction::GeometricMean
+                || $def->operation === AggregateFunction::HarmonicMean) {
                 $listenerChainSpecs[$def->column] = $def;
             }
         }
@@ -2177,9 +2235,18 @@ trait HasNestedSetAggregates
                 if ($def->lazy) {
                     continue;
                 }
+                // Mirror applyAggregateBeforeMove(): exclusive,
+                // inclusive Min/Max, and inclusive companion-derived
+                // display ops (Variance / Stddev / GeoMean /
+                // HarmonicMean) all need chain recompute on the new
+                // chain after the structural move.
                 if (! $def->isInclusive()
                     || $def->operation === AggregateFunction::Max
-                    || $def->operation === AggregateFunction::Min) {
+                    || $def->operation === AggregateFunction::Min
+                    || $def->operation === AggregateFunction::Variance
+                    || $def->operation === AggregateFunction::Stddev
+                    || $def->operation === AggregateFunction::GeometricMean
+                    || $def->operation === AggregateFunction::HarmonicMean) {
                     $listenerChainSpecs[$def->column] = $def;
                 }
             }
@@ -2335,9 +2402,25 @@ trait HasNestedSetAggregates
 
             $op = $definition->operation;
 
-            // AVG: maintained via companions; skip in the move-subtree
-            // contribution pass.
-            if ($op === AggregateFunction::Avg) {
+            // AVG and the companion-derived display ops (Variance /
+            // Stddev / GeoMean / HarmonicMean) all skip this pass:
+            // their auto-promoted Sum / Sum_sq / Count / Sum_log /
+            // Sum_recip companions iterate the loop as separate
+            // definitions and produce the delta / candidate-extreme
+            // entries. The display columns themselves are recomputed
+            // by applyListenerChainRecompute(), which the before- and
+            // after-move hooks queue separately. Without this skip,
+            // Variance/etc. would fall into the Min/Max branch below
+            // and the stored value would be (mis)written via
+            // DeltaMaintenance::buildExtremeSetClauses(), corrupting
+            // the column on every move.
+            if (in_array($op, [
+                AggregateFunction::Avg,
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
+            ], true)) {
                 continue;
             }
 
@@ -2352,9 +2435,10 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above.
-            // Use stored extremum for cheap-delta (extend new chain) and
-            // as the recompute filterValue for old chain.
+            // Min / Max — only remaining ops after Sum/Count/Avg/Variance/
+            // Stddev/GeoMean/HarmonicMean above. Use stored extremum for
+            // cheap-delta (extend new chain) and as the recompute
+            // filterValue for old chain.
             // Stored NULL means the moved subtree has no matching
             // contributions; skip so the cheap-delta doesn't propagate
             // a fake 0 candidate (would clobber the destination's NULL).
@@ -2631,10 +2715,40 @@ trait HasNestedSetAggregates
                 continue;
             }
 
-            // Min / Max — only remaining ops after Sum/Count/Avg above
-            // for SQL listeners. (Bitwise listener aggregates are
-            // rejected at ListenerAggregateDefinition construction.)
-            $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
+            // Variance / Stddev / GeoMean / HarmonicMean: companion-
+            // derived display ops can't be expressed as a per-row
+            // delta. Route to chain recompute so the ancestors pick
+            // up the restored subtree's contribution via a full pass.
+            // (Without this they fall into the extremes bucket below
+            // and DeltaMaintenance::buildExtremeSetClauses() corrupts
+            // the column.)
+            if (in_array($op, [
+                AggregateFunction::Variance,
+                AggregateFunction::Stddev,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean,
+            ], true)) {
+                $listenerChainSpecs[$definition->column] = $definition;
+
+                continue;
+            }
+
+            // Min / Max — only remaining ops after Sum/Count/Avg/Variance/
+            // Stddev/GeoMean/HarmonicMean above. (Bitwise listener
+            // aggregates are rejected at ListenerAggregateDefinition
+            // construction.)
+            //
+            // Stored NULL means the restored subtree has no matching
+            // listener contributions (filtered Min/Max with no in-filter
+            // rows, or an empty subtree). Skip — propagating a 0
+            // candidate would clobber an ancestor's NULL/legit-Min via
+            // DeltaMaintenance::buildExtremeSetClauses(), exactly like
+            // the move-path guard in collectMoveSubtreeContribution().
+            $rawStored = $this->getAttribute($definition->column);
+            if ($rawStored === null) {
+                continue;
+            }
+            $value = Numeric::asNumericOrZero($rawStored);
             $extremes[$definition->column] = ['function' => $op, 'value' => $value];
         }
 
@@ -2838,12 +2952,16 @@ trait HasNestedSetAggregates
         // loop — ~3KB per Eloquent model × subtree size. After
         // streaming, only the scalar cache and bounds list survive
         // (~50-100 bytes per node).
-        /** @var array<string, TreeAggregateListener> $listeners */
-        $listeners = [];
+        // One listener instance per distinct listenerClass — companions
+        // share the same contribution() output as their parent display
+        // column, so we call it once per node and apply each definition's
+        // filter + sourceTransform afterwards via resolveContribution().
+        /** @var array<class-string<TreeAggregateListener>, TreeAggregateListener> $listenerByClass */
+        $listenerByClass = [];
         /** @var array<string, array<int|string, int|float|null>> $contribCache */
         $contribCache = [];
         foreach ($definitions as $column => $definition) {
-            $listeners[$column] = $definition->makeListener();
+            $listenerByClass[$definition->listenerClass] ??= $definition->makeListener();
             $contribCache[$column] = [];
         }
 
@@ -2859,8 +2977,15 @@ trait HasNestedSetAggregates
                 'lft' => Numeric::asIntOrZero($node->getAttribute($lftCol)),
                 'rgt' => Numeric::asIntOrZero($node->getAttribute($rgtCol)),
             ];
-            foreach ($listeners as $column => $listener) {
-                $contribCache[$column][$key] = $listener->contribution($node);
+            $attributes = $node->getAttributes();
+            $rawByClass = [];
+            foreach ($definitions as $column => $definition) {
+                $rawByClass[$definition->listenerClass] ??= $listenerByClass[$definition->listenerClass]->contribution($node);
+                $contribCache[$column][$key] = ListenerMaintenance::resolveContribution(
+                    $definition,
+                    $rawByClass[$definition->listenerClass],
+                    $attributes,
+                );
             }
         }
 

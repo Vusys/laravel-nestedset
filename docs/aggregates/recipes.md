@@ -98,6 +98,26 @@ final class ApprovedAmountListener implements TreeAggregateListener
 
 A `null` return excludes the row from the aggregate. For SUM the resulting value is the same as returning `0` (both add nothing); for COUNT / AVG / MIN / MAX the two differ — `null` skips the row entirely, while `0` still counts as a contributing row. Use `null` (not `0`) when the row genuinely doesn't qualify so a COUNT or AVG over the same listener gets the right denominator.
 
+When the inclusion test is just a column equality or "this column is non-null", lift the predicate into a listener `filter:` / `filterNotNull:` parameter instead — the listener can stay generic and you can drive multiple per-condition aggregates from one listener class:
+
+```php
+#[NestedSetAggregateListener(
+    column: 'approved_amount_sum',
+    listener: AmountListener::class,
+    operation: AggregateFunction::Sum,
+    filter: ['status' => 'approved'],
+)]
+#[NestedSetAggregateListener(
+    column: 'pending_amount_sum',
+    listener: AmountListener::class,
+    operation: AggregateFunction::Sum,
+    filter: ['status' => 'pending'],
+)]
+class Invoice extends Model implements HasNestedSet { use NodeTrait; }
+```
+
+See [Listeners → Filters](listeners.html#filters) for the full filter surface.
+
 ## Multiple Min/Max sliced by type
 
 Filtered MIN/MAX gives you per-category extrema without a `GROUP BY` at read time. Useful for sidebar / dashboard widgets that show "lowest open priority", "highest urgent priority", etc.

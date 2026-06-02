@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Aggregates\Definitions;
 
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\ListenerAggregate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
@@ -29,17 +30,36 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
      * @param  string  $listenerClass  class-string<TreeAggregateListener>
      * @param  bool  $internal  true when this definition was auto-added
      *                          by the registry as a companion to a
-     *                          listener AVG declaration. Internal
-     *                          companions are maintained by the engine
-     *                          but excluded from the user-facing
-     *                          inspection API (getAggregateDefinitions(),
+     *                          companion-derived listener declaration
+     *                          (AVG, Variance, Stddev, GeometricMean,
+     *                          HarmonicMean). Internal companions are
+     *                          maintained by the engine but excluded
+     *                          from the user-facing inspection API
+     *                          (getAggregateDefinitions(),
      *                          aggregateErrors() output).
      * @param  bool  $lazy  See {@see AggregateDefinition::$lazy}. Forbidden
-     *                      on AVG listener kinds because the display
-     *                      column is derived from Sum + Count companions
-     *                      and a lazy display column would require
-     *                      lazy companions too.
+     *                      on companion-derived listener kinds because the
+     *                      display column is derived from internal
+     *                      companions and a lazy display column would
+     *                      require lazy companions too.
      * @param  int|null  $ttl  See {@see AggregateDefinition::$ttl}.
+     * @param  FilterPredicate|null  $filter  Optional row-level predicate
+     *                                        deciding whether a node contributes. When
+     *                                        the predicate rejects a node, the listener's
+     *                                        contribution() result is treated as null
+     *                                        (excluded). Only {@see FilterPredicate::equality()}
+     *                                        and {@see FilterPredicate::notNull()} forms
+     *                                        are evaluable in listener mode — raw SQL
+     *                                        predicates have no evaluation path here
+     *                                        and are rejected at attribute-build time.
+     * @param  CompanionSourceTransform  $sourceTransform  Applied PHP-side
+     *                                                     to the raw contribution() value before it
+     *                                                     feeds the operation. Identity passes through
+     *                                                     untouched. Auto-promoted companions inherit
+     *                                                     the transform from their {@see CompanionSpec}
+     *                                                     (Square for variance __sum_sq, Ln for
+     *                                                     geomean __sum_log / __count, Recip for
+     *                                                     harmonic __sum_recip / __count).
      */
     public function __construct(
         public string $column,
@@ -49,6 +69,8 @@ final readonly class ListenerAggregateDefinition implements AggregateDefinitionC
         public bool $internal = false,
         public bool $lazy = false,
         public ?int $ttl = null,
+        public ?FilterPredicate $filter = null,
+        public CompanionSourceTransform $sourceTransform = CompanionSourceTransform::Identity,
     ) {
         if (in_array($this->operation, [AggregateFunction::BitOr, AggregateFunction::BitAnd, AggregateFunction::BitXor], true)) {
             throw new AggregateConfigurationException(sprintf(
