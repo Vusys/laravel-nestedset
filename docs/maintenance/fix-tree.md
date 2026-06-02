@@ -36,6 +36,27 @@ Same `parent_id`-as-source-of-truth contract on both paths — the anchored rebu
 
 The package treats **`parent_id` as the source of truth**. `fixTree()` rebuilds `lft`/`rgt`/`depth` from a `parent_id` walk, so as long as `parent_id` describes the tree you actually want, every other column is recoverable.
 
+### What the rebuild produces
+
+After `fixTree()` returns, the tree is renumbered in canonical DFS pre-order — every `lft` strictly less than its `rgt`, every parent's `lft` / `rgt` strictly enclosing each child's, depth set to the path length from the root. Looking at the result, regardless of the corruption shape going in:
+
+```ns-tree
+Electronics
+  Computers
+    Laptops
+    Desktops
+  Phones
+    iPhone
+    Android
+Books
+  Fiction
+  Non-fiction
+```
+
+The `lft` / `rgt` pill badges on each row show the dense slot ranges the rebuild assigns: Electronics (1..10), Computers (2..7), Books (11..16). Sibling order is determined by primary-key order under each parent — if you need a different sibling order, apply [`reorderChildren()`](../tree-operations/reordering.html) per parent after the rebuild.
+
+
+
 | Corruption | Detected by `countErrors()`? | Repaired by `fixTree()`? | Typical cause |
 | --- | --- | --- | --- |
 | `invalid_bounds` (`lft >= rgt`) | ✅ | ✅ | Raw `UPDATE` on `lft`/`rgt`; crashed transaction. |

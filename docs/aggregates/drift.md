@@ -4,6 +4,36 @@
 
 Aggregate columns are maintained through **Eloquent's event lifecycle**. Anything that mutates the source column without firing those events leaves the stored aggregates out of sync until the next repair pass. This is the same property `counterCache`, observer-driven side effects, and most "computed column" packages have — it's not nestedset-specific.
 
+### What drift looks like
+
+A healthy tree with `articles_total` rolled up:
+
+```ns-tree
+Electronics
+  Computers
+    Laptops {articles=8}
+    Desktops {articles=3}
+  Phones {articles=12}
+```
+
+The widget's `Σ articles` chip on each ancestor matches what `articles_total` holds in the database — `Electronics.articles_total = 23`, `Computers.articles_total = 11`. Now suppose a raw query bypasses the trait:
+
+```php
+DB::table('categories')->where('name', 'Laptops')->update(['articles' => 18]);
+```
+
+The leaf's source column moved but no `saving` event fired — the package's per-mutation delta UPDATE never ran. The Σ chip below shows what the column **should** read; the `{stale}` chip marks every ancestor whose stored value is now out of sync:
+
+```ns-tree
+Electronics {stale}
+  Computers {stale}
+    Laptops {articles=18}
+    Desktops {articles=3}
+  Phones {articles=12}
+```
+
+`Phones` is unaffected — its subtree didn't include the raw write. The drift is exactly the ancestor chain of the row that was touched without going through Eloquent. `Category::aggregateErrors()` would report `['articles_total' => 2]` (the two rows whose stored value disagrees with a fresh recomputation), and `Category::fixAggregates()` writes the correct values back in one pass.
+
 The two real-world ways this happens:
 
 ```php

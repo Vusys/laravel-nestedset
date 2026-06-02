@@ -22,6 +22,7 @@ Format:
 - [Reordering Siblings](tree-operations/reordering.md)
 - [Soft Deletes](tree-operations/soft-deletes.md)
 - [Bulk Insertion](tree-operations/bulk-insertion.md)
+- [Cloning Subtrees](tree-operations/cloning.md)
 - [Materialised Paths](tree-operations/materialised-paths.md)
 
 # Querying
@@ -48,6 +49,7 @@ Format:
 - [Geometric & Harmonic Mean](aggregates/means.md)
 - [Median, Percentile & Quantiles](aggregates/quantiles.md)
 - [Bitwise Aggregates](aggregates/bitwise.md)
+- [Lazy Aggregates](aggregates/lazy.md)
 - [Recipes](aggregates/recipes.md)
 - [Maintenance](aggregates/maintenance.md)
 - [Drift & Limitations](aggregates/drift.md)

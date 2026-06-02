@@ -63,7 +63,7 @@ gap-shift UPDATE, the row INSERT/UPDATE, and any aggregate maintenance
 hooks all commit together. Set to `false` if you wrap calls in your own
 transaction at the call site.
 
-## `aggregate_locking`
+## `aggregate_locking` {#aggregate_locking}
 
 Controls whether the aggregate maintenance path issues
 `SELECT ... FOR UPDATE` on the ancestor chain before recomputing

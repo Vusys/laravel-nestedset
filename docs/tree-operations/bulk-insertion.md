@@ -23,7 +23,19 @@ $electronics->wasRecentlyCreated;              // true
 $laptops->parent_id === $computers->getKey();  // true
 ```
 
-The returned array is in depth-first pre-order — the same walk order as `defaultOrder()` once the rows are persisted. Top-level entries come first; each entry is immediately followed by its descendants.
+The nested-array payload above translates directly to this tree under `$root` after the call. The `lft` / `rgt` slots are assigned in one pass — no incremental gap-shifting, no N round-trips:
+
+```ns-tree
+All categories
+  Electronics
+    Computers
+      Laptops
+      Desktops
+    Phones
+  Books
+```
+
+The returned array is in depth-first pre-order — the same walk order as `defaultOrder()` once the rows are persisted. Top-level entries come first; each entry is immediately followed by its descendants. The `lft` / `rgt` badges on each row above show the slot range each subtree occupies; reads the package issues against this tree (`whereDescendantOf`, `ancestors()`, etc.) are all `BETWEEN` queries over those ranges.
 
 ## Seeding new roots (unscoped models)
 

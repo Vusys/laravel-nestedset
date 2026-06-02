@@ -2,6 +2,35 @@
 
 The variance and stddev aggregates roll up the spread of a numeric source column over a subtree. Both come in **population** and **sample** variants.
 
+## What it looks like
+
+Variance measures spread, not magnitude — two subtrees with the same `Σ price` can have very different variances. The first product line has tightly clustered prices:
+
+```ns-tree
+Premium Line
+  Watch A {price=100}
+  Watch B {price=102}
+  Watch C {price=98}
+  Watch D {price=100}
+```
+
+The second has the same `Σ price = 400` and the same row count, but the prices are dispersed:
+
+```ns-tree
+Mixed Line
+  Bracelet {price=25}
+  Watch {price=150}
+  Ring {price=50}
+  Pendant {price=175}
+```
+
+Read off the `Σ` chip on each root and you'll see they match (400). But the variance the package maintains in `price_variance` differs by two orders of magnitude:
+
+- `Premium Line` — variance ≈ 2 (every price within ±2 of the mean).
+- `Mixed Line` — variance ≈ 4063 (prices range across 25–175).
+
+The package keeps both columns coherent through the same one-`UPDATE`-per-mutation shape as Sum: three companions (`__sum`, `__sum_sq`, `__count`) get the delta, and `price_variance = (n·SumSq − Sum²) / n²` is rewritten in the same SET clause.
+
 ```php
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 

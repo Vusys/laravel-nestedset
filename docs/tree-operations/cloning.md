@@ -4,6 +4,45 @@ Duplicate a node and every descendant under a new parent — or as a new root �
 
 `cloneSubtreeTo()` and `cloneSubtreeAsRoot()` are built on top of [`bulkInsertTree`](bulk-insertion.html) — they inherit its autoincrement / UUID parent-id reconciliation and deferred aggregate maintenance, and suppress per-row Eloquent `creating` / `created` / `saving` / `saved` events for the cloned rows. The single signal listeners hook is [`SubtreeCloned`](../reference/events.html#subtree-cloning).
 
+## What it looks like
+
+Two trees side by side make the structural story concrete. Starting state — a re-usable `Template` site lives alongside an empty `Customer 42` site:
+
+```ns-tree
+Template
+  Home
+  About
+    Team
+    Mission
+  Contact
+Customer 42
+```
+
+A single call clones the whole `Template` subtree under `Customer 42`:
+
+```php
+$template->cloneSubtreeTo($customer42);
+```
+
+After the call, `Template` is untouched — the clone is independent — and `Customer 42` now carries a fresh copy of every descendant. Note the bound badges on each row (`lft` and `rgt`): the cloned rows occupy a brand-new slot range under `Customer 42`, and `Template`'s own bounds shift outward only if siblings need to make room (they don't, here — `Template` and `Customer 42` are roots and don't share an ancestor):
+
+```ns-tree
+Template
+  Home
+  About
+    Team
+    Mission
+  Contact
+Customer 42
+  Home
+  About
+    Team
+    Mission
+  Contact
+```
+
+Every cloned row has a new primary key, regenerated `lft` / `rgt` / `depth` / `parent_id`, and the same business attributes (`name`, etc.) as its source. Aggregates roll back up automatically; observers and per-row Eloquent `created` events are suppressed for the cloned rows in favour of one [`SubtreeCloned`](../reference/events.html#subtree-cloning) event when the transaction commits.
+
 ## cloneSubtreeTo — clone under a parent
 
 ```php

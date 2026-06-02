@@ -6,6 +6,19 @@ Two delta-maintainable families that don't fit the standard `SUM / COUNT / AVG /
 
 `Aggregate::weightedAvg(value, weight)` rolls up `Σ(weight · value) / Σ(weight)` across a subtree. The display column reads NULL when the subtree's total weight is zero (which matches the SQL convention for `0 / 0`).
 
+### Why a plain `Avg` would lie
+
+A retailer's order categories — a few high-volume, low-price items and one boutique line:
+
+```ns-tree
+Orders
+  Bulk Office Supplies {price=5, qty=1000}
+  Standard Shoes {price=50, qty=200}
+  Custom Watches {price=2000, qty=10}
+```
+
+A plain `AVG(price)` over the subtree would give `685` — but that wildly overstates what customers are actually paying *per item*, because there are 100× more bulk supplies than watches. The weighted average `Σ(qty · price) / Σ(qty)` honours the quantities: `(1000·5 + 200·50 + 10·2000) / (1000+200+10) = 35000 / 1210 ≈ 28.93`. Maintained on `Orders.price_wavg`, kept current by one delta UPDATE per mutation that touches either `price` or `qty`.
+
 ```php
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 
@@ -35,6 +48,23 @@ Updating either the value column or the weight column triggers a delta capture; 
 ## Boolean rollups: `boolOr` / `boolAnd`
 
 `boolOr` answers "does ANY descendant carry a truthy value here?" and `boolAnd` answers "do ALL descendants?". Both share the same companion pair (`__sum` of the bool-as-int + `__count`) so a single declaration of each costs one delta UPDATE on every mutation.
+
+### Reading any / all from a flag tree
+
+A feature-flag tree where some leaves are enabled and some aren't:
+
+```ns-tree
+Beta features {any_active=true, all_active=false}
+  Dark mode {active=true}
+  Realtime sync {any_active=true, all_active=false}
+    Push notifications {active=true}
+    SMS fallback {active=false}
+  Voice control {active=false}
+```
+
+Read the `any_active` and `all_active` chips on each branch row — they're the stored values in `boolOr` and `boolAnd` columns. `Realtime sync` has `any_active = true` (Push is enabled) and `all_active = false` (SMS isn't). The root `Beta features` is `any_active = true, all_active = false` for the same reasons rolled up the whole subtree.
+
+If your UI hides a "Realtime sync" navigation entry when no descendant feature is enabled, the read is a single column lookup — `where('any_active', true)` — no recursive walk and no per-row `EXISTS` subquery. The flip happens on `save()`: enable Voice control and `Beta features.all_active` flips to `true` in the same UPDATE that flips `Voice control.active`.
 
 ```php
 #[NestedSetAggregate(column: 'any_active', boolOr: 'active')]

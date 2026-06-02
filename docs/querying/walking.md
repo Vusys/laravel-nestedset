@@ -68,12 +68,12 @@ The explicit form is the right tool when you want to walk a *partial* subtree �
 
 For the tree
 
-```text
+```ns-tree
 Electronics
-├── Laptops
-└── Phones
-    ├── iPhone
-    └── Android
+  Laptops
+  Phones
+    iPhone
+    Android
 ```
 
 each strategy yields a different order:
@@ -84,7 +84,7 @@ each strategy yields a different order:
 | `'post'` (DFS post-order) | Laptops, iPhone, Android, Phones, Electronics |
 | `'bfs'`  (Breadth-first)  | Electronics, Laptops, Phones, iPhone, Android |
 
-(The pre-order and BFS orders happen to match on this shallow tree because every parent has its children grouped under it. On deeper trees they diverge.)
+(The pre-order and BFS orders happen to match on this shallow tree because every parent has its children grouped under it. On deeper trees they diverge.) The `lft` / `rgt` badges on each row give you the underlying nested-set bounds the walker uses internally — DFS pre-order is the same order as iterating by `lft` ascending, which is why an already-loaded `descendants` relation walks for free.
 
 Pre-order is the default everywhere — it's what humans expect, and what every other tree-printing utility in this package uses.
 

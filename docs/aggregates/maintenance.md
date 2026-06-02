@@ -2,6 +2,40 @@
 
 Aggregates ride the package's existing lifecycle events. The cost of any single mutation depends on which family the column belongs to.
 
+## One mutation, traced through the tree
+
+Before the family taxonomy, here's the shape every delta-maintained aggregate follows. Take a budget tree with a maintained `cost_total = SUM(cost)`:
+
+```ns-tree
+Engineering
+  People
+    Salaries {cost=26000}
+    Bonuses {cost=2000}
+  Tools
+    SaaS {cost=2500}
+    Hardware {cost=1500}
+```
+
+Each node's `Σ cost` is the stored `cost_total` rolled up over its subtree. A single source-column update doubles Bonuses' cost:
+
+```php
+Bonuses::query()->update(['cost' => 4000]);
+```
+
+After the write, every **ancestor** of Bonuses has `cost_total += 2000`. Sibling rows (`Salaries`, `Tools`, `SaaS`, `Hardware`) and the unrelated `Engineering` subtree are untouched — the delta only flows up the ancestor chain:
+
+```ns-tree
+Engineering
+  People
+    Salaries {cost=26000}
+    Bonuses {cost=4000}
+  Tools
+    SaaS {cost=2500}
+    Hardware {cost=1500}
+```
+
+That's the **delta-maintainable** path in code form: one `UPDATE cost_total = cost_total + 2000 WHERE lft <= Bonuses.lft AND rgt >= Bonuses.rgt`, one round-trip, work proportional to the ancestor depth (2 rows: `People`, `Engineering`). The same shape applies to inserts (Δ = `+new.cost`), deletes (Δ = `-old.cost`), moves (Δ on old chain, +Δ on new chain), and soft-delete cascades. The families below describe what changes when the column *isn't* directly delta-maintainable — but the ancestor-chain pattern is the constant across all of them.
+
 ## Families
 
 | Family                    | Members                                                                       | Per-mutation cost |
