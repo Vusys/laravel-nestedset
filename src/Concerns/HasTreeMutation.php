@@ -743,6 +743,29 @@ trait HasTreeMutation
         if ($op->node !== null) {
             $target = $this->requireModelNode($op);
             NestedSetScopeResolver::assertSameScope($this, $target);
+            // Target lft/rgt come from the DB row (freshBoundsOf re-reads
+            // them on dispatch) so a stale in-memory copy is fine — but a
+            // saved target with lft=rgt=0 on disk (raw insert, recovered
+            // corruption) would otherwise read those zero bounds and call
+            // makeGap(0, 2), shifting every row in the scope up by 2 and
+            // leaving the target at (2,2) with the new node at (0,1) —
+            // silent corruption with no ancestor relationship. Restricted
+            // to $exists targets so unsaved-target rejection stays with
+            // the keyOf "no primary key" check, which is the more
+            // specific failure for that case.
+            if ($target->exists
+                && method_exists($target, 'isPlacedInTree')
+                && ! $target->isPlacedInTree()
+            ) {
+                $targetKey = $target->getKey();
+                throw new UnplacedNodeException(sprintf(
+                    '%s::%s target %s id=%s has no bounds — place it in a tree (saveAsRoot / appendToNode / …) first.',
+                    static::class,
+                    $op->action,
+                    $target::class,
+                    is_int($targetKey) || is_string($targetKey) ? (string) $targetKey : '?',
+                ));
+            }
         }
 
         // For existing-node moves we want hooks that bracket the

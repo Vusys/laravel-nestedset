@@ -206,11 +206,13 @@ Category::toJsonTreeForest();
 
 ## Scoped (multi-tree) models
 
-For models that declare `#[NestedSetScope(...)]`, the `*Forest` variants walk every tree across every scope. To render just one tree, pass the scope value:
+For models that declare `#[NestedSetScope(...)]`, the `*Forest` variants walk every tree across every scope. To render just one tree, pass the scope value. All four exporters have a `*Scope` variant:
 
 ```php
 MenuItem::toMermaidScope(7);
+MenuItem::toDotScope(7);
 MenuItem::toAsciiTreeScope(7, new AsciiOptions(unicode: false));
+MenuItem::toJsonTreeScope(7);
 ```
 
 Multi-column scopes accept an array:

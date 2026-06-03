@@ -54,8 +54,6 @@ $laptops->getSubtreeSize();         // 2
 $laptops->getDescendantCount();     // 0
 ```
 
-> `getNodeHeight()` is the legacy name; it still works (it delegates to `getSubtreeSize()`) but is deprecated — the old name suggested tree-theory height (max depth of a descendant) but the method always returned the lft/rgt slot count.
-
 Both are pure arithmetic on the row's columns — they cost nothing.
 
 ## NodeBounds — inspection without a model

@@ -134,9 +134,9 @@ the values shipped in `config/nestedset.php`:
 |---|---|---|
 | `separator` | `'/'` | Character (or short string) joining segments. Forbidden inside any segment when `rejectSeparatorInSegment` is true. |
 | `wrap` | `true` | Wrap the path in leading + trailing separator. `true` → `/a/b/c/`; `false` → `a/b/c`. `LIKE 'a/b/%'` queries work on either, but a wrapped path makes "starts with" tests unambiguous. |
-| `maxLength` | `1024` | Maximum stored path length. Writes that would exceed this throw `MaterialisedPathTooLongException` at save time, before the row is written. Match it to the underlying column width. |
-| `rejectSeparatorInSegment` | `true` | When `true`, a segment that itself contains the separator throws `MaterialisedPathInvalidSegmentException`. Catches a class of silent data corruption (a slug like `a/b/c` would split into three segments on read). Disable only if you really need separators in your data. |
-| `uniquePerParent` | `true` | When `true`, two siblings of the same parent are not allowed to produce the same segment. Collisions throw `MaterialisedPathSegmentCollisionException` on save. Disable for paths where collisions are tolerable (key paths can't collide; slug paths usually shouldn't). |
+| `maxLength` | `1024` | Maximum stored path length. Writes that would exceed this throw `PathTooLong` at save time, before the row is written. Match it to the underlying column width. |
+| `rejectSeparatorInSegment` | `true` | When `true`, a segment that itself contains the separator throws `InvalidPathSegment`. Catches a class of silent data corruption (a slug like `a/b/c` would split into three segments on read). Disable only if you really need separators in your data. |
+| `uniquePerParent` | `true` | When `true`, two siblings of the same parent are not allowed to produce the same segment. Collisions throw `DuplicatePathSegment` on save. Disable for paths where collisions are tolerable (key paths can't collide; slug paths usually shouldn't). |
 
 ### `class_defaults`
 
