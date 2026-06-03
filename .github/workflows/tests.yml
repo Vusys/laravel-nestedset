@@ -127,6 +127,19 @@ jobs:
             "laravel/framework:^${{ matrix.laravel }}" \
             "orchestra/testbench:^${{ matrix.testbench }}"
 
+      # Laravel 11's security-support window closed (~March 2026) before
+      # CVE-2026-48019 (CRLF injection in the default email rule) was
+      # disclosed. The fix was backported to 12.60.0 and 13.10.0 but
+      # NOT to 11.x — advisory PKSA-mdq4-51ck-6kdq flags the entire 11.x
+      # major with no patched release. Composer 2.10's resolver blocks
+      # every affected version, so the 11.x cell can't install at all.
+      # The vuln lives in app-level email validation, unrelated to the
+      # nested-set code under test here, so ignoring it on the 11.x cell
+      # keeps the coverage meaningful. 12.x/13.x stay strict.
+      - name: Allow EOL Laravel 11 (ignore unpatched email-rule advisory)
+        if: matrix.laravel == '11.0'
+        run: composer config policy.advisories.ignore-id PKSA-mdq4-51ck-6kdq
+
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
