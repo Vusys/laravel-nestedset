@@ -2669,7 +2669,7 @@ trait HasNestedSetAggregates
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $value = Numeric::asIntOrZero($this->getAttribute($definition->column));
+                $value = Numeric::asNumericOrZero($this->getAttribute($definition->column));
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,

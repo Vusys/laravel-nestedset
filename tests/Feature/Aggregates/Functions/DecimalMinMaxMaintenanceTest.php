@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
-use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\PricedArea;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -19,12 +18,6 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class DecimalMinMaxMaintenanceTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-        AggregateRegistry::flush();
-    }
-
     public function test_delete_holder_with_decimal_price_recomputes_ancestor_max(): void
     {
         $root = new PricedArea(['name' => 'Root', 'price' => '1.00']);
