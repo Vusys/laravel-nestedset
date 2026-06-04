@@ -91,17 +91,6 @@ final class CapturedMutation
      */
     public ?ChangeFeedSnapshot $changeFeedPreSnapshot = null;
 
-    public function isEmpty(): bool
-    {
-        return $this->deltas === []
-            && $this->extremes === []
-            && $this->recomputes === []
-            && $this->listenerRecomputes === []
-            && $this->chainRecomputes === []
-            && $this->bitwise === []
-            && $this->lazyInvalidations === [];
-    }
-
     public function clearCapture(): void
     {
         $this->deltas = [];
