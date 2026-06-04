@@ -55,15 +55,25 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
 
     public function test_string_agg_distinct_with_custom_order_by_rejects(): void
     {
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('orderBy to match the source column');
-
-        (new NestedSetAggregate(
-            column: 'distinct_tags',
-            stringAgg: 'tag',
-            orderBy: 'created_at',
-            distinct: true,
-        ))->toDefinition();
+        try {
+            (new NestedSetAggregate(
+                column: 'distinct_tags',
+                stringAgg: 'tag',
+                orderBy: 'created_at',
+                distinct: true,
+            ))->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            // Contiguous across all three operands of the message, so any
+            // dropped or reordered literal — including the parenthetical
+            // rationale — fails the assertion.
+            $this->assertStringContainsString(
+                'stringAgg with distinct: true requires orderBy to match the source column '
+                .'(PG only accepts ORDER BY columns that appear in the DISTINCT set; the package '
+                .'enforces this across backends).',
+                $e->getMessage(),
+            );
+        }
     }
 
     public function test_json_agg_scalar_form(): void

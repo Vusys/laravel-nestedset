@@ -138,10 +138,22 @@ final class NestedSetAggregateTest extends TestCase
 
     public function test_rejects_declaration_with_no_function(): void
     {
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('no aggregate function declared');
-
-        (new NestedSetAggregate(column: 'tickets_total'))->toDefinition();
+        try {
+            (new NestedSetAggregate(column: 'tickets_total'))->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            $this->assertStringContainsString('no aggregate function declared', $e->getMessage());
+            // The supported-function list is concatenated across several
+            // string literals; assert it contiguously so dropping or
+            // reordering any operand (which splits or scrambles the list)
+            // fails rather than silently shipping a truncated hint.
+            $this->assertStringContainsString(
+                'sum, count, avg, min, max, variance, stddev, weightedAvg, boolOr, boolAnd, '
+                .'geometricMean, harmonicMean, bitOr, bitAnd, bitXor, distinctCount, stringAgg, '
+                .'jsonAgg, jsonObjectAgg, topK.',
+                $e->getMessage(),
+            );
+        }
     }
 
     public function test_rejects_declaration_with_two_functions_at_once(): void
@@ -170,14 +182,26 @@ final class NestedSetAggregateTest extends TestCase
 
     public function test_rejects_declaration_with_three_functions_at_once(): void
     {
-        $this->expectException(AggregateConfigurationException::class);
-
-        (new NestedSetAggregate(
-            column: 'tickets_total',
-            sum: 'tickets',
-            count: true,
-            avg: 'tickets',
-        ))->toDefinition();
+        try {
+            (new NestedSetAggregate(
+                column: 'tickets_total',
+                sum: 'tickets',
+                count: true,
+                avg: 'tickets',
+            ))->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            $this->assertStringContainsString('multiple aggregate functions declared', $e->getMessage());
+            // Same contiguous-list guard as the no-function case: the
+            // "multiple declared" message embeds the identical supported
+            // list across concatenated operands.
+            $this->assertStringContainsString(
+                'sum, count, avg, min, max, variance, stddev, weightedAvg, boolOr, boolAnd, '
+                .'geometricMean, harmonicMean, bitOr, bitAnd, bitXor, distinctCount, stringAgg, '
+                .'jsonAgg, jsonObjectAgg, topK.',
+                $e->getMessage(),
+            );
+        }
     }
 
     public function test_rejects_empty_column_name(): void
@@ -247,27 +271,45 @@ final class NestedSetAggregateTest extends TestCase
 
     public function test_multiple_filter_params_throws(): void
     {
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('at most one filter form');
-
-        (new NestedSetAggregate(
-            column: 'tickets_total',
-            sum: 'tickets',
-            filter: ['type' => 'fire'],
-            filterNotNull: 'deleted_at',
-        ))->toDefinition();
+        try {
+            (new NestedSetAggregate(
+                column: 'tickets_total',
+                sum: 'tickets',
+                filter: ['type' => 'fire'],
+                filterNotNull: 'deleted_at',
+            ))->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            // One contiguous span across the operand boundary, so neither
+            // dropping the parenthesised list nor swapping the two operands
+            // leaves the assertion satisfied.
+            $this->assertStringContainsString(
+                'at most one filter form may be declared (filter, filterNotNull, filterRaw).',
+                $e->getMessage(),
+            );
+        }
     }
 
     public function test_filter_raw_without_watches_throws(): void
     {
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('filterRawWatches');
-
-        (new NestedSetAggregate(
-            column: 'tickets_total',
-            sum: 'tickets',
-            filterRaw: 'status = 1',
-        ))->toDefinition();
+        try {
+            (new NestedSetAggregate(
+                column: 'tickets_total',
+                sum: 'tickets',
+                filterRaw: 'status = 1',
+            ))->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            $this->assertStringContainsString('filterRawWatches', $e->getMessage());
+            // Contiguous span across the middle operands of the hint, plus
+            // the escape-hatch flag named in the final operand.
+            $this->assertStringContainsString(
+                'so delta maintenance triggers a recompute when one changes; otherwise the '
+                .'aggregate will silently drift.',
+                $e->getMessage(),
+            );
+            $this->assertStringContainsString('filterRawNoColumnDependencies: true', $e->getMessage());
+        }
     }
 
     public function test_filter_raw_with_explicit_no_column_dependencies_flag_is_allowed_with_empty_watches(): void

@@ -82,7 +82,7 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
      * descendant scores (inclusive). Reads the live tree, so it
      * naturally reflects post-mutation state.
      *
-     * @return array{variance: ?float, stddev: ?float, geomean: ?float, harmean: ?float, count: int}
+     * @return array{variance: ?float, stddev: ?float, geomean: ?float, harmean: ?float, min: ?float, count: int}
      */
     private function expected(StatsMonster $node): array
     {
@@ -105,7 +105,7 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
 
         $count = count($scores);
         if ($count === 0) {
-            return ['variance' => null, 'stddev' => null, 'geomean' => null, 'harmean' => null, 'count' => 0];
+            return ['variance' => null, 'stddev' => null, 'geomean' => null, 'harmean' => null, 'min' => null, 'count' => 0];
         }
 
         $sum = array_sum($scores);
@@ -130,6 +130,7 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
             'stddev' => sqrt($variance),
             'geomean' => $geomean,
             'harmean' => $harmean,
+            'min' => min($scores),
             'count' => $count,
         ];
     }
@@ -163,6 +164,15 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
             1e-9,
             "{$label}: harmean",
         );
+        // score_min is the inclusive Min listener — pins the Min arm of
+        // the move/restore chain-recompute selection alongside the
+        // companion-derived ops.
+        $this->assertEqualsWithDelta(
+            $expected['min'],
+            $node->score_min === null ? null : $this->asFloat($node->score_min),
+            1e-9,
+            "{$label}: min",
+        );
     }
 
     public function test_move_subtree_recomputes_companion_derived_ops_on_both_chains(): void
@@ -178,6 +188,33 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
         $this->assertAggregatesMatch($root, 'post-move root');
         $this->assertAggregatesMatch($rightRoot, 'post-move rightRoot');
         $this->assertAggregatesMatch($leftRoot, 'post-move leftRoot (now under rightRoot)');
+    }
+
+    public function test_move_subtree_out_of_old_chain_recomputes_companion_derived_ops_on_the_old_chain(): void
+    {
+        ['root' => $root, 'leftRoot' => $leftRoot] = $this->seedTree();
+
+        // A second, independent root the moving subtree lands under, so
+        // the old chain genuinely *loses* nodes.
+        $other = new StatsMonster(['name' => 'other', 'type' => 'fire', 'score' => 50.0]);
+        $other->saveAsRoot();
+
+        $this->assertAggregatesMatch($root, 'pre-move root');
+
+        // The both-chains test above moves leftRoot *under* rightRoot,
+        // which is itself under root — so root keeps every node and its
+        // companion-derived columns never change, hiding whether the
+        // before-move old-chain recompute selection actually fired.
+        // Moving leftRoot onto a separate root removes leftRoot/L1/L2
+        // from root entirely, so root's variance/stddev/geomean/harmean
+        // must be re-derived by the old-chain hook — were any of those
+        // ops dropped from the recompute selection, root's columns would
+        // go stale against the brute-force expectation.
+        $leftRoot->refresh()->appendToNode($other->refresh())->save();
+
+        $this->assertAggregatesMatch($root, 'post-move root (old chain shrank)');
+        $this->assertAggregatesMatch($other, 'post-move other (new chain grew)');
+        $this->assertAggregatesMatch($leftRoot, 'post-move leftRoot (now under other)');
     }
 
     public function test_hard_delete_recomputes_companion_derived_ops_on_chain(): void
