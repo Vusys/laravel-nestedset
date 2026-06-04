@@ -209,15 +209,21 @@ trait InteractsWithTrees
      */
     public function assertAggregateMatchesFresh(HasNestedSet&Model $node, string $column, string $message = ''): void
     {
-        if (! method_exists($node, 'freshAggregate')) {
+        $stored = $node->getAttribute($column);
+        try {
+            $fresh = $node->freshAggregate($column);
+        } catch (\BadMethodCallException) {
+            // The contract on HasNestedSet declares freshAggregate() as a
+            // virtual method (NodeTrait supplies it in practice), but a
+            // bare HasNestedSet model that skips the trait won't have
+            // it at runtime. Convert the raw forwarding-call error into
+            // a clear test failure so the test author knows to add
+            // NodeTrait + a #[NestedSetAggregate(...)] declaration.
             $this->fail(sprintf(
                 'assertAggregateMatchesFresh: %s does not declare aggregate columns (use NodeTrait + #[NestedSetAggregate]).',
                 $node::class,
             ));
         }
-
-        $stored = $node->getAttribute($column);
-        $fresh = $node->freshAggregate($column);
 
         // Tolerant numeric comparison so a decimal:4 AVG stored as "56.2500" matches a float 56.25.
         if (is_numeric($stored) && is_numeric($fresh)) {

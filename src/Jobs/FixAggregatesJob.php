@@ -84,34 +84,11 @@ final class FixAggregatesJob implements ShouldQueue
             $anchor = $instance;
         }
 
-        // `fixAggregates` is declared on the NodeTrait (always present
-        // on a HasNestedSet model in practice), not on the contract —
-        // so the call site needs runtime narrowing rather than a static
-        // type guarantee. method_exists makes the callable concrete
-        // enough for PHPStan; the instanceof check on the return value
-        // closes the loop.
-        if (! method_exists($modelClass, 'fixAggregates')) {
-            throw new \RuntimeException(sprintf(
-                'FixAggregatesJob: %s has no static fixAggregates() method — does it use NodeTrait?',
-                $modelClass,
-            ));
-        }
-
         if ($this->chunkSize !== null && $this->chunkSize > 0) {
             return $this->handleChunked($modelClass, $anchor);
         }
 
-        $result = $modelClass::fixAggregates($anchor);
-
-        if (! $result instanceof AggregateFixResult) {
-            throw new \RuntimeException(sprintf(
-                'FixAggregatesJob: %s::fixAggregates() returned %s; expected AggregateFixResult.',
-                $modelClass,
-                get_debug_type($result),
-            ));
-        }
-
-        return $result;
+        return $modelClass::fixAggregates($anchor);
     }
 
     /**
@@ -123,15 +100,7 @@ final class FixAggregatesJob implements ShouldQueue
      */
     private function handleChunked(string $modelClass, ?HasNestedSet $anchor): AggregateFixResult
     {
-        if (! method_exists($modelClass, 'fixAggregatesChunk')) {
-            throw new \RuntimeException(sprintf(
-                'FixAggregatesJob: %s has no static fixAggregatesChunk() method — does it use NodeTrait?',
-                $modelClass,
-            ));
-        }
-
         $startNs = hrtime(true);
-        /** @var array{result: AggregateFixResult, nextAfterId: int|string|null} $chunk */
         $chunk = $modelClass::fixAggregatesChunk($anchor, $this->cursorAfterId, $this->chunkSize ?? 0);
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
