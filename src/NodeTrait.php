@@ -86,10 +86,7 @@ trait NodeTrait
             // producing an invalid_bounds corruption. Catches the common
             // footguns: Model::create([...]) without placement, and
             // ->save() on an unplaced replicate() clone.
-            if (! $node->exists
-                && method_exists($node, 'isPlacedInTree')
-                && ! $node->isPlacedInTree()
-            ) {
+            if (! $node->exists && ! $node->isPlacedInTree()) {
                 throw new UnplacedNodeException(sprintf(
                     'Cannot save %s without placing it in the tree first. '
                     .'Call appendToNode($parent), prependToNode($parent), '
@@ -101,25 +98,21 @@ trait NodeTrait
             if (method_exists($node, 'applyMaterialisedPathsOnSaving')) {
                 $node->applyMaterialisedPathsOnSaving();
             }
-            if (method_exists($node, 'captureAggregateDeltas')) {
-                self::runAggregateHook($node, 'capture', static fn () => $node->captureAggregateDeltas());
-            }
+            self::runAggregateHook($node, 'capture', static fn () => $node->captureAggregateDeltas());
         });
 
         static::saved(static function (Model $node): void {
             if (! $node instanceof HasNestedSet) {
                 return;
             }
-            if (method_exists($node, 'applyAggregateDeltas')) {
-                self::runAggregateHook($node, 'apply', static fn () => $node->applyAggregateDeltas());
-            }
+            self::runAggregateHook($node, 'apply', static fn () => $node->applyAggregateDeltas());
             if (method_exists($node, 'applyMaterialisedPathsOnSaved')) {
                 $node->applyMaterialisedPathsOnSaved();
             }
         });
 
         static::created(static function (Model $node): void {
-            if ($node instanceof HasNestedSet && method_exists($node, 'applyAggregateOnCreate')) {
+            if ($node instanceof HasNestedSet) {
                 self::runAggregateHook($node, 'on_create', static fn () => $node->applyAggregateOnCreate());
             }
         });
@@ -201,7 +194,7 @@ trait NodeTrait
                 && is_string($deletedAtColumn)
                 && $node->getAttribute($deletedAtColumn) !== null;
 
-            if (! $alreadyTrashed && method_exists($node, 'applyAggregateOnDelete')) {
+            if (! $alreadyTrashed) {
                 self::runAggregateHook($node, 'on_delete', static fn () => $node->applyAggregateOnDelete());
             }
             // Compact lft/rgt for any hard-delete so the bounds
@@ -225,9 +218,7 @@ trait NodeTrait
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
                 HasSoftDeleteTree::applyRestoreCascade($node);
             }
-            if (method_exists($node, 'applyAggregateOnRestore')) {
-                self::runAggregateHook($node, 'on_restore', static fn () => $node->applyAggregateOnRestore());
-            }
+            self::runAggregateHook($node, 'on_restore', static fn () => $node->applyAggregateOnRestore());
         });
     }
 

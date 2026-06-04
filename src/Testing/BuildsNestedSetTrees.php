@@ -637,7 +637,7 @@ trait BuildsNestedSetTrees
         }
     }
 
-    private function scopeValuesEqual(mixed $a, mixed $b): bool
+    protected function scopeValuesEqual(mixed $a, mixed $b): bool
     {
         if ($a === $b) {
             return true;
@@ -652,7 +652,7 @@ trait BuildsNestedSetTrees
         return $a == $b;
     }
 
-    private function scopeFormat(mixed $v): string
+    protected function scopeFormat(mixed $v): string
     {
         if ($v === null) {
             return 'null';

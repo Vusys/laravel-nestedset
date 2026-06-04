@@ -6,8 +6,8 @@ namespace Vusys\NestedSet\Tests\Feature\Events;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Vusys\NestedSet\Aggregates\ChangeFeed\ChangeFeedRecorder;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
-use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Events\Aggregates\NestedSetAggregateChanged;
 use Vusys\NestedSet\Events\Aggregates\NodeAggregatesRecomputed;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -166,8 +166,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         // diff must catch this so a one-unit move on a large SUM still
         // emits an event.
         $reflection = new \ReflectionMethod(
-            HasNestedSetAggregates::class,
-            'aggregateChangeFeedValuesEqual',
+            ChangeFeedRecorder::class,
+            'valuesEqual',
         );
 
         // 2^53 + 1 (the first integer PHP float cannot represent exactly).

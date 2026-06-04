@@ -69,7 +69,7 @@ final class TopKMaintenanceTest extends TestCase
         // the IDs (insertion order in PHP int autoincrement is enough to
         // make the IDs deterministic but it's the ranking that's the
         // public contract).
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
         $this->assertSame([700, 500, 300], $revenues);
     }
 
@@ -82,7 +82,7 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertIsArray($top);
 
         // A's subtree is {A=500, A1=700} → top 3 (only 2 available).
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
         $this->assertSame([700, 500], $revenues);
     }
 
@@ -107,7 +107,7 @@ final class TopKMaintenanceTest extends TestCase
         $root->refresh();
         $top = $root->top_revenue_ids;
         $this->assertIsArray($top);
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
 
         // D (999) pushes B (300) out of the Top-3.
         $this->assertSame([999, 700, 500], $revenues);
@@ -122,7 +122,7 @@ final class TopKMaintenanceTest extends TestCase
         $root->refresh();
         $top = $root->top_revenue_ids;
         $this->assertIsArray($top);
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
 
         // A1 (700) is gone; remaining ranking is A (500), B (300), C (200).
         $this->assertSame([500, 300, 200], $revenues);
@@ -138,7 +138,7 @@ final class TopKMaintenanceTest extends TestCase
         $root->refresh();
         $top = $root->top_revenue_ids;
         $this->assertIsArray($top);
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
 
         $this->assertSame([800, 700, 500], $revenues);
     }
@@ -154,7 +154,7 @@ final class TopKMaintenanceTest extends TestCase
         $root->refresh();
         $top = $root->top_revenue_ids;
         $this->assertIsArray($top);
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
 
         // Still the original Top-3 of A1 (700), A (500), B (300).
         $this->assertSame([700, 500, 300], $revenues);
@@ -168,7 +168,7 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertIsArray($top);
 
         // category=active excludes A1 (700, inactive); top 3 = A, B, C.
-        $revenues = array_map(static fn (array $row): int => (int) $row[1], $top);
+        $revenues = array_map(static fn (array $row): int => $row[1], $top);
         $this->assertSame([500, 300, 200], $revenues);
     }
 

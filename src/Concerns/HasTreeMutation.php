@@ -753,10 +753,7 @@ trait HasTreeMutation
             // to $exists targets so unsaved-target rejection stays with
             // the keyOf "no primary key" check, which is the more
             // specific failure for that case.
-            if ($target->exists
-                && method_exists($target, 'isPlacedInTree')
-                && ! $target->isPlacedInTree()
-            ) {
+            if ($target->exists && ! $target->isPlacedInTree()) {
                 $targetKey = $target->getKey();
                 throw new UnplacedNodeException(sprintf(
                     '%s::%s target %s id=%s has no bounds — place it in a tree (saveAsRoot / appendToNode / …) first.',
