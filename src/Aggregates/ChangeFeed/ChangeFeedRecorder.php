@@ -258,7 +258,11 @@ final class ChangeFeedRecorder
      * pairs are compared as canonical integer strings to keep 64-bit
      * BIGINT precision (a float cast loses bits past 2^53, which
      * would silently swallow change events on large SUM/COUNT
-     * aggregates), and any other numeric pair compares as floats.
+     * aggregates), decimal-string pairs are compared as canonical
+     * decimal strings for the same reason at the fractional end
+     * (DECIMAL(38, 10) sums differing only in the trailing digits
+     * collapse to the same float), and anything else falls back to
+     * a float comparison.
      */
     private static function valuesEqual(
         int|float|bool|string|null $a,
@@ -276,6 +280,10 @@ final class ChangeFeedRecorder
         if (is_numeric($a) && is_numeric($b)) {
             if (self::isIntegerLike($a) && self::isIntegerLike($b)) {
                 return self::normaliseIntegerString($a) === self::normaliseIntegerString($b);
+            }
+
+            if (self::isDecimalString($a) && self::isDecimalString($b)) {
+                return self::normaliseDecimalString($a) === self::normaliseDecimalString($b);
             }
 
             return (float) $a === (float) $b;
@@ -326,6 +334,59 @@ final class ChangeFeedRecorder
         }
 
         return $negative ? '-'.$raw : $raw;
+    }
+
+    /**
+     * True when the value is a plain decimal-string of the form
+     * `-?(\d+\.\d*|\.\d+|\d+)` — what DB drivers return for DECIMAL
+     * columns. Excludes scientific notation (`1.0e10`), which can't
+     * be compared digit-for-digit and falls through to the float
+     * branch in {@see valuesEqual()}.
+     */
+    private static function isDecimalString(int|float|bool|string|null $value): bool
+    {
+        return is_string($value)
+            && (bool) preg_match('/^[+-]?(\d+\.\d*|\.\d+|\d+)$/', $value);
+    }
+
+    /**
+     * Canonicalise a decimal-string numeric to a comparable string —
+     * strip sign, drop leading zeros in the integer part, drop
+     * trailing zeros in the fractional part, drop the decimal point
+     * if the fractional part is empty, and collapse signed zero to
+     * `0`. Operates on the raw string so precision past `PHP_FLOAT`
+     * (~15 significant digits) is preserved for the diff — a
+     * DECIMAL(38, 10) SUM differing by `0.0000000001` still compares
+     * as unequal.
+     */
+    private static function normaliseDecimalString(int|float|bool|string|null $value): string
+    {
+        $raw = (string) $value;
+        $negative = false;
+        if ($raw !== '' && ($raw[0] === '+' || $raw[0] === '-')) {
+            $negative = $raw[0] === '-';
+            $raw = substr($raw, 1);
+        }
+
+        if (str_contains($raw, '.')) {
+            [$int, $frac] = explode('.', $raw, 2);
+            $frac = rtrim($frac, '0');
+        } else {
+            $int = $raw;
+            $frac = '';
+        }
+
+        $int = ltrim($int, '0');
+        if ($int === '') {
+            $int = '0';
+        }
+
+        $canonical = $frac === '' ? $int : $int.'.'.$frac;
+        if ($canonical === '0') {
+            return '0';
+        }
+
+        return $negative ? '-'.$canonical : $canonical;
     }
 
     /**
