@@ -127,10 +127,18 @@ final class CreateHookApplier
                     && $definition->filter->evaluateFor($node->getAttributes()) !== true) {
                     continue;
                 }
+                // SQL MIN/MAX ignore NULL — a NULL source contributes
+                // nothing to the parent's extremum. Without this guard
+                // `asNumericOrZero` would inject 0 as a candidate and
+                // lower an ancestor's stored MAX (or clobber its NULL).
+                $raw = $node->getAttribute($definition->source);
+                if ($raw === null) {
+                    continue;
+                }
                 // Type-preserving read — decimal-cast sources lose the
                 // fractional part under asIntOrZero and the captured
                 // extreme propagates upward as the truncated value.
-                $value = Numeric::asNumericOrZero($node->getAttribute($definition->source));
+                $value = Numeric::asNumericOrZero($raw);
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,

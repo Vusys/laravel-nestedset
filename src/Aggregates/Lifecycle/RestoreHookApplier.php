@@ -196,7 +196,15 @@ final class RestoreHookApplier
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                $value = Numeric::asNumericOrZero($node->getAttribute($definition->column));
+                // Stored NULL means the restored subtree's MIN/MAX has
+                // no matching rows. Pushing a 0 candidate here would
+                // lower an ancestor's stored MAX or clobber its NULL
+                // extremum — mirror the SQL MIN/MAX-ignore-NULL rule.
+                $raw = $node->getAttribute($definition->column);
+                if ($raw === null) {
+                    continue;
+                }
+                $value = Numeric::asNumericOrZero($raw);
                 $extremes[$definition->column] = [
                     'function' => $definition->function,
                     'value' => $value,
