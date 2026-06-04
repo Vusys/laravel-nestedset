@@ -126,6 +126,16 @@ final class ChainFoldAccumulatorTest extends TestCase
             [5, 5, 5, 8],
         ];
 
+        // A non-numeric row must be SKIPPED, not folded as 0.0. With a
+        // negative running maximum the difference is observable: skipping
+        // keeps -5, whereas max(0.0, -5) would jump the maximum to 0.
+        // All-positive fixtures mask this (max(0.0, positive) == positive).
+        yield 'max skips a non-numeric row without clamping a negative running max to zero' => [
+            fn (): AggregateDefinition => Aggregate::max('x')->into('m'),
+            [[-5, null], ['x', null], [-2, null]],
+            [-5, -5, -2],
+        ];
+
         yield 'bit_or accumulates set bits' => [
             fn (): AggregateDefinition => Aggregate::bitOr('x')->into('b'),
             [[1, null], [2, null], [4, null]],
@@ -148,6 +158,16 @@ final class ChainFoldAccumulatorTest extends TestCase
             fn (): AggregateDefinition => Aggregate::bitOr('x')->into('b'),
             [['x', null], [2, null]],
             [null, 2],
+        ];
+
+        // A leading non-numeric row must leave the accumulator null, not
+        // seed it with (int)'x' == 0. Unlike BitOr/BitAnd this is only
+        // observable for BitXor at the first step: were the non-numeric
+        // guard dropped, step 0 would report 0 instead of null.
+        yield 'bit_xor stays null then skips a leading non-numeric row' => [
+            fn (): AggregateDefinition => Aggregate::bitXor('x')->into('b'),
+            [['x', null], [5, null]],
+            [null, 5],
         ];
 
         yield 'bool_or is null until a row contributes, then ORs' => [

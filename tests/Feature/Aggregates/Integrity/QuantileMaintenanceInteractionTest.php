@@ -59,22 +59,37 @@ final class QuantileMaintenanceInteractionTest extends TestCase
         // model-scan plumbing.
         $attribute = new NestedSetAggregate(column: 'subtree_median', median: 'tickets');
 
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('median() and percentile() are recompute-only');
-        $this->expectExceptionMessage('withFreshAggregates()');
-
-        $attribute->toDefinition();
+        try {
+            $attribute->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            // Single contiguous span across the first three operands —
+            // a second expectExceptionMessage() call would have silently
+            // overwritten the first, so assert the joined text in one go.
+            $this->assertStringContainsString(
+                'median() and percentile() are recompute-only and cannot be stored as '
+                .'precalculated aggregate columns. Use withFreshAggregates() for on-demand '
+                .'quantile reads: ->withFreshAggregates([',
+                $e->getMessage(),
+            );
+        }
     }
 
     public function test_declaring_percentile_via_nested_set_aggregate_throws_with_pointer_to_fresh_read(): void
     {
         $attribute = new NestedSetAggregate(column: 'subtree_p90', percentile: 'tickets');
 
-        $this->expectException(AggregateConfigurationException::class);
-        $this->expectExceptionMessage('median() and percentile() are recompute-only');
-        $this->expectExceptionMessage('withFreshAggregates()');
-
-        $attribute->toDefinition();
+        try {
+            $attribute->toDefinition();
+            $this->fail('expected AggregateConfigurationException');
+        } catch (AggregateConfigurationException $e) {
+            $this->assertStringContainsString(
+                'median() and percentile() are recompute-only and cannot be stored as '
+                .'precalculated aggregate columns. Use withFreshAggregates() for on-demand '
+                .'quantile reads: ->withFreshAggregates([',
+                $e->getMessage(),
+            );
+        }
     }
 
     private function asFloat(mixed $value): float
