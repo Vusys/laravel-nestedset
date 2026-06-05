@@ -99,7 +99,7 @@ jobs:
             --logger-github \
             --no-progress \
             --no-interaction \
-            --threads=$(nproc)
+            --threads="$(nproc)"
 
   full:
     # No custom `name:` — GitHub auto-appends the matrix values
