@@ -199,10 +199,21 @@ final class AggregateRepair
                 ->table($instance->getTable())
                 ->where($instance->getKeyName(), $rootId)
                 ->first([$instance->getLftName(), $instance->getRgtName()]);
-            if ($rootRow !== null) {
-                $query->where($instance->getLftName(), '>=', $rootRow->{$instance->getLftName()})
-                    ->where($instance->getRgtName(), '<=', $rootRow->{$instance->getRgtName()});
+            // Missing-row guard: a queued chunk picked up by a worker
+            // minutes after dispatch may find the anchor row gone (hard
+            // delete, scope move). Without this throw the chunk would
+            // run unbounded over the whole scope — a silently widened
+            // repair on a multi-million-row table.
+            if ($rootRow === null) {
+                throw new \RuntimeException(sprintf(
+                    '%s::fixAggregatesChunk: anchor id %s not found — was the row deleted? '
+                    .'Refusing to widen the repair to the whole scope.',
+                    $modelClass,
+                    (string) $rootId,
+                ));
             }
+            $query->where($instance->getLftName(), '>=', $rootRow->{$instance->getLftName()})
+                ->where($instance->getRgtName(), '<=', $rootRow->{$instance->getRgtName()});
         }
 
         $isIntKey = $instance->getKeyType() === 'int';

@@ -12,6 +12,7 @@ use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
+use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -81,6 +82,42 @@ final class QueueFixAggregatesTest extends TestCase
         $this->expectException(ScopeViolationException::class);
 
         MenuItem::queueFixAggregates();
+    }
+
+    public function test_unsaved_anchor_is_rejected_at_dispatch_time(): void
+    {
+        Queue::fake();
+
+        // An unsaved anchor has no primary key. The job would carry
+        // anchorId=null and run unbounded on pickup — the synchronous
+        // fixAggregates path rejects this; the queued path now does too.
+        $unsaved = new Area(['name' => 'r', 'tickets' => 0]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('has no primary key');
+
+        Area::queueFixAggregates($unsaved);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_cross_class_anchor_is_rejected_at_dispatch_time(): void
+    {
+        Queue::fake();
+
+        // An anchor of a different model would carry an id valid for
+        // *its* table, not the queued model's. On pickup the job's
+        // anchor-row lookup would either silently widen (post-#179
+        // it'd throw, but earlier it would have widened) or repair the
+        // wrong subtree. Reject up-front.
+        $foreign = new Category(['name' => 'foreign']);
+        $foreign->saveAsRoot();
+        $foreign = $foreign->refresh();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/anchor must be an instance of/');
+
+        Area::queueFixAggregates($foreign);
+        Queue::assertNothingPushed();
     }
 
     public function test_handle_repairs_drifted_aggregates_end_to_end(): void

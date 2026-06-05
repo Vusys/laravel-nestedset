@@ -181,4 +181,24 @@ final class SyncChunkedFixAggregatesTest extends TestCase
 
         Area::fixAggregatesChunk(null, null, 0);
     }
+
+    public function test_fix_aggregates_chunk_throws_when_anchor_row_is_missing(): void
+    {
+        // A queued chunk job picked up minutes after dispatch can find
+        // its anchor gone (hard-delete between dispatch and execution).
+        // The pre-fix code silently widened the chunk to every row in
+        // scope — a one-subtree repair turned into a whole-table sweep.
+        $this->seedAreaTree(3);
+        $root = Area::query()->whereIsRoot()->firstOrFail();
+
+        // Hard-delete the anchor row out from under the chunk call,
+        // then invoke the low-level chunk entry point directly with
+        // the now-stale anchor.
+        DB::table('areas')->where('id', $root->id)->delete();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/anchor id .* not found/');
+
+        Area::fixAggregatesChunk($root, null, 100);
+    }
 }

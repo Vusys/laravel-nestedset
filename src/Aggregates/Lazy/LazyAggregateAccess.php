@@ -242,8 +242,18 @@ final class LazyAggregateAccess
 
         if ($rootId !== null) {
             $bounds = self::anchorBoundsRow($instance, $rootId);
+            // Missing-row guard: the lazy stamp pass runs after the
+            // differ. If the anchor row disappeared mid-repair (rare,
+            // but possible under concurrent hard-delete) the stamp UPDATE
+            // would silently widen to every row in scope. Fail loudly
+            // instead — the caller can decide whether to retry or skip.
             if ($bounds === null) {
-                return;
+                throw new \RuntimeException(sprintf(
+                    '%s::stampForFix: anchor id %s not found — was the row deleted? '
+                    .'Refusing to widen the lazy-stamp UPDATE to the whole scope.',
+                    $instance::class,
+                    (string) $rootId,
+                ));
             }
             $query->where($instance->getLftName(), '>=', $bounds['lft'])
                 ->where($instance->getRgtName(), '<=', $bounds['rgt']);

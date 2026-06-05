@@ -132,6 +132,9 @@ final class DeferredMaintenanceRunner
         ?string $onQueue,
         ?int $chunkSize,
     ): FixAggregatesJob {
+        // Scope check first so the violation event carries the
+        // queue_dispatch stage label — downstream observability filters
+        // on this to distinguish queued from synchronous repair faults.
         $scopeColumns = NestedSetScopeResolver::columns($modelClass);
         if ($scopeColumns !== [] && ! $anchor instanceof HasNestedSet) {
             $message = sprintf(
@@ -146,6 +149,12 @@ final class DeferredMaintenanceRunner
             ));
             throw new ScopeViolationException($message);
         }
+
+        // Reject unsaved or cross-class anchors at dispatch — a queued
+        // job picked up minutes later would silently run unbounded
+        // (null anchor id) or target a foreign table. The synchronous
+        // fixAggregates path already enforces this; mirror it here.
+        AggregateAnchor::writeAnchorOrFail($modelClass, $anchor);
 
         $job = new FixAggregatesJob(
             modelClass: $modelClass,
