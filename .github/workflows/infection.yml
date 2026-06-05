@@ -37,7 +37,9 @@ concurrency:
 jobs:
   pr:
     name: Mutation testing (PR diff)
-    if: github.event_name == 'pull_request'
+    # Skip github-actions Dependabot bumps — no PHP changed, so the
+    # diff-mode mutation run has nothing to mutate.
+    if: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

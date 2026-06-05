@@ -30,6 +30,11 @@ jobs:
     name: Bencher
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Dependabot PRs run against the Dependabot secret store, not the
+    # repo's Actions secrets, so BENCHER_API_KEY is empty and the
+    # comparison step always errors. Skip on Dependabot PRs (any
+    # ecosystem); the master-push baseline keeps real secrets and runs.
+    if: ${{ github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' }}
     # `pull-requests` + `checks` are only exercised on PR runs (the
     # `--github-actions` step that posts the comparison comment).
     # Job-level scoping keeps push/master runs at read-only.
