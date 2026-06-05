@@ -80,4 +80,14 @@ final class FilterPredicateTest extends TestCase
         $this->assertSame([], $predicate->getConditions());
         $this->assertNull($predicate->getNotNullColumn());
     }
+
+    public function test_to_fragment_rejects_non_scalar_equality_value(): void
+    {
+        $predicate = FilterPredicate::equality(['payload' => ['nested' => 'array']]);
+
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessage('FilterPredicate equality condition value must be scalar; got array.');
+
+        $predicate->toFragment('d.');
+    }
 }
