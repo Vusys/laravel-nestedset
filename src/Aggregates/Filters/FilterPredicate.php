@@ -136,6 +136,55 @@ final readonly class FilterPredicate
     }
 
     /**
+     * Materialise the predicate as a SQL fragment with positional
+     * bindings, prefixed with `$qualifier` (e.g. `"inner_a."`, `"d."`).
+     *
+     * Equality values flow as `?` placeholders + bindings so they
+     * ride the driver's bound-parameter stream instead of inlining
+     * as literals. NotNull and Raw kinds have no bindings — they
+     * resolve to pure SQL.
+     */
+    public function toFragment(string $qualifier): BoundFragment
+    {
+        return match ($this->kind) {
+            FilterPredicateKind::Equality => $this->equalityFragment($qualifier),
+            FilterPredicateKind::NotNull => new BoundFragment(sprintf(
+                '%s%s IS NOT NULL',
+                $qualifier,
+                (string) $this->notNullColumn,
+            )),
+            FilterPredicateKind::Raw => new BoundFragment(
+                $this->rawSql ?? throw new AggregateConfigurationException(
+                    'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
+                ),
+            ),
+        };
+    }
+
+    private function equalityFragment(string $qualifier): BoundFragment
+    {
+        $parts = [];
+        $bindings = [];
+        foreach ($this->conditions as $col => $value) {
+            if ($value === null) {
+                $parts[] = "{$qualifier}{$col} IS NULL";
+
+                continue;
+            }
+            if (! is_scalar($value)) {
+                throw new AggregateConfigurationException(sprintf(
+                    'FilterPredicate equality condition value must be scalar; got %s.',
+                    get_debug_type($value),
+                ));
+            }
+            $parts[] = "{$qualifier}{$col} = ?";
+            $bindings[] = $value;
+        }
+
+        return new BoundFragment(implode(' AND ', $parts), $bindings);
+    }
+
+    /**
      * Evaluates the predicate against a set of model attributes.
      * Returns null for Raw predicates (cannot be evaluated in PHP).
      *

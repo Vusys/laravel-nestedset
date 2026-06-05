@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Sql\DerivedAggregateFragments;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
@@ -52,7 +53,8 @@ final class DerivedAggregateFragmentsTest extends TestCase
     #[DataProvider('buildCases')]
     public function test_build_emits_derived_sql(Closure $makeDefinition, ?string $filterSql, string $expected): void
     {
-        $this->assertSame($expected, DerivedAggregateFragments::build($makeDefinition(), 'i.', $filterSql));
+        $filter = $filterSql === null ? null : BoundFragment::literal($filterSql);
+        $this->assertSame($expected, DerivedAggregateFragments::build($makeDefinition(), 'i.', $filter)->sql);
     }
 
     /**

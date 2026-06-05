@@ -15,6 +15,7 @@ use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Query\Aggregates\Read\AggregateSqlFragments;
@@ -49,6 +50,35 @@ final class AggregateSqlFragmentsTest extends TestCase
     }
 
     /**
+     * Inline a fragment's bindings into its SQL — used by snapshot
+     * assertions that pre-date the bindings refactor. Reproduces the
+     * previous inline-literal shape so existing test datasets keep
+     * their pre-bindings expected strings.
+     */
+    private function inline(BoundFragment $fragment): string
+    {
+        $sql = $fragment->sql;
+        foreach ($fragment->bindings as $value) {
+            $pos = strpos($sql, '?');
+            if ($pos === false) {
+                break;
+            }
+            if ($value === null) {
+                $literal = 'NULL';
+            } elseif (is_bool($value)) {
+                $literal = $value ? 'TRUE' : 'FALSE';
+            } elseif (is_int($value) || is_float($value)) {
+                $literal = (string) $value;
+            } else {
+                $literal = "'".$value."'";
+            }
+            $sql = substr_replace($sql, $literal, $pos, 1);
+        }
+
+        return $sql;
+    }
+
+    /**
      * Main entry point: unfiltered + equality/notnull-filtered aggregate
      * expressions across every function kind.
      *
@@ -57,9 +87,9 @@ final class AggregateSqlFragmentsTest extends TestCase
     #[DataProvider('aggregateExpressionCases')]
     public function test_aggregate_expression(Closure $makeDefinition, string $qualifier, string $expected): void
     {
-        $sql = AggregateSqlFragments::aggregateExpression($makeDefinition(), $qualifier, $this->sqliteConnection);
+        $fragment = AggregateSqlFragments::aggregateExpression($makeDefinition(), $qualifier, $this->sqliteConnection);
 
-        $this->assertSame($expected, $sql);
+        $this->assertSame($expected, $this->inline($fragment));
     }
 
     /**
@@ -267,41 +297,40 @@ final class AggregateSqlFragmentsTest extends TestCase
     }
 
     /**
-     * filterPredicateSql for every FilterPredicate kind.
+     * FilterPredicate::toFragment for every kind.
+     *
+     * @param  list<scalar|null>  $expectedBindings
      */
     #[DataProvider('filterPredicateCases')]
-    public function test_filter_predicate_sql(FilterPredicate $filter, string $qualifier, string $expected): void
-    {
-        $sql = AggregateSqlFragments::filterPredicateSql($this->sqliteConnection, $filter, $qualifier);
+    public function test_filter_predicate_to_fragment(
+        FilterPredicate $filter,
+        string $qualifier,
+        string $expectedSql,
+        array $expectedBindings,
+    ): void {
+        $fragment = $filter->toFragment($qualifier);
 
-        $this->assertSame($expected, $sql);
+        $this->assertSame($expectedSql, $fragment->sql);
+        $this->assertSame($expectedBindings, $fragment->bindings);
     }
 
     /**
-     * @return iterable<string, array{0: FilterPredicate, 1: string, 2: string}>
+     * @return iterable<string, array{0: FilterPredicate, 1: string, 2: string, 3: list<scalar|null>}>
      */
     public static function filterPredicateCases(): iterable
     {
         yield 'equality with null and value' => [
-            FilterPredicate::equality(['parent_id' => null, 'type' => 'fire']), 'd.', "d.parent_id IS NULL AND d.type = 'fire'",
+            FilterPredicate::equality(['parent_id' => null, 'type' => 'fire']),
+            'd.', 'd.parent_id IS NULL AND d.type = ?', ['fire'],
         ];
 
         yield 'not null' => [
-            FilterPredicate::notNull('active'), 'd.', 'd.active IS NOT NULL',
+            FilterPredicate::notNull('active'), 'd.', 'd.active IS NOT NULL', [],
         ];
 
         yield 'raw' => [
-            FilterPredicate::raw('active = 1', ['active']), 'd.', 'active = 1',
+            FilterPredicate::raw('active = 1', ['active']), 'd.', 'active = 1', [],
         ];
-    }
-
-    public function test_aggregate_expression_filtered_without_connection_throws(): void
-    {
-        $this->expectException(AggregateConfigurationException::class);
-        AggregateSqlFragments::aggregateExpression(
-            Aggregate::sum('x')->filter(['type' => 'fire'])->into('col'),
-            'd.',
-        );
     }
 
     public function test_collection_aggregate_without_connection_throws(): void
@@ -445,7 +474,7 @@ final class AggregateSqlFragmentsTest extends TestCase
         bool $rawFilterContext,
         string $expected,
     ): void {
-        $sql = AggregateSqlFragments::aggregateExpressionInJoinedContext(
+        $fragment = AggregateSqlFragments::aggregateExpressionInJoinedContext(
             $makeDefinition(),
             innerQualifier: 'd.',
             outerAlias: 'o',
@@ -457,7 +486,7 @@ final class AggregateSqlFragmentsTest extends TestCase
             connection: $this->sqliteConnection,
         );
 
-        $this->assertSame($expected, $sql);
+        $this->assertSame($expected, $this->inline($fragment));
     }
 
     /**
@@ -612,8 +641,8 @@ final class AggregateSqlFragmentsTest extends TestCase
             connection: $this->sqliteConnection,
         );
 
-        $this->assertStringContainsString('nss_rf.tenant_id = o.tenant_id', $sql);
-        $this->assertStringContainsString('nss_rf.site_id = o.site_id', $sql);
+        $this->assertStringContainsString('nss_rf.tenant_id = o.tenant_id', $sql->sql);
+        $this->assertStringContainsString('nss_rf.site_id = o.site_id', $sql->sql);
     }
 
     /**
@@ -628,7 +657,7 @@ final class AggregateSqlFragmentsTest extends TestCase
         ?string $softDeletedColumn,
         string $expected,
     ): void {
-        $sql = AggregateSqlFragments::wrapLeafFastPath(
+        $fragment = AggregateSqlFragments::wrapLeafFastPath(
             $makeDefinition(),
             't.',
             'lft',
@@ -638,7 +667,7 @@ final class AggregateSqlFragmentsTest extends TestCase
             $this->sqliteConnection,
         );
 
-        $this->assertSame($expected, $sql);
+        $this->assertSame($expected, $this->inline($fragment));
     }
 
     /**
@@ -795,18 +824,6 @@ final class AggregateSqlFragmentsTest extends TestCase
             static fn (): AggregateDefinition => Aggregate::distinctCount('owner_id')->filter(['type' => 'fire'])->into('col'),
             null, "CASE WHEN t.rgt = t.lft + 1 THEN CASE WHEN (t.type = 'fire') AND t.owner_id IS NOT NULL THEN 1 ELSE 0 END ELSE JOIN_EXPR END",
         ];
-    }
-
-    public function test_wrap_leaf_fast_path_filtered_without_connection_throws(): void
-    {
-        $this->expectException(AggregateConfigurationException::class);
-        AggregateSqlFragments::wrapLeafFastPath(
-            Aggregate::sum('x')->filter(['type' => 'fire'])->into('col'),
-            't.',
-            'lft',
-            'rgt',
-            'JOIN_EXPR',
-        );
     }
 
     /**

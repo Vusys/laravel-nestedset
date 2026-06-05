@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
@@ -118,18 +119,21 @@ final class FreshAggregateProjector
                 // leaf rows; SQLite (and the others) skip dead branches in CASE,
                 // so on a wideShallow shape only the root pays the subquery cost.
                 foreach ($resolved as $alias => $definition) {
-                    $sql = self::buildCorrelatedSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+                    $sub = self::buildCorrelatedSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
                     $cased = AggregateSqlFragments::wrapLeafFastPath(
                         $definition,
                         "{$table}.",
                         $lftCol,
                         $rgtCol,
-                        "({$sql})",
+                        new BoundFragment("({$sub->sql})", $sub->bindings),
                         $softDeletedColumn,
                         $connection,
                     );
 
-                    $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
+                    $builder->addSelect(['*', new TreeExpression("{$cased->sql} as {$alias}")]);
+                    if ($cased->bindings !== []) {
+                        $builder->getQuery()->addBinding($cased->bindings, 'select');
+                    }
                 }
             }
         }
@@ -140,18 +144,21 @@ final class FreshAggregateProjector
         // The leaf fast-path still applies: a single-element subtree's quantile
         // is just the source value itself.
         foreach ($quantiles as $alias => $definition) {
-            $sql = self::buildQuantileSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+            $sub = self::buildQuantileSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
             $cased = AggregateSqlFragments::wrapLeafFastPath(
                 $definition,
                 "{$table}.",
                 $lftCol,
                 $rgtCol,
-                "({$sql})",
+                new BoundFragment("({$sub->sql})", $sub->bindings),
                 $softDeletedColumn,
                 $connection,
             );
 
-            $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
+            $builder->addSelect(['*', new TreeExpression("{$cased->sql} as {$alias}")]);
+            if ($cased->bindings !== []) {
+                $builder->getQuery()->addBinding($cased->bindings, 'select');
+            }
         }
 
         // TopK also needs a dedicated subquery shape — the JSON aggregator
@@ -159,18 +166,21 @@ final class FreshAggregateProjector
         // derived table inside the correlated subquery. Same per-backend
         // dispatch as JsonAgg, but with the top-K winnowing baked in.
         foreach ($topks as $alias => $definition) {
-            $sql = self::buildTopKSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
+            $sub = self::buildTopKSubquery($connection, $table, $lftCol, $rgtCol, $scopeCols, $definition, $softDeletedColumn);
             $cased = AggregateSqlFragments::wrapLeafFastPath(
                 $definition,
                 "{$table}.",
                 $lftCol,
                 $rgtCol,
-                $sql,
+                $sub,
                 $softDeletedColumn,
                 $connection,
             );
 
-            $builder->addSelect(['*', new TreeExpression("{$cased} as {$alias}")]);
+            $builder->addSelect(['*', new TreeExpression("{$cased->sql} as {$alias}")]);
+            if ($cased->bindings !== []) {
+                $builder->getQuery()->addBinding($cased->bindings, 'select');
+            }
         }
     }
 
@@ -262,6 +272,7 @@ final class FreshAggregateProjector
             );
 
             $aggSelects = ["{$outer['outerId']} AS outer_id"];
+            $aggBindings = [];
             foreach ($group as $colAlias => $definition) {
                 $expr = AggregateSqlFragments::aggregateExpressionInJoinedContext(
                     $definition,
@@ -274,7 +285,10 @@ final class FreshAggregateProjector
                     rawFilterContext: $rawFilterContext,
                     connection: $connection,
                 );
-                $aggSelects[] = "{$expr} AS {$colAlias}";
+                $aggSelects[] = "{$expr->sql} AS {$colAlias}";
+                foreach ($expr->bindings as $b) {
+                    $aggBindings[] = $b;
+                }
             }
 
             $boundsClause = $mode === 'inclusive'
@@ -310,9 +324,13 @@ final class FreshAggregateProjector
                 },
             );
 
-            // The inner SQL contains `?` placeholders from the user-ids
-            // sub-query. Those bindings sit inside the JOIN clause, so
-            // register them on the 'join' position to stay in compile order.
+            // Bindings ride inside the JOIN clause: predicate bindings
+            // from filter()/filterRaw() come first in textual order
+            // (embedded in the aggregate SELECT list), then the user-ids
+            // sub-query placeholders in the WHERE.
+            if ($aggBindings !== []) {
+                $builder->getQuery()->addBinding($aggBindings, 'join');
+            }
             $builder->getQuery()->addBinding($userIdsBindings, 'join');
 
             // Two layers of fast-path. (1) The inner derived now excludes
@@ -326,6 +344,7 @@ final class FreshAggregateProjector
             // We thread both via wrapLeafFastPath() — the existing
             // COALESCE shim becomes the JOIN-side of the CASE.
             $columns = ['*'];
+            $casedBindings = [];
             foreach ($group as $colAlias => $definition) {
                 $joinExpr = match ($definition->function) {
                     AggregateFunction::Sum,
@@ -333,9 +352,15 @@ final class FreshAggregateProjector
                     default => "{$derivedAlias}.{$colAlias}",
                 };
                 $cased = AggregateSqlFragments::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn, $connection);
-                $columns[] = new TreeExpression("{$cased} as {$colAlias}");
+                $columns[] = new TreeExpression("{$cased->sql} as {$colAlias}");
+                foreach ($cased->bindings as $b) {
+                    $casedBindings[] = $b;
+                }
             }
             $builder->addSelect($columns);
+            if ($casedBindings !== []) {
+                $builder->getQuery()->addBinding($casedBindings, 'select');
+            }
         }
     }
 
@@ -380,9 +405,13 @@ final class FreshAggregateProjector
             $lateralAlias = "vusys_fresh_lat_{$lateralIndex}";
 
             $aggSelects = [];
+            $aggBindings = [];
             foreach ($group as $colAlias => $definition) {
                 $expr = AggregateSqlFragments::aggregateExpression($definition, qualifier: 'd.', connection: $connection);
-                $aggSelects[] = "{$expr} AS {$colAlias}";
+                $aggSelects[] = "{$expr->sql} AS {$colAlias}";
+                foreach ($expr->bindings as $b) {
+                    $aggBindings[] = $b;
+                }
             }
 
             $boundsClause = $mode === 'inclusive'
@@ -418,14 +447,24 @@ final class FreshAggregateProjector
             $query->leftJoin($lateralExpr, static function ($join) use ($onClause): void {
                 $join->whereRaw($onClause);
             });
+            if ($aggBindings !== []) {
+                $query->addBinding($aggBindings, 'join');
+            }
 
             $columns = ['*'];
+            $casedBindings = [];
             foreach ($group as $colAlias => $definition) {
                 $joinExpr = "{$lateralAlias}.{$colAlias}";
                 $cased = AggregateSqlFragments::wrapLeafFastPath($definition, "{$table}.", $lftCol, $rgtCol, $joinExpr, $softDeletedColumn, $connection);
-                $columns[] = new TreeExpression("{$cased} as {$colAlias}");
+                $columns[] = new TreeExpression("{$cased->sql} as {$colAlias}");
+                foreach ($cased->bindings as $b) {
+                    $casedBindings[] = $b;
+                }
             }
             $builder->addSelect($columns);
+            if ($casedBindings !== []) {
+                $query->addBinding($casedBindings, 'select');
+            }
         }
     }
 
@@ -543,13 +582,13 @@ final class FreshAggregateProjector
             || $definition->function === AggregateFunction::Percentile)
             && $connection->getDriverName() !== 'pgsql'
         ) {
-            $filterSql = $definition->filter instanceof FilterPredicate
-                ? AggregateSqlFragments::filterPredicateSql($connection, $definition->filter, '')
+            $filterFragment = $definition->filter instanceof FilterPredicate
+                ? $definition->filter->toFragment('')
                 : null;
             $innerFromClause = "FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
-            $sql = AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, '', $filterSql);
+            $fragment = AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, '', $filterFragment);
 
-            return $connection->scalar($sql, $bindings);
+            return $connection->scalar($fragment->sql, [...$fragment->bindings, ...$bindings]);
         }
 
         // TopK needs an ORDER BY + LIMIT subquery shape that doesn't fit
@@ -574,25 +613,27 @@ final class FreshAggregateProjector
                 ? ''
                 : " AND inner_a.{$softDeletedColumn} IS NULL";
 
-            $filterSql = $definition->filter instanceof FilterPredicate
-                ? AggregateSqlFragments::filterPredicateSql($connection, $definition->filter, 'inner_a.')
+            $filterFragment = $definition->filter instanceof FilterPredicate
+                ? $definition->filter->toFragment('inner_a.')
                 : null;
 
-            $sql = 'SELECT '.AggregateSqlEmitter::emitTopKCorrelatedSubquery(
+            $topKFragment = AggregateSqlEmitter::emitTopKCorrelatedSubquery(
                 $connection,
                 $definition,
                 $table,
                 $innerBoundsClause.$innerScopeClause.$innerSoftClause,
-                $filterSql,
-            ).' AS aggregate';
+                $filterFragment,
+            );
 
-            return $connection->scalar($sql, $innerBindings);
+            $sql = 'SELECT '.$topKFragment->sql.' AS aggregate';
+
+            return $connection->scalar($sql, [...$topKFragment->bindings, ...$innerBindings]);
         }
 
         $aggregateExpr = AggregateSqlFragments::aggregateExpression($definition, qualifier: '', connection: $connection);
-        $sql = "SELECT {$aggregateExpr} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
+        $sql = "SELECT {$aggregateExpr->sql} AS aggregate FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
-        return $connection->scalar($sql, $bindings);
+        return $connection->scalar($sql, [...$aggregateExpr->bindings, ...$bindings]);
     }
 
     /**
@@ -775,7 +816,7 @@ final class FreshAggregateProjector
         array $scopeCols,
         AggregateDefinition $definition,
         ?string $softDeletedColumn,
-    ): string {
+    ): BoundFragment {
         $boundsClause = $definition->inclusive
             ? "d.{$lftCol} >= {$table}.{$lftCol} AND d.{$rgtCol} <= {$table}.{$rgtCol}"
             : "d.{$lftCol} > {$table}.{$lftCol} AND d.{$rgtCol} < {$table}.{$rgtCol}";
@@ -789,26 +830,26 @@ final class FreshAggregateProjector
             ? ''
             : " AND d.{$softDeletedColumn} IS NULL";
 
-        $filterSql = null;
-        if ($definition->filter instanceof FilterPredicate
-            && $connection instanceof Connection
-        ) {
-            $filterSql = AggregateSqlFragments::filterPredicateSql($connection, $definition->filter, 'd.');
-        }
+        $filterFragment = $definition->filter instanceof FilterPredicate
+            ? $definition->filter->toFragment('d.')
+            : null;
 
         if ($connection instanceof Connection && $connection->getDriverName() === 'pgsql') {
-            $aggregateExpr = AggregateSqlEmitter::emitQuantileNativeExpression($definition, 'd.', $filterSql);
+            $aggregateExpr = AggregateSqlEmitter::emitQuantileNativeExpression($definition, 'd.', $filterFragment);
 
-            return "SELECT {$aggregateExpr} FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
+            return new BoundFragment(
+                "SELECT {$aggregateExpr->sql} FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}",
+                $aggregateExpr->bindings,
+            );
         }
 
         $innerFromClause = "FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
 
         if (AggregateSqlFragments::isMariaDb($connection)) {
-            return AggregateSqlEmitter::emitQuantileJsonExpression($definition, $innerFromClause, 'd.', $filterSql);
+            return AggregateSqlEmitter::emitQuantileJsonExpression($definition, $innerFromClause, 'd.', $filterFragment);
         }
 
-        return AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, 'd.', $filterSql);
+        return AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, 'd.', $filterFragment);
     }
 
     /**
@@ -832,7 +873,7 @@ final class FreshAggregateProjector
         array $scopeCols,
         AggregateDefinition $definition,
         ?string $softDeletedColumn,
-    ): string {
+    ): BoundFragment {
         $boundsClause = $definition->inclusive
             ? "inner_a.{$lftCol} >= {$table}.{$lftCol} AND inner_a.{$rgtCol} <= {$table}.{$rgtCol}"
             : "inner_a.{$lftCol} > {$table}.{$lftCol} AND inner_a.{$rgtCol} < {$table}.{$rgtCol}";
@@ -846,17 +887,16 @@ final class FreshAggregateProjector
             ? ''
             : " AND inner_a.{$softDeletedColumn} IS NULL";
 
-        $filterSql = null;
-        if ($definition->filter instanceof FilterPredicate) {
-            $filterSql = AggregateSqlFragments::filterPredicateSql($connection, $definition->filter, 'inner_a.');
-        }
+        $filterFragment = $definition->filter instanceof FilterPredicate
+            ? $definition->filter->toFragment('inner_a.')
+            : null;
 
         return AggregateSqlEmitter::emitTopKCorrelatedSubquery(
             $connection,
             $definition,
             $table,
             $boundsClause.$scopeClause.$softClause,
-            $filterSql,
+            $filterFragment,
         );
     }
 
@@ -871,7 +911,7 @@ final class FreshAggregateProjector
         array $scopeCols,
         AggregateDefinition $definition,
         ?string $softDeletedColumn,
-    ): string {
+    ): BoundFragment {
         $aggregateExpr = AggregateSqlFragments::aggregateExpression($definition, qualifier: 'd.', connection: $connection);
 
         $boundsClause = $definition->inclusive
@@ -887,6 +927,9 @@ final class FreshAggregateProjector
             ? ''
             : " AND d.{$softDeletedColumn} IS NULL";
 
-        return "SELECT {$aggregateExpr} FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}";
+        return new BoundFragment(
+            "SELECT {$aggregateExpr->sql} FROM {$table} d WHERE {$boundsClause}{$scopeClause}{$softClause}",
+            $aggregateExpr->bindings,
+        );
     }
 }

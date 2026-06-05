@@ -6,6 +6,8 @@ namespace Vusys\NestedSet\Aggregates\Sql;
 
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
+use Vusys\NestedSet\Aggregates\Filters\FragmentSplicer;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
@@ -59,14 +61,26 @@ final class DerivedAggregateFragments
      * Build the derived SQL expression that yields the user-facing
      * value of $definition over the subtree rows referenced by
      * `{$qualifier}*` (e.g. `inner_a.` for the inner subquery alias,
-     * `i.` for joined-shape derives). When $filterSql is non-null,
-     * every inner SUM/COUNT is wrapped in `CASE WHEN $filterSql THEN
-     * x ELSE 0 END` so the filter participates consistently.
+     * `i.` for joined-shape derives). When $filter is non-null,
+     * every inner SUM/COUNT is wrapped in `CASE WHEN <predicate> THEN
+     * x ELSE 0 END` and the predicate's bindings ride along in the
+     * returned fragment.
      */
     public static function build(
         AggregateDefinition $definition,
         string $qualifier,
-        ?string $filterSql = null,
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
+        return FragmentSplicer::splice(
+            $filter,
+            static fn (?string $filterSql): string => self::buildInternal($definition, $qualifier, $filterSql),
+        );
+    }
+
+    private static function buildInternal(
+        AggregateDefinition $definition,
+        string $qualifier,
+        ?string $filterSql,
     ): string {
         $source = $definition->source;
         if ($source === null) {
