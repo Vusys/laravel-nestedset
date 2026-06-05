@@ -186,6 +186,38 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertFalse($reflection->invoke(null, 1.5, '1.500001'));
     }
 
+    public function test_value_equality_uses_string_compare_for_high_precision_decimals(): void
+    {
+        // DECIMAL(38, 10) columns return as driver-side strings.
+        // Two values differing past IEEE-754 precision (~15 significant
+        // digits) collapse to the same float under a `(float)` cast,
+        // which silently swallows aggregate change events on large
+        // SUM / AVG / variance columns. The decimal-string branch keeps
+        // the comparison digit-exact.
+        $reflection = new \ReflectionMethod(
+            ChangeFeedRecorder::class,
+            'valuesEqual',
+        );
+
+        $a = '12345678901234.5678901234';
+        $b = '12345678901234.5678901235';
+
+        $this->assertTrue($reflection->invoke(null, $a, $a));
+        $this->assertFalse($reflection->invoke(null, $a, $b));
+
+        // Driver-side decimal formatting normalises away: trailing
+        // zeros, surplus leading zeros, signed zero, optional `+` sign.
+        $this->assertTrue($reflection->invoke(null, '12.50', '12.5'));
+        $this->assertTrue($reflection->invoke(null, '012.500', '12.5'));
+        $this->assertTrue($reflection->invoke(null, '0.0000', '0'));
+        $this->assertTrue($reflection->invoke(null, '-0.00', '0.0'));
+        $this->assertTrue($reflection->invoke(null, '+12.5', '12.5'));
+
+        // Genuine fractional difference at a magnitude floats represent
+        // fine — still unequal.
+        $this->assertFalse($reflection->invoke(null, '1.25', '1.26'));
+    }
+
     public function test_event_does_not_fire_when_no_listener_is_registered(): void
     {
         // Fake the event WITHOUT registering a listener first. The
