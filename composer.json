@@ -50,6 +50,11 @@
         "rector:check": "rector process --dry-run",
         "pint": "pint",
         "pint:check": "pint --test",
+        "check": [
+            "@pint:check",
+            "@rector:check",
+            "@analyse"
+        ],
         "test": "phpunit",
         "test:coverage": "XDEBUG_MODE=coverage phpunit --coverage-text",
         "test:coverage-html": "XDEBUG_MODE=coverage phpunit --coverage-html=build/coverage",
@@ -67,6 +72,7 @@
         "infection": "infection --threads=max"
     },
     "scripts-descriptions": {
+        "check": "Run every non-test gate (Pint --test, Rector --dry-run, PHPStan level 9) in one go. Halts on the first failure. Approximates what CI's static-analysis lane runs — pass this locally before pushing.",
         "test:matrix": "Run the default test suite against each supported backend (sqlite, mysql, mariadb, pgsql) sequentially, halting on the first red cell. Requires running mysql/mariadb/pgsql servers matching the defaults in tests/TestCase.php::defineEnvironment(); sqlite needs nothing. See CONTRIBUTING.md.",
         "fuzz": "Run the seeded fuzzers (skipped by default). Configure via FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars; set FUZZER_SEEDS=random for non-deterministic exploration.",
         "infection": "Run mutation testing locally against the current backend (DB_CONNECTION). Defaults to all cores; pass `--threads=N` to limit. CI runs the same binary in a shard×backend matrix — see .github/workflows/infection.yml."
