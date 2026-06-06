@@ -496,7 +496,7 @@ final class RecomputeMaintenance
     private static function requireDefinitionFromSpec(ColumnSpec $spec): AggregateDefinition
     {
         $definition = $spec->definition;
-        if (!$definition instanceof \Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition) {
+        if (! $definition instanceof AggregateDefinition) {
             throw new AggregateConfigurationException(sprintf(
                 'RecomputeMaintenance: spec for %s aggregate "%s" is missing the AggregateDefinition reference '
                 .'required for backend-specific SQL emission.',
