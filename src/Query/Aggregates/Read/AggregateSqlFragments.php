@@ -9,9 +9,10 @@ use Illuminate\Database\ConnectionInterface;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
-use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\Filters\FragmentSplicer;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\Sql\DerivedAggregateFragments;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
@@ -41,61 +42,55 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  */
 final class AggregateSqlFragments
 {
-    public static function aggregateExpression(AggregateDefinition $definition, string $qualifier, ?Connection $connection = null): string
+    public static function aggregateExpression(AggregateDefinition $definition, string $qualifier, ?Connection $connection = null): BoundFragment
     {
         if ($definition->filter instanceof FilterPredicate) {
-            if (! $connection instanceof Connection) {
-                throw new AggregateConfigurationException(
-                    'Filtered aggregate expressions require a connection for safe value quoting.',
-                );
-            }
-
             return self::filteredAggregateExpression($connection, $definition, $qualifier, $definition->filter);
         }
 
         return match ($definition->function) {
-            AggregateFunction::Sum => sprintf(
+            AggregateFunction::Sum => new BoundFragment(sprintf(
                 'COALESCE(SUM(%s), 0)',
                 self::sumBody($definition, $qualifier),
-            ),
-            AggregateFunction::Count => $definition->source === null
+            )),
+            AggregateFunction::Count => new BoundFragment($definition->source === null
                 ? 'COUNT(*)'
-                : sprintf('COUNT(%s%s)', $qualifier, $definition->source),
-            AggregateFunction::Avg => sprintf(
+                : sprintf('COUNT(%s%s)', $qualifier, $definition->source)),
+            AggregateFunction::Avg => new BoundFragment(sprintf(
                 'AVG(%s%s)',
                 $qualifier,
                 self::requireSource($definition),
-            ),
-            AggregateFunction::Min => sprintf(
+            )),
+            AggregateFunction::Min => new BoundFragment(sprintf(
                 'MIN(%s%s)',
                 $qualifier,
                 self::requireSource($definition),
-            ),
-            AggregateFunction::Max => sprintf(
+            )),
+            AggregateFunction::Max => new BoundFragment(sprintf(
                 'MAX(%s%s)',
                 $qualifier,
                 self::requireSource($definition),
-            ),
+            )),
             AggregateFunction::Variance => VarianceSqlFragments::variance(
-                sumExpr: sprintf('SUM(%s%s)', $qualifier, self::requireSource($definition)),
-                sumSqExpr: sprintf('SUM(%s%s * %s%s)', $qualifier, self::requireSource($definition), $qualifier, $definition->source),
-                countExpr: sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition)),
+                sumExpr: BoundFragment::literal(sprintf('SUM(%s%s)', $qualifier, self::requireSource($definition))),
+                sumSqExpr: BoundFragment::literal(sprintf('SUM(%s%s * %s%s)', $qualifier, self::requireSource($definition), $qualifier, $definition->source)),
+                countExpr: BoundFragment::literal(sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition))),
                 sample: $definition->sample,
             ),
             AggregateFunction::Stddev => VarianceSqlFragments::stddev(
-                sumExpr: sprintf('SUM(%s%s)', $qualifier, self::requireSource($definition)),
-                sumSqExpr: sprintf('SUM(%s%s * %s%s)', $qualifier, self::requireSource($definition), $qualifier, $definition->source),
-                countExpr: sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition)),
+                sumExpr: BoundFragment::literal(sprintf('SUM(%s%s)', $qualifier, self::requireSource($definition))),
+                sumSqExpr: BoundFragment::literal(sprintf('SUM(%s%s * %s%s)', $qualifier, self::requireSource($definition), $qualifier, $definition->source)),
+                countExpr: BoundFragment::literal(sprintf('COUNT(%s%s)', $qualifier, self::requireSource($definition))),
                 sample: $definition->sample,
             ),
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
-            AggregateFunction::BitXor => sprintf(
+            AggregateFunction::BitXor => new BoundFragment(sprintf(
                 '%s(%s%s)',
                 self::bitwiseFunctionName($definition->function),
                 $qualifier,
                 self::requireSource($definition),
-            ),
+            )),
             AggregateFunction::WeightedAvg,
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
@@ -152,78 +147,81 @@ final class AggregateSqlFragments
     }
 
     private static function filteredAggregateExpression(
-        Connection $connection,
+        ?Connection $connection,
         AggregateDefinition $definition,
         string $qualifier,
         FilterPredicate $filter,
-    ): string {
-        $pred = self::filterPredicateSql($connection, $filter, $qualifier);
+    ): BoundFragment {
+        $predFragment = $filter->toFragment($qualifier);
 
-        return match ($definition->function) {
-            AggregateFunction::Sum => sprintf(
-                'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
-                $pred,
-                self::sumBody($definition, $qualifier),
-            ),
-            AggregateFunction::Count => $definition->source === null
-                ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', $pred)
-                : sprintf(
-                    'COUNT(CASE WHEN %s THEN %s%s ELSE NULL END)',
-                    $pred,
-                    $qualifier,
-                    $definition->source,
+        return FragmentSplicer::splice(
+            $predFragment,
+            static fn (?string $pred): string => match ($definition->function) {
+                AggregateFunction::Sum => sprintf(
+                    'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
+                    (string) $pred,
+                    self::sumBody($definition, $qualifier),
                 ),
-            AggregateFunction::Avg => sprintf(
-                'AVG(CASE WHEN %s THEN %s%s ELSE NULL END)',
-                $pred,
-                $qualifier,
-                self::requireSource($definition),
-            ),
-            AggregateFunction::Min => sprintf(
-                'MIN(CASE WHEN %s THEN %s%s ELSE NULL END)',
-                $pred,
-                $qualifier,
-                self::requireSource($definition),
-            ),
-            AggregateFunction::Max => sprintf(
-                'MAX(CASE WHEN %s THEN %s%s ELSE NULL END)',
-                $pred,
-                $qualifier,
-                self::requireSource($definition),
-            ),
-            AggregateFunction::Variance => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: false),
-            AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $qualifier, $pred, stddev: true),
-            AggregateFunction::BitOr,
-            AggregateFunction::BitAnd,
-            AggregateFunction::BitXor => sprintf(
-                '%s(CASE WHEN %s THEN %s%s ELSE NULL END)',
-                self::bitwiseFunctionName($definition->function),
-                $pred,
-                $qualifier,
-                self::requireSource($definition),
-            ),
-            AggregateFunction::WeightedAvg,
-            AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd,
-            AggregateFunction::GeometricMean,
-            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $qualifier, $pred),
-            AggregateFunction::Median,
-            AggregateFunction::Percentile => AggregateSqlEmitter::emitQuantileNativeExpression($definition, $qualifier, $pred),
-            AggregateFunction::DistinctCount,
-            AggregateFunction::StringAgg,
-            AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
-                $connection,
-                $definition,
-                $qualifier,
-                $pred,
-            ),
-            AggregateFunction::TopK => throw new AggregateConfigurationException(
-                'TopK aggregates are emitted as standalone correlated subqueries by '
-                .'FreshAggregateProjector::buildTopKSubquery() — they should never reach '
-                .'AggregateSqlFragments::filteredAggregateExpression().',
-            ),
-        };
+                AggregateFunction::Count => $definition->source === null
+                    ? sprintf('COUNT(CASE WHEN %s THEN 1 ELSE NULL END)', (string) $pred)
+                    : sprintf(
+                        'COUNT(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                        (string) $pred,
+                        $qualifier,
+                        $definition->source,
+                    ),
+                AggregateFunction::Avg => sprintf(
+                    'AVG(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                    (string) $pred,
+                    $qualifier,
+                    self::requireSource($definition),
+                ),
+                AggregateFunction::Min => sprintf(
+                    'MIN(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                    (string) $pred,
+                    $qualifier,
+                    self::requireSource($definition),
+                ),
+                AggregateFunction::Max => sprintf(
+                    'MAX(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                    (string) $pred,
+                    $qualifier,
+                    self::requireSource($definition),
+                ),
+                AggregateFunction::Variance => self::filteredVarianceFragmentInternal($definition, $qualifier, (string) $pred, stddev: false),
+                AggregateFunction::Stddev => self::filteredVarianceFragmentInternal($definition, $qualifier, (string) $pred, stddev: true),
+                AggregateFunction::BitOr,
+                AggregateFunction::BitAnd,
+                AggregateFunction::BitXor => sprintf(
+                    '%s(CASE WHEN %s THEN %s%s ELSE NULL END)',
+                    self::bitwiseFunctionName($definition->function),
+                    (string) $pred,
+                    $qualifier,
+                    self::requireSource($definition),
+                ),
+                AggregateFunction::WeightedAvg,
+                AggregateFunction::BoolOr,
+                AggregateFunction::BoolAnd,
+                AggregateFunction::GeometricMean,
+                AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $qualifier, BoundFragment::literal((string) $pred))->sql,
+                AggregateFunction::Median,
+                AggregateFunction::Percentile => AggregateSqlEmitter::emitQuantileNativeExpression($definition, $qualifier, BoundFragment::literal((string) $pred))->sql,
+                AggregateFunction::DistinctCount,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                    self::requireConnection($connection, $definition),
+                    $definition,
+                    $qualifier,
+                    BoundFragment::literal((string) $pred),
+                )->sql,
+                AggregateFunction::TopK => throw new AggregateConfigurationException(
+                    'TopK aggregates are emitted as standalone correlated subqueries by '
+                    .'FreshAggregateProjector::buildTopKSubquery() — they should never reach '
+                    .'AggregateSqlFragments::filteredAggregateExpression().',
+                ),
+            },
+        );
     }
 
     /**
@@ -233,7 +231,7 @@ final class AggregateSqlFragments
      * exactly the behaviour the unfiltered case relies on, just with
      * the CASE wrapper in front.
      */
-    private static function filteredVarianceFragment(
+    private static function filteredVarianceFragmentInternal(
         AggregateDefinition $definition,
         string $qualifier,
         string $pred,
@@ -242,38 +240,13 @@ final class AggregateSqlFragments
         $source = self::requireSource($definition);
         $sourceRef = $qualifier.$source;
 
-        $sumExpr = sprintf('SUM(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
-        $sumSqExpr = sprintf('SUM(CASE WHEN %s THEN %s * %s ELSE NULL END)', $pred, $sourceRef, $sourceRef);
-        $countExpr = sprintf('COUNT(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
+        $sumExpr = BoundFragment::literal(sprintf('SUM(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef));
+        $sumSqExpr = BoundFragment::literal(sprintf('SUM(CASE WHEN %s THEN %s * %s ELSE NULL END)', $pred, $sourceRef, $sourceRef));
+        $countExpr = BoundFragment::literal(sprintf('COUNT(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef));
 
-        return $stddev
+        return ($stddev
             ? VarianceSqlFragments::stddev($sumExpr, $sumSqExpr, $countExpr, $definition->sample)
-            : VarianceSqlFragments::variance($sumExpr, $sumSqExpr, $countExpr, $definition->sample);
-    }
-
-    public static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string
-    {
-        return match ($filter->getKind()) {
-            FilterPredicateKind::Equality => implode(' AND ', array_map(
-                static function (string $col, mixed $value) use ($connection, $qualifier): string {
-                    if ($value === null) {
-                        return "{$qualifier}{$col} IS NULL";
-                    }
-
-                    return "{$qualifier}{$col} = ".FilterValueQuoter::quote($connection, $value);
-                },
-                array_keys($filter->getConditions()),
-                array_values($filter->getConditions()),
-            )),
-            FilterPredicateKind::NotNull => sprintf(
-                '%s%s IS NOT NULL',
-                $qualifier,
-                (string) $filter->getNotNullColumn(),
-            ),
-            FilterPredicateKind::Raw => $filter->getRawSql() ?? throw new AggregateConfigurationException(
-                'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
-            ),
-        };
+            : VarianceSqlFragments::variance($sumExpr, $sumSqExpr, $countExpr, $definition->sample))->sql;
     }
 
     /**
@@ -294,6 +267,8 @@ final class AggregateSqlFragments
         string $innerQualifier,
         ?Connection $connection = null,
     ): string {
+        $rawFragment = BoundFragment::literal($rawFilter);
+
         return match ($definition->function) {
             AggregateFunction::Sum => sprintf(
                 'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
@@ -326,8 +301,8 @@ final class AggregateSqlFragments
                 $innerQualifier,
                 self::requireSource($definition),
             ),
-            AggregateFunction::Variance => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: false),
-            AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerQualifier, $rawFilter, stddev: true),
+            AggregateFunction::Variance => self::filteredVarianceFragmentInternal($definition, $innerQualifier, $rawFilter, stddev: false),
+            AggregateFunction::Stddev => self::filteredVarianceFragmentInternal($definition, $innerQualifier, $rawFilter, stddev: true),
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
             AggregateFunction::BitXor => sprintf(
@@ -341,7 +316,7 @@ final class AggregateSqlFragments
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
-            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFilter),
+            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFragment)->sql,
             AggregateFunction::Median,
             AggregateFunction::Percentile => throw new \LogicException(
                 'Median/Percentile cannot appear in inlineRawFilterExpression() — they are pre-extracted as correlated subqueries.',
@@ -353,8 +328,8 @@ final class AggregateSqlFragments
                 self::requireConnection($connection, $definition),
                 $definition,
                 $innerQualifier,
-                $rawFilter,
-            ),
+                $rawFragment,
+            )->sql,
             AggregateFunction::TopK => throw new \LogicException(
                 'TopK cannot appear in inlineRawFilterExpression() — it is pre-extracted as a correlated subquery.',
             ),
@@ -533,8 +508,8 @@ final class AggregateSqlFragments
                 $innerAlias,
                 self::requireSource($definition),
             ),
-            AggregateFunction::Variance => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: false),
-            AggregateFunction::Stddev => self::filteredVarianceFragment($definition, $innerAlias.'.', $rawSql, stddev: true),
+            AggregateFunction::Variance => self::filteredVarianceFragmentInternal($definition, $innerAlias.'.', $rawSql, stddev: false),
+            AggregateFunction::Stddev => self::filteredVarianceFragmentInternal($definition, $innerAlias.'.', $rawSql, stddev: true),
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
             AggregateFunction::BitXor => sprintf(
@@ -548,7 +523,7 @@ final class AggregateSqlFragments
             AggregateFunction::BoolOr,
             AggregateFunction::BoolAnd,
             AggregateFunction::GeometricMean,
-            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerAlias.'.', $rawSql),
+            AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerAlias.'.', BoundFragment::literal($rawSql))->sql,
             AggregateFunction::Median,
             AggregateFunction::Percentile => throw new \LogicException(
                 'Median/Percentile cannot appear in correlatedRawFilterExpression() — they are pre-extracted as correlated subqueries.',
@@ -560,8 +535,8 @@ final class AggregateSqlFragments
                 self::requireConnection($connection, $definition),
                 $definition,
                 $innerAlias.'.',
-                $rawSql,
-            ),
+                BoundFragment::literal($rawSql),
+            )->sql,
             AggregateFunction::TopK => throw new \LogicException(
                 'TopK cannot appear in correlatedRawFilterExpression() — it is pre-extracted as a correlated subquery.',
             ),
@@ -618,21 +593,21 @@ final class AggregateSqlFragments
         array $scopeCols,
         bool $rawFilterContext = false,
         ?Connection $connection = null,
-    ): string {
+    ): BoundFragment {
         if ($definition->filter instanceof FilterPredicate
             && $definition->filter->getKind() === FilterPredicateKind::Raw) {
             if ($rawFilterContext) {
-                return self::inlineRawFilterExpression(
+                return new BoundFragment(self::inlineRawFilterExpression(
                     $definition,
                     $definition->filter->getRawSql() ?? throw new AggregateConfigurationException(
                         'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
                     ),
                     $innerQualifier,
                     $connection,
-                );
+                ));
             }
 
-            return self::correlatedRawFilterExpression(
+            return new BoundFragment(self::correlatedRawFilterExpression(
                 $definition,
                 $outerAlias,
                 $table,
@@ -640,7 +615,7 @@ final class AggregateSqlFragments
                 $rgtCol,
                 $scopeCols,
                 $connection,
-            );
+            ));
         }
 
         return self::aggregateExpression($definition, $innerQualifier, $connection);
@@ -762,9 +737,9 @@ final class AggregateSqlFragments
         string $tableQualifier,
         ?string $softDeletedColumn = null,
         ?Connection $connection = null,
-    ): string {
+    ): BoundFragment {
         if (! $definition->inclusive) {
-            return match ($definition->function) {
+            return new BoundFragment(match ($definition->function) {
                 AggregateFunction::Sum,
                 AggregateFunction::Count,
                 AggregateFunction::DistinctCount => '0',
@@ -787,18 +762,13 @@ final class AggregateSqlFragments
                 AggregateFunction::Median,
                 AggregateFunction::Percentile,
                 AggregateFunction::TopK => 'NULL',
-            };
+            });
         }
 
         if ($definition->filter instanceof FilterPredicate) {
-            if (! $connection instanceof Connection) {
-                throw new AggregateConfigurationException(
-                    'Filtered aggregate expressions require a connection for safe value quoting.',
-                );
-            }
-            $inline = self::filteredLeafInlineExpression($connection, $definition, $tableQualifier, $definition->filter);
+            $inlineFragment = self::filteredLeafInlineExpression($connection, $definition, $tableQualifier, $definition->filter);
         } else {
-            $inline = match ($definition->function) {
+            $inlineFragment = new BoundFragment(match ($definition->function) {
                 AggregateFunction::Sum => sprintf(
                     'COALESCE(%s, 0)',
                     self::sumBody($definition, $tableQualifier),
@@ -848,17 +818,17 @@ final class AggregateSqlFragments
                     self::requireConnection($connection, $definition),
                     $definition,
                     $tableQualifier,
-                ),
+                )->sql,
                 AggregateFunction::TopK => AggregateSqlEmitter::leafTopK(
                     self::requireConnection($connection, $definition),
                     $definition,
                     $tableQualifier,
-                ),
-            };
+                )->sql,
+            });
         }
 
         if ($softDeletedColumn === null) {
-            return $inline;
+            return $inlineFragment;
         }
 
         // A trashed leaf contributes nothing to its own inclusive aggregate
@@ -891,104 +861,110 @@ final class AggregateSqlFragments
             AggregateFunction::TopK => 'NULL',
         };
 
-        return sprintf(
-            '(CASE WHEN %s%s IS NULL THEN %s ELSE %s END)',
-            $tableQualifier,
-            $softDeletedColumn,
-            $inline,
-            $emptyResult,
+        return new BoundFragment(
+            sprintf(
+                '(CASE WHEN %s%s IS NULL THEN %s ELSE %s END)',
+                $tableQualifier,
+                $softDeletedColumn,
+                $inlineFragment->sql,
+                $emptyResult,
+            ),
+            $inlineFragment->bindings,
         );
     }
 
     private static function filteredLeafInlineExpression(
-        Connection $connection,
+        ?Connection $connection,
         AggregateDefinition $definition,
         string $tableQualifier,
         FilterPredicate $filter,
-    ): string {
-        $pred = self::filterPredicateSql($connection, $filter, $tableQualifier);
+    ): BoundFragment {
+        $predFragment = $filter->toFragment($tableQualifier);
 
-        return match ($definition->function) {
-            AggregateFunction::Sum => sprintf(
-                'COALESCE(CASE WHEN %s THEN %s ELSE 0 END, 0)',
-                $pred,
-                self::sumBody($definition, $tableQualifier),
-            ),
-            AggregateFunction::Count => $definition->source === null
-                ? sprintf('CASE WHEN %s THEN 1 ELSE 0 END', $pred)
-                : sprintf(
-                    'CASE WHEN %s AND %s%s IS NOT NULL THEN 1 ELSE 0 END',
-                    $pred,
-                    $tableQualifier,
-                    $definition->source,
+        return FragmentSplicer::splice(
+            $predFragment,
+            static fn (?string $pred): string => match ($definition->function) {
+                AggregateFunction::Sum => sprintf(
+                    'COALESCE(CASE WHEN %s THEN %s ELSE 0 END, 0)',
+                    (string) $pred,
+                    self::sumBody($definition, $tableQualifier),
                 ),
-            AggregateFunction::Avg,
-            AggregateFunction::Min,
-            AggregateFunction::Max,
-            AggregateFunction::BitOr,
-            AggregateFunction::BitAnd,
-            AggregateFunction::BitXor => sprintf(
-                'CASE WHEN %s THEN %s%s ELSE NULL END',
-                $pred,
-                $tableQualifier,
-                self::requireSource($definition),
-            ),
-            // See {@see leafInlineExpression()} for the unfiltered counterpart.
-            // The filter wraps the leaf inline: when the predicate is false,
-            // the leaf contributes nothing → NULL across all four functions.
-            AggregateFunction::Variance, AggregateFunction::Stddev => sprintf(
-                'CASE WHEN %s AND %s%s IS NOT NULL THEN %s ELSE NULL END',
-                $pred,
-                $tableQualifier,
-                self::requireSource($definition),
-                $definition->sample ? 'NULL' : '0',
-            ),
-            AggregateFunction::WeightedAvg => sprintf(
-                'CASE WHEN %s THEN %s ELSE NULL END',
-                $pred,
-                self::leafInlineWeightedAvg($definition, $tableQualifier),
-            ),
-            AggregateFunction::BoolOr,
-            AggregateFunction::BoolAnd => sprintf(
-                'CASE WHEN %s THEN %s ELSE NULL END',
-                $pred,
-                self::leafInlineBool($definition, $tableQualifier),
-            ),
-            AggregateFunction::GeometricMean => sprintf(
-                'CASE WHEN (%s) AND %s > 0 THEN %s ELSE NULL END',
-                $pred,
-                $tableQualifier.self::requireSource($definition),
-                $tableQualifier.self::requireSource($definition),
-            ),
-            AggregateFunction::HarmonicMean => sprintf(
-                'CASE WHEN (%s) AND %s <> 0 THEN %s ELSE NULL END',
-                $pred,
-                $tableQualifier.self::requireSource($definition),
-                $tableQualifier.self::requireSource($definition),
-            ),
-            AggregateFunction::Median,
-            AggregateFunction::Percentile => sprintf(
-                'CASE WHEN (%s) THEN %s%s ELSE NULL END',
-                $pred,
-                $tableQualifier,
-                self::requireSource($definition),
-            ),
-            AggregateFunction::DistinctCount,
-            AggregateFunction::StringAgg,
-            AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
-                $connection,
-                $definition,
-                $tableQualifier,
-                $pred,
-            ),
-            AggregateFunction::TopK => AggregateSqlEmitter::leafTopK(
-                $connection,
-                $definition,
-                $tableQualifier,
-                $pred,
-            ),
-        };
+                AggregateFunction::Count => $definition->source === null
+                    ? sprintf('CASE WHEN %s THEN 1 ELSE 0 END', (string) $pred)
+                    : sprintf(
+                        'CASE WHEN %s AND %s%s IS NOT NULL THEN 1 ELSE 0 END',
+                        (string) $pred,
+                        $tableQualifier,
+                        $definition->source,
+                    ),
+                AggregateFunction::Avg,
+                AggregateFunction::Min,
+                AggregateFunction::Max,
+                AggregateFunction::BitOr,
+                AggregateFunction::BitAnd,
+                AggregateFunction::BitXor => sprintf(
+                    'CASE WHEN %s THEN %s%s ELSE NULL END',
+                    (string) $pred,
+                    $tableQualifier,
+                    self::requireSource($definition),
+                ),
+                // See {@see leafInlineExpression()} for the unfiltered counterpart.
+                // The filter wraps the leaf inline: when the predicate is false,
+                // the leaf contributes nothing → NULL across all four functions.
+                AggregateFunction::Variance, AggregateFunction::Stddev => sprintf(
+                    'CASE WHEN %s AND %s%s IS NOT NULL THEN %s ELSE NULL END',
+                    (string) $pred,
+                    $tableQualifier,
+                    self::requireSource($definition),
+                    $definition->sample ? 'NULL' : '0',
+                ),
+                AggregateFunction::WeightedAvg => sprintf(
+                    'CASE WHEN %s THEN %s ELSE NULL END',
+                    (string) $pred,
+                    self::leafInlineWeightedAvg($definition, $tableQualifier),
+                ),
+                AggregateFunction::BoolOr,
+                AggregateFunction::BoolAnd => sprintf(
+                    'CASE WHEN %s THEN %s ELSE NULL END',
+                    (string) $pred,
+                    self::leafInlineBool($definition, $tableQualifier),
+                ),
+                AggregateFunction::GeometricMean => sprintf(
+                    'CASE WHEN (%s) AND %s > 0 THEN %s ELSE NULL END',
+                    (string) $pred,
+                    $tableQualifier.self::requireSource($definition),
+                    $tableQualifier.self::requireSource($definition),
+                ),
+                AggregateFunction::HarmonicMean => sprintf(
+                    'CASE WHEN (%s) AND %s <> 0 THEN %s ELSE NULL END',
+                    (string) $pred,
+                    $tableQualifier.self::requireSource($definition),
+                    $tableQualifier.self::requireSource($definition),
+                ),
+                AggregateFunction::Median,
+                AggregateFunction::Percentile => sprintf(
+                    'CASE WHEN (%s) THEN %s%s ELSE NULL END',
+                    (string) $pred,
+                    $tableQualifier,
+                    self::requireSource($definition),
+                ),
+                AggregateFunction::DistinctCount,
+                AggregateFunction::StringAgg,
+                AggregateFunction::JsonAgg,
+                AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::leafInline(
+                    self::requireConnection($connection, $definition),
+                    $definition,
+                    $tableQualifier,
+                    BoundFragment::literal((string) $pred),
+                )->sql,
+                AggregateFunction::TopK => AggregateSqlEmitter::leafTopK(
+                    self::requireConnection($connection, $definition),
+                    $definition,
+                    $tableQualifier,
+                    BoundFragment::literal((string) $pred),
+                )->sql,
+            },
+        );
     }
 
     /**
@@ -1007,20 +983,24 @@ final class AggregateSqlFragments
         string $tableQualifier,
         string $lftCol,
         string $rgtCol,
-        string $joinExpr,
+        string|BoundFragment $joinExpr,
         ?string $softDeletedColumn = null,
         ?Connection $connection = null,
-    ): string {
-        $inline = self::leafInlineExpression($definition, $tableQualifier, $softDeletedColumn, $connection);
+    ): BoundFragment {
+        $inlineFragment = self::leafInlineExpression($definition, $tableQualifier, $softDeletedColumn, $connection);
+        $joinFragment = $joinExpr instanceof BoundFragment ? $joinExpr : new BoundFragment($joinExpr);
 
-        return sprintf(
-            'CASE WHEN %s%s = %s%s + 1 THEN %s ELSE %s END',
-            $tableQualifier,
-            $rgtCol,
-            $tableQualifier,
-            $lftCol,
-            $inline,
-            $joinExpr,
+        return new BoundFragment(
+            sprintf(
+                'CASE WHEN %s%s = %s%s + 1 THEN %s ELSE %s END',
+                $tableQualifier,
+                $rgtCol,
+                $tableQualifier,
+                $lftCol,
+                $inlineFragment->sql,
+                $joinFragment->sql,
+            ),
+            [...$inlineFragment->bindings, ...$joinFragment->bindings],
         );
     }
 

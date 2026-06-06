@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Aggregates\Strategy;
 
 use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Sql\VarianceSqlFragments;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\TreeExpression;
@@ -215,15 +216,15 @@ final class DeltaMaintenance
         $clauses = [];
 
         foreach ($variances as $displayCol => $spec) {
-            $sumExpression = self::columnPlusDelta($spec['sum'], $deltas[$spec['sum']] ?? 0);
-            $sumSqExpression = self::columnPlusDelta($spec['sum_sq'], $deltas[$spec['sum_sq']] ?? 0);
-            $countExpression = self::columnPlusDelta($spec['count'], $deltas[$spec['count']] ?? 0);
+            $sumExpression = BoundFragment::literal(self::columnPlusDelta($spec['sum'], $deltas[$spec['sum']] ?? 0));
+            $sumSqExpression = BoundFragment::literal(self::columnPlusDelta($spec['sum_sq'], $deltas[$spec['sum_sq']] ?? 0));
+            $countExpression = BoundFragment::literal(self::columnPlusDelta($spec['count'], $deltas[$spec['count']] ?? 0));
 
-            $clauses[$displayCol] = new TreeExpression(
-                $spec['function'] === AggregateFunction::Stddev
-                    ? VarianceSqlFragments::stddev($sumExpression, $sumSqExpression, $countExpression, $spec['sample'])
-                    : VarianceSqlFragments::variance($sumExpression, $sumSqExpression, $countExpression, $spec['sample']),
-            );
+            $fragment = $spec['function'] === AggregateFunction::Stddev
+                ? VarianceSqlFragments::stddev($sumExpression, $sumSqExpression, $countExpression, $spec['sample'])
+                : VarianceSqlFragments::variance($sumExpression, $sumSqExpression, $countExpression, $spec['sample']);
+
+            $clauses[$displayCol] = new TreeExpression($fragment->sql);
         }
 
         return $clauses;

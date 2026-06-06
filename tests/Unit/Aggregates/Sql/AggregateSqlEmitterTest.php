@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Tests\Support\DriverFakedConnection;
 
@@ -52,9 +53,10 @@ final class AggregateSqlEmitterTest extends TestCase
     #[DataProvider('emitCases')]
     public function test_emit(string $driver, Closure $makeDefinition, ?string $filterSql, string $expected): void
     {
-        $sql = AggregateSqlEmitter::emit($this->fakeDriver($driver), $makeDefinition(), 'i.', $filterSql);
+        $filterFragment = $filterSql === null ? null : BoundFragment::literal($filterSql);
+        $fragment = AggregateSqlEmitter::emit($this->fakeDriver($driver), $makeDefinition(), 'i.', $filterFragment);
 
-        $this->assertSame($expected, $sql);
+        $this->assertSame($expected, $fragment->sql);
     }
 
     /**
@@ -184,9 +186,9 @@ final class AggregateSqlEmitterTest extends TestCase
     #[DataProvider('leafInlineCases')]
     public function test_leaf_inline(string $driver, Closure $makeDefinition, string $expected): void
     {
-        $sql = AggregateSqlEmitter::leafInline($this->fakeDriver($driver), $makeDefinition(), 't.');
+        $fragment = AggregateSqlEmitter::leafInline($this->fakeDriver($driver), $makeDefinition(), 't.');
 
-        $this->assertSame($expected, $sql);
+        $this->assertSame($expected, $fragment->sql);
     }
 
     /**

@@ -8,7 +8,8 @@ use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
-use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
+use Vusys\NestedSet\Aggregates\Filters\FragmentSplicer;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Query\Aggregates\Read\AggregateSqlFragments;
@@ -29,7 +30,7 @@ use Vusys\NestedSet\Query\Aggregates\Read\AggregateSqlFragments;
  * No values are injected through these helpers — only column identifiers
  * the package owns end-to-end (validated against the model's source
  * columns at registry build time) and user-supplied separator strings
- * which are quoted via {@see FilterValueQuoter}.
+ * which are quoted via {@see Connection::escape()}.
  */
 final class AggregateSqlEmitter
 {
@@ -38,28 +39,32 @@ final class AggregateSqlEmitter
      * the outer node) and returns one scalar value per row.
      *
      * `$sourceQualifier` is the SQL prefix the inner table is exposed
-     * under (`'i.'`, `'inner_a.'`, `'d.'`, etc.). `$filterSql` is the
-     * already-built WHERE-style predicate when the aggregate is filtered;
-     * `null` for the unfiltered fast path.
+     * under (`'i.'`, `'inner_a.'`, `'d.'`, etc.). `$filter` is the
+     * already-built predicate fragment when the aggregate is filtered;
+     * `null` for the unfiltered fast path. Filter bindings ride through
+     * to the returned fragment via the splicer.
      */
     public static function emit(
         Connection $connection,
         AggregateDefinition $def,
         string $sourceQualifier,
-        ?string $filterSql = null,
-    ): string {
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
         $driver = $connection->getDriverName();
 
-        return match ($def->function) {
-            AggregateFunction::DistinctCount => self::emitDistinctCount($def, $sourceQualifier, $filterSql),
-            AggregateFunction::StringAgg => self::emitStringAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
-            AggregateFunction::JsonAgg => self::emitJsonAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
-            AggregateFunction::JsonObjectAgg => self::emitJsonObjectAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
-            default => throw new AggregateConfigurationException(sprintf(
-                'AggregateSqlEmitter::emit() does not handle %s — only the collection-aggregate kinds belong here.',
-                $def->function->value,
-            )),
-        };
+        return FragmentSplicer::splice(
+            $filter,
+            static fn (?string $filterSql): string => match ($def->function) {
+                AggregateFunction::DistinctCount => self::emitDistinctCount($def, $sourceQualifier, $filterSql),
+                AggregateFunction::StringAgg => self::emitStringAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
+                AggregateFunction::JsonAgg => self::emitJsonAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
+                AggregateFunction::JsonObjectAgg => self::emitJsonObjectAgg($connection, $driver, $def, $sourceQualifier, $filterSql),
+                default => throw new AggregateConfigurationException(sprintf(
+                    'AggregateSqlEmitter::emit() does not handle %s — only the collection-aggregate kinds belong here.',
+                    $def->function->value,
+                )),
+            },
+        );
     }
 
     /**
@@ -76,10 +81,10 @@ final class AggregateSqlEmitter
         Connection $connection,
         AggregateDefinition $def,
         string $tableQualifier,
-        ?string $filterSql = null,
-    ): string {
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
         if (! $def->inclusive) {
-            return match ($def->function) {
+            return new BoundFragment(match ($def->function) {
                 AggregateFunction::DistinctCount => '0',
                 AggregateFunction::StringAgg,
                 AggregateFunction::JsonAgg,
@@ -88,21 +93,24 @@ final class AggregateSqlEmitter
                     'AggregateSqlEmitter::leafInline() does not handle %s.',
                     $def->function->value,
                 )),
-            };
+            });
         }
 
         $driver = $connection->getDriverName();
 
-        return match ($def->function) {
-            AggregateFunction::DistinctCount => self::leafDistinctCount($def, $tableQualifier, $filterSql),
-            AggregateFunction::StringAgg => self::leafStringAgg($driver, $def, $tableQualifier, $filterSql),
-            AggregateFunction::JsonAgg => self::leafJsonAgg($connection, $driver, $def, $tableQualifier, $filterSql),
-            AggregateFunction::JsonObjectAgg => self::leafJsonObjectAgg($driver, $def, $tableQualifier, $filterSql),
-            default => throw new AggregateConfigurationException(sprintf(
-                'AggregateSqlEmitter::leafInline() does not handle %s.',
-                $def->function->value,
-            )),
-        };
+        return FragmentSplicer::splice(
+            $filter,
+            static fn (?string $filterSql): string => match ($def->function) {
+                AggregateFunction::DistinctCount => self::leafDistinctCount($def, $tableQualifier, $filterSql),
+                AggregateFunction::StringAgg => self::leafStringAgg($driver, $def, $tableQualifier, $filterSql),
+                AggregateFunction::JsonAgg => self::leafJsonAgg($connection, $driver, $def, $tableQualifier, $filterSql),
+                AggregateFunction::JsonObjectAgg => self::leafJsonObjectAgg($driver, $def, $tableQualifier, $filterSql),
+                default => throw new AggregateConfigurationException(sprintf(
+                    'AggregateSqlEmitter::leafInline() does not handle %s.',
+                    $def->function->value,
+                )),
+            },
+        );
     }
 
     private static function emitDistinctCount(AggregateDefinition $def, string $qualifier, ?string $filterSql): string
@@ -465,17 +473,22 @@ final class AggregateSqlEmitter
     public static function emitQuantileNativeExpression(
         AggregateDefinition $def,
         string $qualifier,
-        ?string $filterSql = null,
-    ): string {
-        $source = self::requireSource($def);
-        $p = number_format($def->percentilePoint, 10, '.', '');
-        $expr = "PERCENTILE_CONT({$p}) WITHIN GROUP (ORDER BY {$qualifier}{$source})";
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
+        return FragmentSplicer::splice(
+            $filter,
+            static function (?string $filterSql) use ($def, $qualifier): string {
+                $source = self::requireSource($def);
+                $p = number_format($def->percentilePoint, 10, '.', '');
+                $expr = "PERCENTILE_CONT({$p}) WITHIN GROUP (ORDER BY {$qualifier}{$source})";
 
-        if ($filterSql !== null) {
-            $expr .= " FILTER (WHERE {$filterSql})";
-        }
+                if ($filterSql !== null) {
+                    $expr .= " FILTER (WHERE {$filterSql})";
+                }
 
-        return $expr;
+                return $expr;
+            },
+        );
     }
 
     /**
@@ -499,35 +512,40 @@ final class AggregateSqlEmitter
         AggregateDefinition $def,
         string $innerFromClause,
         string $qualifier = 'd.',
-        ?string $filterSql = null,
-    ): string {
-        $source = self::requireSource($def);
-        $p = number_format($def->percentilePoint, 10, '.', '');
-        $srcRef = $qualifier.$source;
-        $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
-        // Exclude NULL source rows from the windowed set so ROW_NUMBER /
-        // COUNT positions match PG PERCENTILE_CONT semantics (ordered-set
-        // aggregates skip NULL inputs).
-        $filterClause .= " AND ({$srcRef} IS NOT NULL)";
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
+        return FragmentSplicer::splice(
+            $filter,
+            static function (?string $filterSql) use ($def, $innerFromClause, $qualifier): string {
+                $source = self::requireSource($def);
+                $p = number_format($def->percentilePoint, 10, '.', '');
+                $srcRef = $qualifier.$source;
+                $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
+                // Exclude NULL source rows from the windowed set so ROW_NUMBER /
+                // COUNT positions match PG PERCENTILE_CONT semantics (ordered-set
+                // aggregates skip NULL inputs).
+                $filterClause .= " AND ({$srcRef} IS NOT NULL)";
 
-        $innerSelect =
-            "SELECT {$srcRef} AS _src, "
-            ."ROW_NUMBER() OVER (ORDER BY {$srcRef}) AS _rn, "
-            .'COUNT(*) OVER () - 1 AS _cnt '
-            .$innerFromClause.$filterClause;
+                $innerSelect =
+                    "SELECT {$srcRef} AS _src, "
+                    ."ROW_NUMBER() OVER (ORDER BY {$srcRef}) AS _rn, "
+                    .'COUNT(*) OVER () - 1 AS _cnt '
+                    .$innerFromClause.$filterClause;
 
-        // coeff_low  = 1 - frac = 1 - (p*_cnt - FLOOR(p*_cnt))
-        //            = 1 - p*_cnt + FLOOR(p*_cnt)   (constant 1.0 keeps numeric type)
-        // coeff_high = frac = p*_cnt - FLOOR(p*_cnt)
-        // low_rn  = FLOOR(p*_cnt) + 1
-        // high_rn = CEIL(p*_cnt)  + 1
-        $formula =
-            "(1.0 - {$p} * MAX(_q._cnt) + FLOOR({$p} * MAX(_q._cnt)))"
-            .' * MAX(CASE WHEN _q._rn = FLOOR('.$p.' * _q._cnt) + 1 THEN _q._src END)'
-            ." + ({$p} * MAX(_q._cnt) - FLOOR({$p} * MAX(_q._cnt)))"
-            .' * MAX(CASE WHEN _q._rn = CEIL('.$p.' * _q._cnt) + 1 THEN _q._src END)';
+                // coeff_low  = 1 - frac = 1 - (p*_cnt - FLOOR(p*_cnt))
+                //            = 1 - p*_cnt + FLOOR(p*_cnt)   (constant 1.0 keeps numeric type)
+                // coeff_high = frac = p*_cnt - FLOOR(p*_cnt)
+                // low_rn  = FLOOR(p*_cnt) + 1
+                // high_rn = CEIL(p*_cnt)  + 1
+                $formula =
+                    "(1.0 - {$p} * MAX(_q._cnt) + FLOOR({$p} * MAX(_q._cnt)))"
+                    .' * MAX(CASE WHEN _q._rn = FLOOR('.$p.' * _q._cnt) + 1 THEN _q._src END)'
+                    ." + ({$p} * MAX(_q._cnt) - FLOOR({$p} * MAX(_q._cnt)))"
+                    .' * MAX(CASE WHEN _q._rn = CEIL('.$p.' * _q._cnt) + 1 THEN _q._src END)';
 
-        return "SELECT {$formula} FROM ({$innerSelect}) _q";
+                return "SELECT {$formula} FROM ({$innerSelect}) _q";
+            },
+        );
     }
 
     /**
@@ -557,32 +575,37 @@ final class AggregateSqlEmitter
         AggregateDefinition $def,
         string $innerFromClause,
         string $qualifier = 'd.',
-        ?string $filterSql = null,
-    ): string {
-        $source = self::requireSource($def);
-        $p = number_format($def->percentilePoint, 10, '.', '');
-        $srcRef = $qualifier.$source;
-        $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
-        $notNullClause = " AND {$srcRef} IS NOT NULL";
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
+        return FragmentSplicer::splice(
+            $filter,
+            static function (?string $filterSql) use ($def, $innerFromClause, $qualifier): string {
+                $source = self::requireSource($def);
+                $p = number_format($def->percentilePoint, 10, '.', '');
+                $srcRef = $qualifier.$source;
+                $filterClause = $filterSql !== null ? " AND ({$filterSql})" : '';
+                $notNullClause = " AND {$srcRef} IS NOT NULL";
 
-        $cnt = "(SELECT JSON_LENGTH(JSON_ARRAYAGG({$srcRef})) {$innerFromClause}{$notNullClause}{$filterClause})";
-        $arr = "(SELECT JSON_ARRAYAGG({$srcRef} ORDER BY {$srcRef}) {$innerFromClause}{$notNullClause}{$filterClause})";
+                $cnt = "(SELECT JSON_LENGTH(JSON_ARRAYAGG({$srcRef})) {$innerFromClause}{$notNullClause}{$filterClause})";
+                $arr = "(SELECT JSON_ARRAYAGG({$srcRef} ORDER BY {$srcRef}) {$innerFromClause}{$notNullClause}{$filterClause})";
 
-        $pos = "{$p} * ({$cnt} - 1)";
-        $valAt = static fn (string $idx): string => sprintf(
-            "CAST(JSON_VALUE(%s, CONCAT('$[', %s, ']')) AS DECIMAL(30, 10))",
-            $arr,
-            $idx,
+                $pos = "{$p} * ({$cnt} - 1)";
+                $valAt = static fn (string $idx): string => sprintf(
+                    "CAST(JSON_VALUE(%s, CONCAT('$[', %s, ']')) AS DECIMAL(30, 10))",
+                    $arr,
+                    $idx,
+                );
+
+                // Equivalent to (1 - frac) * v_low + frac * v_high with
+                // frac = pos - FLOOR(pos), expanded so MariaDB sees pos in
+                // the same arithmetic form each side.
+                $formula =
+                    "(1.0 - {$pos} + FLOOR({$pos})) * ".$valAt("FLOOR({$pos})")
+                    ." + ({$pos} - FLOOR({$pos})) * ".$valAt("CEIL({$pos})");
+
+                return "SELECT {$formula}";
+            },
         );
-
-        // Equivalent to (1 - frac) * v_low + frac * v_high with
-        // frac = pos - FLOOR(pos), expanded so MariaDB sees pos in
-        // the same arithmetic form each side.
-        $formula =
-            "(1.0 - {$pos} + FLOOR({$pos})) * ".$valAt("FLOOR({$pos})")
-            ." + ({$pos} - FLOOR({$pos})) * ".$valAt("CEIL({$pos})");
-
-        return "SELECT {$formula}";
     }
 
     /**
@@ -652,7 +675,26 @@ final class AggregateSqlEmitter
         AggregateDefinition $def,
         string $table,
         string $boundsAndScope,
-        ?string $filterSql = null,
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
+        return FragmentSplicer::splice(
+            $filter,
+            static fn (?string $filterSql): string => self::emitTopKCorrelatedSubqueryInternal(
+                $connection,
+                $def,
+                $table,
+                $boundsAndScope,
+                $filterSql,
+            ),
+        );
+    }
+
+    private static function emitTopKCorrelatedSubqueryInternal(
+        Connection $connection,
+        AggregateDefinition $def,
+        string $table,
+        string $boundsAndScope,
+        ?string $filterSql,
     ): string {
         if ($def->function !== AggregateFunction::TopK) {
             throw new AggregateConfigurationException(sprintf(
@@ -728,41 +770,50 @@ final class AggregateSqlEmitter
      * the inclusive form yields a single-element JSON array; exclusive
      * yields NULL.
      */
-    public static function leafTopK(Connection $connection, AggregateDefinition $def, string $tableQualifier, ?string $filterSql = null): string
-    {
+    public static function leafTopK(
+        Connection $connection,
+        AggregateDefinition $def,
+        string $tableQualifier,
+        ?BoundFragment $filter = null,
+    ): BoundFragment {
         if (! $def->inclusive) {
-            return 'NULL';
+            return new BoundFragment('NULL');
         }
 
-        $source = self::requireSource($def);
-        $by = $def->topKBy ?? throw new AggregateConfigurationException(sprintf(
-            'TopK "%s" is missing its `by` column.',
-            $def->column,
-        ));
+        return FragmentSplicer::splice(
+            $filter,
+            static function (?string $filterSql) use ($connection, $def, $tableQualifier): string {
+                $source = self::requireSource($def);
+                $by = $def->topKBy ?? throw new AggregateConfigurationException(sprintf(
+                    'TopK "%s" is missing its `by` column.',
+                    $def->column,
+                ));
 
-        $srcRef = $tableQualifier.$source;
-        $byRef = $tableQualifier.$by;
+                $srcRef = $tableQualifier.$source;
+                $byRef = $tableQualifier.$by;
 
-        $driver = $connection->getDriverName();
-        $singleElement = match ($driver) {
-            'pgsql' => "JSON_BUILD_ARRAY(JSON_BUILD_ARRAY({$srcRef}, {$byRef}))",
-            'mysql', 'mariadb', 'sqlite' => "JSON_ARRAY(JSON_ARRAY({$srcRef}, {$byRef}))",
-            default => throw self::unsupportedDriver('topK leaf inline', $driver),
-        };
+                $driver = $connection->getDriverName();
+                $singleElement = match ($driver) {
+                    'pgsql' => "JSON_BUILD_ARRAY(JSON_BUILD_ARRAY({$srcRef}, {$byRef}))",
+                    'mysql', 'mariadb', 'sqlite' => "JSON_ARRAY(JSON_ARRAY({$srcRef}, {$byRef}))",
+                    default => throw self::unsupportedDriver('topK leaf inline', $driver),
+                };
 
-        // NULL `by` excludes the row from the result. A filtered leaf
-        // that doesn't pass the predicate also yields NULL.
-        $guard = "{$byRef} IS NOT NULL";
-        if ($filterSql !== null) {
-            $guard .= " AND ({$filterSql})";
-        }
+                // NULL `by` excludes the row from the result. A filtered leaf
+                // that doesn't pass the predicate also yields NULL.
+                $guard = "{$byRef} IS NOT NULL";
+                if ($filterSql !== null) {
+                    $guard .= " AND ({$filterSql})";
+                }
 
-        return "CASE WHEN {$guard} THEN {$singleElement} ELSE NULL END";
+                return "CASE WHEN {$guard} THEN {$singleElement} ELSE NULL END";
+            },
+        );
     }
 
     private static function quoteString(Connection $connection, string $value): string
     {
-        return FilterValueQuoter::quote($connection, $value);
+        return $connection->escape($value);
     }
 
     private static function unsupportedDriver(string $kind, string $driver): AggregateConfigurationException

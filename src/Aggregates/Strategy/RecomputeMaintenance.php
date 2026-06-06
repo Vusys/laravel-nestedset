@@ -8,9 +8,9 @@ use Illuminate\Database\Connection;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
-use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
-use Vusys\NestedSet\Aggregates\Filters\FilterValueQuoter;
+use Vusys\NestedSet\Aggregates\Filters\FragmentSplicer;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Aggregates\Sql\VarianceSqlFragments;
@@ -173,6 +173,7 @@ final class RecomputeMaintenance
             ? " AND outer_a.{$softDeletedColumn} IS NULL"
             : '';
 
+        $aggBindings = [];
         foreach ($columns as $i => $spec) {
             $alias = self::recomputeAlias($i);
             $boundsClause = $spec['inclusive']
@@ -185,8 +186,8 @@ final class RecomputeMaintenance
             }
 
             $filterPredicate = $spec['filter'] ?? null;
-            $filterSql = $filterPredicate instanceof FilterPredicate
-                ? self::filterPredicateSql($connection, $filterPredicate, 'inner_a.')
+            $filterFragment = $filterPredicate instanceof FilterPredicate
+                ? $filterPredicate->toFragment('inner_a.')
                 : null;
 
             // TopK can't be expressed as a single scalar aggregate
@@ -201,21 +202,29 @@ final class RecomputeMaintenance
                     self::requireDefinitionFromSpec($spec),
                     $table,
                     $boundsClause.$scopeJoin.$exclusionClause.$softInner,
-                    $filterSql,
+                    $filterFragment,
                 );
-                $selects[] = "{$subquery} AS {$alias}";
+                $selects[] = "{$subquery->sql} AS {$alias}";
+                foreach ($subquery->bindings as $b) {
+                    $aggBindings[] = $b;
+                }
 
                 continue;
             }
 
-            $aggExpr = self::innerAggregateExpression($connection, $spec, $filterPredicate);
+            $aggExpr = self::innerAggregateExpression($connection, $spec, $filterFragment);
 
-            $selects[] = "(SELECT {$aggExpr} FROM {$table} AS inner_a "
+            $selects[] = "(SELECT {$aggExpr->sql} FROM {$table} AS inner_a "
                 ."WHERE {$boundsClause}{$scopeJoin}{$exclusionClause}{$softInner}) AS {$alias}";
+            foreach ($aggExpr->bindings as $b) {
+                $aggBindings[] = $b;
+            }
         }
 
         $where = "outer_a.{$lftCol} <= ? AND outer_a.{$rgtCol} >= ?";
-        $bindings = [$bounds->lft, $bounds->rgt];
+        // Aggregate-predicate bindings appear FIRST textually (inner
+        // SELECT list) so they lead the positional stream.
+        $bindings = [...$aggBindings, $bounds->lft, $bounds->rgt];
 
         if ($excludeBounds instanceof NodeBounds) {
             // Outer-side counterpart of the inner exclusion. For the
@@ -329,7 +338,7 @@ final class RecomputeMaintenance
      *
      * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}  $spec
      */
-    private static function innerAggregateExpression(Connection $connection, array $spec, ?FilterPredicate $filter): string
+    private static function innerAggregateExpression(Connection $connection, array $spec, ?BoundFragment $filter): BoundFragment
     {
         $source = $spec['source'];
         $sourceRef = "inner_a.{$source}";
@@ -354,81 +363,74 @@ final class RecomputeMaintenance
         $sourceExpression = $sourceTransform->applySqlFragment($sourceRef, $weightRef);
         $sample = $spec['sample'] ?? false;
 
-        if ($filter instanceof FilterPredicate) {
-            $pred = self::filterPredicateSql($connection, $filter, 'inner_a.');
-
-            return match ($spec['function']) {
-                AggregateFunction::Sum => sprintf(
-                    'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
-                    $pred,
-                    $sourceExpression,
-                ),
-                AggregateFunction::Count => sprintf(
-                    // COUNT(NULL) and COUNT(expr-returning-NULL) both yield 0
-                    // — wrap in a CASE that returns 1 / NULL to match
-                    // COUNT(*)-semantics-with-filter as well as
-                    // COUNT(col)-with-filter (NULL source already produces
-                    // NULL via the CASE branch). Use $sourceExpression so
-                    // non-Identity Count companions (Ln for GeometricMean,
-                    // Recip for HarmonicMean) only count rows whose transform
-                    // produces a non-NULL contribution.
-                    'COUNT(CASE WHEN %s THEN %s ELSE NULL END)',
-                    $pred,
-                    $spec['source'] === '' ? '1' : $sourceExpression,
-                ),
-                AggregateFunction::Avg => sprintf(
-                    'AVG(CASE WHEN %s THEN %s ELSE NULL END)',
-                    $pred,
-                    $sourceRef,
-                ),
-                AggregateFunction::Min => sprintf(
-                    'MIN(CASE WHEN %s THEN %s ELSE NULL END)',
-                    $pred,
-                    $sourceRef,
-                ),
-                AggregateFunction::Max => sprintf(
-                    'MAX(CASE WHEN %s THEN %s ELSE NULL END)',
-                    $pred,
-                    $sourceRef,
-                ),
-                AggregateFunction::Variance => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: false),
-                AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, $pred, $sample, stddev: true),
-                AggregateFunction::BitOr,
-                AggregateFunction::BitAnd,
-                AggregateFunction::BitXor => sprintf(
-                    '%s(CASE WHEN %s THEN %s ELSE NULL END)',
-                    self::bitwiseFunctionName($spec['function']),
-                    $pred,
-                    $sourceRef,
-                ),
-                AggregateFunction::WeightedAvg,
-                AggregateFunction::BoolOr,
-                AggregateFunction::BoolAnd,
-                AggregateFunction::GeometricMean,
-                AggregateFunction::HarmonicMean,
-                AggregateFunction::Median,
-                AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
-                    'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
-                    .'in DeltaMaintenance and should never reach this inner-expression builder.',
-                    strtoupper($spec['function']->value),
-                )),
-                AggregateFunction::TopK => throw new AggregateConfigurationException(
-                    'RecomputeMaintenance: TopK columns are emitted via emitTopKCorrelatedSubquery() '
-                    .'in candidatesForRecompute() and should never reach this inner-expression builder.',
-                ),
-                AggregateFunction::DistinctCount,
-                AggregateFunction::StringAgg,
-                AggregateFunction::JsonAgg,
-                AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
-                    $connection,
-                    self::requireDefinitionFromSpec($spec),
-                    'inner_a.',
-                    $pred,
-                ),
-            };
+        if ($filter instanceof BoundFragment) {
+            return FragmentSplicer::splice(
+                $filter,
+                static fn (?string $pred): string => match ($spec['function']) {
+                    AggregateFunction::Sum => sprintf(
+                        'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
+                        (string) $pred,
+                        $sourceExpression,
+                    ),
+                    AggregateFunction::Count => sprintf(
+                        'COUNT(CASE WHEN %s THEN %s ELSE NULL END)',
+                        (string) $pred,
+                        $spec['source'] === '' ? '1' : $sourceExpression,
+                    ),
+                    AggregateFunction::Avg => sprintf(
+                        'AVG(CASE WHEN %s THEN %s ELSE NULL END)',
+                        (string) $pred,
+                        $sourceRef,
+                    ),
+                    AggregateFunction::Min => sprintf(
+                        'MIN(CASE WHEN %s THEN %s ELSE NULL END)',
+                        (string) $pred,
+                        $sourceRef,
+                    ),
+                    AggregateFunction::Max => sprintf(
+                        'MAX(CASE WHEN %s THEN %s ELSE NULL END)',
+                        (string) $pred,
+                        $sourceRef,
+                    ),
+                    AggregateFunction::Variance => self::filteredVarianceFragment($sourceRef, (string) $pred, $sample, stddev: false),
+                    AggregateFunction::Stddev => self::filteredVarianceFragment($sourceRef, (string) $pred, $sample, stddev: true),
+                    AggregateFunction::BitOr,
+                    AggregateFunction::BitAnd,
+                    AggregateFunction::BitXor => sprintf(
+                        '%s(CASE WHEN %s THEN %s ELSE NULL END)',
+                        self::bitwiseFunctionName($spec['function']),
+                        (string) $pred,
+                        $sourceRef,
+                    ),
+                    AggregateFunction::WeightedAvg,
+                    AggregateFunction::BoolOr,
+                    AggregateFunction::BoolAnd,
+                    AggregateFunction::GeometricMean,
+                    AggregateFunction::HarmonicMean,
+                    AggregateFunction::Median,
+                    AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
+                        'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
+                        .'in DeltaMaintenance and should never reach this inner-expression builder.',
+                        strtoupper($spec['function']->value),
+                    )),
+                    AggregateFunction::TopK => throw new AggregateConfigurationException(
+                        'RecomputeMaintenance: TopK columns are emitted via emitTopKCorrelatedSubquery() '
+                        .'in candidatesForRecompute() and should never reach this inner-expression builder.',
+                    ),
+                    AggregateFunction::DistinctCount,
+                    AggregateFunction::StringAgg,
+                    AggregateFunction::JsonAgg,
+                    AggregateFunction::JsonObjectAgg => AggregateSqlEmitter::emit(
+                        $connection,
+                        self::requireDefinitionFromSpec($spec),
+                        'inner_a.',
+                        BoundFragment::literal((string) $pred),
+                    )->sql,
+                },
+            );
         }
 
-        return match ($spec['function']) {
+        return new BoundFragment(match ($spec['function']) {
             AggregateFunction::Sum => "COALESCE(SUM({$sourceExpression}), 0)",
             AggregateFunction::Count => $spec['source'] === ''
                 ? 'COUNT(*)'
@@ -437,17 +439,17 @@ final class RecomputeMaintenance
             AggregateFunction::Min => "MIN({$sourceRef})",
             AggregateFunction::Max => "MAX({$sourceRef})",
             AggregateFunction::Variance => VarianceSqlFragments::variance(
-                sumExpr: "SUM({$sourceRef})",
-                sumSqExpr: "SUM({$sourceRef} * {$sourceRef})",
-                countExpr: "COUNT({$sourceRef})",
+                sumExpr: BoundFragment::literal("SUM({$sourceRef})"),
+                sumSqExpr: BoundFragment::literal("SUM({$sourceRef} * {$sourceRef})"),
+                countExpr: BoundFragment::literal("COUNT({$sourceRef})"),
                 sample: $sample,
-            ),
+            )->sql,
             AggregateFunction::Stddev => VarianceSqlFragments::stddev(
-                sumExpr: "SUM({$sourceRef})",
-                sumSqExpr: "SUM({$sourceRef} * {$sourceRef})",
-                countExpr: "COUNT({$sourceRef})",
+                sumExpr: BoundFragment::literal("SUM({$sourceRef})"),
+                sumSqExpr: BoundFragment::literal("SUM({$sourceRef} * {$sourceRef})"),
+                countExpr: BoundFragment::literal("COUNT({$sourceRef})"),
                 sample: $sample,
-            ),
+            )->sql,
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
             AggregateFunction::BitXor => sprintf(
@@ -477,8 +479,8 @@ final class RecomputeMaintenance
                 $connection,
                 self::requireDefinitionFromSpec($spec),
                 'inner_a.',
-            ),
-        };
+            )->sql,
+        });
     }
 
     private static function bitwiseFunctionName(AggregateFunction $function): string
@@ -523,37 +525,12 @@ final class RecomputeMaintenance
         bool $sample,
         bool $stddev,
     ): string {
-        $sumExpr = sprintf('SUM(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
-        $sumSqExpr = sprintf('SUM(CASE WHEN %s THEN %s * %s ELSE NULL END)', $pred, $sourceRef, $sourceRef);
-        $countExpr = sprintf('COUNT(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef);
+        $sumExpr = BoundFragment::literal(sprintf('SUM(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef));
+        $sumSqExpr = BoundFragment::literal(sprintf('SUM(CASE WHEN %s THEN %s * %s ELSE NULL END)', $pred, $sourceRef, $sourceRef));
+        $countExpr = BoundFragment::literal(sprintf('COUNT(CASE WHEN %s THEN %s ELSE NULL END)', $pred, $sourceRef));
 
-        return $stddev
+        return ($stddev
             ? VarianceSqlFragments::stddev($sumExpr, $sumSqExpr, $countExpr, $sample)
-            : VarianceSqlFragments::variance($sumExpr, $sumSqExpr, $countExpr, $sample);
-    }
-
-    private static function filterPredicateSql(Connection $connection, FilterPredicate $filter, string $qualifier): string
-    {
-        return match ($filter->getKind()) {
-            FilterPredicateKind::Equality => implode(' AND ', array_map(
-                static function (string $col, mixed $value) use ($connection, $qualifier): string {
-                    if ($value === null) {
-                        return "{$qualifier}{$col} IS NULL";
-                    }
-
-                    return "{$qualifier}{$col} = ".FilterValueQuoter::quote($connection, $value);
-                },
-                array_keys($filter->getConditions()),
-                array_values($filter->getConditions()),
-            )),
-            FilterPredicateKind::NotNull => sprintf(
-                '%s%s IS NOT NULL',
-                $qualifier,
-                (string) $filter->getNotNullColumn(),
-            ),
-            FilterPredicateKind::Raw => $filter->getRawSql() ?? throw new AggregateConfigurationException(
-                'FilterPredicate of kind Raw has a null rawSql — this should never happen.',
-            ),
-        };
+            : VarianceSqlFragments::variance($sumExpr, $sumSqExpr, $countExpr, $sample))->sql;
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates\Sql;
 
+use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
+
 /**
  * Builds portable SQL fragments for variance and stddev display columns
  * from their delta-maintained companions (Sum, SumSq, Count).
@@ -50,23 +52,40 @@ final class VarianceSqlFragments
      * Build the variance SQL fragment from the three companion
      * subexpressions. The result evaluates to NULL for empty subtrees
      * (denominator → 0) and, in sample mode, for n=1 subtrees too.
+     *
+     * Each companion may carry its own bindings (when wrapped in a
+     * filter CASE). The result's bindings are concatenated in textual
+     * occurrence order — count appears 3× (population) or 3× (sample),
+     * sum 2×, sumSq 1× — so positional `?` alignment is preserved.
      */
     public static function variance(
-        string $sumExpr,
-        string $sumSqExpr,
-        string $countExpr,
+        BoundFragment $sumExpr,
+        BoundFragment $sumSqExpr,
+        BoundFragment $countExpr,
         bool $sample,
-    ): string {
-        $sum = "({$sumExpr})";
-        $sumSq = "({$sumSqExpr})";
-        $count = "({$countExpr})";
+    ): BoundFragment {
+        $sum = "({$sumExpr->sql})";
+        $sumSq = "({$sumSqExpr->sql})";
+        $count = "({$countExpr->sql})";
 
         $numerator = "(1.0 * ({$count} * {$sumSq} - {$sum} * {$sum}))";
         $denominator = $sample
             ? "NULLIF({$count} * ({$count} - 1), 0)"
             : "NULLIF({$count} * {$count}, 0)";
 
-        return "({$numerator} / {$denominator})";
+        $sql = "({$numerator} / {$denominator})";
+
+        // Textual occurrence order: count, sumSq, sum, sum, count, count.
+        $bindings = [
+            ...$countExpr->bindings,
+            ...$sumSqExpr->bindings,
+            ...$sumExpr->bindings,
+            ...$sumExpr->bindings,
+            ...$countExpr->bindings,
+            ...$countExpr->bindings,
+        ];
+
+        return new BoundFragment($sql, $bindings);
     }
 
     /**
@@ -75,13 +94,21 @@ final class VarianceSqlFragments
      * cancellation doesn't blow up SQRT on Postgres.
      */
     public static function stddev(
-        string $sumExpr,
-        string $sumSqExpr,
-        string $countExpr,
+        BoundFragment $sumExpr,
+        BoundFragment $sumSqExpr,
+        BoundFragment $countExpr,
         bool $sample,
-    ): string {
-        $varianceExpr = self::variance($sumExpr, $sumSqExpr, $countExpr, $sample);
+    ): BoundFragment {
+        $varianceFragment = self::variance($sumExpr, $sumSqExpr, $countExpr, $sample);
 
-        return "SQRT(CASE WHEN {$varianceExpr} < 0 THEN 0 ELSE {$varianceExpr} END)";
+        $sql = "SQRT(CASE WHEN {$varianceFragment->sql} < 0 THEN 0 ELSE {$varianceFragment->sql} END)";
+
+        // variance is spliced twice (CASE-condition + ELSE branch).
+        $bindings = [
+            ...$varianceFragment->bindings,
+            ...$varianceFragment->bindings,
+        ];
+
+        return new BoundFragment($sql, $bindings);
     }
 }

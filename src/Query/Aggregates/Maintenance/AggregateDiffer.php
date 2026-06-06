@@ -651,6 +651,7 @@ final class AggregateDiffer
 
         $outerSelects = ["outer_a.{$idCol} AS id"];
         $aggSelects = ["{$outer['outerId']} AS outer_id"];
+        $aggBindings = [];
 
         foreach ($definitions as $definition) {
             $innerExpr = AggregateSqlFragments::aggregateExpressionInJoinedContext(
@@ -665,7 +666,10 @@ final class AggregateDiffer
                 connection: $connection,
             );
             $computedAlias = self::computedAlias($definition->column);
-            $aggSelects[] = "{$innerExpr} AS {$computedAlias}";
+            $aggSelects[] = "{$innerExpr->sql} AS {$computedAlias}";
+            foreach ($innerExpr->bindings as $b) {
+                $aggBindings[] = $b;
+            }
 
             $outerComputed = match ($definition->function) {
                 AggregateFunction::Sum,
@@ -686,7 +690,10 @@ final class AggregateDiffer
             $scopeJoinExtra .= " AND i.{$col} = {$outerRef}";
         }
 
-        $bindings = [];
+        // Aggregate-predicate bindings appear FIRST textually (in the
+        // inner SELECT's CASE WHEN, before the inner WHERE) so they
+        // lead the positional stream.
+        $bindings = $aggBindings;
 
         $innerWhere = '1 = 1';
         foreach ($scope as $col => $value) {
