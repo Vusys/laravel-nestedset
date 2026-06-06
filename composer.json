@@ -53,10 +53,21 @@
         "test": "phpunit",
         "test:coverage": "XDEBUG_MODE=coverage phpunit --coverage-text",
         "test:coverage-html": "XDEBUG_MODE=coverage phpunit --coverage-html=build/coverage",
+        "test:matrix": [
+            "@putenv DB_CONNECTION=sqlite",
+            "@test",
+            "@putenv DB_CONNECTION=mysql",
+            "@test",
+            "@putenv DB_CONNECTION=mariadb",
+            "@test",
+            "@putenv DB_CONNECTION=pgsql",
+            "@test"
+        ],
         "fuzz": "phpunit --group fuzzer",
         "infection": "infection --threads=max"
     },
     "scripts-descriptions": {
+        "test:matrix": "Run the default test suite against each supported backend (sqlite, mysql, mariadb, pgsql) sequentially, halting on the first red cell. Requires running mysql/mariadb/pgsql servers matching the defaults in tests/TestCase.php::defineEnvironment(); sqlite needs nothing. See CONTRIBUTING.md.",
         "fuzz": "Run the seeded fuzzers (skipped by default). Configure via FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars; set FUZZER_SEEDS=random for non-deterministic exploration.",
         "infection": "Run mutation testing locally against the current backend (DB_CONNECTION). Defaults to all cores; pass `--threads=N` to limit. CI runs the same binary in a shard×backend matrix — see .github/workflows/infection.yml."
     }
