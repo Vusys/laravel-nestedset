@@ -333,7 +333,13 @@ jobs:
       # Reduce the (very large — source is embedded per mutant) report
       # to a compact per-mutant status record before uploading.
       - name: Distil report
-        if: always()
+        # `hashFiles` returns '' when the path doesn't exist, which is how we
+        # detect that checkout never ran (e.g. a service container failed to
+        # start before any step executed — see runs 27059251136). Without this
+        # guard, `if: always()` runs the distill step in an empty workspace
+        # and the real failure (Docker Hub flake) gets masked by a misleading
+        # "Could not open input file" error.
+        if: always() && hashFiles('tooling/merge-infection.php') != ''
         # infection.json embeds the full source of every mutated file, so
         # json_decode of the raw report can blow past the default CLI
         # memory_limit — lift it for this one invocation.
