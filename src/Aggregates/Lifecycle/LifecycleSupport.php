@@ -12,6 +12,7 @@ use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Repair\AggregateAnchor;
+use Vusys\NestedSet\Aggregates\Strategy\ColumnSpec;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\Aggregates\NodeAggregatesRecomputed;
@@ -59,15 +60,15 @@ final class LifecycleSupport
 
         $columns = [];
         foreach ($definitions as $aggregateColumn => $definition) {
-            $columns[] = [
-                'column' => $aggregateColumn,
-                'function' => $definition->function,
+            $columns[] = new ColumnSpec(
+                column: $aggregateColumn,
+                function: $definition->function,
                 // RecomputeMaintenance reads inner_a.<source>; for COUNT(*) the
                 // source is null in the definition, but the helper handles
                 // empty string specially.
-                'source' => $definition->source ?? '',
-                'inclusive' => $definition->inclusive,
-                'filter' => $definition->filter,
+                source: $definition->source ?? '',
+                inclusive: $definition->inclusive,
+                filter: $definition->filter,
                 // Variance / Stddev recomputes need the sample flag to pick
                 // the right denominator; the SumSq companion of those kinds
                 // needs its Square source-transform so the inner SQL emits
@@ -75,10 +76,10 @@ final class LifecycleSupport
                 // chain recomputes triggered by raw-filter / exclusive /
                 // move / restore paths silently fall back to population
                 // maths and rebuild SumSq as a plain Sum.
-                'sample' => $definition->sample,
-                'sourceTransform' => $definition->sourceTransform,
-                'definition' => $definition,
-            ];
+                sample: $definition->sample,
+                sourceTransform: $definition->sourceTransform,
+                definition: $definition,
+            );
         }
 
         RecomputeMaintenance::apply(
@@ -111,13 +112,13 @@ final class LifecycleSupport
         $filterEquals = [];
 
         foreach ($recomputes as $aggregateColumn => $spec) {
-            $columns[] = [
-                'column' => $aggregateColumn,
-                'function' => $spec['function'],
-                'source' => $spec['source'],
-                'inclusive' => true,
-                'filter' => $spec['filter'],
-            ];
+            $columns[] = new ColumnSpec(
+                column: $aggregateColumn,
+                function: $spec['function'],
+                source: $spec['source'],
+                inclusive: true,
+                filter: $spec['filter'],
+            );
             $filterEquals[$aggregateColumn] = $spec['filterValue'];
         }
 
@@ -152,13 +153,13 @@ final class LifecycleSupport
         $filterEquals = [];
 
         foreach ($minMaxByFunction as $aggregateColumn => $spec) {
-            $columns[] = [
-                'column' => $aggregateColumn,
-                'function' => $spec['function'],
-                'source' => $spec['source'],
-                'inclusive' => true,
-                'filter' => $spec['filter'],
-            ];
+            $columns[] = new ColumnSpec(
+                column: $aggregateColumn,
+                function: $spec['function'],
+                source: $spec['source'],
+                inclusive: true,
+                filter: $spec['filter'],
+            );
             $filterEquals[$aggregateColumn] = $spec['filterValue'];
         }
 

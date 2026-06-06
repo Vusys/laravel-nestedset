@@ -56,7 +56,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
+     * @param  list<ColumnSpec>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      *                                                         column => previous_value pairs ORed into the WHERE.
@@ -96,7 +96,7 @@ final class RecomputeMaintenance
         // recomputes triggered before the ConnectionEstablished
         // listener fires still resolve them.
         foreach ($columns as $column) {
-            if (in_array($column['function'], [
+            if (in_array($column->function, [
                 AggregateFunction::BitOr,
                 AggregateFunction::BitAnd,
                 AggregateFunction::BitXor,
@@ -136,7 +136,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
+     * @param  list<ColumnSpec>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
      * @param  'always'|'auto'|'never'  $locking
@@ -176,7 +176,7 @@ final class RecomputeMaintenance
         $aggBindings = [];
         foreach ($columns as $i => $spec) {
             $alias = self::recomputeAlias($i);
-            $boundsClause = $spec['inclusive']
+            $boundsClause = $spec->inclusive
                 ? "inner_a.{$lftCol} >= outer_a.{$lftCol} AND inner_a.{$rgtCol} <= outer_a.{$rgtCol}"
                 : "inner_a.{$lftCol} > outer_a.{$lftCol} AND inner_a.{$rgtCol} < outer_a.{$rgtCol}";
 
@@ -185,7 +185,7 @@ final class RecomputeMaintenance
                 $scopeJoin .= " AND inner_a.{$col} = outer_a.{$col}";
             }
 
-            $filterPredicate = $spec['filter'] ?? null;
+            $filterPredicate = $spec->filter;
             $filterFragment = $filterPredicate instanceof FilterPredicate
                 ? $filterPredicate->toFragment('inner_a.')
                 : null;
@@ -196,7 +196,7 @@ final class RecomputeMaintenance
             // sees only the K winners. Build the complete correlated
             // subquery here instead of routing through
             // innerAggregateExpression().
-            if ($spec['function'] === AggregateFunction::TopK) {
+            if ($spec->function === AggregateFunction::TopK) {
                 $subquery = AggregateSqlEmitter::emitTopKCorrelatedSubquery(
                     $connection,
                     self::requireDefinitionFromSpec($spec),
@@ -284,7 +284,7 @@ final class RecomputeMaintenance
     }
 
     /**
-     * @param  list<array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}>  $columns
+     * @param  list<ColumnSpec>  $columns
      * @param  list<array<string, mixed>>  $candidates
      */
     private static function writeRecomputedValues(
@@ -300,7 +300,7 @@ final class RecomputeMaintenance
             $updates = [];
             foreach ($columns as $i => $spec) {
                 $alias = self::recomputeAlias($i);
-                $updates[$spec['column']] = $row[$alias] ?? null;
+                $updates[$spec->column] = $row[$alias] ?? null;
             }
 
             $id = $row['id'] ?? null;
@@ -335,23 +335,21 @@ final class RecomputeMaintenance
      * JsonAgg / JsonObjectAgg) route through {@see AggregateSqlEmitter}
      * for backend-specific SQL — the spec carries an `AggregateDefinition`
      * reference for those.
-     *
-     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}  $spec
      */
-    private static function innerAggregateExpression(Connection $connection, array $spec, ?BoundFragment $filter): BoundFragment
+    private static function innerAggregateExpression(Connection $connection, ColumnSpec $spec, ?BoundFragment $filter): BoundFragment
     {
-        $source = $spec['source'];
+        $source = $spec->source;
         $sourceRef = "inner_a.{$source}";
         // Companions with a non-Identity transform (square for
         // variance/stddev, weight*value for weightedAvg, bool-as-int
         // for boolOr/boolAnd) compile the SUM around a derived
         // expression instead of a plain column ref. The transform
-        // comes from either `$spec['sourceTransform']` (existing
+        // comes from either `$spec->sourceTransform` (existing
         // variance call sites) or the definition's `sourceTransform`
         // (companion paths that carry a full definition); falls back
         // to Identity for non-companion specs.
-        $definition = $spec['definition'] ?? null;
-        $sourceTransform = $spec['sourceTransform']
+        $definition = $spec->definition;
+        $sourceTransform = $spec->sourceTransform
             ?? ($definition instanceof AggregateDefinition
                 ? $definition->sourceTransform
                 : CompanionSourceTransform::Identity);
@@ -361,12 +359,12 @@ final class RecomputeMaintenance
             ? 'inner_a.'.$definition->weight
             : null;
         $sourceExpression = $sourceTransform->applySqlFragment($sourceRef, $weightRef);
-        $sample = $spec['sample'] ?? false;
+        $sample = $spec->sample;
 
         if ($filter instanceof BoundFragment) {
             return FragmentSplicer::splice(
                 $filter,
-                static fn (?string $pred): string => match ($spec['function']) {
+                static fn (?string $pred): string => match ($spec->function) {
                     AggregateFunction::Sum => sprintf(
                         'COALESCE(SUM(CASE WHEN %s THEN %s ELSE 0 END), 0)',
                         (string) $pred,
@@ -375,7 +373,7 @@ final class RecomputeMaintenance
                     AggregateFunction::Count => sprintf(
                         'COUNT(CASE WHEN %s THEN %s ELSE NULL END)',
                         (string) $pred,
-                        $spec['source'] === '' ? '1' : $sourceExpression,
+                        $spec->source === '' ? '1' : $sourceExpression,
                     ),
                     AggregateFunction::Avg => sprintf(
                         'AVG(CASE WHEN %s THEN %s ELSE NULL END)',
@@ -398,7 +396,7 @@ final class RecomputeMaintenance
                     AggregateFunction::BitAnd,
                     AggregateFunction::BitXor => sprintf(
                         '%s(CASE WHEN %s THEN %s ELSE NULL END)',
-                        self::bitwiseFunctionName($spec['function']),
+                        self::bitwiseFunctionName($spec->function),
                         (string) $pred,
                         $sourceRef,
                     ),
@@ -411,7 +409,7 @@ final class RecomputeMaintenance
                     AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
                         'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                         .'in DeltaMaintenance and should never reach this inner-expression builder.',
-                        strtoupper($spec['function']->value),
+                        strtoupper($spec->function->value),
                     )),
                     AggregateFunction::TopK => throw new AggregateConfigurationException(
                         'RecomputeMaintenance: TopK columns are emitted via emitTopKCorrelatedSubquery() '
@@ -430,9 +428,9 @@ final class RecomputeMaintenance
             );
         }
 
-        return new BoundFragment(match ($spec['function']) {
+        return new BoundFragment(match ($spec->function) {
             AggregateFunction::Sum => "COALESCE(SUM({$sourceExpression}), 0)",
-            AggregateFunction::Count => $spec['source'] === ''
+            AggregateFunction::Count => $spec->source === ''
                 ? 'COUNT(*)'
                 : "COUNT({$sourceExpression})",
             AggregateFunction::Avg => "AVG({$sourceRef})",
@@ -454,7 +452,7 @@ final class RecomputeMaintenance
             AggregateFunction::BitAnd,
             AggregateFunction::BitXor => sprintf(
                 '%s(%s)',
-                self::bitwiseFunctionName($spec['function']),
+                self::bitwiseFunctionName($spec->function),
                 $sourceRef,
             ),
             AggregateFunction::WeightedAvg,
@@ -466,7 +464,7 @@ final class RecomputeMaintenance
             AggregateFunction::Percentile => throw new AggregateConfigurationException(sprintf(
                 'RecomputeMaintenance: %s display columns are derived from companion sums + counts '
                 .'in DeltaMaintenance and should never reach this inner-expression builder.',
-                strtoupper($spec['function']->value),
+                strtoupper($spec->function->value),
             )),
             AggregateFunction::TopK => throw new AggregateConfigurationException(
                 'RecomputeMaintenance: TopK columns are emitted via emitTopKCorrelatedSubquery() '
@@ -495,18 +493,15 @@ final class RecomputeMaintenance
         };
     }
 
-    /**
-     * @param  array{column: string, function: AggregateFunction, source: string, inclusive: bool, filter?: FilterPredicate|null, sample?: bool, sourceTransform?: CompanionSourceTransform, definition?: AggregateDefinition|null}  $spec
-     */
-    private static function requireDefinitionFromSpec(array $spec): AggregateDefinition
+    private static function requireDefinitionFromSpec(ColumnSpec $spec): AggregateDefinition
     {
-        $definition = $spec['definition'] ?? null;
-        if ($definition === null) {
+        $definition = $spec->definition;
+        if (!$definition instanceof \Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition) {
             throw new AggregateConfigurationException(sprintf(
                 'RecomputeMaintenance: spec for %s aggregate "%s" is missing the AggregateDefinition reference '
                 .'required for backend-specific SQL emission.',
-                $spec['function']->value,
-                $spec['column'],
+                $spec->function->value,
+                $spec->column,
             ));
         }
 
