@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\HalfWeightedPowerListener;
@@ -43,7 +43,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 #[NestedSetAggregateListener(column: 'strongest_level', listener: StrongestLevelListener::class, operation: AggregateFunction::Max)]
 #[NestedSetAggregateListener(column: 'weighted_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
 #[NestedSetAggregateListener(column: 'descendant_fire_count', listener: FireCountListener::class, operation: AggregateFunction::Sum, exclusive: true)]
-final class Monster extends Model implements HasNestedSet
+final class Monster extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
     use SoftDeletes;

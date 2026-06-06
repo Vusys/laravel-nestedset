@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -26,7 +26,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property int $tickets_total
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
-final class Tag extends Model implements HasNestedSet
+final class Tag extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

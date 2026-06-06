@@ -8,11 +8,11 @@ Declare the partition column with `#[NestedSetScope]` and the package constrains
 
 ```php
 use Vusys\NestedSet\Attributes\NestedSetScope;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 #[NestedSetScope('menu_id')]
-class MenuItem extends Model implements HasNestedSet
+class MenuItem extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

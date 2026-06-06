@@ -11,7 +11,7 @@ For a workflow column with a small enum of values, declare one filtered SUM and 
 #[NestedSetAggregate(column: 'open_count',     count: true,    filter: ['status' => 'open'])]
 #[NestedSetAggregate(column: 'closed_tickets', sum: 'tickets', filter: ['status' => 'closed'])]
 #[NestedSetAggregate(column: 'closed_count',   count: true,    filter: ['status' => 'closed'])]
-class Project extends Model implements HasNestedSet { use NodeTrait; }
+class Project extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 When a ticket flips from `open` to `closed`, the package fires a delta on `open_*` *and* on `closed_*` in the same `saved` event — `+/- ticket_value` on each pair, propagated to every ancestor in one `UPDATE`.
@@ -23,7 +23,7 @@ Two declarations against the same source column gives you both "my subtree total
 ```php
 #[NestedSetAggregate(column: 'budget_inclusive', sum: 'budget')]
 #[NestedSetAggregate(column: 'budget_below',     sum: 'budget', exclusive: true)]
-class Department extends Model implements HasNestedSet { use NodeTrait; }
+class Department extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 `exclusive: true` excludes self from the rollup. A leaf reports `budget_below = 0`. A folder with three children each holding `budget = 100` reports `budget_inclusive = 300 + own_budget` and `budget_below = 300`.
@@ -41,7 +41,7 @@ When the filter needs a SQL function or a comparison against something the equal
     filterRaw: 'closed_at >= CURRENT_DATE - INTERVAL 30 DAY',
     filterRawWatches: ['closed_at'],
 )]
-class Account extends Model implements HasNestedSet { use NodeTrait; }
+class Account extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 The watch on `closed_at` says "if this column changes on a save, the raw-filter column may need to be recomputed for the ancestor chain". A `name` change won't trigger the recompute; a `closed_at` change will.
@@ -71,7 +71,7 @@ final class RiskWeightedExposureListener implements TreeAggregateListener
     listener: RiskWeightedExposureListener::class,
     operation: AggregateFunction::Sum,
 )]
-class Position extends Model implements HasNestedSet { use NodeTrait; }
+class Position extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 The maintained column is a `decimal` (declare it via the migration's standard Blueprint helpers, not `nestedSetAggregate`, when you need a non-integer column type). Cast as `float` or `decimal:N` on the model.
@@ -113,7 +113,7 @@ When the inclusion test is just a column equality or "this column is non-null", 
     operation: AggregateFunction::Sum,
     filter: ['status' => 'pending'],
 )]
-class Invoice extends Model implements HasNestedSet { use NodeTrait; }
+class Invoice extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 See [Listeners → Filters](listeners.html#filters) for the full filter surface.
@@ -125,7 +125,7 @@ Filtered MIN/MAX gives you per-category extrema without a `GROUP BY` at read tim
 ```php
 #[NestedSetAggregate(column: 'low_priority_min',  min: 'priority', filter: ['status' => 'open'])]
 #[NestedSetAggregate(column: 'high_priority_max', max: 'priority', filter: ['status' => 'urgent'])]
-class Issue extends Model implements HasNestedSet { use NodeTrait; }
+class Issue extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 Each column gets its own cheap-delta / recompute behaviour independently — `low_priority_min` only triggers a recompute when the deleted/changed row's value matched the stored extremum AND the row's `status` was `open`.

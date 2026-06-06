@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -30,7 +30,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property-read WeightedArea|null $parent
  */
 #[NestedSetAggregate(column: 'value_wavg', weightedAvg: 'value', weight: 'weight')]
-final class WeightedArea extends Model implements HasNestedSet
+final class WeightedArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Attributes\NestedSetScope;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -40,7 +40,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetScope(['tenant_id', 'site_id'])]
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
 #[NestedSetAggregate(column: 'tickets_count', count: true)]
-final class MultiScopedBranch extends Model implements HasNestedSet
+final class MultiScopedBranch extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

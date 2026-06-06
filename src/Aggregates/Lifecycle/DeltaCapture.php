@@ -20,7 +20,7 @@ use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Repair\AggregateAnchor;
 use Vusys\NestedSet\Aggregates\Sql\AggregateSqlEmitter;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\AggregateSourceConstraintViolationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -49,7 +49,7 @@ final class DeltaCapture
      * MIN/MAX captures route to either a cheap-delta extension or a
      * lost-holder recompute depending on direction.
      *
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function capture(Model $node, CapturedMutation $state): void
     {
@@ -418,7 +418,7 @@ final class DeltaCapture
      * {@see capture()}. Touches self + ancestors so the node's own
      * stored aggregate stays in sync alongside the rollup.
      *
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function apply(Model $node, CapturedMutation $state): void
     {
@@ -514,7 +514,7 @@ final class DeltaCapture
      * Validates that any GeometricMean or HarmonicMean aggregate
      * source value satisfies its positivity / non-zero constraint.
      *
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      *
      * @throws AggregateSourceConstraintViolationException
      */

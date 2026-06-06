@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\NodeTrait;
 
@@ -19,7 +19,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property int $depth
  * @property int|null $parent_id
  */
-final class ClosurePathArticle extends Model implements HasNestedSet
+final class ClosurePathArticle extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

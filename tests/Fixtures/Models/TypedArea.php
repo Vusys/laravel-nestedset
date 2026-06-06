@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -27,7 +27,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'fire_count', count: true, filter: ['type' => 'fire'])]
 #[NestedSetAggregate(column: 'water_max', max: 'tickets', filter: ['type' => 'water'])]
 #[NestedSetAggregate(column: 'has_tickets', count: true, filterNotNull: 'tickets')]
-final class TypedArea extends Model implements HasNestedSet
+final class TypedArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

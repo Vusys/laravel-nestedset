@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -39,7 +39,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'descendant_ids', jsonAgg: 'id')]
 #[NestedSetAggregate(column: 'descendant_summary', jsonAgg: ['id', 'name'])]
 #[NestedSetAggregate(column: 'name_lookup', jsonObjectAgg: ['key' => 'name', 'value' => 'tag'])]
-final class TextJsonArea extends Model implements HasNestedSet
+final class TextJsonArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

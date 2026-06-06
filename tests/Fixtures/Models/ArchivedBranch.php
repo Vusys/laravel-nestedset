@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -33,7 +33,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property Carbon|null $archived_at
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
-final class ArchivedBranch extends Model implements HasNestedSet
+final class ArchivedBranch extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
     use SoftDeletes;

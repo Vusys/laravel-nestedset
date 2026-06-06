@@ -10,7 +10,7 @@ Declare a column on the model with `#[NestedSetMaterialisedPath]` and add the co
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 
 #[NestedSetMaterialisedPath(column: 'url_path', slug: 'name')]
-final class Category extends Model implements HasNestedSet
+final class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -69,7 +69,7 @@ Attributes can't carry closures. For runtime-composed segments use the method fo
 ```php
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 
-class Article extends Model implements HasNestedSet
+class Article extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -93,7 +93,7 @@ A single model may carry several path columns at once, each derived from a diffe
 ```php
 #[NestedSetMaterialisedPath(column: 'url_path',   slug: 'name')]
 #[NestedSetMaterialisedPath(column: 'crumb_path', attribute: 'display_name', separator: ' > ', wrap: false)]
-final class Category extends Model implements HasNestedSet { use NodeTrait; }
+final class Category extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 A change to `display_name` rewrites `crumb_path` for the row + every descendant; `url_path` stays put.
@@ -120,7 +120,7 @@ Class-level:
 #[NestedSetMaterialisedPathDefaults(separator: '.', wrap: false, maxLength: 2048)]
 #[NestedSetMaterialisedPath(column: 'numeric_path', key: true)]
 #[NestedSetMaterialisedPath(column: 'doc_path', slug: 'reference')]
-class DocumentNode extends Model implements HasNestedSet { use NodeTrait; }
+class DocumentNode extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 Per-class config:

@@ -5,10 +5,10 @@ like this:
 
 ```php
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -23,9 +23,11 @@ class Category extends Model implements HasNestedSet
 }
 ```
 
-The trait satisfies the `HasNestedSet` interface out of the box — you
-only need to implement methods yourself if you're storing nested-set
-data on columns the trait can't derive from your `protected $casts`.
+The trait satisfies the `HasNestedSet` interface (and the
+`MaintainsTreeAggregates` sub-contract, which adds the aggregate-trait
+surface) out of the box — you only need to implement methods yourself if
+you're storing nested-set data on columns the trait can't derive from
+your `protected $casts`.
 
 ## What `NodeTrait` gives you
 

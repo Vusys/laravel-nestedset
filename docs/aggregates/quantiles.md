@@ -46,7 +46,7 @@ Declaring `median` or `percentile` as a stored column fails at the attribute bou
 
 ```php
 #[NestedSetAggregate(column: 'price_median', median: 'price')]  // throws:
-class Category extends Model implements HasNestedSet { use NodeTrait; }
+class Category extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 // AggregateConfigurationException — median() and percentile() are
 // recompute-only and cannot be stored as precalculated aggregate
 // columns. Use withFreshAggregates() for on-demand quantile reads.

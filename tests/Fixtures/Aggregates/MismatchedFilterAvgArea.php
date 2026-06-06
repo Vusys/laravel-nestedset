@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -21,7 +21,7 @@ use Vusys\NestedSet\NodeTrait;
  * separate (internal) Sum whose filter matches the AVG, rather than
  * adopting the mismatched user Sum.
  */
-final class MismatchedFilterAvgArea extends Model implements HasNestedSet
+final class MismatchedFilterAvgArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

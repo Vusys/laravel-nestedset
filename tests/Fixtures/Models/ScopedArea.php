@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -32,7 +32,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetAggregate(column: 'amount_total', sum: 'amount')]
 #[NestedSetAggregate(column: 'amount_min', min: 'amount')]
-final class ScopedArea extends Model implements HasNestedSet
+final class ScopedArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

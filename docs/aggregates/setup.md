@@ -67,7 +67,7 @@ Schema::table('categories', function (Blueprint $table): void {
 Aggregate columns are derived state. Two rules:
 
 ```php
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

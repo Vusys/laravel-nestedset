@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -34,6 +35,20 @@ trait HasNodeInspection
     public function isChild(): bool
     {
         return ! $this->isRoot();
+    }
+
+    /**
+     * True when this node's lft/rgt have been assigned via a tree
+     * placement (appendToNode, makeRoot, etc.). False for freshly-
+     * constructed models whose bounds are still at the migration
+     * default of 0.
+     */
+    public function isPlacedInTree(): bool
+    {
+        $lft = Numeric::asIntOrZero($this->getAttribute($this->getLftName()));
+        $rgt = Numeric::asIntOrZero($this->getAttribute($this->getRgtName()));
+
+        return $lft > 0 && $rgt > $lft;
     }
 
     public function isDescendantOf(HasNestedSet $other): bool

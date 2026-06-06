@@ -14,7 +14,7 @@
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 
 #[NestedSetAggregate(column: 'top_revenue_products', topK: 'product_id', k: 5, by: 'revenue')]
-class Department extends Model implements HasNestedSet { use NodeTrait; }
+class Department extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 Storage shape on each department row:

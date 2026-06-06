@@ -21,7 +21,7 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *     #[NestedSetAggregate(column: 'tickets_count', count: true)]
  *     #[NestedSetAggregate(column: 'tickets_avg',   avg: 'tickets')]
  *     #[NestedSetAggregate(column: 'tickets_max',   max: 'tickets')]
- *     class Area extends Model implements HasNestedSet { use NodeTrait; }
+ *     class Area extends Model implements MaintainsTreeAggregates { use NodeTrait; }
  *
  * Exactly one of `sum | count | avg | min | max | variance | stddev |
  * weightedAvg | boolOr | boolAnd | geometricMean | harmonicMean |

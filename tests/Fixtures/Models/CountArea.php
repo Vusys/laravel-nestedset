@@ -9,7 +9,7 @@ use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireNodeCountListener;
 
@@ -41,7 +41,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireNodeCountListener;
  * @property int $fire_node_count
  */
 #[NestedSetAggregateListener(column: 'fire_node_count', listener: FireNodeCountListener::class, operation: AggregateFunction::Count)]
-final class CountArea extends Model implements HasNestedSet
+final class CountArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

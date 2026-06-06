@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -23,7 +24,7 @@ use Vusys\NestedSet\NodeTrait;
  * trait path that constructs a fresh instance).
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
-final class StuckCursorUuidTag extends Model implements HasNestedSet
+final class StuckCursorUuidTag extends Model implements MaintainsTreeAggregates
 {
     use HasUuids;
     use NodeTrait;

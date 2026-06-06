@@ -12,6 +12,7 @@ use Vusys\NestedSet\Aggregates\Listeners\ListenerCalculator;
 use Vusys\NestedSet\Aggregates\Listeners\ListenerMaintenance;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\AggregateDriftDetected;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesCompleted;
@@ -35,7 +36,7 @@ final class AggregateRepair
      * disagree with their freshly-computed values over the source.
      * Empty array on a model with no aggregate declarations.
      *
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      * @return array<string, int>
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
@@ -89,7 +90,7 @@ final class AggregateRepair
      * AVG companions) from the source data and overwrites stored
      * values that have drifted. Returns a structured count per column.
      *
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */
@@ -158,7 +159,7 @@ final class AggregateRepair
      * break a long-running repair into a series of short, self-re-
      * dispatching jobs.
      *
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      * @return array{result: AggregateFixResult, nextAfterId: int|string|null}
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
@@ -264,7 +265,7 @@ final class AggregateRepair
      * Internal — called from `HasTreeRepair::fixTree()` after the
      * structural repair so stored aggregates match the rebuilt tree.
      *
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      */
     public static function runForFixTree(
         string $modelClass,
@@ -313,7 +314,7 @@ final class AggregateRepair
      * nextAfterId=null, accumulating per-chunk results into one
      * combined AggregateFixResult.
      *
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      */
     private static function fixAggregatesChunked(
         string $modelClass,

@@ -13,7 +13,7 @@ use Vusys\NestedSet\Aggregates\ListenerAggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;
@@ -191,7 +191,7 @@ final class ListenerAggregateRegistryTest extends TestCase
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
 #[NestedSetAggregateListener(column: 'tickets_total', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
-final class DuplicateListenerArea extends Model implements HasNestedSet
+final class DuplicateListenerArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -201,7 +201,7 @@ final class DuplicateListenerArea extends Model implements HasNestedSet
  * the `__sum` and `__count` companions as internal definitions.
  */
 #[NestedSetAggregateListener(column: 'power_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
-final class ListenerAvgArea extends Model implements HasNestedSet
+final class ListenerAvgArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -214,7 +214,7 @@ final class ListenerAvgArea extends Model implements HasNestedSet
 #[NestedSetAggregateListener(column: 'power_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
 #[NestedSetAggregateListener(column: 'power_total', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'power_n', listener: WeightedPowerListener::class, operation: AggregateFunction::Count)]
-final class ListenerAvgWithDeclaredCompanionsArea extends Model implements HasNestedSet
+final class ListenerAvgWithDeclaredCompanionsArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -223,7 +223,7 @@ final class ListenerAvgWithDeclaredCompanionsArea extends Model implements HasNe
  * Inline fixture: two listener aggregates declared via method override.
  * The resolver must return both, not just the first.
  */
-final class MultiListenerMethodArea extends Model implements HasNestedSet
+final class MultiListenerMethodArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

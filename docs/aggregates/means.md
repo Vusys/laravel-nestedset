@@ -37,7 +37,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
 
 #[NestedSetAggregate(column: 'growth_geomean', geometricMean: 'growth_rate')]
 #[NestedSetAggregate(column: 'speed_harmean',  harmonicMean:  'speed_kph')]
-class Segment extends Model implements HasNestedSet
+class Segment extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -99,7 +99,7 @@ Opt into silent-skip semantics with `allowNonPositive()` (fluent form) or `allow
     geometricMean: 'growth_rate',
     allowNonPositive: true,
 )]
-class Segment extends Model implements HasNestedSet { use NodeTrait; }
+class Segment extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 
 // or
 Aggregate::geometricMean('growth_rate')->allowNonPositive()->into('growth_geomean');
@@ -148,7 +148,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 
 #[NestedSetAggregateListener(column: 'score_geomean',  listener: ScoreListener::class, operation: AggregateFunction::GeometricMean)]
 #[NestedSetAggregateListener(column: 'score_harmean',  listener: ScoreListener::class, operation: AggregateFunction::HarmonicMean)]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 The migration declares the display column plus the auto-promoted Ln / Recip companions:

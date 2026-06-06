@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -33,7 +33,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetAggregate(column: 'top_revenue_ids', topK: 'id', k: 3, by: 'revenue')]
 #[NestedSetAggregate(column: 'top_active_ids', filter: ['category' => 'active'], topK: 'id', k: 3, by: 'revenue')]
-final class TopKArea extends Model implements HasNestedSet
+final class TopKArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

@@ -3,7 +3,7 @@
 When the model uses Laravel's `SoftDeletes` trait, the package cascades soft-delete, restore, and force-delete through the subtree — descendants follow the anchor without per-row Eloquent events firing, but the package's typed lifecycle events fill the visibility gap.
 
 ```php
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait, SoftDeletes;
 }

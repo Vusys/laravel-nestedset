@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\MaterialisedPathConfigurationException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
@@ -14,7 +14,7 @@ use Vusys\NestedSet\Tests\TestCase;
 
 #[NestedSetMaterialisedPath(column: 'p', slug: 'name')]
 #[NestedSetMaterialisedPath(column: 'p', slug: 'title')]
-final class DuplicateAttributeFixture extends Model implements HasNestedSet
+final class DuplicateAttributeFixture extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

@@ -7,14 +7,14 @@ namespace Vusys\NestedSet\Tests\Unit\MaterialisedPath;
 use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\MaterialisedPathConfigurationException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
 
 #[NestedSetMaterialisedPath(column: 'a_path', slug: 'name')]
-final class MethodOverrideMixed extends Model implements HasNestedSet
+final class MethodOverrideMixed extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -31,7 +31,7 @@ final class MethodOverrideMixed extends Model implements HasNestedSet
     }
 }
 
-final class MethodOverrideInstanceMethod extends Model implements HasNestedSet
+final class MethodOverrideInstanceMethod extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -42,7 +42,7 @@ final class MethodOverrideInstanceMethod extends Model implements HasNestedSet
     }
 }
 
-final class MethodOverrideNonArray extends Model implements HasNestedSet
+final class MethodOverrideNonArray extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -52,7 +52,7 @@ final class MethodOverrideNonArray extends Model implements HasNestedSet
     }
 }
 
-final class MethodOverrideEmptyKey extends Model implements HasNestedSet
+final class MethodOverrideEmptyKey extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -63,7 +63,7 @@ final class MethodOverrideEmptyKey extends Model implements HasNestedSet
     }
 }
 
-final class MethodOverrideBadEntry extends Model implements HasNestedSet
+final class MethodOverrideBadEntry extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

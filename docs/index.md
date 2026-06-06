@@ -42,7 +42,7 @@ Declare aggregates on the model and the SUM / COUNT / AVG / MIN / MAX roll-ups a
 ```php
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Export\AsciiOptions;
 use Vusys\NestedSet\NodeTrait;
 
@@ -51,7 +51,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'avg_cost',        avg:   'cost')]
 #[NestedSetAggregate(column: 'biggest_item',    max:   'cost')]
 #[NestedSetAggregate(column: 'recurring_total', sum:   'cost', filter: ['recurring' => true])]
-class BudgetItem extends Model implements HasNestedSet { use NodeTrait; }
+class BudgetItem extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 
 // Render the forest with each node's own cost + rolled-up subtree total:
 $render = fn () => BudgetItem::toAsciiTreeForest(new AsciiOptions(

@@ -12,6 +12,7 @@ use Vusys\NestedSet\Aggregates\Strategy\LazyInvalidation;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeBounds;
 
 /**
@@ -86,7 +87,7 @@ final class LazyAggregateAccess
      * `freshAggregate()` and writes the new value plus the stamp
      * companion to both the database row and the in-memory model.
      *
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function refresh(Model $node, AggregateDefinitionContract $definition): void
     {

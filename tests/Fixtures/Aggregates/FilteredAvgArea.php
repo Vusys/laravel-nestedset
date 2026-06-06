@@ -7,14 +7,14 @@ namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
  * AVG declared with an equality filter. Registry auto-promotes
  * companion SUM and COUNT; both companions must inherit the filter.
  */
-final class FilteredAvgArea extends Model implements HasNestedSet
+final class FilteredAvgArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

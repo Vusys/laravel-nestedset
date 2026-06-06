@@ -6,12 +6,12 @@ namespace Vusys\NestedSet\Tests\Unit\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
 
-final class FunctionNameColumnFixture extends Model implements HasNestedSet
+final class FunctionNameColumnFixture extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

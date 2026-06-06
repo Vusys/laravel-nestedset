@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -38,7 +38,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'features_or', bitOr: 'feature_bits')]
 #[NestedSetAggregate(column: 'features_and', bitAnd: 'feature_bits')]
 #[NestedSetAggregate(column: 'features_xor', bitXor: 'feature_bits')]
-final class BitwiseArea extends Model implements HasNestedSet
+final class BitwiseArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

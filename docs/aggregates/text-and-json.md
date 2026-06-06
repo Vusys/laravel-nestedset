@@ -52,7 +52,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
     column: 'slug_to_name',
     jsonObjectAgg: ['key' => 'slug', 'value' => 'name'],
 )]
-class Category extends Model implements HasNestedSet { use NodeTrait; }
+class Category extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 ### `distinctCount(source)`

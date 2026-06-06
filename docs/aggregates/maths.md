@@ -38,7 +38,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
 #[NestedSetAggregate(column: 'price_stddev',   stddev:   'price')]
 #[NestedSetAggregate(column: 'price_var_samp', variance: 'price', sample: true)]
 #[NestedSetAggregate(column: 'price_std_samp', stddev:   'price', sample: true)]
-class Product extends Model implements HasNestedSet
+class Product extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -120,7 +120,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 
 #[NestedSetAggregateListener(column: 'score_variance', listener: ScoreListener::class, operation: AggregateFunction::Variance)]
 #[NestedSetAggregateListener(column: 'score_stddev',   listener: ScoreListener::class, operation: AggregateFunction::Stddev)]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 The migration declares the display column plus the three auto-promoted companions (Sum, SumSq, Count) under the same `__sum` / `__sum_sq` / `__count` naming convention as the SQL form:

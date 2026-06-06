@@ -224,6 +224,11 @@ final class IsSiblingOfTest extends TestCase
             {
                 return 'parent_id';
             }
+
+            public function isPlacedInTree(): bool
+            {
+                return true;
+            }
         };
 
         // Same parent_id (null vs null) AND non-Model fallback path →
@@ -280,6 +285,11 @@ final class IsSiblingOfTest extends TestCase
             public function getParentIdName(): string
             {
                 return 'parent_id';
+            }
+
+            public function isPlacedInTree(): bool
+            {
+                return true;
             }
         };
 

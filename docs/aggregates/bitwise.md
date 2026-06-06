@@ -8,7 +8,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
 #[NestedSetAggregate(column: 'features_or',  bitOr:  'feature_bits')]
 #[NestedSetAggregate(column: 'features_and', bitAnd: 'feature_bits')]
 #[NestedSetAggregate(column: 'features_xor', bitXor: 'feature_bits')]
-class Module extends Model implements HasNestedSet
+class Module extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

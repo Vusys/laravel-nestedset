@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Factories\CategoryFactory;
 
@@ -29,7 +29,7 @@ use Vusys\NestedSet\Tests\Fixtures\Factories\CategoryFactory;
  * @property-read Collection<int, Category> $children
  * @property-read Category|null $parent
  */
-final class Category extends Model implements HasNestedSet
+final class Category extends Model implements MaintainsTreeAggregates
 {
     /** @use HasFactory<CategoryFactory> */
     use HasFactory;

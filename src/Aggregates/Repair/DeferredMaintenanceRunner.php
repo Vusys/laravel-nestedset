@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Aggregates\Repair;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\DeferredAggregateMaintenanceCompleted;
 use Vusys\NestedSet\Events\Aggregates\DeferredMaintenanceStarting;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesJobDispatched;
@@ -40,7 +41,7 @@ final class DeferredMaintenanceRunner
     /**
      * @template T
      *
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      * @param  \Closure(): T  $work
      * @return T
      *
@@ -121,7 +122,7 @@ final class DeferredMaintenanceRunner
     }
 
     /**
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */

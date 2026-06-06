@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\ScoreListener;
 
@@ -58,7 +58,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\ScoreListener;
 #[NestedSetAggregateListener(column: 'fire_score_sum', listener: ScoreListener::class, operation: AggregateFunction::Sum, filter: ['type' => 'fire'])]
 #[NestedSetAggregateListener(column: 'non_null_score_avg', listener: ScoreListener::class, operation: AggregateFunction::Avg, filterNotNull: 'score')]
 #[NestedSetAggregateListener(column: 'score_min', listener: ScoreListener::class, operation: AggregateFunction::Min)]
-final class StatsMonster extends Model implements HasNestedSet
+final class StatsMonster extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

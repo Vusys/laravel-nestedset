@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -33,7 +33,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetAggregate(column: 'price_min', min: 'price')]
 #[NestedSetAggregate(column: 'price_max', max: 'price')]
-final class PricedArea extends Model implements HasNestedSet
+final class PricedArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

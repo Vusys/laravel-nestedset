@@ -109,4 +109,9 @@ final class StubNode extends Model implements HasNestedSet
     {
         return 'parent_id';
     }
+
+    public function isPlacedInTree(): bool
+    {
+        return $this->getLft() > 0 && $this->getRgt() > $this->getLft();
+    }
 }

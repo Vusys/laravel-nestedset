@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 use Vusys\NestedSet\Attributes\NestedSetScope;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -22,7 +22,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetScope('menu_id')]
 #[NestedSetMaterialisedPath(column: 'url_path', slug: 'name')]
-final class ScopedSluggedMenuItem extends Model implements HasNestedSet
+final class ScopedSluggedMenuItem extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

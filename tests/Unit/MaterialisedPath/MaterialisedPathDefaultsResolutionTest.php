@@ -8,13 +8,13 @@ use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPathDefaults;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
 
 #[NestedSetMaterialisedPathDefaults(separator: '.', wrap: false, maxLength: 2048)]
 #[NestedSetMaterialisedPath(column: 'doc_path', slug: 'name')]
-final class DefaultsAttrFixture extends Model implements HasNestedSet
+final class DefaultsAttrFixture extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
@@ -23,7 +23,7 @@ final class DefaultsAttrFixture extends Model implements HasNestedSet
 }
 
 #[NestedSetMaterialisedPath(column: 'doc_path', slug: 'name')]
-final class NoDefaultsFixture extends Model implements HasNestedSet
+final class NoDefaultsFixture extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -32,7 +32,7 @@ final class NoDefaultsFixture extends Model implements HasNestedSet
 // says wrap=true. Used to verify the topmost (per-path) layer wins.
 #[NestedSetMaterialisedPathDefaults(separator: '.', wrap: false)]
 #[NestedSetMaterialisedPath(column: 'doc_path', slug: 'name', wrap: true)]
-final class PerPathOverridesDefaultsFixture extends Model implements HasNestedSet
+final class PerPathOverridesDefaultsFixture extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

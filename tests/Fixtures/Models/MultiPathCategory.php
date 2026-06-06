@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -22,7 +22,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetMaterialisedPath(column: 'url_path', slug: 'name')]
 #[NestedSetMaterialisedPath(column: 'crumb_path', attribute: 'display_name', separator: ' > ', wrap: false)]
-final class MultiPathCategory extends Model implements HasNestedSet
+final class MultiPathCategory extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

@@ -24,7 +24,7 @@ The attribute form (`src/Attributes/NestedSetAggregate.php`) is preferred for st
 #[NestedSetAggregate(column: 'tickets_avg',   avg: 'tickets')]
 #[NestedSetAggregate(column: 'cheapest',      min: 'price')]
 #[NestedSetAggregate(column: 'descendant_n',  count: true, exclusive: true)]
-class Area extends Model implements HasNestedSet { use NodeTrait; }
+class Area extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 Each attribute must name **exactly one** function (`toDefinition()` throws otherwise) and resolves to an immutable `AggregateDefinition`. The fluent `Aggregate` factory (`src/Aggregates/Aggregate.php`) is the runtime/conditional escape hatch, used from a `nestedSetAggregates()` method override — it's also where the richer forms live (`filterRaw`, `weightedAvg`, `percentiles`, …):

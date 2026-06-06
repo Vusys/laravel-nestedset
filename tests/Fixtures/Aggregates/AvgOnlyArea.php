@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -15,7 +15,7 @@ use Vusys\NestedSet\NodeTrait;
  * can maintain the AVG without a separate user declaration.
  */
 #[NestedSetAggregate(column: 'tickets_avg', avg: 'tickets')]
-final class AvgOnlyArea extends Model implements HasNestedSet
+final class AvgOnlyArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

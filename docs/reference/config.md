@@ -45,7 +45,7 @@ To use different column names per model, override those accessors on
 the model:
 
 ```php
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 
