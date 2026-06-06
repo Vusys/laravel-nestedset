@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -31,7 +31,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetAggregate(column: 'value_gmean', geometricMean: 'value')]
 #[NestedSetAggregate(column: 'value_hmean', harmonicMean: 'value')]
-final class MeanArea extends Model implements HasNestedSet
+final class MeanArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

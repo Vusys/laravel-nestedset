@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -17,7 +17,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
 #[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
-final class MixedAggregatesArea extends Model implements HasNestedSet
+final class MixedAggregatesArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

@@ -11,10 +11,10 @@ Every public capability is reachable from one trait, `NodeTrait` (`src/NodeTrait
 
 ```php
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -61,7 +61,7 @@ trait NodeTrait
 
 The walker is purely a consumer of in-memory data — it never queries. When the public methods on `HasTreeWalk` are called without an explicit `$subtree`, they fall back to `$this->descendants`; if the relation is not loaded either, they throw `UnloadedSubtreeException`. The exporters use it internally to compute their visible-key set when a `WalkFilter` is supplied.
 
-Models **must** `implements HasNestedSet` (`src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
+Models **must** `implements MaintainsTreeAggregates` (`src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
 
 ## The layers underneath
 

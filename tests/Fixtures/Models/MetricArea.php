@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -37,7 +37,7 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'tickets_stddev', stddev: 'tickets')]
 #[NestedSetAggregate(column: 'tickets_variance_samp', variance: 'tickets', sample: true)]
 #[NestedSetAggregate(column: 'tickets_stddev_samp', stddev: 'tickets', sample: true)]
-final class MetricArea extends Model implements HasNestedSet
+final class MetricArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

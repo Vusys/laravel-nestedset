@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -19,7 +19,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property int|null $parent_id
  */
 #[NestedSetMaterialisedPath(column: 'id_path', key: true, separator: '.')]
-final class KeyPathCategory extends Model implements HasNestedSet
+final class KeyPathCategory extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

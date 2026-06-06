@@ -29,7 +29,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
 
 #[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'fire_count',     listener: FireCountListener::class,     operation: AggregateFunction::Sum)]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 `contribution()` returns this node's value. `null` means "exclude this node" — useful for Min/Max where some nodes have no meaningful value. `watchColumns()` declares which attribute changes trigger incremental maintenance.
@@ -106,7 +106,7 @@ Declare a listener AVG with `AggregateFunction::Avg` and the package auto-promot
 
 ```php
 #[NestedSetAggregateListener(column: 'weighted_avg', listener: WeightedPowerListener::class, operation: AggregateFunction::Avg)]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 The companion columns are conventionally suffixed `__sum` and `__count` on the AVG column name. You declare them in the migration alongside the display column. **The `__sum` companion's storage type must accept the same value range your listener returns** — `nestedSetAggregate()` defaults to a `bigint`, which silently truncates float contributions. Match the migration to the listener:
@@ -150,7 +150,7 @@ The companion column names must follow the `__sum` / `__count` convention — th
     operation: AggregateFunction::Sum,
     exclusive: true,
 )]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 In the method-override form, call `->exclusive()` on the fluent builder before `->into()`:
@@ -186,7 +186,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
     operation: AggregateFunction::Avg,
     filterNotNull: 'score',
 )]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 In the method-override form, chain `->filter([...])` or `->filterNotNull('col')` before `->into()`:
@@ -210,7 +210,7 @@ Companion-derived statistical operations work on listener contributions the same
 #[NestedSetAggregateListener(column: 'score_stddev',   listener: ScoreListener::class, operation: AggregateFunction::Stddev)]
 #[NestedSetAggregateListener(column: 'score_geomean',  listener: ScoreListener::class, operation: AggregateFunction::GeometricMean)]
 #[NestedSetAggregateListener(column: 'score_harmean',  listener: ScoreListener::class, operation: AggregateFunction::HarmonicMean)]
-class Monster extends Model implements HasNestedSet { use NodeTrait; }
+class Monster extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 The companion shape mirrors the SQL aggregates:

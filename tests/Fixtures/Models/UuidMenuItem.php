@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Vusys\NestedSet\Attributes\NestedSetScope;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -31,7 +31,7 @@ use Vusys\NestedSet\NodeTrait;
  * @property-read UuidMenuItem|null $parent
  */
 #[NestedSetScope('menu_id')]
-final class UuidMenuItem extends Model implements HasNestedSet
+final class UuidMenuItem extends Model implements MaintainsTreeAggregates
 {
     use HasUuids;
     use NodeTrait;

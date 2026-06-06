@@ -7,7 +7,7 @@ The class-attribute form shown in the [Overview](overview.html) is the canonical
 For runtime-conditional aggregates (or large declaration sets that would clutter the class header), override `nestedSetAggregates()`:
 
 ```php
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

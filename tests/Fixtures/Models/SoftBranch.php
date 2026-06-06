@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -44,7 +44,7 @@ use Vusys\NestedSet\NodeTrait;
     filterRaw: 'active = 1',
     filterRawWatches: ['active'],
 )]
-final class SoftBranch extends Model implements HasNestedSet
+final class SoftBranch extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
     use SoftDeletes;

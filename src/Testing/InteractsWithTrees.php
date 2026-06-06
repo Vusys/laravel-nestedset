@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Testing;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 
 /**
  * Test-time assertion helpers for models that use `NodeTrait`. Drop
@@ -207,23 +208,10 @@ trait InteractsWithTrees
      * drift introduced by tests that mutate aggregate inputs without
      * going through Eloquent.
      */
-    public function assertAggregateMatchesFresh(HasNestedSet&Model $node, string $column, string $message = ''): void
+    public function assertAggregateMatchesFresh(MaintainsTreeAggregates&Model $node, string $column, string $message = ''): void
     {
         $stored = $node->getAttribute($column);
-        try {
-            $fresh = $node->freshAggregate($column);
-        } catch (\BadMethodCallException) {
-            // The contract on HasNestedSet declares freshAggregate() as a
-            // virtual method (NodeTrait supplies it in practice), but a
-            // bare HasNestedSet model that skips the trait won't have
-            // it at runtime. Convert the raw forwarding-call error into
-            // a clear test failure so the test author knows to add
-            // NodeTrait + a #[NestedSetAggregate(...)] declaration.
-            $this->fail(sprintf(
-                'assertAggregateMatchesFresh: %s does not declare aggregate columns (use NodeTrait + #[NestedSetAggregate]).',
-                $node::class,
-            ));
-        }
+        $fresh = $node->freshAggregate($column);
 
         // Tolerant numeric comparison so a decimal:4 AVG stored as "56.2500" matches a float 56.25.
         if (is_numeric($stored) && is_numeric($fresh)) {

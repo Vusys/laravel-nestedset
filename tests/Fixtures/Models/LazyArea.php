@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\DoubleTicketsListener;
 
@@ -52,7 +52,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\DoubleTicketsListener;
     operation: AggregateFunction::Sum,
     lazy: true,
 )]
-final class LazyArea extends Model implements HasNestedSet
+final class LazyArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

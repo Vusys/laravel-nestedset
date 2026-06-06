@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -19,7 +19,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  * precedence.
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
-final class HybridArea extends Model implements HasNestedSet
+final class HybridArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

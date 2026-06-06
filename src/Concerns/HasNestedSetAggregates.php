@@ -18,13 +18,13 @@ use Vusys\NestedSet\Aggregates\Lifecycle\DeltaCapture;
 use Vusys\NestedSet\Aggregates\Lifecycle\MoveHookApplier;
 use Vusys\NestedSet\Aggregates\Lifecycle\RestoreHookApplier;
 use Vusys\NestedSet\Aggregates\Listeners\ListenerCalculator;
-use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Repair\AggregateAnchor;
 use Vusys\NestedSet\Aggregates\Repair\AggregateRepair;
 use Vusys\NestedSet\Aggregates\Repair\DeferredMaintenanceRunner;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
@@ -66,6 +66,8 @@ use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
  *
  * @mixin Model
  * @mixin HasNestedSet
+ *
+ * @phpstan-require-implements MaintainsTreeAggregates
  */
 trait HasNestedSetAggregates
 {
@@ -176,20 +178,6 @@ trait HasNestedSetAggregates
             $definition::class,
             $column,
         ));
-    }
-
-    /**
-     * True when this node's lft/rgt have been assigned via a tree
-     * placement (appendToNode, makeRoot, etc.). False for freshly-
-     * constructed models whose bounds are still at the migration
-     * default of 0.
-     */
-    public function isPlacedInTree(): bool
-    {
-        $lft = Numeric::asIntOrZero($this->getAttribute($this->getLftName()));
-        $rgt = Numeric::asIntOrZero($this->getAttribute($this->getRgtName()));
-
-        return $lft > 0 && $rgt > $lft;
     }
 
     /**

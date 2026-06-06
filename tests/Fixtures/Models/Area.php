@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Factories\AreaFactory;
 
@@ -41,7 +41,7 @@ use Vusys\NestedSet\Tests\Fixtures\Factories\AreaFactory;
 #[NestedSetAggregate(column: 'tickets_avg', avg: 'tickets')]
 #[NestedSetAggregate(column: 'tickets_min', min: 'tickets')]
 #[NestedSetAggregate(column: 'tickets_max', max: 'tickets')]
-final class Area extends Model implements HasNestedSet
+final class Area extends Model implements MaintainsTreeAggregates
 {
     /** @use HasFactory<AreaFactory> */
     use HasFactory;

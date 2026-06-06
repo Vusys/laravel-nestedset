@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -64,7 +64,7 @@ use Vusys\NestedSet\NodeTrait;
     filterRaw: 'active = 1',
     filterRawWatches: ['active'],
 )]
-final class Branch extends Model implements HasNestedSet
+final class Branch extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

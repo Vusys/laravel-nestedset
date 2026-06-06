@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\FireCountListener;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
@@ -36,7 +36,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 #[NestedSetAggregateListener(column: 'op_json_object_agg', listener: WeightedPowerListener::class, operation: AggregateFunction::JsonObjectAgg)]
 #[NestedSetAggregateListener(column: 'op_median', listener: FireCountListener::class, operation: AggregateFunction::Median)]
 #[NestedSetAggregateListener(column: 'op_percentile', listener: FireCountListener::class, operation: AggregateFunction::Percentile)]
-final class UnsupportedOpMonster extends Model implements HasNestedSet
+final class UnsupportedOpMonster extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

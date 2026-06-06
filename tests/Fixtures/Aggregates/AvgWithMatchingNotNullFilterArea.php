@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -16,7 +16,7 @@ use Vusys\NestedSet\NodeTrait;
  * `FilterPredicateKind::NotNull` arm of
  * `AggregateRegistry::filtersMatch()`.
  */
-final class AvgWithMatchingNotNullFilterArea extends Model implements HasNestedSet
+final class AvgWithMatchingNotNullFilterArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

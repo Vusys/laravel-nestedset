@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\NonDeterministicPathSegment;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
@@ -23,7 +23,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * @property int $depth
  * @property int|null $parent_id
  */
-final class NonDeterministicNode extends Model implements HasNestedSet
+final class NonDeterministicNode extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

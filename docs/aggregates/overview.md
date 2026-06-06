@@ -12,7 +12,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
 #[NestedSetAggregate(column: 'articles_avg',       avg:   'articles')]
 #[NestedSetAggregate(column: 'articles_min',       min:   'articles')]
 #[NestedSetAggregate(column: 'articles_max',       max:   'articles')]
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -18,7 +18,7 @@ use Vusys\NestedSet\NodeTrait;
  * mutation.
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
-final class UnguardedArea extends Model implements HasNestedSet
+final class UnguardedArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

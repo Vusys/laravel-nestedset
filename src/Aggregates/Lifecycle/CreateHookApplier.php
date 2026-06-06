@@ -18,14 +18,14 @@ use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Repair\AggregateAnchor;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
-use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * `created` hook applier. A newly-inserted node has just been placed
  * in the tree (or it has not been — see
- * {@see HasNestedSetAggregates::isPlacedInTree()} for the guard). For
+ * {@see HasNestedSet::isPlacedInTree()} for the guard). For
  * each inclusive SUM/COUNT/MIN/MAX/BitOr/BitXor declaration, push the
  * node's contribution to its ancestor chain and to its own row in one
  * UPDATE.
@@ -33,7 +33,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 final class CreateHookApplier
 {
     /**
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function apply(Model $node): void
     {

@@ -328,76 +328,6 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('NestedSetAggregate', $error->getMessage());
     }
 
-    public function test_assert_aggregate_matches_fresh_fails_clearly_on_non_aggregate_model(): void
-    {
-        // Category uses NodeTrait but declares no aggregate columns.
-        // NodeTrait provides `freshAggregate()`, but calling it for an
-        // undeclared column raises AggregateConfigurationException
-        // — which the helper translates into a clean test-time
-        // failure rather than the user seeing an exception class
-        // they have to learn about.
-        $category = new Category(['name' => 'Root']);
-        $category->saveAsRoot();
-
-        // freshAggregate() throws AggregateConfigurationException for an
-        // unknown column, which surfaces as a test error — but the
-        // helper itself triggers when the model doesn't have the
-        // method at all. Use an anonymous Model that implements
-        // HasNestedSet without NodeTrait to exercise the guard:
-        $bareModel = new class extends Model implements HasNestedSet
-        {
-            public int $id = 1;
-
-            public function getLft(): int
-            {
-                return 1;
-            }
-
-            public function getRgt(): int
-            {
-                return 2;
-            }
-
-            public function getDepth(): int
-            {
-                return 0;
-            }
-
-            public function getParentId(): ?int
-            {
-                return null;
-            }
-
-            public function getBounds(): NodeBounds
-            {
-                return new NodeBounds(1, 2, 0);
-            }
-
-            public function getLftName(): string
-            {
-                return 'lft';
-            }
-
-            public function getRgtName(): string
-            {
-                return 'rgt';
-            }
-
-            public function getDepthName(): string
-            {
-                return 'depth';
-            }
-
-            public function getParentIdName(): string
-            {
-                return 'parent_id';
-            }
-        };
-
-        $error = $this->expectFailure(fn () => $this->assertAggregateMatchesFresh($bareModel, 'tickets_total'));
-        $this->assertStringContainsString('NestedSetAggregate', $error->getMessage());
-    }
-
     public function test_assert_is_child_of_accepts_string_primary_key(): void
     {
         // String/UUID/ULID PKs are first-class — `assertIsChildOf`
@@ -458,6 +388,11 @@ final class InteractsWithTreesTest extends TestCase
             {
                 return 'parent_id';
             }
+
+            public function isPlacedInTree(): bool
+            {
+                return true;
+            }
         };
 
         $child = new class extends Model implements HasNestedSet
@@ -505,6 +440,11 @@ final class InteractsWithTreesTest extends TestCase
             public function getParentIdName(): string
             {
                 return 'parent_id';
+            }
+
+            public function isPlacedInTree(): bool
+            {
+                return true;
             }
         };
 

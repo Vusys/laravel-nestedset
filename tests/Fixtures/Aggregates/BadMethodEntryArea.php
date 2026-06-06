@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 
 use Illuminate\Database\Eloquent\Model;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
  * Method-override returns an array containing a non-AggregateDefinition
  * entry. Used to exercise the registry's per-entry validation throw.
  */
-final class BadMethodEntryArea extends Model implements HasNestedSet
+final class BadMethodEntryArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 

@@ -37,7 +37,7 @@ Read each rollup chip (`Σ articles`) on the second tree against the first: `Ele
 #[NestedSetAggregate(column: 'public_count',       count: true,        filter: ['visibility' => 'public'])]
 #[NestedSetAggregate(column: 'public_max',         max:   'articles', filter: ['visibility' => 'public'])]
 #[NestedSetAggregate(column: 'has_articles',       count: true,        filterNotNull: 'articles')]
-class Category extends Model implements HasNestedSet { use NodeTrait; }
+class Category extends Model implements MaintainsTreeAggregates { use NodeTrait; }
 ```
 
 Filtered and unfiltered columns can coexist on the same model — declare `articles_total` (unfiltered SUM) alongside `published_articles` (filtered SUM) and you get both rollups maintained independently.

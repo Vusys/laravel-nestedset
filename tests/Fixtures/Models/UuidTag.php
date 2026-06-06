@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Aggregates\UuidNameLengthListener;
 
@@ -35,7 +35,7 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\UuidNameLengthListener;
  */
 #[NestedSetAggregate(column: 'tickets_total', sum: 'tickets')]
 #[NestedSetAggregateListener(column: 'name_length_total', listener: UuidNameLengthListener::class, operation: AggregateFunction::Sum)]
-final class UuidTag extends Model implements HasNestedSet
+final class UuidTag extends Model implements MaintainsTreeAggregates
 {
     use HasUuids;
     use NodeTrait;

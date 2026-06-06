@@ -7,7 +7,7 @@ namespace Vusys\NestedSet\Tests\Fixtures\Aggregates;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregateListener;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 
 /**
@@ -16,7 +16,7 @@ use Vusys\NestedSet\NodeTrait;
  */
 #[NestedSetAggregateListener(column: 'weighted_power', listener: WeightedPowerListener::class, operation: AggregateFunction::Sum)]
 #[NestedSetAggregateListener(column: 'fire_count', listener: FireCountListener::class, operation: AggregateFunction::Sum)]
-final class ListenerOnlyArea extends Model implements HasNestedSet
+final class ListenerOnlyArea extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

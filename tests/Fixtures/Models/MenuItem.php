@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Vusys\NestedSet\Attributes\NestedSetScope;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeTrait;
 use Vusys\NestedSet\Tests\Fixtures\Factories\MenuItemFactory;
 
@@ -28,7 +28,7 @@ use Vusys\NestedSet\Tests\Fixtures\Factories\MenuItemFactory;
  * @property-read MenuItem|null $parent
  */
 #[NestedSetScope('menu_id')]
-final class MenuItem extends Model implements HasNestedSet
+final class MenuItem extends Model implements MaintainsTreeAggregates
 {
     /** @use HasFactory<MenuItemFactory> */
     use HasFactory;

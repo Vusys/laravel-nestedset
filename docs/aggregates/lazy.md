@@ -13,7 +13,7 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
 
 #[NestedSetAggregate(column: 'articles_total', sum: 'articles', lazy: true)]
 #[NestedSetAggregate(column: 'articles_count', count: true, lazy: true)]
-class Category extends Model implements HasNestedSet
+class Category extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

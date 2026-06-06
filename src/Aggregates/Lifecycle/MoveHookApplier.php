@@ -16,7 +16,7 @@ use Vusys\NestedSet\Aggregates\Listeners\ListenerCalculator;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Repair\AggregateAnchor;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -45,7 +45,7 @@ final class MoveHookApplier
      * Path A "before-move" hook: the OLD ancestor chain loses this
      * subtree's contribution.
      *
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function applyBeforeMove(Model $node, NodeBounds $from): void
     {
@@ -180,7 +180,7 @@ final class MoveHookApplier
      * Path A "after-move" hook: the NEW ancestor chain gains this
      * subtree's contribution.
      *
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function applyAfterMove(Model $node, NodeBounds $from, NodeBounds $to, string $action): void
     {

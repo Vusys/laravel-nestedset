@@ -23,7 +23,7 @@ A plain `AVG(price)` over the subtree would give `685` — but that wildly overs
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
 
 #[NestedSetAggregate(column: 'price_wavg', weightedAvg: 'price', weight: 'qty')]
-class OrderCategory extends Model implements HasNestedSet
+class OrderCategory extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }
@@ -69,7 +69,7 @@ If your UI hides a "Realtime sync" navigation entry when no descendant feature i
 ```php
 #[NestedSetAggregate(column: 'any_active', boolOr: 'active')]
 #[NestedSetAggregate(column: 'all_active', boolAnd: 'active')]
-class FeatureFlagNode extends Model implements HasNestedSet
+class FeatureFlagNode extends Model implements MaintainsTreeAggregates
 {
     use NodeTrait;
 }

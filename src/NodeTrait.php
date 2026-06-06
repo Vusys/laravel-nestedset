@@ -20,6 +20,7 @@ use Vusys\NestedSet\Concerns\HasTreeRelations;
 use Vusys\NestedSet\Concerns\HasTreeRepair;
 use Vusys\NestedSet\Concerns\HasTreeWalk;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
@@ -31,7 +32,8 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 /**
  * Adds the full nested-set API to an Eloquent model.
  *
- * Models that use this trait must also `implements HasNestedSet`. The
+ * Models that use this trait must also `implements MaintainsTreeAggregates`
+ * (which itself extends {@see HasNestedSet}). The
  * trait provides default implementations of all five interface methods
  * (getLft/getRgt/getDepth/getParentId/getBounds) so the contract is
  * satisfied out of the box; user code can override the column-name
@@ -63,7 +65,7 @@ trait NodeTrait
      *  - `created` → applyAggregateOnCreate (push fresh node's
      *                contribution to ancestors; skipped when the node
      *                has not been placed in the tree yet, see
-     *                {@see HasNestedSetAggregates::isPlacedInTree()}).
+     *                {@see HasNestedSet::isPlacedInTree()}).
      *  - `deleted` → applyAggregateOnDelete (subtract stored subtree
      *                contribution from ancestors). Fires for both hard
      *                and soft deletes; HasSoftDeleteTree's separate
@@ -73,7 +75,7 @@ trait NodeTrait
     public static function bootNodeTrait(): void
     {
         static::saving(static function (Model $node): void {
-            if (! $node instanceof HasNestedSet) {
+            if (! $node instanceof MaintainsTreeAggregates) {
                 return;
             }
             if (method_exists($node, 'callPendingAction')) {
@@ -102,7 +104,7 @@ trait NodeTrait
         });
 
         static::saved(static function (Model $node): void {
-            if (! $node instanceof HasNestedSet) {
+            if (! $node instanceof MaintainsTreeAggregates) {
                 return;
             }
             self::runAggregateHook($node, 'apply', static fn () => $node->applyAggregateDeltas());
@@ -112,13 +114,13 @@ trait NodeTrait
         });
 
         static::created(static function (Model $node): void {
-            if ($node instanceof HasNestedSet) {
+            if ($node instanceof MaintainsTreeAggregates) {
                 self::runAggregateHook($node, 'on_create', static fn () => $node->applyAggregateOnCreate());
             }
         });
 
         static::deleting(static function (Model $node): void {
-            if (! $node instanceof HasNestedSet) {
+            if (! $node instanceof MaintainsTreeAggregates) {
                 return;
             }
             // Re-read structural columns (lft/rgt/depth/parent_id) and
@@ -155,7 +157,7 @@ trait NodeTrait
         });
 
         static::deleted(static function (Model $node): void {
-            if (! $node instanceof HasNestedSet) {
+            if (! $node instanceof MaintainsTreeAggregates) {
                 return;
             }
 
@@ -212,7 +214,7 @@ trait NodeTrait
         // must run *before* the aggregate hook so chain recomputes see
         // descendants in their final (post-cascade) live state.
         static::registerModelEvent('restored', static function (Model $node): void {
-            if (! $node instanceof HasNestedSet) {
+            if (! $node instanceof MaintainsTreeAggregates) {
                 return;
             }
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {

@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Events\EventDispatcher;
 
@@ -39,7 +40,7 @@ final class FixAggregatesJob implements ShouldQueue
     use SerializesModels;
 
     /**
-     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      * @param  int|null  $chunkSize  When > 0, process up to this many
      *                               outer rows per dispatch and
      *                               re-queue this job with an advanced
@@ -97,6 +98,9 @@ final class FixAggregatesJob implements ShouldQueue
      * as the single-shot path, but each individual job runs in bounded
      * time — friendlier for queue workers with timeouts and easier to
      * observe via `php artisan queue:work` output.
+     */
+    /**
+     * @param  class-string<Model&MaintainsTreeAggregates>  $modelClass
      */
     private function handleChunked(string $modelClass, ?HasNestedSet $anchor): AggregateFixResult
     {

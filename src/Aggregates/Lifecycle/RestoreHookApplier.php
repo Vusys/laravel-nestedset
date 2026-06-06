@@ -18,7 +18,7 @@ use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Repair\AggregateAnchor;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
-use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
@@ -35,7 +35,7 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 final class RestoreHookApplier
 {
     /**
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     public static function apply(Model $node): void
     {
@@ -60,7 +60,7 @@ final class RestoreHookApplier
     }
 
     /**
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     private static function applySoftDeleteRestore(Model $node): void
     {
@@ -138,7 +138,7 @@ final class RestoreHookApplier
     }
 
     /**
-     * @param  Model&HasNestedSet  $node
+     * @param  Model&MaintainsTreeAggregates  $node
      */
     private static function applyHardRestore(Model $node): void
     {
