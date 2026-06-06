@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -39,7 +40,8 @@ final class ReorderChildrenTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_reorder_two_siblings_swaps_their_subtrees(): void
+    #[Test]
+    public function reorder_two_siblings_swaps_their_subtrees(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -68,7 +70,8 @@ final class ReorderChildrenTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_reorder_three_siblings_cyclic_permutation(): void
+    #[Test]
+    public function reorder_three_siblings_cyclic_permutation(): void
     {
         // A,B,C → B,C,A
         $root = Category::query()->findOrFail(1);
@@ -96,7 +99,8 @@ final class ReorderChildrenTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_reorder_with_deeper_subtrees_shifts_every_descendant(): void
+    #[Test]
+    public function reorder_with_deeper_subtrees_shifts_every_descendant(): void
     {
         // Extend A's subtree by another level: AA → AAA.
         $aaa = new Category(['name' => 'AAA']);
@@ -116,7 +120,8 @@ final class ReorderChildrenTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_identity_reorder_is_silent_no_op_and_fires_no_query(): void
+    #[Test]
+    public function identity_reorder_is_silent_no_op_and_fires_no_query(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -142,7 +147,8 @@ final class ReorderChildrenTest extends TestCase
         );
     }
 
-    public function test_rejects_missing_child_with_message_listing_omitted_keys(): void
+    #[Test]
+    public function rejects_missing_child_with_message_listing_omitted_keys(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -153,7 +159,8 @@ final class ReorderChildrenTest extends TestCase
         $root->reorderChildren([2, 4]);
     }
 
-    public function test_rejects_foreign_key_with_message_listing_unknown_keys(): void
+    #[Test]
+    public function rejects_foreign_key_with_message_listing_unknown_keys(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -164,7 +171,8 @@ final class ReorderChildrenTest extends TestCase
         $root->reorderChildren([2, 4, 6, 999]);
     }
 
-    public function test_rejects_grandchild_as_foreign_key(): void
+    #[Test]
+    public function rejects_grandchild_as_foreign_key(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -174,7 +182,8 @@ final class ReorderChildrenTest extends TestCase
         $root->reorderChildren([2, 4, 6, 3]);
     }
 
-    public function test_rejects_duplicate_keys(): void
+    #[Test]
+    public function rejects_duplicate_keys(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -184,7 +193,8 @@ final class ReorderChildrenTest extends TestCase
         $root->reorderChildren([2, 4, 2]);
     }
 
-    public function test_empty_parent_silently_noops_when_called_with_empty_list(): void
+    #[Test]
+    public function empty_parent_silently_noops_when_called_with_empty_list(): void
     {
         $leaf = Category::query()->findOrFail(3); // AA — a leaf
 
@@ -203,7 +213,8 @@ final class ReorderChildrenTest extends TestCase
         $this->assertSame(0, $sniffer->updates);
     }
 
-    public function test_empty_parent_with_supplied_keys_throws(): void
+    #[Test]
+    public function empty_parent_with_supplied_keys_throws(): void
     {
         $leaf = Category::query()->findOrFail(3);
 
@@ -212,7 +223,8 @@ final class ReorderChildrenTest extends TestCase
         $leaf->reorderChildren([99]);
     }
 
-    public function test_accepts_model_instances_in_place_of_keys(): void
+    #[Test]
+    public function accepts_model_instances_in_place_of_keys(): void
     {
         $root = Category::query()->findOrFail(1);
         $a = Category::query()->findOrFail(2);
@@ -227,7 +239,8 @@ final class ReorderChildrenTest extends TestCase
         );
     }
 
-    public function test_unplaced_parent_throws(): void
+    #[Test]
+    public function unplaced_parent_throws(): void
     {
         $unplaced = new Category(['name' => 'Unplaced']);
 
@@ -236,7 +249,8 @@ final class ReorderChildrenTest extends TestCase
         $unplaced->reorderChildren([1]);
     }
 
-    public function test_parent_id_unchanged_for_every_row(): void
+    #[Test]
+    public function parent_id_unchanged_for_every_row(): void
     {
         $beforeParents = Category::query()
             ->orderBy('id')
@@ -253,7 +267,8 @@ final class ReorderChildrenTest extends TestCase
         $this->assertSame($beforeParents, $afterParents);
     }
 
-    public function test_returns_self_after_reorder(): void
+    #[Test]
+    public function returns_self_after_reorder(): void
     {
         $root = Category::query()->findOrFail(1);
         $returned = $root->reorderChildren([6, 4, 2]);
@@ -261,7 +276,8 @@ final class ReorderChildrenTest extends TestCase
         $this->assertSame($root, $returned);
     }
 
-    public function test_rejects_non_int_or_string_entries(): void
+    #[Test]
+    public function rejects_non_int_or_string_entries(): void
     {
         $root = Category::query()->findOrFail(1);
 

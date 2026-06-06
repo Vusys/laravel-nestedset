@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathCloneTest extends TestCase
 {
-    public function test_clone_subtree_regenerates_paths_under_new_parent(): void
+    #[Test]
+    public function clone_subtree_regenerates_paths_under_new_parent(): void
     {
         $source = new SluggedCategory(['name' => 'Source']);
         $source->makeRoot()->save();
@@ -33,7 +35,8 @@ final class MaterialisedPathCloneTest extends TestCase
         $this->assertSame('/dest/source/child/', $clonedChild->url_path);
     }
 
-    public function test_transform_setting_a_path_column_throws(): void
+    #[Test]
+    public function transform_setting_a_path_column_throws(): void
     {
         $source = new SluggedCategory(['name' => 'Source']);
         $source->makeRoot()->save();

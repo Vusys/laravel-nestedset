@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation;
 
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
@@ -48,7 +49,8 @@ final class MutationSemanticsTest extends TestCase
     // Self-as-own-parent
     // ================================================================
 
-    public function test_appending_node_to_itself_throws(): void
+    #[Test]
+    public function appending_node_to_itself_throws(): void
     {
         $this->seedFamilyTree();
 
@@ -61,7 +63,8 @@ final class MutationSemanticsTest extends TestCase
         $a->appendToNode($a)->save();
     }
 
-    public function test_prepending_node_to_itself_throws(): void
+    #[Test]
+    public function prepending_node_to_itself_throws(): void
     {
         $this->seedFamilyTree();
 
@@ -74,7 +77,8 @@ final class MutationSemanticsTest extends TestCase
         $a->prependToNode($a)->save();
     }
 
-    public function test_insert_before_node_on_self_is_rejected(): void
+    #[Test]
+    public function insert_before_node_on_self_is_rejected(): void
     {
         // "Insert before yourself" is logically meaningless — it would
         // be a silent no-op without the guard in actSibling.
@@ -89,7 +93,8 @@ final class MutationSemanticsTest extends TestCase
         $a->insertBeforeNode($a)->save();
     }
 
-    public function test_insert_after_node_on_self_is_rejected(): void
+    #[Test]
+    public function insert_after_node_on_self_is_rejected(): void
     {
         $this->seedFamilyTree();
 
@@ -106,7 +111,8 @@ final class MutationSemanticsTest extends TestCase
     // Unsaved parent passed to single-node placement methods
     // ================================================================
 
-    public function test_append_to_node_with_unsaved_parent_throws(): void
+    #[Test]
+    public function append_to_node_with_unsaved_parent_throws(): void
     {
         // Single-node `appendToNode->save()` against an unsaved parent
         // can't proceed: there are no parent bounds to read. Pins that
@@ -119,7 +125,8 @@ final class MutationSemanticsTest extends TestCase
         $child->appendToNode($unsavedParent)->save();
     }
 
-    public function test_prepend_to_node_with_unsaved_parent_throws(): void
+    #[Test]
+    public function prepend_to_node_with_unsaved_parent_throws(): void
     {
         $unsavedParent = new Category(['name' => 'Phantom']);
         $child = new Category(['name' => 'Orphan']);
@@ -129,7 +136,8 @@ final class MutationSemanticsTest extends TestCase
         $child->prependToNode($unsavedParent)->save();
     }
 
-    public function test_insert_before_node_with_unsaved_sibling_throws(): void
+    #[Test]
+    public function insert_before_node_with_unsaved_sibling_throws(): void
     {
         $unsavedSibling = new Category(['name' => 'Phantom']);
         $newNode = new Category(['name' => 'Newcomer']);
@@ -143,7 +151,8 @@ final class MutationSemanticsTest extends TestCase
     // makeRoot on an already-root row
     // ================================================================
 
-    public function test_make_root_on_already_root_is_a_safe_noop(): void
+    #[Test]
+    public function make_root_on_already_root_is_a_safe_noop(): void
     {
         $this->seedFamilyTree();
 
@@ -157,7 +166,8 @@ final class MutationSemanticsTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_make_root_on_already_root_is_a_noop_for_scoped_models(): void
+    #[Test]
+    public function make_root_on_already_root_is_a_noop_for_scoped_models(): void
     {
         // Scoped equivalent of the unscoped no-op above. The max-rgt
         // lookup inside actMakeRoot is scope-filtered, so re-rooting
@@ -188,7 +198,8 @@ final class MutationSemanticsTest extends TestCase
         $this->assertEquals($beforeB, $afterB, 'menu B not touched — the makeRoot stayed inside menu A');
     }
 
-    public function test_make_root_locks_max_rgt_read_against_concurrent_writers(): void
+    #[Test]
+    public function make_root_locks_max_rgt_read_against_concurrent_writers(): void
     {
         if (DB::connection()->getDriverName() === 'sqlite') {
             $this->markTestSkipped('SQLite has no row-level locking; FOR UPDATE is a no-op there.');
@@ -229,7 +240,8 @@ final class MutationSemanticsTest extends TestCase
     // insertBeforeNode / insertAfterNode targeting a root
     // ================================================================
 
-    public function test_insert_before_node_on_a_root_creates_a_sibling_root(): void
+    #[Test]
+    public function insert_before_node_on_a_root_creates_a_sibling_root(): void
     {
         // Multiple roots are allowed for unscoped models (forest).
         // Inserting a new node "before" a root should produce another
@@ -249,7 +261,8 @@ final class MutationSemanticsTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_insert_after_node_on_a_root_creates_a_sibling_root(): void
+    #[Test]
+    public function insert_after_node_on_a_root_creates_a_sibling_root(): void
     {
         $r1 = new Category(['name' => 'Root 1']);
         $r1->saveAsRoot();
@@ -270,7 +283,8 @@ final class MutationSemanticsTest extends TestCase
     // Pending placement wins over hand-set parent_id
     // ================================================================
 
-    public function test_pending_placement_wins_when_parent_id_is_also_set_by_hand(): void
+    #[Test]
+    public function pending_placement_wins_when_parent_id_is_also_set_by_hand(): void
     {
         // A user does `$x->appendToNode($a)` AND sets `$x->parent_id = $b->id`
         // before save. Behaviour to lock in: the pending placement wins —
@@ -298,7 +312,8 @@ final class MutationSemanticsTest extends TestCase
     // Cross-scope moves throw ScopeViolationException
     // ================================================================
 
-    public function test_append_to_node_across_scopes_throws(): void
+    #[Test]
+    public function append_to_node_across_scopes_throws(): void
     {
         $m1 = Menu::create(['name' => 'Menu 1']);
         $m2 = Menu::create(['name' => 'Menu 2']);
@@ -321,7 +336,8 @@ final class MutationSemanticsTest extends TestCase
         $child->appendToNode($m2Root)->save();
     }
 
-    public function test_insert_before_node_across_scopes_throws(): void
+    #[Test]
+    public function insert_before_node_across_scopes_throws(): void
     {
         $m1 = Menu::create(['name' => 'Menu 1']);
         $m2 = Menu::create(['name' => 'Menu 2']);
@@ -351,7 +367,8 @@ final class MutationSemanticsTest extends TestCase
     // appendToNode / prependToNode / sibling — unsaved target
     // ================================================================
 
-    public function test_append_to_unsaved_parent_throws_at_save(): void
+    #[Test]
+    public function append_to_unsaved_parent_throws_at_save(): void
     {
         // Anchor placement reads the parent's bounds from the DB by
         // primary key. An unsaved parent has getKey() === null, which
@@ -370,7 +387,8 @@ final class MutationSemanticsTest extends TestCase
         $child->save();
     }
 
-    public function test_insert_before_unsaved_sibling_throws_at_save(): void
+    #[Test]
+    public function insert_before_unsaved_sibling_throws_at_save(): void
     {
         // Same diagnosis as append: the sibling action reads the
         // target's bounds via getNodeData, which routes through

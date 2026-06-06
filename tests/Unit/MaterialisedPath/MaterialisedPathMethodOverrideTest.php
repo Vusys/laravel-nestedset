@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\MaterialisedPathConfigurationException;
@@ -82,13 +83,15 @@ final class MaterialisedPathMethodOverrideTest extends OrchestraTestCase
         MaterialisedPathRegistry::forgetCache();
     }
 
-    public function test_method_form_merges_with_attribute_form(): void
+    #[Test]
+    public function method_form_merges_with_attribute_form(): void
     {
         $paths = MaterialisedPathRegistry::for(MethodOverrideMixed::class);
         $this->assertSame(['a_path', 'b_path', 'c_path', 'd_path'], array_keys($paths));
     }
 
-    public function test_method_form_wins_on_column_collision(): void
+    #[Test]
+    public function method_form_wins_on_column_collision(): void
     {
         $paths = MaterialisedPathRegistry::for(MethodOverrideMixed::class);
         // The attribute declared slug:'name'; the method-form override sets attribute:'display_name'.
@@ -96,48 +99,55 @@ final class MaterialisedPathMethodOverrideTest extends OrchestraTestCase
         $this->assertSame('display_name', $paths['a_path']->sourceColumn());
     }
 
-    public function test_string_auto_wraps_to_attribute(): void
+    #[Test]
+    public function string_auto_wraps_to_attribute(): void
     {
         $paths = MaterialisedPathRegistry::for(MethodOverrideMixed::class);
         $this->assertSame(MaterialisedPath::SOURCE_ATTRIBUTE, $paths['b_path']->sourceKind());
         $this->assertSame('title', $paths['b_path']->sourceColumn());
     }
 
-    public function test_closure_auto_wraps_to_from(): void
+    #[Test]
+    public function closure_auto_wraps_to_from(): void
     {
         $paths = MaterialisedPathRegistry::for(MethodOverrideMixed::class);
         $this->assertSame(MaterialisedPath::SOURCE_CLOSURE, $paths['c_path']->sourceKind());
     }
 
-    public function test_value_object_passes_through(): void
+    #[Test]
+    public function value_object_passes_through(): void
     {
         $paths = MaterialisedPathRegistry::for(MethodOverrideMixed::class);
         $this->assertSame(MaterialisedPath::SOURCE_KEY, $paths['d_path']->sourceKind());
         $this->assertSame('.', $paths['d_path']->getSeparator());
     }
 
-    public function test_non_static_method_throws(): void
+    #[Test]
+    public function non_static_method_throws(): void
     {
         $this->expectException(MaterialisedPathConfigurationException::class);
         $this->expectExceptionMessageMatches('/protected static/');
         MaterialisedPathRegistry::for(MethodOverrideInstanceMethod::class);
     }
 
-    public function test_method_returning_non_array_throws(): void
+    #[Test]
+    public function method_returning_non_array_throws(): void
     {
         $this->expectException(MaterialisedPathConfigurationException::class);
         $this->expectExceptionMessageMatches('/must return array/');
         MaterialisedPathRegistry::for(MethodOverrideNonArray::class);
     }
 
-    public function test_method_with_non_string_column_key_throws(): void
+    #[Test]
+    public function method_with_non_string_column_key_throws(): void
     {
         $this->expectException(MaterialisedPathConfigurationException::class);
         $this->expectExceptionMessageMatches('/non-empty column name/');
         MaterialisedPathRegistry::for(MethodOverrideEmptyKey::class);
     }
 
-    public function test_method_with_bad_entry_type_throws(): void
+    #[Test]
+    public function method_with_bad_entry_type_throws(): void
     {
         $this->expectException(MaterialisedPathConfigurationException::class);
         $this->expectExceptionMessageMatches('/MaterialisedPath, a callable, or a string/');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\InvalidJsonTreeException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
@@ -27,7 +28,8 @@ final class JsonImportEdgeCasesTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_empty_payload_inserts_nothing_and_returns_empty(): void
+    #[Test]
+    public function empty_payload_inserts_nothing_and_returns_empty(): void
     {
         $result = Category::fromJsonTree([]);
 
@@ -35,7 +37,8 @@ final class JsonImportEdgeCasesTest extends TestCase
         $this->assertSame(0, Category::query()->count());
     }
 
-    public function test_json_string_input_is_decoded_and_inserted(): void
+    #[Test]
+    public function json_string_input_is_decoded_and_inserted(): void
     {
         $json = '[{"name":"r","children":[]}]';
 
@@ -44,13 +47,15 @@ final class JsonImportEdgeCasesTest extends TestCase
         $this->assertSame(1, Category::query()->count());
     }
 
-    public function test_invalid_json_string_throws(): void
+    #[Test]
+    public function invalid_json_string_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         Category::fromJsonTree('not json at all');
     }
 
-    public function test_flat_shape_payload_is_imported(): void
+    #[Test]
+    public function flat_shape_payload_is_imported(): void
     {
         Category::fromJsonTree([
             ['id' => 1, 'name' => 'r', 'parent_id' => null],
@@ -63,7 +68,8 @@ final class JsonImportEdgeCasesTest extends TestCase
         $this->assertIsChildOf($a, $r);
     }
 
-    public function test_scoped_model_without_parent_requires_scope_columns_on_roots(): void
+    #[Test]
+    public function scoped_model_without_parent_requires_scope_columns_on_roots(): void
     {
         $this->expectException(ScopeViolationException::class);
         MenuItem::fromJsonTree([
@@ -71,7 +77,8 @@ final class JsonImportEdgeCasesTest extends TestCase
         ]);
     }
 
-    public function test_scoped_model_with_parent_inherits_scope(): void
+    #[Test]
+    public function scoped_model_with_parent_inherits_scope(): void
     {
         $menu = Menu::query()->create(['name' => 'main']);
         $rootItem = new MenuItem(['name' => 'root']);

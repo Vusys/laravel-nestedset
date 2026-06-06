@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\MultiPathCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathRepairTest extends TestCase
 {
-    public function test_fix_materialised_paths_rebuilds_a_corrupted_column(): void
+    #[Test]
+    public function fix_materialised_paths_rebuilds_a_corrupted_column(): void
     {
         $root = new MultiPathCategory(['name' => 'Electronics', 'display_name' => 'Electronics']);
         $root->makeRoot()->save();
@@ -30,7 +32,8 @@ final class MaterialisedPathRepairTest extends TestCase
         $this->assertSame('/electronics/laptops/', $child->url_path);
     }
 
-    public function test_fix_tree_rebuilds_paths_as_part_of_the_pass(): void
+    #[Test]
+    public function fix_tree_rebuilds_paths_as_part_of_the_pass(): void
     {
         $root = new MultiPathCategory(['name' => 'A', 'display_name' => 'A']);
         $root->makeRoot()->save();

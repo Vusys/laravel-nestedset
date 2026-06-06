@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Testing;
 
 use Closure;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Testing\TreeBuilderShape;
 
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Testing\TreeBuilderShape;
  */
 final class ShapeNormalisationTest extends TestCase
 {
-    public function test_uniform_int_branching_expands_to_expected_subtree_counts(): void
+    #[Test]
+    public function uniform_int_branching_expands_to_expected_subtree_counts(): void
     {
         $shape = $this->uniform(depth: 3, branching: 2);
         $normalised = $shape->normalise();
@@ -25,7 +27,8 @@ final class ShapeNormalisationTest extends TestCase
         $this->assertSame(15, $this->totalNodes($normalised));
     }
 
-    public function test_uniform_zero_depth_zero_branching_is_single_root(): void
+    #[Test]
+    public function uniform_zero_depth_zero_branching_is_single_root(): void
     {
         $shape = $this->uniform(depth: 0, branching: 0);
         $normalised = $shape->normalise();
@@ -34,7 +37,8 @@ final class ShapeNormalisationTest extends TestCase
         $this->assertSame([], $normalised[0][TreeBuilderShape::CHILDREN_KEY]);
     }
 
-    public function test_branching_array_produces_per_depth_fan_out(): void
+    #[Test]
+    public function branching_array_produces_per_depth_fan_out(): void
     {
         $shape = $this->uniform(depth: 3, branching: [5, 2, 1]);
         $normalised = $shape->normalise();
@@ -61,7 +65,8 @@ final class ShapeNormalisationTest extends TestCase
         return $children;
     }
 
-    public function test_branching_closure_receives_parent_depth(): void
+    #[Test]
+    public function branching_closure_receives_parent_depth(): void
     {
         $seenDepths = [];
         $shape = $this->uniform(
@@ -80,7 +85,8 @@ final class ShapeNormalisationTest extends TestCase
         $this->assertContains(1, $seenDepths);
     }
 
-    public function test_branching_closure_returning_non_int_throws(): void
+    #[Test]
+    public function branching_closure_returning_non_int_throws(): void
     {
         $bogus = $this->bogusBranchingClosure();
         $shape = $this->uniform(depth: 1, branching: $bogus);
@@ -106,7 +112,8 @@ final class ShapeNormalisationTest extends TestCase
         return $closure;
     }
 
-    public function test_branching_closure_returning_negative_throws(): void
+    #[Test]
+    public function branching_closure_returning_negative_throws(): void
     {
         $shape = $this->uniform(
             depth: 1,
@@ -117,7 +124,8 @@ final class ShapeNormalisationTest extends TestCase
         $shape->normalise();
     }
 
-    public function test_explicit_shape_walks_in_dfs_pre_order(): void
+    #[Test]
+    public function explicit_shape_walks_in_dfs_pre_order(): void
     {
         $shape = new TreeBuilderShape(
             kind: TreeBuilderShape::KIND_EXPLICIT,
@@ -145,7 +153,8 @@ final class ShapeNormalisationTest extends TestCase
         $this->assertSame(['A', 'A1', 'A2', 'B'], $names);
     }
 
-    public function test_explicit_shape_empty_row_passes_through(): void
+    #[Test]
+    public function explicit_shape_empty_row_passes_through(): void
     {
         $shape = new TreeBuilderShape(
             kind: TreeBuilderShape::KIND_EXPLICIT,
@@ -166,7 +175,8 @@ final class ShapeNormalisationTest extends TestCase
         $this->assertSame([], $node, 'Empty entry carries no model attributes — only structural metadata.');
     }
 
-    public function test_explicit_shape_only_children_key_resolves_root_attrs_to_empty(): void
+    #[Test]
+    public function explicit_shape_only_children_key_resolves_root_attrs_to_empty(): void
     {
         $shape = new TreeBuilderShape(
             kind: TreeBuilderShape::KIND_EXPLICIT,
@@ -187,7 +197,8 @@ final class ShapeNormalisationTest extends TestCase
         $this->assertSame([], $root);
     }
 
-    public function test_explicit_shape_non_array_children_throws(): void
+    #[Test]
+    public function explicit_shape_non_array_children_throws(): void
     {
         $shape = new TreeBuilderShape(
             kind: TreeBuilderShape::KIND_EXPLICIT,
@@ -204,7 +215,8 @@ final class ShapeNormalisationTest extends TestCase
         $shape->normalise();
     }
 
-    public function test_branching_array_bounds_guard_throws(): void
+    #[Test]
+    public function branching_array_bounds_guard_throws(): void
     {
         $shape = new TreeBuilderShape(
             kind: TreeBuilderShape::KIND_UNIFORM,
@@ -222,7 +234,8 @@ final class ShapeNormalisationTest extends TestCase
         $shape->normalise();
     }
 
-    public function test_walk_dfs_rejects_non_array_children_on_raw_input(): void
+    #[Test]
+    public function walk_dfs_rejects_non_array_children_on_raw_input(): void
     {
         $bogus = [['name' => 'x', 'children' => 'not-an-array']];
 
@@ -230,7 +243,8 @@ final class ShapeNormalisationTest extends TestCase
         iterator_to_array(TreeBuilderShape::walkDfs($bogus), false);
     }
 
-    public function test_walk_dfs_derives_depth_and_sibling_index_from_path_when_meta_absent(): void
+    #[Test]
+    public function walk_dfs_derives_depth_and_sibling_index_from_path_when_meta_absent(): void
     {
         $raw = [
             ['name' => 'root', 'children' => [
@@ -249,7 +263,8 @@ final class ShapeNormalisationTest extends TestCase
         );
     }
 
-    public function test_sibling_index_metadata_resets_per_branch(): void
+    #[Test]
+    public function sibling_index_metadata_resets_per_branch(): void
     {
         $shape = $this->uniform(depth: 2, branching: 2);
         $normalised = $shape->normalise();

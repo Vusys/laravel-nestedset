@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -14,7 +15,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class TreeDiffApplyResolverTest extends TestCase
 {
-    public function test_default_resolver_translates_name_to_primary_key(): void
+    #[Test]
+    public function default_resolver_translates_name_to_primary_key(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -38,7 +40,8 @@ final class TreeDiffApplyResolverTest extends TestCase
         $this->assertSame('I have a title now', $root->refresh()->title);
     }
 
-    public function test_custom_resolver_closure_is_used_when_supplied(): void
+    #[Test]
+    public function custom_resolver_closure_is_used_when_supplied(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();

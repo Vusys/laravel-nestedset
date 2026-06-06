@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Position;
 
@@ -17,23 +18,27 @@ use Vusys\NestedSet\Position;
  */
 final class PositionTest extends TestCase
 {
-    public function test_before_case_uses_int_value_1_for_internal_round_trip(): void
+    #[Test]
+    public function before_case_uses_int_value_1_for_internal_round_trip(): void
     {
         $this->assertSame(1, Position::Before->value);
     }
 
-    public function test_after_case_uses_int_value_2_for_internal_round_trip(): void
+    #[Test]
+    public function after_case_uses_int_value_2_for_internal_round_trip(): void
     {
         $this->assertSame(2, Position::After->value);
     }
 
-    public function test_from_int_round_trips_each_case_back_to_its_enum_instance(): void
+    #[Test]
+    public function from_int_round_trips_each_case_back_to_its_enum_instance(): void
     {
         $this->assertSame(Position::Before, Position::from(1));
         $this->assertSame(Position::After, Position::from(2));
     }
 
-    public function test_enum_is_exactly_two_cases_before_and_after_no_silent_third_case(): void
+    #[Test]
+    public function enum_is_exactly_two_cases_before_and_after_no_silent_third_case(): void
     {
         // Pinning case count + identity guards against a silent third
         // case being added (e.g. "Inside" or "Replace") that would

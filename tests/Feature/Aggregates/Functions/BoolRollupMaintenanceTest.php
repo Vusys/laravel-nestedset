@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\FlagArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -22,7 +23,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_root_alone_reflects_its_own_active_flag(): void
+    #[Test]
+    public function root_alone_reflects_its_own_active_flag(): void
     {
         $root = new FlagArea(['name' => 'Root', 'active' => true]);
         $root->saveAsRoot();
@@ -38,7 +40,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertFalse($root->all_active);
     }
 
-    public function test_mixed_subtree_distinguishes_any_from_all(): void
+    #[Test]
+    public function mixed_subtree_distinguishes_any_from_all(): void
     {
         $root = new FlagArea(['name' => 'Root', 'active' => true]);
         $root->saveAsRoot();
@@ -65,7 +68,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertTrue($b->all_active);
     }
 
-    public function test_flipping_descendant_active_propagates(): void
+    #[Test]
+    public function flipping_descendant_active_propagates(): void
     {
         $root = new FlagArea(['name' => 'Root', 'active' => true]);
         $root->saveAsRoot();
@@ -91,7 +95,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertTrue($root->all_active);
     }
 
-    public function test_descendant_delete_re_evaluates_rollups(): void
+    #[Test]
+    public function descendant_delete_re_evaluates_rollups(): void
     {
         $root = new FlagArea(['name' => 'Root', 'active' => false]);
         $root->saveAsRoot();
@@ -109,7 +114,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertFalse($root->all_active);
     }
 
-    public function test_fix_aggregates_repairs_corruption(): void
+    #[Test]
+    public function fix_aggregates_repairs_corruption(): void
     {
         $root = new FlagArea(['name' => 'Root', 'active' => true]);
         $root->saveAsRoot();
@@ -130,7 +136,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertFalse($root->all_active);
     }
 
-    public function test_aggregate_errors_is_silent_on_correctly_maintained_chain_tree(): void
+    #[Test]
+    public function aggregate_errors_is_silent_on_correctly_maintained_chain_tree(): void
     {
         // Chain shape: Root(true) → A(true) → B(false) → C(true).
         // Each ancestor's any_active should be true, all_active should
@@ -151,7 +158,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertSame(0, array_sum($errors), 'aggregateErrors() flagged drift on a clean chain: '.json_encode($errors));
     }
 
-    public function test_cross_parent_move_re_evaluates_rollups_on_both_ancestor_chains(): void
+    #[Test]
+    public function cross_parent_move_re_evaluates_rollups_on_both_ancestor_chains(): void
     {
         // Two siblings with different active values:
         //   Root(true)
@@ -198,7 +206,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertFalse($root->all_active);
     }
 
-    public function test_make_root_subtracts_descendant_from_old_chain_and_starts_fresh_at_new_root(): void
+    #[Test]
+    public function make_root_subtracts_descendant_from_old_chain_and_starts_fresh_at_new_root(): void
     {
         // Root(true) → A(true) → A1(false). A.all_active = false because
         // of A1; Root.all_active = false too.
@@ -227,7 +236,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         $this->assertFalse($a->all_active, 'new root still carries A1=false');
     }
 
-    public function test_fix_aggregates_is_a_no_op_on_a_correctly_maintained_tree(): void
+    #[Test]
+    public function fix_aggregates_is_a_no_op_on_a_correctly_maintained_tree(): void
     {
         // Steady-state chain: Root(true) → A(false) → B(true).
         $root = new FlagArea(['name' => 'Root', 'active' => true]);
@@ -248,7 +258,8 @@ final class BoolRollupMaintenanceTest extends TestCase
         );
     }
 
-    public function test_fix_tree_followed_by_fix_aggregates_clears_synthetic_corruption(): void
+    #[Test]
+    public function fix_tree_followed_by_fix_aggregates_clears_synthetic_corruption(): void
     {
         // Build a clean tree, then trash both lft/rgt AND the rollup
         // columns to simulate a worst-case post-incident state.

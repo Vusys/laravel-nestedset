@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -26,7 +27,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class DeferredSoftDeleteAggregateMaintenanceTest extends TestCase
 {
-    public function test_soft_then_force_delete_under_deferred_does_not_double_decrement(): void
+    #[Test]
+    public function soft_then_force_delete_under_deferred_does_not_double_decrement(): void
     {
         [$root, $left, $right] = $this->seedThreeNodeTree();
 
@@ -48,7 +50,8 @@ final class DeferredSoftDeleteAggregateMaintenanceTest extends TestCase
         $this->assertFalse(SoftBranch::aggregatesAreBroken($root), 'no drift after deferred soft+force delete');
     }
 
-    public function test_force_delete_only_under_deferred_matches_live_state(): void
+    #[Test]
+    public function force_delete_only_under_deferred_matches_live_state(): void
     {
         [$root, $left, $right] = $this->seedThreeNodeTree();
 
@@ -68,7 +71,8 @@ final class DeferredSoftDeleteAggregateMaintenanceTest extends TestCase
         $this->assertFalse(SoftBranch::aggregatesAreBroken($root));
     }
 
-    public function test_soft_then_force_delete_on_two_leaves_under_deferred(): void
+    #[Test]
+    public function soft_then_force_delete_on_two_leaves_under_deferred(): void
     {
         [$root, $left, $right] = $this->seedThreeNodeTree();
 

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffInvertTest extends TestCase
 {
-    public function test_invert_swaps_added_and_removed(): void
+    #[Test]
+    public function invert_swaps_added_and_removed(): void
     {
         $before = [['id' => 1, 'name' => 'A', 'parent_id' => null]];
         $after = [
@@ -24,7 +26,8 @@ final class TreeDiffInvertTest extends TestCase
         $this->assertSame(2, $inverted->removed[0]->key);
     }
 
-    public function test_invert_swaps_modified_before_after(): void
+    #[Test]
+    public function invert_swaps_modified_before_after(): void
     {
         $before = [['id' => 1, 'name' => 'Old', 'parent_id' => null]];
         $after = [['id' => 1, 'name' => 'New', 'parent_id' => null]];
@@ -36,7 +39,8 @@ final class TreeDiffInvertTest extends TestCase
         $this->assertSame(['name' => 'Old'], $inverted->modified[0]->after);
     }
 
-    public function test_invert_preserves_removed_row_data_for_round_trip(): void
+    #[Test]
+    public function invert_preserves_removed_row_data_for_round_trip(): void
     {
         $before = [['id' => 1, 'name' => 'Root', 'parent_id' => null]];
         $after = [];
@@ -57,7 +61,8 @@ final class TreeDiffInvertTest extends TestCase
         $this->assertSame(['name' => 'Root'], $a->attributes);
     }
 
-    public function test_invert_preserves_added_row_data_for_round_trip(): void
+    #[Test]
+    public function invert_preserves_added_row_data_for_round_trip(): void
     {
         $before = [];
         $after = [['id' => 1, 'name' => 'X', 'parent_id' => null]];
@@ -70,7 +75,8 @@ final class TreeDiffInvertTest extends TestCase
         $this->assertSame(['name' => 'X'], $r->attributes);
     }
 
-    public function test_invert_swaps_moved_from_and_to_parent(): void
+    #[Test]
+    public function invert_swaps_moved_from_and_to_parent(): void
     {
         $before = [
             ['id' => 1, 'name' => 'A', 'parent_id' => null],

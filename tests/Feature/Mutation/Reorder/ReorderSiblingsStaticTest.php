@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -26,7 +27,8 @@ final class ReorderSiblingsStaticTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_static_helper_delegates_to_instance_method(): void
+    #[Test]
+    public function static_helper_delegates_to_instance_method(): void
     {
         $root = Category::query()->findOrFail(1);
 
@@ -38,7 +40,8 @@ final class ReorderSiblingsStaticTest extends TestCase
         );
     }
 
-    public function test_static_helper_rejects_parent_of_different_class(): void
+    #[Test]
+    public function static_helper_rejects_parent_of_different_class(): void
     {
         $menu = Menu::create(['name' => 'M']);
         $menuRoot = new MenuItem(['name' => 'mroot', 'menu_id' => $menu->id]);

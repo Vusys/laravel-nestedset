@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Query\Aggregates\Sql\FragmentSplicer;
 use Vusys\NestedSet\Tests\Fixtures\Models\StatusBranch;
@@ -64,7 +65,8 @@ final class RawFilterStringLiteralTest extends TestCase
         ];
     }
 
-    public function test_maintained_value_matches_hand_computed_total_at_root(): void
+    #[Test]
+    public function maintained_value_matches_hand_computed_total_at_root(): void
     {
         $this->buildTree();
 
@@ -78,7 +80,8 @@ final class RawFilterStringLiteralTest extends TestCase
         $this->assertSame(150, (int) $root->points_total);
     }
 
-    public function test_maintained_value_matches_fresh_recompute(): void
+    #[Test]
+    public function maintained_value_matches_fresh_recompute(): void
     {
         $this->buildTree();
 
@@ -109,7 +112,8 @@ final class RawFilterStringLiteralTest extends TestCase
         $this->assertSame((int) $stored->points_total, (int) $fresh->points_total);
     }
 
-    public function test_aggregate_errors_returns_zero_for_string_literal_filter(): void
+    #[Test]
+    public function aggregate_errors_returns_zero_for_string_literal_filter(): void
     {
         $this->buildTree();
 
@@ -123,7 +127,8 @@ final class RawFilterStringLiteralTest extends TestCase
         $this->assertSame(0, $errors['open_or_closed_count'] ?? -1);
     }
 
-    public function test_flipping_status_into_filter_updates_aggregate(): void
+    #[Test]
+    public function flipping_status_into_filter_updates_aggregate(): void
     {
         $this->buildTree();
 
@@ -143,7 +148,8 @@ final class RawFilterStringLiteralTest extends TestCase
         $this->assertSame(3, (int) $root->open_or_closed_count);
     }
 
-    public function test_flipping_status_out_of_filter_updates_aggregate(): void
+    #[Test]
+    public function flipping_status_out_of_filter_updates_aggregate(): void
     {
         $this->buildTree();
 
@@ -159,7 +165,8 @@ final class RawFilterStringLiteralTest extends TestCase
         $this->assertSame(1, (int) $root->open_or_closed_count);
     }
 
-    public function test_fresh_read_applies_string_literal_filter(): void
+    #[Test]
+    public function fresh_read_applies_string_literal_filter(): void
     {
         $this->buildTree();
 

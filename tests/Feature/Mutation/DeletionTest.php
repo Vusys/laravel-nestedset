@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -32,7 +33,8 @@ final class DeletionTest extends TestCase
         ]);
     }
 
-    public function test_hard_leaf_delete_compacts_bounds(): void
+    #[Test]
+    public function hard_leaf_delete_compacts_bounds(): void
     {
         // After hard-deleting a leaf, the surrounding lft/rgt values
         // collapse to close the gap so the bounds sequence stays a
@@ -59,7 +61,8 @@ final class DeletionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_force_delete_interior_node_cascades_and_compacts(): void
+    #[Test]
+    public function force_delete_interior_node_cascades_and_compacts(): void
     {
         // Force-deleting an interior node hard-deletes every
         // descendant in the same scope and closes the entire subtree
@@ -82,7 +85,8 @@ final class DeletionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_force_delete_cascade_removes_descendants(): void
+    #[Test]
+    public function force_delete_cascade_removes_descendants(): void
     {
         // Force-delete on an interior node clears the entire subtree.
         // Sibling subtrees are untouched.
@@ -96,7 +100,8 @@ final class DeletionTest extends TestCase
         $this->assertNotNull(Category::withTrashed()->find(5), 'B (sibling subtree) survives');
     }
 
-    public function test_soft_delete_marks_descendants_deleted_at_same_timestamp(): void
+    #[Test]
+    public function soft_delete_marks_descendants_deleted_at_same_timestamp(): void
     {
         $a = Category::query()->findOrFail(2);
         $a->delete();
@@ -113,7 +118,8 @@ final class DeletionTest extends TestCase
         $this->assertSame((string) $a->deleted_at, (string) $ab->deleted_at);
     }
 
-    public function test_soft_delete_does_not_affect_already_trashed_rows(): void
+    #[Test]
+    public function soft_delete_does_not_affect_already_trashed_rows(): void
     {
         // Trash AA first with an earlier timestamp.
         $aa = Category::query()->findOrFail(3);

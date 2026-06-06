@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeChange\Added;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffTopologicalAddOrderTest extends TestCase
 {
-    public function test_parents_appear_before_children_in_added_list(): void
+    #[Test]
+    public function parents_appear_before_children_in_added_list(): void
     {
         $before = [];
         $after = [

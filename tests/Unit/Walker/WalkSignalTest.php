@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Walker;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Walker\SubtreeWalker;
@@ -39,7 +40,8 @@ final class WalkSignalTest extends TestCase
         return [$root, new EloquentCollection([$root, $a, $x, $y, $b, $z])];
     }
 
-    public function test_skip_subtree_prevents_descent_in_pre_order(): void
+    #[Test]
+    public function skip_subtree_prevents_descent_in_pre_order(): void
     {
         [$root, $nodes] = $this->fixture();
         $walker = new SubtreeWalker($nodes, $root);
@@ -55,7 +57,8 @@ final class WalkSignalTest extends TestCase
         $this->assertSame(['root', 'A', 'B', 'Z'], $visited);
     }
 
-    public function test_skip_subtree_prevents_descent_in_bfs(): void
+    #[Test]
+    public function skip_subtree_prevents_descent_in_bfs(): void
     {
         [$root, $nodes] = $this->fixture();
         $walker = new SubtreeWalker($nodes, $root);
@@ -71,7 +74,8 @@ final class WalkSignalTest extends TestCase
         $this->assertSame(['root', 'A', 'B', 'Z'], $visited);
     }
 
-    public function test_skip_subtree_is_ignored_in_post_order_because_children_already_ran(): void
+    #[Test]
+    public function skip_subtree_is_ignored_in_post_order_because_children_already_ran(): void
     {
         [$root, $nodes] = $this->fixture();
         $walker = new SubtreeWalker($nodes, $root);
@@ -89,7 +93,8 @@ final class WalkSignalTest extends TestCase
         $this->assertSame(['X', 'Y', 'A', 'Z', 'B', 'root'], $visited);
     }
 
-    public function test_stop_signal_halts_walk_immediately_no_further_visitors(): void
+    #[Test]
+    public function stop_signal_halts_walk_immediately_no_further_visitors(): void
     {
         [$root, $nodes] = $this->fixture();
         $walker = new SubtreeWalker($nodes, $root);
@@ -106,7 +111,8 @@ final class WalkSignalTest extends TestCase
         $this->assertSame(['root', 'A', 'X'], $visited);
     }
 
-    public function test_null_or_no_return_value_continues_normally(): void
+    #[Test]
+    public function null_or_no_return_value_continues_normally(): void
     {
         [$root, $nodes] = $this->fixture();
         $walker = new SubtreeWalker($nodes, $root);

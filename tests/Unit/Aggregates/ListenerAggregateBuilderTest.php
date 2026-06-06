@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
@@ -14,7 +15,8 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 
 final class ListenerAggregateBuilderTest extends TestCase
 {
-    public function test_sum_factory_sets_sum_operation(): void
+    #[Test]
+    public function sum_factory_sets_sum_operation(): void
     {
         $aggregate = ListenerAggregate::sum(WeightedPowerListener::class);
         $definition = $aggregate->into('weighted_power');
@@ -22,7 +24,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertSame(AggregateFunction::Sum, $definition->operation);
     }
 
-    public function test_count_factory_sets_count_operation(): void
+    #[Test]
+    public function count_factory_sets_count_operation(): void
     {
         $aggregate = ListenerAggregate::count(FireCountListener::class);
         $definition = $aggregate->into('fire_count');
@@ -30,7 +33,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertSame(AggregateFunction::Count, $definition->operation);
     }
 
-    public function test_min_factory_sets_min_operation(): void
+    #[Test]
+    public function min_factory_sets_min_operation(): void
     {
         $aggregate = ListenerAggregate::min(WeightedPowerListener::class);
         $definition = $aggregate->into('min_power');
@@ -38,7 +42,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertSame(AggregateFunction::Min, $definition->operation);
     }
 
-    public function test_max_factory_sets_max_operation(): void
+    #[Test]
+    public function max_factory_sets_max_operation(): void
     {
         $aggregate = ListenerAggregate::max(WeightedPowerListener::class);
         $definition = $aggregate->into('max_power');
@@ -46,14 +51,16 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertSame(AggregateFunction::Max, $definition->operation);
     }
 
-    public function test_inclusive_is_the_default(): void
+    #[Test]
+    public function inclusive_is_the_default(): void
     {
         $definition = ListenerAggregate::sum(WeightedPowerListener::class)->into('weighted_power');
 
         $this->assertTrue($definition->inclusive);
     }
 
-    public function test_exclusive_modifier_sets_inclusive_to_false(): void
+    #[Test]
+    public function exclusive_modifier_sets_inclusive_to_false(): void
     {
         $definition = ListenerAggregate::sum(WeightedPowerListener::class)
             ->exclusive()
@@ -62,7 +69,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertFalse($definition->inclusive);
     }
 
-    public function test_inclusive_modifier_restores_default(): void
+    #[Test]
+    public function inclusive_modifier_restores_default(): void
     {
         $definition = ListenerAggregate::sum(WeightedPowerListener::class)
             ->exclusive()
@@ -72,7 +80,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertTrue($definition->inclusive);
     }
 
-    public function test_modifiers_return_new_instances(): void
+    #[Test]
+    public function modifiers_return_new_instances(): void
     {
         $base = ListenerAggregate::sum(WeightedPowerListener::class);
         $exclusive = $base->exclusive();
@@ -80,7 +89,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertNotSame($base, $exclusive);
     }
 
-    public function test_into_returns_listener_aggregate_definition_with_correct_properties(): void
+    #[Test]
+    public function into_returns_listener_aggregate_definition_with_correct_properties(): void
     {
         $definition = ListenerAggregate::sum(WeightedPowerListener::class)->into('weighted_power');
 
@@ -91,7 +101,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertTrue($definition->inclusive);
     }
 
-    public function test_into_carries_exclusive_flag_to_definition(): void
+    #[Test]
+    public function into_carries_exclusive_flag_to_definition(): void
     {
         $definition = ListenerAggregate::sum(WeightedPowerListener::class)
             ->exclusive()
@@ -100,7 +111,8 @@ final class ListenerAggregateBuilderTest extends TestCase
         $this->assertFalse($definition->inclusive);
     }
 
-    public function test_into_throws_for_empty_column(): void
+    #[Test]
+    public function into_throws_for_empty_column(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('must not be empty');

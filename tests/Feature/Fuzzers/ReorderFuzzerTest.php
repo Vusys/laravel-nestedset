@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Fuzzers;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -47,7 +48,8 @@ final class ReorderFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_category_random_reorders_preserve_invariants(int $seed, int $steps): void
+    #[Test]
+    public function category_random_reorders_preserve_invariants(int $seed, int $steps): void
     {
         mt_srand($seed);
 
@@ -106,7 +108,8 @@ final class ReorderFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_area_random_reorders_preserve_aggregates(int $seed, int $steps): void
+    #[Test]
+    public function area_random_reorders_preserve_aggregates(int $seed, int $steps): void
     {
         mt_srand($seed);
 

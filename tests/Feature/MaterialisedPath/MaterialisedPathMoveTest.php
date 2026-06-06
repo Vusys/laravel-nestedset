@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathMoveTest extends TestCase
 {
-    public function test_move_subtree_rewrites_descendant_paths(): void
+    #[Test]
+    public function move_subtree_rewrites_descendant_paths(): void
     {
         $a = $this->plant('A');
         $b = $this->plant('B');
@@ -30,7 +32,8 @@ final class MaterialisedPathMoveTest extends TestCase
         $this->assertSame('/b/a-child/a-grand/', $aGrand->url_path);
     }
 
-    public function test_move_does_not_touch_sibling_subtrees(): void
+    #[Test]
+    public function move_does_not_touch_sibling_subtrees(): void
     {
         $a = $this->plant('A');
         $b = $this->plant('B');

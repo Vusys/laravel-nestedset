@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\LazyArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -84,7 +85,8 @@ final class LazyAggregateTest extends TestCase
         return (int) $value;
     }
 
-    public function test_create_invalidates_lazy_columns_on_ancestor_chain(): void
+    #[Test]
+    public function create_invalidates_lazy_columns_on_ancestor_chain(): void
     {
         $this->buildTree();
 
@@ -100,7 +102,8 @@ final class LazyAggregateTest extends TestCase
         }
     }
 
-    public function test_read_of_stale_lazy_column_recomputes_and_stamps(): void
+    #[Test]
+    public function read_of_stale_lazy_column_recomputes_and_stamps(): void
     {
         $this->buildTree();
 
@@ -112,7 +115,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertNotNull($rootRaw['lazy_tickets_total_computed_at']);
     }
 
-    public function test_read_of_fresh_lazy_column_does_not_re_recompute(): void
+    #[Test]
+    public function read_of_fresh_lazy_column_does_not_re_recompute(): void
     {
         $this->buildTree();
 
@@ -127,7 +131,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertSame($stampAfterFirst, $stampAfterSecond);
     }
 
-    public function test_read_recomputes_listener_lazy_aggregate(): void
+    #[Test]
+    public function read_recomputes_listener_lazy_aggregate(): void
     {
         $this->buildTree();
 
@@ -141,7 +146,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertNotNull($rootRaw['lazy_listener_sum_computed_at']);
     }
 
-    public function test_source_change_invalidates_lazy_columns_on_chain(): void
+    #[Test]
+    public function source_change_invalidates_lazy_columns_on_chain(): void
     {
         $this->buildTree();
 
@@ -167,7 +173,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertSame(10 + 20 + 999 + 40, (int) $root2->lazy_tickets_total);
     }
 
-    public function test_unrelated_column_change_does_not_invalidate(): void
+    #[Test]
+    public function unrelated_column_change_does_not_invalidate(): void
     {
         $this->buildTree();
 
@@ -186,7 +193,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertSame($stampBefore, $stampAfter);
     }
 
-    public function test_delete_invalidates_ancestor_lazy_columns(): void
+    #[Test]
+    public function delete_invalidates_ancestor_lazy_columns(): void
     {
         $this->buildTree();
 
@@ -203,7 +211,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertSame(10 + 20 + 40, (int) $root2->lazy_tickets_total);
     }
 
-    public function test_create_descendant_invalidates_ancestor_lazy_columns(): void
+    #[Test]
+    public function create_descendant_invalidates_ancestor_lazy_columns(): void
     {
         $this->buildTree();
 
@@ -220,7 +229,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertSame(10 + 20 + 30 + 40 + 7, (int) $root2->lazy_tickets_total);
     }
 
-    public function test_exclusive_lazy_descendants_total_excludes_self(): void
+    #[Test]
+    public function exclusive_lazy_descendants_total_excludes_self(): void
     {
         $this->buildTree();
 
@@ -232,7 +242,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertSame(0, (int) $leaf->lazy_descendants_total);
     }
 
-    public function test_move_invalidates_both_old_and_new_chain(): void
+    #[Test]
+    public function move_invalidates_both_old_and_new_chain(): void
     {
         $this->buildTree();
 
@@ -254,7 +265,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertNull($this->rawRow($this->ids['B'])['lazy_tickets_total_computed_at']);
     }
 
-    public function test_fix_aggregates_writes_value_and_stamp_for_lazy_columns(): void
+    #[Test]
+    public function fix_aggregates_writes_value_and_stamp_for_lazy_columns(): void
     {
         $this->buildTree();
 
@@ -281,7 +293,8 @@ final class LazyAggregateTest extends TestCase
         $this->assertNotNull($rootRaw['lazy_listener_sum_computed_at']);
     }
 
-    public function test_ttl_expired_triggers_recompute_on_next_read(): void
+    #[Test]
+    public function ttl_expired_triggers_recompute_on_next_read(): void
     {
         $this->buildTree();
 

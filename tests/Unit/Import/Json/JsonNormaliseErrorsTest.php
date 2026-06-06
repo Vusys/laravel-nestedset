@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Exceptions\InvalidJsonTreeException;
 use Vusys\NestedSet\Import\JsonImportOptions;
@@ -17,24 +18,28 @@ use Vusys\NestedSet\Import\JsonTreeNormaliser;
  */
 final class JsonNormaliseErrorsTest extends TestCase
 {
-    public function test_non_array_decoded_payload_throws(): void
+    #[Test]
+    public function non_array_decoded_payload_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise('"a bare string"', new JsonImportOptions);
     }
 
-    public function test_empty_payload_returns_empty_list(): void
+    #[Test]
+    public function empty_payload_returns_empty_list(): void
     {
         $this->assertSame([], JsonTreeNormaliser::normalise([], new JsonImportOptions));
     }
 
-    public function test_non_array_row_in_nested_shape_throws(): void
+    #[Test]
+    public function non_array_row_in_nested_shape_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(['not an object'], new JsonImportOptions);
     }
 
-    public function test_nested_row_with_non_array_children_throws(): void
+    #[Test]
+    public function nested_row_with_non_array_children_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(
@@ -43,7 +48,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         );
     }
 
-    public function test_flat_row_without_id_throws(): void
+    #[Test]
+    public function flat_row_without_id_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(
@@ -52,7 +58,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         );
     }
 
-    public function test_flat_id_must_be_int_or_string(): void
+    #[Test]
+    public function flat_id_must_be_int_or_string(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(
@@ -61,7 +68,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         );
     }
 
-    public function test_flat_duplicate_id_throws(): void
+    #[Test]
+    public function flat_duplicate_id_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(
@@ -73,7 +81,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         );
     }
 
-    public function test_flat_parent_id_must_be_scalar(): void
+    #[Test]
+    public function flat_parent_id_must_be_scalar(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(
@@ -85,7 +94,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         );
     }
 
-    public function test_flat_parent_id_referencing_unknown_row_throws(): void
+    #[Test]
+    public function flat_parent_id_referencing_unknown_row_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(
@@ -94,7 +104,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         );
     }
 
-    public function test_single_root_object_input_is_wrapped(): void
+    #[Test]
+    public function single_root_object_input_is_wrapped(): void
     {
         $out = JsonTreeNormaliser::normalise(
             ['id' => 1, 'name' => 'lone'],
@@ -103,7 +114,8 @@ final class JsonNormaliseErrorsTest extends TestCase
         $this->assertCount(1, $out);
     }
 
-    public function test_non_array_child_inside_children_throws(): void
+    #[Test]
+    public function non_array_child_inside_children_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         JsonTreeNormaliser::normalise(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -26,7 +27,8 @@ final class LazyAggregateValidationTest extends TestCase
     // Allowed shapes round-trip.
     // ----------------------------------------------------------------
 
-    public function test_lazy_sum_attribute_round_trips_to_definition(): void
+    #[Test]
+    public function lazy_sum_attribute_round_trips_to_definition(): void
     {
         $attr = new NestedSetAggregate(
             column: 'lazy_total',
@@ -43,7 +45,8 @@ final class LazyAggregateValidationTest extends TestCase
         $this->assertSame(AggregateFunction::Sum, $def->function);
     }
 
-    public function test_lazy_fluent_round_trips_to_definition(): void
+    #[Test]
+    public function lazy_fluent_round_trips_to_definition(): void
     {
         $def = Aggregate::count()->lazy(120)->into('lazy_count');
 
@@ -53,7 +56,8 @@ final class LazyAggregateValidationTest extends TestCase
         $this->assertSame(120, $def->lazyTtlSeconds());
     }
 
-    public function test_lazy_fluent_without_ttl_is_null_ttl(): void
+    #[Test]
+    public function lazy_fluent_without_ttl_is_null_ttl(): void
     {
         $def = Aggregate::sum('tickets')->lazy()->into('lazy_total');
 
@@ -61,7 +65,8 @@ final class LazyAggregateValidationTest extends TestCase
         $this->assertNull($def->ttl);
     }
 
-    public function test_listener_lazy_attribute_round_trips(): void
+    #[Test]
+    public function listener_lazy_attribute_round_trips(): void
     {
         $attr = new NestedSetAggregateListener(
             column: 'lazy_listener_sum',
@@ -77,7 +82,8 @@ final class LazyAggregateValidationTest extends TestCase
         $this->assertSame(30, $def->ttl);
     }
 
-    public function test_listener_lazy_fluent_round_trips(): void
+    #[Test]
+    public function listener_lazy_fluent_round_trips(): void
     {
         $def = ListenerAggregate::sum(DoubleTicketsListener::class)
             ->lazy()
@@ -91,7 +97,8 @@ final class LazyAggregateValidationTest extends TestCase
     // AggregateFunction::supportsLazy() matrix.
     // ----------------------------------------------------------------
 
-    public function test_supports_lazy_returns_true_for_simple_kinds(): void
+    #[Test]
+    public function supports_lazy_returns_true_for_simple_kinds(): void
     {
         foreach ([
             AggregateFunction::Sum, AggregateFunction::Count,
@@ -104,7 +111,8 @@ final class LazyAggregateValidationTest extends TestCase
         }
     }
 
-    public function test_supports_lazy_returns_false_for_companion_derived_kinds(): void
+    #[Test]
+    public function supports_lazy_returns_false_for_companion_derived_kinds(): void
     {
         foreach ([
             AggregateFunction::Avg, AggregateFunction::Variance, AggregateFunction::Stddev,
@@ -120,7 +128,8 @@ final class LazyAggregateValidationTest extends TestCase
     // Validation: lazy on disallowed function throws.
     // ----------------------------------------------------------------
 
-    public function test_lazy_on_avg_throws_at_definition_build_via_attribute(): void
+    #[Test]
+    public function lazy_on_avg_throws_at_definition_build_via_attribute(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/lazy is not supported on avg/');
@@ -129,7 +138,8 @@ final class LazyAggregateValidationTest extends TestCase
             ->toDefinition();
     }
 
-    public function test_lazy_on_variance_throws_at_definition_build_via_attribute(): void
+    #[Test]
+    public function lazy_on_variance_throws_at_definition_build_via_attribute(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/lazy is not supported on variance/');
@@ -138,7 +148,8 @@ final class LazyAggregateValidationTest extends TestCase
             ->toDefinition();
     }
 
-    public function test_lazy_on_listener_avg_throws_at_construction(): void
+    #[Test]
+    public function lazy_on_listener_avg_throws_at_construction(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/Sum, Count, Min, Max/');
@@ -151,7 +162,8 @@ final class LazyAggregateValidationTest extends TestCase
         );
     }
 
-    public function test_ttl_without_lazy_throws(): void
+    #[Test]
+    public function ttl_without_lazy_throws(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/`ttl` only applies when `lazy: true`/');
@@ -165,7 +177,8 @@ final class LazyAggregateValidationTest extends TestCase
         );
     }
 
-    public function test_zero_ttl_throws(): void
+    #[Test]
+    public function zero_ttl_throws(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/`ttl` must be a positive integer/');
@@ -180,7 +193,8 @@ final class LazyAggregateValidationTest extends TestCase
         );
     }
 
-    public function test_negative_ttl_throws(): void
+    #[Test]
+    public function negative_ttl_throws(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/`ttl` must be a positive integer/');
@@ -195,7 +209,8 @@ final class LazyAggregateValidationTest extends TestCase
         );
     }
 
-    public function test_internal_companion_cannot_be_lazy(): void
+    #[Test]
+    public function internal_companion_cannot_be_lazy(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessageMatches('/auto-promoted internal companion cannot be lazy/');

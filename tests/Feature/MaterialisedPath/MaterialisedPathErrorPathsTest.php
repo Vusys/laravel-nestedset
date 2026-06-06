@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\PathTooLong;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -14,7 +15,8 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathErrorPathsTest extends TestCase
 {
-    public function test_materialised_path_for_unknown_column_throws(): void
+    #[Test]
+    public function materialised_path_for_unknown_column_throws(): void
     {
         $node = new SluggedCategory(['name' => 'Root']);
 
@@ -24,7 +26,8 @@ final class MaterialisedPathErrorPathsTest extends TestCase
         $node->materialisedPathFor('nope');
     }
 
-    public function test_materialised_path_for_unknown_column_on_model_without_any_declared_lists_none(): void
+    #[Test]
+    public function materialised_path_for_unknown_column_on_model_without_any_declared_lists_none(): void
     {
         $node = new Category(['name' => 'Root']);
 
@@ -34,7 +37,8 @@ final class MaterialisedPathErrorPathsTest extends TestCase
         $node->materialisedPathFor('whatever');
     }
 
-    public function test_path_too_long_throws(): void
+    #[Test]
+    public function path_too_long_throws(): void
     {
         // Default maxLength is 1024; build a name long enough that
         // its slug + wrap blows past it.
@@ -47,7 +51,8 @@ final class MaterialisedPathErrorPathsTest extends TestCase
         $node->makeRoot()->save();
     }
 
-    public function test_is_maintenance_bypassed_reflects_depth(): void
+    #[Test]
+    public function is_maintenance_bypassed_reflects_depth(): void
     {
         $this->assertFalse(SluggedCategory::isMaterialisedPathMaintenanceBypassed());
 
@@ -65,7 +70,8 @@ final class MaterialisedPathErrorPathsTest extends TestCase
         $this->assertFalse(SluggedCategory::isMaterialisedPathMaintenanceBypassed());
     }
 
-    public function test_fix_materialised_paths_unknown_column_throws(): void
+    #[Test]
+    public function fix_materialised_paths_unknown_column_throws(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/not declared/');
@@ -73,21 +79,24 @@ final class MaterialisedPathErrorPathsTest extends TestCase
         SluggedCategory::fixMaterialisedPaths('nope');
     }
 
-    public function test_fix_materialised_paths_on_scoped_model_without_anchor_throws(): void
+    #[Test]
+    public function fix_materialised_paths_on_scoped_model_without_anchor_throws(): void
     {
         $this->expectException(ScopeViolationException::class);
 
         ScopedSluggedMenuItem::fixMaterialisedPaths();
     }
 
-    public function test_fix_materialised_paths_on_model_with_no_paths_returns_empty_array(): void
+    #[Test]
+    public function fix_materialised_paths_on_model_with_no_paths_returns_empty_array(): void
     {
         // Category declares no materialised-path columns.
         $result = Category::fixMaterialisedPaths();
         $this->assertSame([], $result);
     }
 
-    public function test_fix_materialised_paths_accepts_anchor_to_scope_the_repair(): void
+    #[Test]
+    public function fix_materialised_paths_accepts_anchor_to_scope_the_repair(): void
     {
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();

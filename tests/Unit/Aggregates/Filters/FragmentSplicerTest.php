@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Filters;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Filters\BoundFragment;
 use Vusys\NestedSet\Aggregates\Filters\FragmentSplicer;
 
 final class FragmentSplicerTest extends TestCase
 {
-    public function test_null_filter_passes_through_with_no_bindings(): void
+    #[Test]
+    public function null_filter_passes_through_with_no_bindings(): void
     {
         $fragment = FragmentSplicer::splice(
             null,
@@ -21,7 +23,8 @@ final class FragmentSplicerTest extends TestCase
         $this->assertSame([], $fragment->bindings);
     }
 
-    public function test_single_splice_passes_bindings_through_once(): void
+    #[Test]
+    public function single_splice_passes_bindings_through_once(): void
     {
         $filter = new BoundFragment('x = ?', [1]);
 
@@ -34,7 +37,8 @@ final class FragmentSplicerTest extends TestCase
         $this->assertSame([1], $fragment->bindings);
     }
 
-    public function test_n_splices_repeat_bindings_n_times(): void
+    #[Test]
+    public function n_splices_repeat_bindings_n_times(): void
     {
         $filter = new BoundFragment('x = ? AND y = ?', [1, 'foo']);
 
@@ -50,7 +54,8 @@ final class FragmentSplicerTest extends TestCase
         $this->assertSame([1, 'foo', 1, 'foo', 1, 'foo'], $fragment->bindings);
     }
 
-    public function test_bindingless_filter_skips_repetition(): void
+    #[Test]
+    public function bindingless_filter_skips_repetition(): void
     {
         $filter = BoundFragment::literal('active = 1');
 

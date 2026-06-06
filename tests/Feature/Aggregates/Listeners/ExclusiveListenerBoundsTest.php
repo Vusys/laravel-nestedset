@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -77,7 +78,8 @@ final class ExclusiveListenerBoundsTest extends TestCase
     }
 
     /** Self isn't counted: Root's own fire contribution is excluded from its descendant count. */
-    public function test_exclusive_listener_excludes_self_at_root(): void
+    #[Test]
+    public function exclusive_listener_excludes_self_at_root(): void
     {
         $t = $this->buildTree();
 
@@ -88,7 +90,8 @@ final class ExclusiveListenerBoundsTest extends TestCase
     }
 
     /** Mid-tree node: A is fire but must not contribute to its own descendant_fire_count. */
-    public function test_exclusive_listener_excludes_self_mid_tree(): void
+    #[Test]
+    public function exclusive_listener_excludes_self_mid_tree(): void
     {
         $t = $this->buildTree();
 
@@ -97,7 +100,8 @@ final class ExclusiveListenerBoundsTest extends TestCase
     }
 
     /** Leaf node: exclusive is always zero — leaves have no strict descendants. */
-    public function test_exclusive_listener_at_leaf_is_zero(): void
+    #[Test]
+    public function exclusive_listener_at_leaf_is_zero(): void
     {
         $t = $this->buildTree();
 
@@ -113,7 +117,8 @@ final class ExclusiveListenerBoundsTest extends TestCase
      * bounds value. Verifies the exclusive arm of the recompute path
      * runs and produces the descendants-only rollup.
      */
-    public function test_fix_aggregates_recomputes_exclusive_listener_with_strict_bounds(): void
+    #[Test]
+    public function fix_aggregates_recomputes_exclusive_listener_with_strict_bounds(): void
     {
         $t = $this->buildTree();
 
@@ -134,7 +139,8 @@ final class ExclusiveListenerBoundsTest extends TestCase
      * exclusive fold agrees with the stored values for a tree with
      * mixed-contribution rows.
      */
-    public function test_aggregate_errors_validates_exclusive_listener_with_strict_bounds(): void
+    #[Test]
+    public function aggregate_errors_validates_exclusive_listener_with_strict_bounds(): void
     {
         $this->buildTree();
 

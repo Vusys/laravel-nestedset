@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\TypedArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -50,7 +51,8 @@ final class RecomputeBindingOrderTest extends TestCase
         $this->syncSequence('typed_areas');
     }
 
-    public function test_recompute_select_orders_predicate_bindings_before_outer_bounds(): void
+    #[Test]
+    public function recompute_select_orders_predicate_bindings_before_outer_bounds(): void
     {
         $parent = TypedArea::find(1);
         $this->assertNotNull($parent);

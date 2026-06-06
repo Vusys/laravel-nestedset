@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Events;
 
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeCompleted;
 use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -52,7 +53,8 @@ final class EventPayloadTest extends TestCase
     // NodeMoved — one test per operation variant
     // ================================================================
 
-    public function test_node_moved_fires_for_prepend_to_node(): void
+    #[Test]
+    public function node_moved_fires_for_prepend_to_node(): void
     {
         $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -71,7 +73,8 @@ final class EventPayloadTest extends TestCase
         });
     }
 
-    public function test_node_moved_fires_for_insert_before_node(): void
+    #[Test]
+    public function node_moved_fires_for_insert_before_node(): void
     {
         $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -89,7 +92,8 @@ final class EventPayloadTest extends TestCase
         });
     }
 
-    public function test_node_moved_fires_for_insert_after_node(): void
+    #[Test]
+    public function node_moved_fires_for_insert_after_node(): void
     {
         $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -106,7 +110,8 @@ final class EventPayloadTest extends TestCase
         });
     }
 
-    public function test_up_fires_node_moved_for_both_self_and_swapped_sibling(): void
+    #[Test]
+    public function up_fires_node_moved_for_both_self_and_swapped_sibling(): void
     {
         $this->seedTree();
         $b = Area::query()->where('name', 'B')->firstOrFail();
@@ -123,7 +128,8 @@ final class EventPayloadTest extends TestCase
         Event::assertDispatched(NodeMoved::class, fn (NodeMoved $e): bool => $e->nodeId === $aId && $e->operation === 'sibling-displaced');
     }
 
-    public function test_down_fires_node_moved_for_both_self_and_swapped_sibling(): void
+    #[Test]
+    public function down_fires_node_moved_for_both_self_and_swapped_sibling(): void
     {
         $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -139,7 +145,8 @@ final class EventPayloadTest extends TestCase
         Event::assertDispatched(NodeMoved::class, fn (NodeMoved $e): bool => $e->nodeId === $bId && $e->operation === 'sibling-displaced');
     }
 
-    public function test_node_moved_fires_for_make_root(): void
+    #[Test]
+    public function node_moved_fires_for_make_root(): void
     {
         $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -156,7 +163,8 @@ final class EventPayloadTest extends TestCase
         });
     }
 
-    public function test_node_moved_payload_reflects_pre_and_post_bounds(): void
+    #[Test]
+    public function node_moved_payload_reflects_pre_and_post_bounds(): void
     {
         $this->seedTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -182,7 +190,8 @@ final class EventPayloadTest extends TestCase
     // BulkInsertTreeCompleted — payload edge cases
     // ================================================================
 
-    public function test_bulk_insert_completion_event_carries_null_anchor_for_new_roots(): void
+    #[Test]
+    public function bulk_insert_completion_event_carries_null_anchor_for_new_roots(): void
     {
         Event::fake([BulkInsertTreeCompleted::class]);
 
@@ -199,7 +208,8 @@ final class EventPayloadTest extends TestCase
         });
     }
 
-    public function test_bulk_insert_completion_event_does_not_fire_for_empty_input(): void
+    #[Test]
+    public function bulk_insert_completion_event_does_not_fire_for_empty_input(): void
     {
         // bulkInsertTree([]) returns early — no event.
         Event::fake([BulkInsertTreeCompleted::class]);
@@ -209,7 +219,8 @@ final class EventPayloadTest extends TestCase
         Event::assertNotDispatched(BulkInsertTreeCompleted::class);
     }
 
-    public function test_bulk_insert_completion_event_carries_anchor_id_when_anchored(): void
+    #[Test]
+    public function bulk_insert_completion_event_carries_anchor_id_when_anchored(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();

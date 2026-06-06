@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\MetricArea;
@@ -24,7 +25,8 @@ final class VarianceCompanionsRegistryTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_variance_and_stddev_companion_maps_use_canonical_suffixes(): void
+    #[Test]
+    public function variance_and_stddev_companion_maps_use_canonical_suffixes(): void
     {
         $companions = AggregateRegistry::varianceCompanionsFor(MetricArea::class);
 

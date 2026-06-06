@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Scoping;
 
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Stringable;
 use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
@@ -24,19 +25,22 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class ScopeResolverTest extends TestCase
 {
-    public function test_columns_reads_the_method_form_scope_declaration(): void
+    #[Test]
+    public function columns_reads_the_method_form_scope_declaration(): void
     {
         $this->assertSame(['tenant_id'], NestedSetScopeResolver::columns(ScopedArea::class));
     }
 
-    public function test_values_for_maps_each_scope_column_to_its_attribute(): void
+    #[Test]
+    public function values_for_maps_each_scope_column_to_its_attribute(): void
     {
         $node = new ScopedArea(['tenant_id' => 7, 'name' => 'x', 'amount' => 0]);
 
         $this->assertSame(['tenant_id' => 7], NestedSetScopeResolver::valuesFor($node));
     }
 
-    public function test_same_scope_is_false_for_different_model_classes(): void
+    #[Test]
+    public function same_scope_is_false_for_different_model_classes(): void
     {
         $area = new ScopedArea(['tenant_id' => 1, 'name' => 'a', 'amount' => 0]);
         $menuItem = new MenuItem(['menu_id' => 1, 'name' => 'b']);
@@ -44,7 +48,8 @@ final class ScopeResolverTest extends TestCase
         $this->assertFalse(NestedSetScopeResolver::sameScope($area, $menuItem));
     }
 
-    public function test_same_scope_compares_datetime_scopes_by_instant(): void
+    #[Test]
+    public function same_scope_compares_datetime_scopes_by_instant(): void
     {
         $a = new ScopedArea(['name' => 'a', 'amount' => 0]);
         $a->setAttribute('tenant_id', Date::parse('2020-01-01 12:00:00'));
@@ -59,7 +64,8 @@ final class ScopeResolverTest extends TestCase
         $this->assertFalse(NestedSetScopeResolver::sameScope($a, $differentInstant));
     }
 
-    public function test_same_scope_uses_loose_equality_for_stringable_scopes(): void
+    #[Test]
+    public function same_scope_uses_loose_equality_for_stringable_scopes(): void
     {
         $stringable = new class implements Stringable
         {
@@ -78,7 +84,8 @@ final class ScopeResolverTest extends TestCase
         $this->assertTrue(NestedSetScopeResolver::sameScope($a, $b));
     }
 
-    public function test_same_scope_treats_int_and_numeric_string_as_equal(): void
+    #[Test]
+    public function same_scope_treats_int_and_numeric_string_as_equal(): void
     {
         // tenant_id is uncast, so these keep their PHP types. The numeric
         // branch must normalise `int 5` and `string '5'` to the same
@@ -92,7 +99,8 @@ final class ScopeResolverTest extends TestCase
         $this->assertTrue(NestedSetScopeResolver::sameScope($a, $b));
     }
 
-    public function test_same_scope_does_not_collapse_numeric_prefixed_strings(): void
+    #[Test]
+    public function same_scope_does_not_collapse_numeric_prefixed_strings(): void
     {
         // `'1abc'` is not numeric, so the numeric branch must NOT fire —
         // both operands have to be numeric. Were the guard relaxed to
@@ -107,7 +115,8 @@ final class ScopeResolverTest extends TestCase
         $this->assertFalse(NestedSetScopeResolver::sameScope($prefixed, $numeric));
     }
 
-    public function test_same_scope_treats_two_null_scopes_as_the_same_partition(): void
+    #[Test]
+    public function same_scope_treats_two_null_scopes_as_the_same_partition(): void
     {
         // The identity fast-path (`$a === $b`) is what makes null/null
         // resolve as the same partition before the null-guard returns
@@ -123,7 +132,8 @@ final class ScopeResolverTest extends TestCase
         $this->assertTrue(NestedSetScopeResolver::sameScope($a, $b));
     }
 
-    public function test_assert_same_scope_dispatches_mutation_violation_with_formatted_message(): void
+    #[Test]
+    public function assert_same_scope_dispatches_mutation_violation_with_formatted_message(): void
     {
         Event::fake([ScopeViolationDetected::class]);
 
@@ -153,7 +163,8 @@ final class ScopeResolverTest extends TestCase
         });
     }
 
-    public function test_assert_same_scope_formats_a_null_operand_as_null_in_the_message(): void
+    #[Test]
+    public function assert_same_scope_formats_a_null_operand_as_null_in_the_message(): void
     {
         // A null scope value must render as the literal `null` in the
         // violation message — the dedicated null arm of format(), distinct

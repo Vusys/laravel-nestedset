@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeChange\Added;
 use Vusys\NestedSet\Diff\TreeChange\Modified;
@@ -17,7 +18,8 @@ use Vusys\NestedSet\Diff\TreeChange\Removed;
  */
 final class TreeChangeJsonSerializeTest extends TestCase
 {
-    public function test_added_serialises_with_all_fields(): void
+    #[Test]
+    public function added_serialises_with_all_fields(): void
     {
         $added = new Added(
             key: 7,
@@ -35,7 +37,8 @@ final class TreeChangeJsonSerializeTest extends TestCase
         ], $added->jsonSerialize());
     }
 
-    public function test_removed_serialises_with_round_trip_fields(): void
+    #[Test]
+    public function removed_serialises_with_round_trip_fields(): void
     {
         $removed = new Removed(
             key: 7,
@@ -53,7 +56,8 @@ final class TreeChangeJsonSerializeTest extends TestCase
         ], $removed->jsonSerialize());
     }
 
-    public function test_moved_serialises_with_all_fields(): void
+    #[Test]
+    public function moved_serialises_with_all_fields(): void
     {
         $moved = new Moved(
             key: 7,
@@ -71,7 +75,8 @@ final class TreeChangeJsonSerializeTest extends TestCase
         ], $moved->jsonSerialize());
     }
 
-    public function test_modified_serialises_with_before_and_after(): void
+    #[Test]
+    public function modified_serialises_with_before_and_after(): void
     {
         $mod = new Modified(
             key: 7,

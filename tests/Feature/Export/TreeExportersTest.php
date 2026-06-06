@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Export;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\CorruptTreeException;
 use Vusys\NestedSet\Export\AsciiOptions;
@@ -51,7 +52,8 @@ final class TreeExportersTest extends TestCase
         return [$electronics->refresh(), $laptops->refresh(), $phones->refresh(), $iphone->refresh(), $android->refresh()];
     }
 
-    public function test_ascii_tree_unicode_default(): void
+    #[Test]
+    public function ascii_tree_unicode_default(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -64,7 +66,8 @@ final class TreeExportersTest extends TestCase
         $this->assertSame($expected, $electronics->toAsciiTree());
     }
 
-    public function test_ascii_tree_plain_ascii_fallback(): void
+    #[Test]
+    public function ascii_tree_plain_ascii_fallback(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -77,7 +80,8 @@ final class TreeExportersTest extends TestCase
         $this->assertSame($expected, $electronics->toAsciiTree(new AsciiOptions(unicode: false)));
     }
 
-    public function test_ascii_tree_renders_vertical_continuation_for_deep_nodes(): void
+    #[Test]
+    public function ascii_tree_renders_vertical_continuation_for_deep_nodes(): void
     {
         $root = new Category(['name' => 'A']);
         $root->saveAsRoot();
@@ -97,7 +101,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('│   └── C', $tree);
     }
 
-    public function test_ascii_tree_show_depth(): void
+    #[Test]
+    public function ascii_tree_show_depth(): void
     {
         [$electronics, , , $iphone] = $this->buildElectronicsTree();
 
@@ -107,7 +112,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('iPhone (depth=2)', $tree);
     }
 
-    public function test_ascii_tree_max_depth_truncates(): void
+    #[Test]
+    public function ascii_tree_max_depth_truncates(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -119,7 +125,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('Android', $tree);
     }
 
-    public function test_mermaid_emits_nodes_and_edges(): void
+    #[Test]
+    public function mermaid_emits_nodes_and_edges(): void
     {
         [$electronics, $laptops, $phones, $iphone, $android] = $this->buildElectronicsTree();
 
@@ -134,7 +141,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString("    n{$phones->id} --> n{$android->id}", $mermaid);
     }
 
-    public function test_mermaid_direction_option(): void
+    #[Test]
+    public function mermaid_direction_option(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -143,7 +151,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringStartsWith('graph LR', $mermaid);
     }
 
-    public function test_mermaid_show_id_appends_pk(): void
+    #[Test]
+    public function mermaid_show_id_appends_pk(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -152,7 +161,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString("Electronics (id={$electronics->id})", $mermaid);
     }
 
-    public function test_mermaid_escapes_special_characters_in_label(): void
+    #[Test]
+    public function mermaid_escapes_special_characters_in_label(): void
     {
         $root = new Category(['name' => 'A & B "C" <D>']);
         $root->saveAsRoot();
@@ -163,7 +173,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('&lt;D&gt;', $mermaid);
     }
 
-    public function test_mermaid_falls_back_to_pk_when_label_closure_throws(): void
+    #[Test]
+    public function mermaid_falls_back_to_pk_when_label_closure_throws(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -176,7 +187,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString("[\"{$electronics->id}\"]", $mermaid);
     }
 
-    public function test_dot_emits_digraph(): void
+    #[Test]
+    public function dot_emits_digraph(): void
     {
         [$electronics, $laptops, , $iphone] = $this->buildElectronicsTree();
 
@@ -193,7 +205,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('iPhone (depth=', $dot);
     }
 
-    public function test_dot_direction_option(): void
+    #[Test]
+    public function dot_direction_option(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -202,7 +215,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('rankdir=LR;', $dot);
     }
 
-    public function test_dot_escapes_quotes_and_backslashes(): void
+    #[Test]
+    public function dot_escapes_quotes_and_backslashes(): void
     {
         $root = new Category(['name' => 'path\\to "x"']);
         $root->saveAsRoot();
@@ -212,7 +226,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('label="path\\\\to \\"x\\""', $dot);
     }
 
-    public function test_json_tree_shape(): void
+    #[Test]
+    public function json_tree_shape(): void
     {
         [$electronics, $laptops, $phones, $iphone, $android] = $this->buildElectronicsTree();
 
@@ -247,7 +262,8 @@ final class TreeExportersTest extends TestCase
         ], $json);
     }
 
-    public function test_json_tree_extras_and_children_key(): void
+    #[Test]
+    public function json_tree_extras_and_children_key(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -263,7 +279,8 @@ final class TreeExportersTest extends TestCase
         $this->assertArrayNotHasKey('children', $json);
     }
 
-    public function test_json_tree_custom_label_closure(): void
+    #[Test]
+    public function json_tree_custom_label_closure(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -278,7 +295,8 @@ final class TreeExportersTest extends TestCase
         $this->assertSame('ELECTRONICS', $json['label']);
     }
 
-    public function test_json_label_closure_stringifies_numeric_return_values(): void
+    #[Test]
+    public function json_label_closure_stringifies_numeric_return_values(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -290,7 +308,8 @@ final class TreeExportersTest extends TestCase
         $this->assertSame('3.5', $root->toJsonTree(new JsonOptions(label: static fn (): float => 3.5))['label']);
     }
 
-    public function test_subtree_export_omits_siblings_of_root(): void
+    #[Test]
+    public function subtree_export_omits_siblings_of_root(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -306,7 +325,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('Other', $mermaid);
     }
 
-    public function test_forest_exports_every_root(): void
+    #[Test]
+    public function forest_exports_every_root(): void
     {
         $a = new Category(['name' => 'A']);
         $a->saveAsRoot();
@@ -319,7 +339,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('"B"', $mermaid);
     }
 
-    public function test_scope_export_filters_to_one_tree(): void
+    #[Test]
+    public function scope_export_filters_to_one_tree(): void
     {
         $menu1 = Menu::create(['name' => 'Menu 1']);
         $menu2 = Menu::create(['name' => 'Menu 2']);
@@ -339,14 +360,16 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('M2-root', $ascii);
     }
 
-    public function test_scope_export_rejects_unscoped_models(): void
+    #[Test]
+    public function scope_export_rejects_unscoped_models(): void
     {
         $this->expectException(\LogicException::class);
 
         Category::toAsciiTreeScope(1);
     }
 
-    public function test_uuid_pk_uses_hashed_node_id(): void
+    #[Test]
+    public function uuid_pk_uses_hashed_node_id(): void
     {
         $root = new UuidTag(['name' => 'Root']);
         $root->saveAsRoot();
@@ -360,7 +383,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString($key, $mermaid);
     }
 
-    public function test_soft_deleted_descendants_excluded_by_default(): void
+    #[Test]
+    public function soft_deleted_descendants_excluded_by_default(): void
     {
         [$electronics, , $phones, , $android] = $this->buildElectronicsTree();
         $android->delete();
@@ -372,7 +396,8 @@ final class TreeExportersTest extends TestCase
         $this->allowBrokenTreeAtTearDown = false;
     }
 
-    public function test_soft_deleted_descendants_included_with_with_trashed(): void
+    #[Test]
+    public function soft_deleted_descendants_included_with_with_trashed(): void
     {
         [$electronics, , , , $android] = $this->buildElectronicsTree();
         $android->delete();
@@ -382,7 +407,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('Android', $ascii);
     }
 
-    public function test_cycle_detection_throws_corrupt_tree_exception(): void
+    #[Test]
+    public function cycle_detection_throws_corrupt_tree_exception(): void
     {
         $this->allowBrokenTreeAtTearDown = true;
 
@@ -397,7 +423,8 @@ final class TreeExportersTest extends TestCase
         Category::toMermaidForest();
     }
 
-    public function test_aggregates_in_label_when_show_aggregates_set(): void
+    #[Test]
+    public function aggregates_in_label_when_show_aggregates_set(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -411,7 +438,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('Electronics<br/>products_total: 23', $mermaid);
     }
 
-    public function test_mermaid_options_rejects_invalid_direction(): void
+    #[Test]
+    public function mermaid_options_rejects_invalid_direction(): void
     {
         // Reflection bypasses the static narrow ('TD'|'LR'|'BT'|'RL'), so
         // the runtime guard is what's actually under test here.
@@ -420,14 +448,16 @@ final class TreeExportersTest extends TestCase
         (new \ReflectionClass(MermaidOptions::class))->newInstance('XX');
     }
 
-    public function test_dot_options_rejects_invalid_direction(): void
+    #[Test]
+    public function dot_options_rejects_invalid_direction(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
         (new \ReflectionClass(DotOptions::class))->newInstance('TD');
     }
 
-    public function test_aggregate_boolean_renders_as_true_false_not_empty_string(): void
+    #[Test]
+    public function aggregate_boolean_renders_as_true_false_not_empty_string(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->setAttribute('featured', false);
@@ -438,7 +468,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('featured: <br/>', $mermaid);
     }
 
-    public function test_mermaid_label_with_newline_renders_as_br(): void
+    #[Test]
+    public function mermaid_label_with_newline_renders_as_br(): void
     {
         $root = new Category(['name' => "Line1\nLine2"]);
         $root->saveAsRoot();
@@ -448,7 +479,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('Line1<br/>Line2', $mermaid);
     }
 
-    public function test_subtree_export_of_scoped_model_only_includes_same_scope(): void
+    #[Test]
+    public function subtree_export_of_scoped_model_only_includes_same_scope(): void
     {
         // Two trees with overlapping lft/rgt (each scope restarts its
         // sequence at 1). Without the scope filter on the descendants
@@ -474,7 +506,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('M2-Child', $ascii);
     }
 
-    public function test_forest_groups_scoped_trees_by_scope_column(): void
+    #[Test]
+    public function forest_groups_scoped_trees_by_scope_column(): void
     {
         // Auto-increment guarantees menu1.id < menu2.id even though we
         // insert menu2's tree first. The Forest loader's `ORDER BY
@@ -504,7 +537,8 @@ final class TreeExportersTest extends TestCase
         $this->assertLessThan($m1Child, $m1Root, 'within menu1, root must render before child (lft order).');
     }
 
-    public function test_dot_forest_renders_digraph(): void
+    #[Test]
+    public function dot_forest_renders_digraph(): void
     {
         $a = new Category(['name' => 'A']);
         $a->saveAsRoot();
@@ -518,7 +552,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('label="B"', $dot);
     }
 
-    public function test_ascii_tree_forest_renders_each_root(): void
+    #[Test]
+    public function ascii_tree_forest_renders_each_root(): void
     {
         $a = new Category(['name' => 'A']);
         $a->saveAsRoot();
@@ -531,7 +566,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('B', $ascii);
     }
 
-    public function test_json_tree_forest_returns_list_for_multiple_roots(): void
+    #[Test]
+    public function json_tree_forest_returns_list_for_multiple_roots(): void
     {
         $a = new Category(['name' => 'A']);
         $a->saveAsRoot();
@@ -546,7 +582,8 @@ final class TreeExportersTest extends TestCase
         ], $json);
     }
 
-    public function test_dot_scope_filters_to_one_tree(): void
+    #[Test]
+    public function dot_scope_filters_to_one_tree(): void
     {
         $menu1 = Menu::create(['name' => 'M1']);
         $menu2 = Menu::create(['name' => 'M2']);
@@ -559,7 +596,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('M2-Root', $dot);
     }
 
-    public function test_json_tree_scope_filters_to_one_tree(): void
+    #[Test]
+    public function json_tree_scope_filters_to_one_tree(): void
     {
         $menu1 = Menu::create(['name' => 'M1']);
         $menu2 = Menu::create(['name' => 'M2']);
@@ -572,7 +610,8 @@ final class TreeExportersTest extends TestCase
         $this->assertSame('M1-Root', $json['label']);
     }
 
-    public function test_mermaid_scope_filters_to_one_tree(): void
+    #[Test]
+    public function mermaid_scope_filters_to_one_tree(): void
     {
         $menu1 = Menu::create(['name' => 'M1']);
         $menu2 = Menu::create(['name' => 'M2']);
@@ -585,7 +624,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('"M2-Root"', $mermaid);
     }
 
-    public function test_mermaid_options_default_excludes_trashed(): void
+    #[Test]
+    public function mermaid_options_default_excludes_trashed(): void
     {
         [$electronics, , , , $android] = $this->buildElectronicsTree();
         $android->delete();
@@ -595,7 +635,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('"Android"', $mermaid);
     }
 
-    public function test_dot_options_default_excludes_trashed(): void
+    #[Test]
+    public function dot_options_default_excludes_trashed(): void
     {
         [$electronics, , , , $android] = $this->buildElectronicsTree();
         $android->delete();
@@ -605,7 +646,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('"Android"', $dot);
     }
 
-    public function test_json_tree_options_default_excludes_trashed(): void
+    #[Test]
+    public function json_tree_options_default_excludes_trashed(): void
     {
         [$electronics, , , $iphone, $android] = $this->buildElectronicsTree();
         $android->delete();
@@ -618,7 +660,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('iPhone', $encoded);
     }
 
-    public function test_forest_with_trashed_includes_soft_deleted_rows(): void
+    #[Test]
+    public function forest_with_trashed_includes_soft_deleted_rows(): void
     {
         [, , , , $android] = $this->buildElectronicsTree();
         $android->delete();
@@ -630,7 +673,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('Android', $withTrashed);
     }
 
-    public function test_ascii_tree_max_depth_at_2_renders_grandchildren_only(): void
+    #[Test]
+    public function ascii_tree_max_depth_at_2_renders_grandchildren_only(): void
     {
         $r = new Category(['name' => 'R']);
         $r->saveAsRoot();
@@ -649,7 +693,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringNotContainsString('AAA', $ascii);
     }
 
-    public function test_dot_show_aggregates_renders_columns(): void
+    #[Test]
+    public function dot_show_aggregates_renders_columns(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->setAttribute('products_total', 23);
@@ -660,7 +705,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('Electronics\\nproducts_total: 23', $dot);
     }
 
-    public function test_aggregate_float_value_renders_in_label(): void
+    #[Test]
+    public function aggregate_float_value_renders_in_label(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->setAttribute('price_avg', 12.5);
@@ -670,7 +716,8 @@ final class TreeExportersTest extends TestCase
         $this->assertStringContainsString('price_avg: 12.5', $mermaid);
     }
 
-    public function test_filter_prunes_nodes_and_edges_uniformly_across_formats(): void
+    #[Test]
+    public function filter_prunes_nodes_and_edges_uniformly_across_formats(): void
     {
         // All four exporters share one filter primitive — they should
         // produce the same node/edge inclusion decision when handed the
@@ -708,7 +755,8 @@ final class TreeExportersTest extends TestCase
         $this->assertSame(['Laptops'], $childLabels);
     }
 
-    public function test_uuid_node_id_is_deterministic_hash_of_key(): void
+    #[Test]
+    public function uuid_node_id_is_deterministic_hash_of_key(): void
     {
         // Hash offset matters: substr(md5(...), 0, 8) vs substr(..., 1, 8)
         // produce different but both-valid-hex strings, so the regex test

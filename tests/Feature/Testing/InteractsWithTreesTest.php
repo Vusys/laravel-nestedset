@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Testing;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeBounds;
@@ -77,7 +78,8 @@ final class InteractsWithTreesTest extends TestCase
     // assertIsRoot / assertIsLeaf / assertIsNotLeaf
     // ----------------------------------------------------------------
 
-    public function test_assert_is_root_passes_for_root_node(): void
+    #[Test]
+    public function assert_is_root_passes_for_root_node(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -85,7 +87,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsRoot($root);
     }
 
-    public function test_assert_is_root_fails_for_non_root(): void
+    #[Test]
+    public function assert_is_root_fails_for_non_root(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -94,7 +97,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('root', $error->getMessage());
     }
 
-    public function test_assert_is_leaf_passes_for_leaf(): void
+    #[Test]
+    public function assert_is_leaf_passes_for_leaf(): void
     {
         $this->seedMotivatingTree();
         $b = Area::query()->where('name', 'B')->firstOrFail();
@@ -102,7 +106,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsLeaf($b);
     }
 
-    public function test_assert_is_leaf_fails_for_internal_node(): void
+    #[Test]
+    public function assert_is_leaf_fails_for_internal_node(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -110,7 +115,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->expectFailure(fn () => $this->assertIsLeaf($a));
     }
 
-    public function test_assert_is_not_leaf_passes_for_internal_node(): void
+    #[Test]
+    public function assert_is_not_leaf_passes_for_internal_node(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -118,7 +124,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsNotLeaf($root);
     }
 
-    public function test_assert_is_not_leaf_fails_for_leaf(): void
+    #[Test]
+    public function assert_is_not_leaf_fails_for_leaf(): void
     {
         $this->seedMotivatingTree();
         $b = Area::query()->where('name', 'B')->firstOrFail();
@@ -130,7 +137,8 @@ final class InteractsWithTreesTest extends TestCase
     // assertIsChildOf / assertIsDescendantOf / assertIsAncestorOf
     // ----------------------------------------------------------------
 
-    public function test_assert_is_child_of_passes_for_direct_child(): void
+    #[Test]
+    public function assert_is_child_of_passes_for_direct_child(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -139,7 +147,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsChildOf($a, $root);
     }
 
-    public function test_assert_is_child_of_fails_for_grandchild(): void
+    #[Test]
+    public function assert_is_child_of_fails_for_grandchild(): void
     {
         $this->seedMotivatingTree();
         $a1 = Area::query()->where('name', 'A1')->firstOrFail();
@@ -148,7 +157,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->expectFailure(fn () => $this->assertIsChildOf($a1, $root));
     }
 
-    public function test_assert_is_descendant_of_passes_for_grandchild(): void
+    #[Test]
+    public function assert_is_descendant_of_passes_for_grandchild(): void
     {
         $this->seedMotivatingTree();
         $a1 = Area::query()->where('name', 'A1')->firstOrFail();
@@ -157,7 +167,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsDescendantOf($a1, $root);
     }
 
-    public function test_assert_is_descendant_of_fails_for_sibling(): void
+    #[Test]
+    public function assert_is_descendant_of_fails_for_sibling(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -166,7 +177,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->expectFailure(fn () => $this->assertIsDescendantOf($a, $b));
     }
 
-    public function test_assert_is_ancestor_of_passes_for_root_over_grandchild(): void
+    #[Test]
+    public function assert_is_ancestor_of_passes_for_root_over_grandchild(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -175,7 +187,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsAncestorOf($root, $a1);
     }
 
-    public function test_assert_is_ancestor_of_fails_for_reversed_relationship(): void
+    #[Test]
+    public function assert_is_ancestor_of_fails_for_reversed_relationship(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -189,7 +202,8 @@ final class InteractsWithTreesTest extends TestCase
     // assertHasDescendants / assertHasChildren
     // ----------------------------------------------------------------
 
-    public function test_assert_has_descendants_passes_with_correct_count(): void
+    #[Test]
+    public function assert_has_descendants_passes_with_correct_count(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -206,7 +220,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertHasDescendants($b, 0);
     }
 
-    public function test_assert_has_descendants_fails_with_wrong_count(): void
+    #[Test]
+    public function assert_has_descendants_fails_with_wrong_count(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -214,7 +229,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->expectFailure(fn () => $this->assertHasDescendants($root, 99));
     }
 
-    public function test_assert_has_children_counts_direct_children_only(): void
+    #[Test]
+    public function assert_has_children_counts_direct_children_only(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -226,7 +242,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertHasChildren($a, 1);
     }
 
-    public function test_assert_has_children_fails_with_wrong_count(): void
+    #[Test]
+    public function assert_has_children_fails_with_wrong_count(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -238,7 +255,8 @@ final class InteractsWithTreesTest extends TestCase
     // assertAggregateMatchesFresh
     // ----------------------------------------------------------------
 
-    public function test_assert_aggregate_matches_fresh_passes_on_intact_tree(): void
+    #[Test]
+    public function assert_aggregate_matches_fresh_passes_on_intact_tree(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -247,7 +265,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertAggregateMatchesFresh($root, 'tickets_count_all');
     }
 
-    public function test_assert_aggregate_matches_fresh_fails_on_drifted_value(): void
+    #[Test]
+    public function assert_aggregate_matches_fresh_fails_on_drifted_value(): void
     {
         $this->seedMotivatingTree();
         // Corrupt the stored value behind Eloquent's back.
@@ -262,14 +281,16 @@ final class InteractsWithTreesTest extends TestCase
     // assertTreeIsIntact / assertAggregatesAreIntact
     // ----------------------------------------------------------------
 
-    public function test_assert_tree_is_intact_passes_on_clean_tree(): void
+    #[Test]
+    public function assert_tree_is_intact_passes_on_clean_tree(): void
     {
         $this->seedMotivatingTree();
 
         $this->assertTreeIsIntact(Area::class);
     }
 
-    public function test_assert_tree_is_intact_fails_when_lft_rgt_corrupted(): void
+    #[Test]
+    public function assert_tree_is_intact_fails_when_lft_rgt_corrupted(): void
     {
         $this->seedMotivatingTree();
         // invalid_bounds: rgt must be > lft. Setting lft=10, rgt=5 on A
@@ -280,20 +301,23 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertMatchesRegularExpression('/duplicate_lft|duplicate_rgt|invalid_bounds|orphans/', $error->getMessage());
     }
 
-    public function test_assert_tree_is_intact_fails_clearly_on_non_node_model(): void
+    #[Test]
+    public function assert_tree_is_intact_fails_clearly_on_non_node_model(): void
     {
         $error = $this->expectFailure(fn () => $this->assertTreeIsIntact(\stdClass::class));
         $this->assertStringContainsString('NodeTrait', $error->getMessage());
     }
 
-    public function test_assert_aggregates_are_intact_passes_on_clean_tree(): void
+    #[Test]
+    public function assert_aggregates_are_intact_passes_on_clean_tree(): void
     {
         $this->seedMotivatingTree();
 
         $this->assertAggregatesAreIntact(Area::class);
     }
 
-    public function test_assert_aggregates_are_intact_fails_when_stored_drifted(): void
+    #[Test]
+    public function assert_aggregates_are_intact_fails_when_stored_drifted(): void
     {
         $this->seedMotivatingTree();
         DB::table('areas')->where('name', 'Root')->update(['tickets_total' => 9999]);
@@ -302,7 +326,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('tickets_total', $error->getMessage());
     }
 
-    public function test_assert_aggregates_are_intact_skips_when_model_declares_no_aggregates(): void
+    #[Test]
+    public function assert_aggregates_are_intact_skips_when_model_declares_no_aggregates(): void
     {
         // Category has no aggregate columns — the helper should fail
         // *fast* with a clear message rather than silently passing.
@@ -319,7 +344,8 @@ final class InteractsWithTreesTest extends TestCase
     // surface. Exercises the `method_exists` and `is_numeric` guards.
     // ----------------------------------------------------------------
 
-    public function test_assert_aggregates_are_intact_fails_clearly_on_non_node_model(): void
+    #[Test]
+    public function assert_aggregates_are_intact_fails_clearly_on_non_node_model(): void
     {
         // stdClass has neither aggregatesAreBroken() nor
         // aggregateErrors(). The guard should fire fast with a
@@ -328,7 +354,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('NestedSetAggregate', $error->getMessage());
     }
 
-    public function test_assert_is_child_of_accepts_string_primary_key(): void
+    #[Test]
+    public function assert_is_child_of_accepts_string_primary_key(): void
     {
         // String/UUID/ULID PKs are first-class — `assertIsChildOf`
         // compares parent.getKey() against child.getParentId() with
@@ -451,7 +478,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertIsChildOf($child, $stringKeyParent);
     }
 
-    public function test_assert_aggregate_matches_fresh_handles_non_numeric_values(): void
+    #[Test]
+    public function assert_aggregate_matches_fresh_handles_non_numeric_values(): void
     {
         // Both stored and fresh end up null when an exclusive MIN
         // hits a leaf. Tolerant numeric comparison short-circuits;
@@ -487,7 +515,8 @@ final class InteractsWithTreesTest extends TestCase
     // does not contain that token.
     // ----------------------------------------------------------------
 
-    public function test_assert_is_root_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_is_root_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -497,7 +526,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isRoot', $error->getMessage());
     }
 
-    public function test_assert_is_leaf_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_is_leaf_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -507,7 +537,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isLeaf', $error->getMessage());
     }
 
-    public function test_assert_is_not_leaf_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_is_not_leaf_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $b = Area::query()->where('name', 'B')->firstOrFail();
@@ -517,7 +548,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isNotLeaf', $error->getMessage());
     }
 
-    public function test_assert_is_child_of_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_is_child_of_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -528,7 +560,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isChildOf', $error->getMessage());
     }
 
-    public function test_assert_is_descendant_of_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_is_descendant_of_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -539,7 +572,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isDescendantOf', $error->getMessage());
     }
 
-    public function test_assert_is_ancestor_of_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_is_ancestor_of_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $a1 = Area::query()->where('name', 'A1')->firstOrFail();
@@ -550,7 +584,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_isAncestorOf', $error->getMessage());
     }
 
-    public function test_assert_has_descendants_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_has_descendants_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -560,7 +595,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_hasDescendants', $error->getMessage());
     }
 
-    public function test_assert_has_children_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_has_children_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         $root = Area::query()->where('name', 'Root')->firstOrFail();
@@ -570,7 +606,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_hasChildren', $error->getMessage());
     }
 
-    public function test_assert_aggregate_matches_fresh_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_aggregate_matches_fresh_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         // Drift the stored aggregate so the assertion will fail.
@@ -582,7 +619,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_aggregateMatchesFresh', $error->getMessage());
     }
 
-    public function test_assert_tree_is_intact_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_tree_is_intact_uses_custom_message_on_failure(): void
     {
         // Corrupt the tree so the assertion fails.
         $this->allowBrokenTreeAtTearDown = true;
@@ -595,7 +633,8 @@ final class InteractsWithTreesTest extends TestCase
         $this->assertStringContainsString('CUSTOM_FAIL_TOKEN_treeIsIntact', $error->getMessage());
     }
 
-    public function test_assert_aggregates_are_intact_uses_custom_message_on_failure(): void
+    #[Test]
+    public function assert_aggregates_are_intact_uses_custom_message_on_failure(): void
     {
         $this->seedMotivatingTree();
         // Drift a stored aggregate so the assertion fails.

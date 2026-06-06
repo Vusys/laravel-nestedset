@@ -9,6 +9,7 @@ use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -36,7 +37,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class TransactionTest extends TestCase
 {
-    public function test_explicit_transaction_rollback_restores_tree(): void
+    #[Test]
+    public function explicit_transaction_rollback_restores_tree(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -63,7 +65,8 @@ final class TransactionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_failure_after_save_under_outer_transaction_is_rolled_back(): void
+    #[Test]
+    public function failure_after_save_under_outer_transaction_is_rolled_back(): void
     {
         // Sanity: an outer DB::transaction() that throws after a save
         // call still rolls back, even though the package's auto-tx
@@ -92,7 +95,8 @@ final class TransactionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_failure_inside_created_listener_rolls_back_the_gap(): void
+    #[Test]
+    public function failure_inside_created_listener_rolls_back_the_gap(): void
     {
         // The whole point of wrapping save() (not just the structural
         // SQL): a listener throw AFTER the INSERT — created / saved
@@ -133,7 +137,8 @@ final class TransactionTest extends TestCase
         }
     }
 
-    public function test_auto_transaction_wraps_call_pending_action(): void
+    #[Test]
+    public function auto_transaction_wraps_call_pending_action(): void
     {
         // The auto-transaction boundary wraps `callPendingAction`'s
         // structural-SQL block (`makeGap` / `moveNode` plus the
@@ -164,7 +169,8 @@ final class TransactionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_auto_transaction_false_skips_the_wrap(): void
+    #[Test]
+    public function auto_transaction_false_skips_the_wrap(): void
     {
         // With auto_transaction disabled, the package emits no
         // transaction-control statement around callPendingAction —
@@ -190,7 +196,8 @@ final class TransactionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_auto_transaction_false_under_user_wrapped_transaction_still_rolls_back(): void
+    #[Test]
+    public function auto_transaction_false_under_user_wrapped_transaction_still_rolls_back(): void
     {
         // The recommended pattern when auto_transaction is off: wrap
         // the work yourself. The user-wrapped transaction handles
@@ -217,7 +224,8 @@ final class TransactionTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_auto_transaction_can_be_disabled_for_successful_mutations(): void
+    #[Test]
+    public function auto_transaction_can_be_disabled_for_successful_mutations(): void
     {
         // Happy-path sanity check: auto_transaction = false does NOT
         // break a successful mutation. (It used to be the only mode.)

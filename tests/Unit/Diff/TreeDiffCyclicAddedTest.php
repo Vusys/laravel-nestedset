@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Exceptions\DanglingParentException;
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Exceptions\DanglingParentException;
  */
 final class TreeDiffCyclicAddedTest extends TestCase
 {
-    public function test_cycle_in_added_rows_throws_rather_than_recursing_forever(): void
+    #[Test]
+    public function cycle_in_added_rows_throws_rather_than_recursing_forever(): void
     {
         $before = [];
         $after = [

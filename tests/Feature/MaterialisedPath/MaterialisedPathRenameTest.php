@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathRenameTest extends TestCase
 {
-    public function test_rename_internal_node_rewrites_descendant_prefixes(): void
+    #[Test]
+    public function rename_internal_node_rewrites_descendant_prefixes(): void
     {
         $root = new SluggedCategory(['name' => 'Electronics']);
         $root->makeRoot()->save();
@@ -30,7 +32,8 @@ final class MaterialisedPathRenameTest extends TestCase
         $this->assertSame('/electronics/computers/ultrabooks/', $grand->url_path);
     }
 
-    public function test_rename_root_rewrites_all_descendants(): void
+    #[Test]
+    public function rename_root_rewrites_all_descendants(): void
     {
         $root = new SluggedCategory(['name' => 'Electronics']);
         $root->makeRoot()->save();

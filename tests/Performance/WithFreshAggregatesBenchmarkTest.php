@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
@@ -28,7 +29,8 @@ use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
  */
 final class WithFreshAggregatesBenchmarkTest extends PerformanceTestCase
 {
-    public function test_with_fresh_aggregates_all_declared(): void
+    #[Test]
+    public function with_fresh_aggregates_all_declared(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();
@@ -45,7 +47,8 @@ final class WithFreshAggregatesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_with_fresh_aggregates_single_column(): void
+    #[Test]
+    public function with_fresh_aggregates_single_column(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();
@@ -62,7 +65,8 @@ final class WithFreshAggregatesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_with_fresh_aggregates_adhoc_aggregate(): void
+    #[Test]
+    public function with_fresh_aggregates_adhoc_aggregate(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();

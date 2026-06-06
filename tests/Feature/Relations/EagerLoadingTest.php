@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Relations;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
@@ -48,14 +49,16 @@ final class EagerLoadingTest extends TestCase
     // ancestors — single load
     // ----------------------------------------------------------------
 
-    public function test_ancestors_returns_strict_ancestors_in_order(): void
+    #[Test]
+    public function ancestors_returns_strict_ancestors_in_order(): void
     {
         $names = $this->find(3)->ancestors()->orderBy('lft')->pluck('name')->all();
 
         $this->assertSame(['Root', 'Child A'], $names);
     }
 
-    public function test_ancestors_of_root_is_empty(): void
+    #[Test]
+    public function ancestors_of_root_is_empty(): void
     {
         $this->assertCount(0, $this->find(1)->ancestors()->get());
     }
@@ -64,14 +67,16 @@ final class EagerLoadingTest extends TestCase
     // descendants — single load
     // ----------------------------------------------------------------
 
-    public function test_descendants_returns_strict_descendants(): void
+    #[Test]
+    public function descendants_returns_strict_descendants(): void
     {
         $names = $this->find(2)->descendants()->orderBy('lft')->pluck('name')->all();
 
         $this->assertSame(['AA', 'AB'], $names);
     }
 
-    public function test_descendants_of_leaf_is_empty(): void
+    #[Test]
+    public function descendants_of_leaf_is_empty(): void
     {
         $this->assertCount(0, $this->find(3)->descendants()->get());
     }
@@ -80,7 +85,8 @@ final class EagerLoadingTest extends TestCase
     // Eager loading
     // ----------------------------------------------------------------
 
-    public function test_with_ancestors_uses_exactly_two_queries(): void
+    #[Test]
+    public function with_ancestors_uses_exactly_two_queries(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -92,7 +98,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertSame(2, $count);
     }
 
-    public function test_with_descendants_uses_exactly_two_queries(): void
+    #[Test]
+    public function with_descendants_uses_exactly_two_queries(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -104,7 +111,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertSame(2, $count);
     }
 
-    public function test_with_ancestors_attaches_correct_results_per_model(): void
+    #[Test]
+    public function with_ancestors_attaches_correct_results_per_model(): void
     {
         $rows = Category::query()->with('ancestors')->orderBy('id')->get();
         $byId = $rows->keyBy('id');
@@ -130,7 +138,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertCount(0, $root->ancestors);
     }
 
-    public function test_with_descendants_attaches_correct_results_per_model(): void
+    #[Test]
+    public function with_descendants_attaches_correct_results_per_model(): void
     {
         $rows = Category::query()->with('descendants')->orderBy('id')->get();
         $byId = $rows->keyBy('id');
@@ -156,7 +165,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertCount(0, $aa->descendants);
     }
 
-    public function test_eager_loaded_ancestors_does_not_include_self(): void
+    #[Test]
+    public function eager_loaded_ancestors_does_not_include_self(): void
     {
         $rows = Category::query()->with('ancestors')->get();
 
@@ -175,7 +185,8 @@ final class EagerLoadingTest extends TestCase
     // whereHas — subquery support
     // ----------------------------------------------------------------
 
-    public function test_where_has_descendants_returns_only_internal_nodes(): void
+    #[Test]
+    public function where_has_descendants_returns_only_internal_nodes(): void
     {
         $names = Category::query()
             ->whereHas('descendants')
@@ -186,7 +197,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertSame(['Root', 'Child A'], $names);
     }
 
-    public function test_where_has_ancestors_excludes_root(): void
+    #[Test]
+    public function where_has_ancestors_excludes_root(): void
     {
         $names = Category::query()
             ->whereHas('ancestors')
@@ -197,7 +209,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertSame(['Child A', 'AA', 'AB', 'Child B'], $names);
     }
 
-    public function test_where_has_descendants_accepts_constraint_closure(): void
+    #[Test]
+    public function where_has_descendants_accepts_constraint_closure(): void
     {
         // README line 206 documents the constraint-closure form:
         //   Category::whereHas('descendants', fn ($q) => $q->where('active', true))
@@ -214,7 +227,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertSame(['Root', 'Child A'], $names);
     }
 
-    public function test_parent_relation_returns_belongs_to_pointing_at_parent_id(): void
+    #[Test]
+    public function parent_relation_returns_belongs_to_pointing_at_parent_id(): void
     {
         // The `parent` relation method is a thin BelongsTo wrapper.
         // The README features it but no test had exercised it
@@ -231,7 +245,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertNull($this->find(1)->parent);
     }
 
-    public function test_children_relation_returns_direct_children_only(): void
+    #[Test]
+    public function children_relation_returns_direct_children_only(): void
     {
         // The `children` HasMany filters by parent_id — README
         // documents it. Distinct from `descendants` (transitive).
@@ -244,7 +259,8 @@ final class EagerLoadingTest extends TestCase
         $this->assertCount(0, $this->find(3)->children);
     }
 
-    public function test_children_relation_applies_scope_filters_on_scoped_models(): void
+    #[Test]
+    public function children_relation_applies_scope_filters_on_scoped_models(): void
     {
         // On a scoped model (MenuItem with #[NestedSetScope('menu_id')])
         // the children() builder gets an extra `menu_id = ?` so

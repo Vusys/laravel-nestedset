@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
@@ -56,21 +57,24 @@ final class ListenerVarianceMaintenanceTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_variance_value_matches_textbook_formula(): void
+    #[Test]
+    public function variance_value_matches_textbook_formula(): void
     {
         $root = $this->seedFour();
 
         $this->assertEqualsWithDelta(5.0, $this->asFloat($root->score_variance), 1e-9);
     }
 
-    public function test_stddev_value_matches_sqrt_of_variance(): void
+    #[Test]
+    public function stddev_value_matches_sqrt_of_variance(): void
     {
         $root = $this->seedFour();
 
         $this->assertEqualsWithDelta(sqrt(5.0), $this->asFloat($root->score_stddev), 1e-9);
     }
 
-    public function test_companion_columns_track_running_totals(): void
+    #[Test]
+    public function companion_columns_track_running_totals(): void
     {
         $root = $this->seedFour();
 
@@ -79,7 +83,8 @@ final class ListenerVarianceMaintenanceTest extends TestCase
         $this->assertSame(4, (int) $root->score_variance__count);
     }
 
-    public function test_inserting_a_node_rerolls_variance(): void
+    #[Test]
+    public function inserting_a_node_rerolls_variance(): void
     {
         $root = $this->seedFour();
 
@@ -94,7 +99,8 @@ final class ListenerVarianceMaintenanceTest extends TestCase
         $this->assertSame(5, (int) $root->score_variance__count);
     }
 
-    public function test_deleting_a_node_rerolls_variance(): void
+    #[Test]
+    public function deleting_a_node_rerolls_variance(): void
     {
         $root = $this->seedFour();
         $third = StatsMonster::query()->where('name', 'c2')->firstOrFail();
@@ -107,7 +113,8 @@ final class ListenerVarianceMaintenanceTest extends TestCase
         $this->assertSame(3, (int) $root->score_variance__count);
     }
 
-    public function test_single_value_variance_is_zero_and_stddev_is_zero(): void
+    #[Test]
+    public function single_value_variance_is_zero_and_stddev_is_zero(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 42.0]);
         $root->saveAsRoot();
@@ -118,7 +125,8 @@ final class ListenerVarianceMaintenanceTest extends TestCase
         $this->assertSame(1, (int) $root->score_variance__count);
     }
 
-    public function test_empty_score_subtree_yields_null_variance(): void
+    #[Test]
+    public function empty_score_subtree_yields_null_variance(): void
     {
         // Score is null → ScoreListener returns null → row excluded.
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => null]);
@@ -130,7 +138,8 @@ final class ListenerVarianceMaintenanceTest extends TestCase
         $this->assertSame(0, (int) $root->score_variance__count);
     }
 
-    public function test_fix_aggregates_restores_drifted_variance(): void
+    #[Test]
+    public function fix_aggregates_restores_drifted_variance(): void
     {
         $root = $this->seedFour();
 
@@ -154,7 +163,8 @@ final class ListenerVarianceMaintenanceTest extends TestCase
      * Auto-promotion must produce companions with the right
      * sourceTransform so __sum_sq stores Σ(x²), not Σ(x).
      */
-    public function test_sum_sq_companion_carries_square_transform(): void
+    #[Test]
+    public function sum_sq_companion_carries_square_transform(): void
     {
         $defs = AggregateRegistry::for(StatsMonster::class);
 

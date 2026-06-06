@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Attributes;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
@@ -11,7 +12,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class NestedSetAggregateCollectionKindsTest extends TestCase
 {
-    public function test_distinct_count_produces_a_distinct_count_definition(): void
+    #[Test]
+    public function distinct_count_produces_a_distinct_count_definition(): void
     {
         $def = (new NestedSetAggregate(
             column: 'distinct_owners',
@@ -23,7 +25,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertTrue($def->inclusive);
     }
 
-    public function test_string_agg_with_separator_limit_and_order_by(): void
+    #[Test]
+    public function string_agg_with_separator_limit_and_order_by(): void
     {
         $def = (new NestedSetAggregate(
             column: 'child_names',
@@ -41,7 +44,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertFalse($def->distinct);
     }
 
-    public function test_string_agg_distinct_flag_lights_distinct_in_definition(): void
+    #[Test]
+    public function string_agg_distinct_flag_lights_distinct_in_definition(): void
     {
         $def = (new NestedSetAggregate(
             column: 'distinct_tags',
@@ -53,7 +57,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertSame('tag', $def->orderBy);
     }
 
-    public function test_string_agg_distinct_with_custom_order_by_rejects(): void
+    #[Test]
+    public function string_agg_distinct_with_custom_order_by_rejects(): void
     {
         try {
             (new NestedSetAggregate(
@@ -76,7 +81,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         }
     }
 
-    public function test_json_agg_scalar_form(): void
+    #[Test]
+    public function json_agg_scalar_form(): void
     {
         $def = (new NestedSetAggregate(
             column: 'descendant_ids',
@@ -89,7 +95,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertSame('id', $def->orderBy);
     }
 
-    public function test_json_agg_list_form(): void
+    #[Test]
+    public function json_agg_list_form(): void
     {
         $def = (new NestedSetAggregate(
             column: 'summary',
@@ -100,7 +107,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertSame(['id' => 'id', 'name' => 'name'], $def->sources);
     }
 
-    public function test_json_agg_assoc_form(): void
+    #[Test]
+    public function json_agg_assoc_form(): void
     {
         $def = (new NestedSetAggregate(
             column: 'summary',
@@ -110,7 +118,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertSame(['nodeId' => 'id', 'label' => 'name'], $def->sources);
     }
 
-    public function test_json_agg_rejects_duplicate_list_keys(): void
+    #[Test]
+    public function json_agg_rejects_duplicate_list_keys(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         (new NestedSetAggregate(
@@ -119,7 +128,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_json_agg_rejects_empty_string_key(): void
+    #[Test]
+    public function json_agg_rejects_empty_string_key(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         (new NestedSetAggregate(
@@ -128,7 +138,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_json_agg_rejects_empty_source_array(): void
+    #[Test]
+    public function json_agg_rejects_empty_source_array(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         (new NestedSetAggregate(
@@ -137,7 +148,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_json_object_agg_definition(): void
+    #[Test]
+    public function json_object_agg_definition(): void
     {
         $def = (new NestedSetAggregate(
             column: 'slug_to_name',
@@ -152,7 +164,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertFalse($def->allowNullKeys);
     }
 
-    public function test_json_object_agg_allow_null_keys(): void
+    #[Test]
+    public function json_object_agg_allow_null_keys(): void
     {
         $def = (new NestedSetAggregate(
             column: 'slug_to_name',
@@ -163,7 +176,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         $this->assertTrue($def->allowNullKeys);
     }
 
-    public function test_json_object_agg_rejects_missing_key_or_value(): void
+    #[Test]
+    public function json_object_agg_rejects_missing_key_or_value(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage("requires `['key' => …, 'value' => …]`");
@@ -177,7 +191,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_rejects_two_function_declarations(): void
+    #[Test]
+    public function rejects_two_function_declarations(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('multiple aggregate functions declared');
@@ -189,13 +204,15 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_no_function_declared_rejects(): void
+    #[Test]
+    public function no_function_declared_rejects(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         (new NestedSetAggregate(column: 'broken'))->toDefinition();
     }
 
-    public function test_negative_limit_rejected_on_string_agg(): void
+    #[Test]
+    public function negative_limit_rejected_on_string_agg(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         (new NestedSetAggregate(
@@ -205,7 +222,8 @@ final class NestedSetAggregateCollectionKindsTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_negative_limit_rejected_on_json_agg(): void
+    #[Test]
+    public function negative_limit_rejected_on_json_agg(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         (new NestedSetAggregate(

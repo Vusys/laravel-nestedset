@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Fuzzers;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -60,7 +61,8 @@ final class QuerySemanticsFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_query_results_match_bounds_oracle(int $seed, int $plantSize): void
+    #[Test]
+    public function query_results_match_bounds_oracle(int $seed, int $plantSize): void
     {
         mt_srand($seed);
 

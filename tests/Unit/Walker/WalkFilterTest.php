@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Unit\Walker;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Walker\SubtreeWalker;
@@ -15,7 +16,8 @@ use Vusys\NestedSet\Walker\WalkFilter;
 
 final class WalkFilterTest extends TestCase
 {
-    public function test_depth_filter_visits_root_plus_n_levels_and_skips_deeper_subtrees(): void
+    #[Test]
+    public function depth_filter_visits_root_plus_n_levels_and_skips_deeper_subtrees(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 8, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 7, depth: 1, parentId: 1);
@@ -30,7 +32,8 @@ final class WalkFilterTest extends TestCase
         $this->assertSame(['root', 'A', 'X'], $names);
     }
 
-    public function test_where_filter_skips_nodes_and_their_subtree_when_predicate_returns_false(): void
+    #[Test]
+    public function where_filter_skips_nodes_and_their_subtree_when_predicate_returns_false(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 12, depth: 0, parentId: null);
         $keep = $this->node(2, name: 'keep', lft: 2, rgt: 5, depth: 1, parentId: 1);
@@ -52,7 +55,8 @@ final class WalkFilterTest extends TestCase
         $this->assertSame(['root', 'keep', 'keep-child'], $names);
     }
 
-    public function test_compose_ands_predicates_and_takes_the_stricter_depth(): void
+    #[Test]
+    public function compose_ands_predicates_and_takes_the_stricter_depth(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 8, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 7, depth: 1, parentId: 1);
@@ -89,7 +93,8 @@ final class WalkFilterTest extends TestCase
         );
     }
 
-    public function test_include_root_false_visits_descendants_only_keeping_depth_relative(): void
+    #[Test]
+    public function include_root_false_visits_descendants_only_keeping_depth_relative(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 6, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -109,7 +114,8 @@ final class WalkFilterTest extends TestCase
         $this->assertSame(1, $observed['B']);
     }
 
-    public function test_where_callback_receives_context_with_sibling_and_depth_data(): void
+    #[Test]
+    public function where_callback_receives_context_with_sibling_and_depth_data(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 6, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -136,7 +142,8 @@ final class WalkFilterTest extends TestCase
         $this->assertSame(['depth' => 1, 'idx' => 1, 'count' => 2], $seen['B']);
     }
 
-    public function test_depth_rejects_negative_input_with_actionable_message(): void
+    #[Test]
+    public function depth_rejects_negative_input_with_actionable_message(): void
     {
         $this->expectException(InvalidArgumentException::class);
         // The catch is "negative depth silently rejects every node" —
@@ -146,7 +153,8 @@ final class WalkFilterTest extends TestCase
         WalkFilter::depth(-1);
     }
 
-    public function test_depth_zero_is_a_valid_root_only_walk(): void
+    #[Test]
+    public function depth_zero_is_a_valid_root_only_walk(): void
     {
         // Boundary: depth(0) means "visit the walk root only" — a
         // legitimate use case, not an error.
@@ -155,7 +163,8 @@ final class WalkFilterTest extends TestCase
         $this->assertSame(0, $filter->maxDepth);
     }
 
-    public function test_compose_handles_null_inputs_gracefully(): void
+    #[Test]
+    public function compose_handles_null_inputs_gracefully(): void
     {
         $f = WalkFilter::depth(3);
 
@@ -168,7 +177,8 @@ final class WalkFilterTest extends TestCase
         $this->assertTrue($bothNull->includeRoot);
     }
 
-    public function test_compose_keeps_the_single_predicate_when_only_one_side_carries_it(): void
+    #[Test]
+    public function compose_keeps_the_single_predicate_when_only_one_side_carries_it(): void
     {
         // When one input has a `where` and the other only carries
         // `maxDepth`, the result should keep the predicate verbatim

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Vusys\NestedSet\Diff\TreeDiffApplier;
@@ -17,22 +18,26 @@ use Vusys\NestedSet\Diff\TreeDiffApplier;
  */
 final class TreeDiffApplierKeyHashTest extends TestCase
 {
-    public function test_int_key_uses_i_prefix(): void
+    #[Test]
+    public function int_key_uses_i_prefix(): void
     {
         $this->assertSame('i:7', $this->hash(7));
     }
 
-    public function test_string_key_uses_s_prefix(): void
+    #[Test]
+    public function string_key_uses_s_prefix(): void
     {
         $this->assertSame('s:slug', $this->hash('slug'));
     }
 
-    public function test_null_key_uses_n_prefix(): void
+    #[Test]
+    public function null_key_uses_n_prefix(): void
     {
         $this->assertSame('n:', $this->hash(null));
     }
 
-    public function test_array_key_uses_canonical_json_with_a_prefix(): void
+    #[Test]
+    public function array_key_uses_canonical_json_with_a_prefix(): void
     {
         // Same logical map, different declared key order — must hash the same.
         $forward = $this->hash(['b' => 2, 'a' => 1]);
@@ -42,7 +47,8 @@ final class TreeDiffApplierKeyHashTest extends TestCase
         $this->assertStringStartsWith('a:', $forward);
     }
 
-    public function test_array_key_with_nested_associative_value_is_canonical(): void
+    #[Test]
+    public function array_key_with_nested_associative_value_is_canonical(): void
     {
         $forward = $this->hash(['outer' => ['z' => 1, 'a' => 2]]);
         $reverse = $this->hash(['outer' => ['a' => 2, 'z' => 1]]);
@@ -50,7 +56,8 @@ final class TreeDiffApplierKeyHashTest extends TestCase
         $this->assertSame($forward, $reverse);
     }
 
-    public function test_object_key_uses_spl_object_hash_with_o_prefix(): void
+    #[Test]
+    public function object_key_uses_spl_object_hash_with_o_prefix(): void
     {
         $o = new \stdClass;
 
@@ -61,7 +68,8 @@ final class TreeDiffApplierKeyHashTest extends TestCase
         $this->assertStringStartsWith('o:', $first);
     }
 
-    public function test_unsupported_type_falls_through_with_t_prefix(): void
+    #[Test]
+    public function unsupported_type_falls_through_with_t_prefix(): void
     {
         // Resource is the residual mixed case the narrowing chain can't catch
         // at construction time — the canonical-fallthrough has to handle it.

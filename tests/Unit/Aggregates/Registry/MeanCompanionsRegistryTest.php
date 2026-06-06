@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
@@ -30,7 +31,8 @@ final class MeanCompanionsRegistryTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_geometric_mean_auto_promotes_sum_log_and_count_companions(): void
+    #[Test]
+    public function geometric_mean_auto_promotes_sum_log_and_count_companions(): void
     {
         $definitions = AggregateRegistry::for(MeanArea::class);
 
@@ -62,7 +64,8 @@ final class MeanCompanionsRegistryTest extends TestCase
         $this->assertTrue($count->isInternal());
     }
 
-    public function test_harmonic_mean_auto_promotes_sum_recip_and_count_companions(): void
+    #[Test]
+    public function harmonic_mean_auto_promotes_sum_recip_and_count_companions(): void
     {
         $definitions = AggregateRegistry::for(MeanArea::class);
 
@@ -94,7 +97,8 @@ final class MeanCompanionsRegistryTest extends TestCase
         $this->assertTrue($count->isInternal());
     }
 
-    public function test_mean_companion_resolver_returns_correct_column_names(): void
+    #[Test]
+    public function mean_companion_resolver_returns_correct_column_names(): void
     {
         $companions = AggregateRegistry::meanCompanionsFor(MeanArea::class);
 

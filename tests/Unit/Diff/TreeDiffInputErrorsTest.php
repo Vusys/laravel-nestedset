@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Exceptions\InvalidJsonTreeException;
@@ -17,7 +18,8 @@ use Vusys\NestedSet\Tests\Fixtures\Models\Category;
  */
 final class TreeDiffInputErrorsTest extends TestCase
 {
-    public function test_identity_column_must_exist_on_row(): void
+    #[Test]
+    public function identity_column_must_exist_on_row(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         TreeDiff::between(
@@ -26,7 +28,8 @@ final class TreeDiffInputErrorsTest extends TestCase
         );
     }
 
-    public function test_identity_value_must_be_int_or_string(): void
+    #[Test]
+    public function identity_value_must_be_int_or_string(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         TreeDiff::between(
@@ -35,7 +38,8 @@ final class TreeDiffInputErrorsTest extends TestCase
         );
     }
 
-    public function test_non_array_row_is_rejected(): void
+    #[Test]
+    public function non_array_row_is_rejected(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         TreeDiff::between(
@@ -44,7 +48,8 @@ final class TreeDiffInputErrorsTest extends TestCase
         );
     }
 
-    public function test_mixed_nested_and_flat_shape_throws(): void
+    #[Test]
+    public function mixed_nested_and_flat_shape_throws(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         TreeDiff::between(
@@ -56,7 +61,8 @@ final class TreeDiffInputErrorsTest extends TestCase
         );
     }
 
-    public function test_nested_children_must_be_an_array(): void
+    #[Test]
+    public function nested_children_must_be_an_array(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         TreeDiff::between(
@@ -65,13 +71,15 @@ final class TreeDiffInputErrorsTest extends TestCase
         );
     }
 
-    public function test_aggregate_columns_for_a_class_returns_empty_when_none_declared(): void
+    #[Test]
+    public function aggregate_columns_for_a_class_returns_empty_when_none_declared(): void
     {
         $cols = TreeDiff::aggregateColumnsFor(Category::class);
         $this->assertSame([], $cols);
     }
 
-    public function test_aggregate_columns_for_a_class_lists_declared_aggregates(): void
+    #[Test]
+    public function aggregate_columns_for_a_class_lists_declared_aggregates(): void
     {
         $cols = TreeDiff::aggregateColumnsFor(Area::class);
         $this->assertContains('tickets_total', $cols);

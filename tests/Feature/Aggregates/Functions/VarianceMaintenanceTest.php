@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\MetricArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -42,7 +43,8 @@ final class VarianceMaintenanceTest extends TestCase
     // Single-row subtree edge cases
     // ----------------------------------------------------------------
 
-    public function test_root_alone_has_zero_population_variance_and_null_sample_variance(): void
+    #[Test]
+    public function root_alone_has_zero_population_variance_and_null_sample_variance(): void
     {
         $root = new MetricArea(['name' => 'Root', 'tickets' => 42]);
         $root->saveAsRoot();
@@ -55,7 +57,8 @@ final class VarianceMaintenanceTest extends TestCase
         $this->assertNull($root->tickets_stddev_samp);
     }
 
-    public function test_motivating_example_tree(): void
+    #[Test]
+    public function motivating_example_tree(): void
     {
         // Root(100) > A(50) > A1(50); Root > B(25).
         $root = new MetricArea(['name' => 'Root', 'tickets' => 100]);
@@ -105,7 +108,8 @@ final class VarianceMaintenanceTest extends TestCase
     // Updates: source column changes propagate to companions and display
     // ----------------------------------------------------------------
 
-    public function test_source_update_propagates_to_variance_and_stddev_columns(): void
+    #[Test]
+    public function source_update_propagates_to_variance_and_stddev_columns(): void
     {
         $root = new MetricArea(['name' => 'Root', 'tickets' => 10]);
         $root->saveAsRoot();
@@ -133,7 +137,8 @@ final class VarianceMaintenanceTest extends TestCase
     // Deletion: removed contributions roll out of ancestor companions
     // ----------------------------------------------------------------
 
-    public function test_descendant_delete_re_computes_variance(): void
+    #[Test]
+    public function descendant_delete_re_computes_variance(): void
     {
         $root = new MetricArea(['name' => 'Root', 'tickets' => 10]);
         $root->saveAsRoot();
@@ -154,7 +159,8 @@ final class VarianceMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(200.0, $this->asFloat($root->tickets_variance_samp), 0.01);
     }
 
-    public function test_all_descendants_deleted_leaves_root_with_self_only(): void
+    #[Test]
+    public function all_descendants_deleted_leaves_root_with_self_only(): void
     {
         $root = new MetricArea(['name' => 'Root', 'tickets' => 99]);
         $root->saveAsRoot();
@@ -176,7 +182,8 @@ final class VarianceMaintenanceTest extends TestCase
     // fixAggregates: full recompute over source data matches delta-maintained value
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_reproduces_delta_maintained_variance(): void
+    #[Test]
+    public function fix_aggregates_reproduces_delta_maintained_variance(): void
     {
         $root = new MetricArea(['name' => 'Root', 'tickets' => 10]);
         $root->saveAsRoot();
@@ -200,7 +207,8 @@ final class VarianceMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta($deltaMaintainedSamp, $this->asFloat($root->tickets_variance_samp), 0.01);
     }
 
-    public function test_fix_aggregates_repairs_corrupted_display_column(): void
+    #[Test]
+    public function fix_aggregates_repairs_corrupted_display_column(): void
     {
         $root = new MetricArea(['name' => 'Root', 'tickets' => 10]);
         $root->saveAsRoot();
@@ -222,7 +230,8 @@ final class VarianceMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(10.0, $this->asFloat($root->tickets_stddev), 0.01);
     }
 
-    public function test_aggregate_errors_is_silent_on_correctly_maintained_chain_tree(): void
+    #[Test]
+    public function aggregate_errors_is_silent_on_correctly_maintained_chain_tree(): void
     {
         // Chain-shape (every parent has exactly one child) takes the
         // PHP chain-fold fast path in selectStoredAndComputed*().

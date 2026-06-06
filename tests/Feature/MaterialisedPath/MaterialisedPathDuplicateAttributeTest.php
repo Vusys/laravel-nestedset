@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\MaterialisedPathConfigurationException;
@@ -21,7 +22,8 @@ final class DuplicateAttributeFixture extends Model implements MaintainsTreeAggr
 
 final class MaterialisedPathDuplicateAttributeTest extends TestCase
 {
-    public function test_two_attributes_on_same_column_throw(): void
+    #[Test]
+    public function two_attributes_on_same_column_throw(): void
     {
         MaterialisedPathRegistry::forgetCache();
 

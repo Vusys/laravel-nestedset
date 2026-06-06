@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Clone;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -18,7 +19,8 @@ final class CloneTransactionTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_outer_transaction_rollback_unwinds_cloned_rows(): void
+    #[Test]
+    public function outer_transaction_rollback_unwinds_cloned_rows(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();

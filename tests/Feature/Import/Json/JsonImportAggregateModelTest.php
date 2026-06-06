@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
@@ -18,7 +19,8 @@ final class JsonImportAggregateModelTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_payload_with_aggregate_columns_is_imported_and_aggregates_recompute(): void
+    #[Test]
+    public function payload_with_aggregate_columns_is_imported_and_aggregates_recompute(): void
     {
         Area::fromJsonTree([
             ['name' => 'r', 'tickets' => 5, 'children' => [
@@ -32,7 +34,8 @@ final class JsonImportAggregateModelTest extends TestCase
         $this->assertAggregatesAreIntact(Area::class, $root);
     }
 
-    public function test_payload_that_explicitly_carries_stored_aggregates_strips_them(): void
+    #[Test]
+    public function payload_that_explicitly_carries_stored_aggregates_strips_them(): void
     {
         // Aggregate columns in the payload are ignored automatically — the
         // post-import recompute is the source of truth. If the importer

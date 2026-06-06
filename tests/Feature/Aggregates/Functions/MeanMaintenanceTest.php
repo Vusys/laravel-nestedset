@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Exceptions\AggregateSourceConstraintViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\MeanArea;
@@ -37,7 +38,8 @@ final class MeanMaintenanceTest extends TestCase
 
     // ── Geometric mean ────────────────────────────────────────────────
 
-    public function test_geometric_mean_of_single_positive_root_equals_itself(): void
+    #[Test]
+    public function geometric_mean_of_single_positive_root_equals_itself(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 4.0]);
         $root->saveAsRoot();
@@ -46,7 +48,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(4.0, $this->asFloat($root->value_gmean), 0.0001);
     }
 
-    public function test_geometric_mean_of_three_values(): void
+    #[Test]
+    public function geometric_mean_of_three_values(): void
     {
         // Geometric mean of 2, 8, 32: (2 · 8 · 32)^(1/3) = 512^(1/3) = 8.
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
@@ -66,7 +69,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(8.0, $this->asFloat($a->value_gmean), 0.0001);
     }
 
-    public function test_geometric_mean_updates_when_descendant_value_changes(): void
+    #[Test]
+    public function geometric_mean_updates_when_descendant_value_changes(): void
     {
         // Root=2, A=8. Geom mean = sqrt(16) = 4.
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
@@ -85,7 +89,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(8.0, $this->asFloat($root->value_gmean), 0.0001);
     }
 
-    public function test_deleting_descendant_updates_geometric_mean(): void
+    #[Test]
+    public function deleting_descendant_updates_geometric_mean(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 8.0]);
         $root->saveAsRoot();
@@ -104,7 +109,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(8.0, $this->asFloat($root->value_gmean), 0.0001);
     }
 
-    public function test_fix_aggregates_matches_delta_maintained_geometric_mean(): void
+    #[Test]
+    public function fix_aggregates_matches_delta_maintained_geometric_mean(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
         $root->saveAsRoot();
@@ -123,7 +129,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta($deltaMaintained, $this->asFloat($root->value_gmean), 0.0001);
     }
 
-    public function test_fix_aggregates_repairs_corrupted_geometric_mean(): void
+    #[Test]
+    public function fix_aggregates_repairs_corrupted_geometric_mean(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 4.0]);
         $root->saveAsRoot();
@@ -142,7 +149,8 @@ final class MeanMaintenanceTest extends TestCase
 
     // ── Harmonic mean ─────────────────────────────────────────────────
 
-    public function test_harmonic_mean_of_single_nonzero_root_equals_itself(): void
+    #[Test]
+    public function harmonic_mean_of_single_nonzero_root_equals_itself(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 6.0]);
         $root->saveAsRoot();
@@ -151,7 +159,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(6.0, $this->asFloat($root->value_hmean), 0.0001);
     }
 
-    public function test_harmonic_mean_of_three_values(): void
+    #[Test]
+    public function harmonic_mean_of_three_values(): void
     {
         // Harmonic mean of 2, 3, 6: 3 / (1/2 + 1/3 + 1/6) = 3 / 1 = 3.
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
@@ -167,7 +176,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(3.0, $this->asFloat($root->value_hmean), 0.0001);
     }
 
-    public function test_harmonic_mean_updates_when_descendant_value_changes(): void
+    #[Test]
+    public function harmonic_mean_updates_when_descendant_value_changes(): void
     {
         // Root=2, A=3 → HM = 2 / (1/2 + 1/3) = 2 / (5/6) = 12/5 = 2.4.
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
@@ -186,7 +196,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(3.0, $this->asFloat($root->value_hmean), 0.0001);
     }
 
-    public function test_deleting_descendant_updates_harmonic_mean(): void
+    #[Test]
+    public function deleting_descendant_updates_harmonic_mean(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
         $root->saveAsRoot();
@@ -205,7 +216,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(2.0, $this->asFloat($root->value_hmean), 0.0001);
     }
 
-    public function test_fix_aggregates_matches_delta_maintained_harmonic_mean(): void
+    #[Test]
+    public function fix_aggregates_matches_delta_maintained_harmonic_mean(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
         $root->saveAsRoot();
@@ -224,7 +236,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta($deltaMaintained, $this->asFloat($root->value_hmean), 0.0001);
     }
 
-    public function test_fix_aggregates_repairs_corrupted_harmonic_mean(): void
+    #[Test]
+    public function fix_aggregates_repairs_corrupted_harmonic_mean(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
         $root->saveAsRoot();
@@ -243,7 +256,8 @@ final class MeanMaintenanceTest extends TestCase
 
     // ── Constraint validation ─────────────────────────────────────────
 
-    public function test_geometric_mean_throws_on_non_positive_insert(): void
+    #[Test]
+    public function geometric_mean_throws_on_non_positive_insert(): void
     {
         $this->expectException(AggregateSourceConstraintViolationException::class);
 
@@ -251,7 +265,8 @@ final class MeanMaintenanceTest extends TestCase
         $root->saveAsRoot();
     }
 
-    public function test_geometric_mean_throws_on_zero_insert(): void
+    #[Test]
+    public function geometric_mean_throws_on_zero_insert(): void
     {
         $this->expectException(AggregateSourceConstraintViolationException::class);
 
@@ -259,7 +274,8 @@ final class MeanMaintenanceTest extends TestCase
         $root->saveAsRoot();
     }
 
-    public function test_geometric_mean_throws_on_non_positive_update(): void
+    #[Test]
+    public function geometric_mean_throws_on_non_positive_update(): void
     {
         $root = new MeanArea(['name' => 'Root', 'value' => 5.0]);
         $root->saveAsRoot();
@@ -268,7 +284,8 @@ final class MeanMaintenanceTest extends TestCase
         $root->refresh()->update(['value' => -3.0]);
     }
 
-    public function test_geometric_mean_null_source_does_not_throw(): void
+    #[Test]
+    public function geometric_mean_null_source_does_not_throw(): void
     {
         // NULL source is allowed — the row simply contributes nothing.
         $root = new MeanArea(['name' => 'Root', 'value' => null]);
@@ -278,7 +295,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertNull($root->value_gmean);
     }
 
-    public function test_harmonic_mean_throws_on_zero_insert(): void
+    #[Test]
+    public function harmonic_mean_throws_on_zero_insert(): void
     {
         $this->expectException(AggregateSourceConstraintViolationException::class);
 
@@ -294,7 +312,8 @@ final class MeanMaintenanceTest extends TestCase
     // mirror StructuralMutationMaintenanceTest's coverage for SUM/AVG,
     // adapted to the multiplicative semantics of the means.
 
-    public function test_geometric_mean_subtracts_when_moving_descendant_to_a_different_parent_subtree(): void
+    #[Test]
+    public function geometric_mean_subtracts_when_moving_descendant_to_a_different_parent_subtree(): void
     {
         // Build two siblings under one root:
         //   Root(2)
@@ -327,7 +346,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(16.0, $this->asFloat($a->value_gmean), 0.0001, 'A picks up B as a new descendant');
     }
 
-    public function test_geometric_mean_subtracts_from_old_ancestor_chain_on_make_root(): void
+    #[Test]
+    public function geometric_mean_subtracts_from_old_ancestor_chain_on_make_root(): void
     {
         // Root(2) → A(8) → A1(32). Root inclusive {2, 8, 32} → 8.
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
@@ -354,7 +374,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(16.0, $this->asFloat($a->value_gmean), 0.0001, 'new root sees its own subtree {8, 32}');
     }
 
-    public function test_harmonic_mean_subtracts_when_moving_descendant_to_a_different_parent_subtree(): void
+    #[Test]
+    public function harmonic_mean_subtracts_when_moving_descendant_to_a_different_parent_subtree(): void
     {
         // Build two siblings under one root:
         //   Root(2)
@@ -385,7 +406,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(4.0, $this->asFloat($a->value_hmean), 0.0001);
     }
 
-    public function test_harmonic_mean_subtracts_from_old_ancestor_chain_on_make_root(): void
+    #[Test]
+    public function harmonic_mean_subtracts_from_old_ancestor_chain_on_make_root(): void
     {
         // Root(2) → A(3) → A1(6). Root inclusive {2, 3, 6} → HM = 3.
         $root = new MeanArea(['name' => 'Root', 'value' => 2.0]);
@@ -411,7 +433,8 @@ final class MeanMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(4.0, $this->asFloat($a->value_hmean), 0.0001);
     }
 
-    public function test_means_unchanged_when_reordering_siblings_under_same_parent(): void
+    #[Test]
+    public function means_unchanged_when_reordering_siblings_under_same_parent(): void
     {
         // Reordering siblings under the same parent leaves every
         // ancestor's inclusive subtree set unchanged — both means

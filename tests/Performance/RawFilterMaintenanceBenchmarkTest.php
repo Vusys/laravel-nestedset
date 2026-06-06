@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
 use Vusys\NestedSet\Tests\Performance\Fixtures\AggregateTreeShapes;
@@ -22,7 +23,8 @@ use Vusys\NestedSet\Tests\Performance\Fixtures\AggregateTreeShapes;
  */
 final class RawFilterMaintenanceBenchmarkTest extends PerformanceTestCase
 {
-    public function test_source_update_at_leaf_triggers_chain_recompute(): void
+    #[Test]
+    public function source_update_at_leaf_triggers_chain_recompute(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('branches')->delete();
@@ -46,7 +48,8 @@ final class RawFilterMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_watch_column_update_triggers_chain_recompute(): void
+    #[Test]
+    public function watch_column_update_triggers_chain_recompute(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('branches')->delete();
@@ -66,7 +69,8 @@ final class RawFilterMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_unrelated_save_skips_recompute(): void
+    #[Test]
+    public function unrelated_save_skips_recompute(): void
     {
         // Negative-space benchmark: prove that saves not touching a
         // watched column don't fire the recompute. If this regresses
@@ -90,7 +94,8 @@ final class RawFilterMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_insert_leaf_triggers_chain_recompute(): void
+    #[Test]
+    public function insert_leaf_triggers_chain_recompute(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('branches')->delete();
@@ -113,7 +118,8 @@ final class RawFilterMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_delete_leaf_triggers_chain_recompute(): void
+    #[Test]
+    public function delete_leaf_triggers_chain_recompute(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('branches')->delete();
@@ -132,7 +138,8 @@ final class RawFilterMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_fix_aggregates_with_raw_filter(): void
+    #[Test]
+    public function fix_aggregates_with_raw_filter(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('branches')->delete();

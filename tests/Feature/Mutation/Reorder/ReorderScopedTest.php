@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\Fixtures\Models\MultiScopedBranch;
@@ -19,7 +20,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class ReorderScopedTest extends TestCase
 {
-    public function test_single_scope_reorder_does_not_touch_other_scope(): void
+    #[Test]
+    public function single_scope_reorder_does_not_touch_other_scope(): void
     {
         $menu1 = Menu::create(['name' => 'Menu 1']);
         $menu2 = Menu::create(['name' => 'Menu 2']);
@@ -57,7 +59,8 @@ final class ReorderScopedTest extends TestCase
         );
     }
 
-    public function test_multi_scope_reorder_does_not_leak_into_other_partitions(): void
+    #[Test]
+    public function multi_scope_reorder_does_not_leak_into_other_partitions(): void
     {
         // Same shape in four partitions: (t=1,s=1), (t=1,s=2), (t=2,s=1), (t=2,s=2).
         $partitions = [[1, 1], [1, 2], [2, 1], [2, 2]];

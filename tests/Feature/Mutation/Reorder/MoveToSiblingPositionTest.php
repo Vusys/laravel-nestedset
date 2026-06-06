@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -34,7 +35,8 @@ final class MoveToSiblingPositionTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_position_one_is_first(): void
+    #[Test]
+    public function position_one_is_first(): void
     {
         Category::query()->findOrFail(5)->moveToSiblingPosition(1);
 
@@ -44,7 +46,8 @@ final class MoveToSiblingPositionTest extends TestCase
         );
     }
 
-    public function test_position_last_is_last(): void
+    #[Test]
+    public function position_last_is_last(): void
     {
         Category::query()->findOrFail(2)->moveToSiblingPosition(4);
 
@@ -54,7 +57,8 @@ final class MoveToSiblingPositionTest extends TestCase
         );
     }
 
-    public function test_position_middle_inserts_correctly(): void
+    #[Test]
+    public function position_middle_inserts_correctly(): void
     {
         Category::query()->findOrFail(2)->moveToSiblingPosition(3);
 
@@ -66,7 +70,8 @@ final class MoveToSiblingPositionTest extends TestCase
         );
     }
 
-    public function test_moving_to_current_position_is_silent_no_op(): void
+    #[Test]
+    public function moving_to_current_position_is_silent_no_op(): void
     {
         $b = Category::query()->findOrFail(3);
 
@@ -89,7 +94,8 @@ final class MoveToSiblingPositionTest extends TestCase
         );
     }
 
-    public function test_position_zero_throws(): void
+    #[Test]
+    public function position_zero_throws(): void
     {
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage('position must be in [1, 4]');
@@ -97,7 +103,8 @@ final class MoveToSiblingPositionTest extends TestCase
         Category::query()->findOrFail(2)->moveToSiblingPosition(0);
     }
 
-    public function test_position_past_end_throws(): void
+    #[Test]
+    public function position_past_end_throws(): void
     {
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage('position must be in [1, 4]');
@@ -105,21 +112,24 @@ final class MoveToSiblingPositionTest extends TestCase
         Category::query()->findOrFail(2)->moveToSiblingPosition(99);
     }
 
-    public function test_negative_position_throws(): void
+    #[Test]
+    public function negative_position_throws(): void
     {
         $this->expectException(LogicException::class);
 
         Category::query()->findOrFail(2)->moveToSiblingPosition(-1);
     }
 
-    public function test_root_throws_because_no_parent(): void
+    #[Test]
+    public function root_throws_because_no_parent(): void
     {
         $this->expectException(UnplacedNodeException::class);
 
         Category::query()->findOrFail(1)->moveToSiblingPosition(1);
     }
 
-    public function test_throws_when_parent_id_points_to_missing_row(): void
+    #[Test]
+    public function throws_when_parent_id_points_to_missing_row(): void
     {
         // Defensive guard: parent row vanished between this->load() and the
         // newQuery()->whereKey($parentId)->first() lookup. Reproduce by

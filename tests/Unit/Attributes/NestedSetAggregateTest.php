@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Attributes;
 
 use Attribute;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Vusys\NestedSet\Aggregates\Aggregate;
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class NestedSetAggregateTest extends TestCase
 {
-    public function test_sum_declaration_produces_a_sum_definition(): void
+    #[Test]
+    public function sum_declaration_produces_a_sum_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'tickets_total', sum: 'tickets'))
             ->toDefinition();
@@ -27,7 +29,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertTrue($definition->inclusive);
     }
 
-    public function test_count_true_produces_a_count_star_definition_with_null_source(): void
+    #[Test]
+    public function count_true_produces_a_count_star_definition_with_null_source(): void
     {
         $definition = (new NestedSetAggregate(column: 'tickets_count', count: true))
             ->toDefinition();
@@ -36,7 +39,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertNull($definition->source);
     }
 
-    public function test_avg_declaration_produces_an_avg_definition(): void
+    #[Test]
+    public function avg_declaration_produces_an_avg_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'tickets_avg', avg: 'tickets'))
             ->toDefinition();
@@ -45,7 +49,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('tickets', $definition->source);
     }
 
-    public function test_min_declaration_produces_a_min_definition(): void
+    #[Test]
+    public function min_declaration_produces_a_min_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'tickets_min', min: 'tickets'))
             ->toDefinition();
@@ -54,7 +59,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('tickets', $definition->source);
     }
 
-    public function test_max_declaration_produces_a_max_definition(): void
+    #[Test]
+    public function max_declaration_produces_a_max_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'tickets_max', max: 'tickets'))
             ->toDefinition();
@@ -63,7 +69,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('tickets', $definition->source);
     }
 
-    public function test_variance_declaration_produces_a_variance_definition(): void
+    #[Test]
+    public function variance_declaration_produces_a_variance_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'tickets_var', variance: 'tickets'))
             ->toDefinition();
@@ -73,7 +80,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertFalse($definition->sample, 'default is population variance');
     }
 
-    public function test_stddev_declaration_with_sample_flag(): void
+    #[Test]
+    public function stddev_declaration_with_sample_flag(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'tickets_std_samp',
@@ -86,7 +94,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertTrue($definition->sample);
     }
 
-    public function test_sample_flag_is_rejected_on_non_variance_kinds(): void
+    #[Test]
+    public function sample_flag_is_rejected_on_non_variance_kinds(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('`sample: true` is only valid on variance/stddev');
@@ -98,7 +107,8 @@ final class NestedSetAggregateTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_bit_or_declaration_produces_a_bit_or_definition(): void
+    #[Test]
+    public function bit_or_declaration_produces_a_bit_or_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'features_or', bitOr: 'feature_bits'))
             ->toDefinition();
@@ -107,7 +117,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('feature_bits', $definition->source);
     }
 
-    public function test_bit_and_declaration_produces_a_bit_and_definition(): void
+    #[Test]
+    public function bit_and_declaration_produces_a_bit_and_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'features_and', bitAnd: 'feature_bits'))
             ->toDefinition();
@@ -116,7 +127,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('feature_bits', $definition->source);
     }
 
-    public function test_bit_xor_declaration_produces_a_bit_xor_definition(): void
+    #[Test]
+    public function bit_xor_declaration_produces_a_bit_xor_definition(): void
     {
         $definition = (new NestedSetAggregate(column: 'features_xor', bitXor: 'feature_bits'))
             ->toDefinition();
@@ -125,7 +137,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('feature_bits', $definition->source);
     }
 
-    public function test_exclusive_flag_propagates_to_definition(): void
+    #[Test]
+    public function exclusive_flag_propagates_to_definition(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'descendants_total',
@@ -136,7 +149,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertFalse($definition->inclusive);
     }
 
-    public function test_rejects_declaration_with_no_function(): void
+    #[Test]
+    public function rejects_declaration_with_no_function(): void
     {
         try {
             (new NestedSetAggregate(column: 'tickets_total'))->toDefinition();
@@ -156,7 +170,8 @@ final class NestedSetAggregateTest extends TestCase
         }
     }
 
-    public function test_rejects_declaration_with_two_functions_at_once(): void
+    #[Test]
+    public function rejects_declaration_with_two_functions_at_once(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         // The message must list the *function names* that were declared
@@ -180,7 +195,8 @@ final class NestedSetAggregateTest extends TestCase
         ))->toDefinition();
     }
 
-    public function test_rejects_declaration_with_three_functions_at_once(): void
+    #[Test]
+    public function rejects_declaration_with_three_functions_at_once(): void
     {
         try {
             (new NestedSetAggregate(
@@ -204,7 +220,8 @@ final class NestedSetAggregateTest extends TestCase
         }
     }
 
-    public function test_rejects_empty_column_name(): void
+    #[Test]
+    public function rejects_empty_column_name(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('`column` must not be empty');
@@ -212,7 +229,8 @@ final class NestedSetAggregateTest extends TestCase
         (new NestedSetAggregate(column: '', sum: 'tickets'))->toDefinition();
     }
 
-    public function test_is_declared_as_a_repeatable_class_level_attribute(): void
+    #[Test]
+    public function is_declared_as_a_repeatable_class_level_attribute(): void
     {
         $reflection = new ReflectionClass(NestedSetAggregate::class);
         $attributes = $reflection->getAttributes(Attribute::class);
@@ -228,7 +246,8 @@ final class NestedSetAggregateTest extends TestCase
         );
     }
 
-    public function test_filter_param_produces_equality_predicate_on_definition(): void
+    #[Test]
+    public function filter_param_produces_equality_predicate_on_definition(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'tickets_total',
@@ -241,7 +260,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame(['type' => 'fire'], $definition->filter->getConditions());
     }
 
-    public function test_filter_not_null_param_produces_not_null_predicate_on_definition(): void
+    #[Test]
+    public function filter_not_null_param_produces_not_null_predicate_on_definition(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'tickets_total',
@@ -254,7 +274,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame('deleted_at', $definition->filter->getNotNullColumn());
     }
 
-    public function test_filter_raw_param_produces_raw_predicate_on_definition(): void
+    #[Test]
+    public function filter_raw_param_produces_raw_predicate_on_definition(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'tickets_total',
@@ -269,7 +290,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame(['status'], $definition->filter->watchColumns());
     }
 
-    public function test_multiple_filter_params_throws(): void
+    #[Test]
+    public function multiple_filter_params_throws(): void
     {
         try {
             (new NestedSetAggregate(
@@ -290,7 +312,8 @@ final class NestedSetAggregateTest extends TestCase
         }
     }
 
-    public function test_filter_raw_without_watches_throws(): void
+    #[Test]
+    public function filter_raw_without_watches_throws(): void
     {
         try {
             (new NestedSetAggregate(
@@ -312,7 +335,8 @@ final class NestedSetAggregateTest extends TestCase
         }
     }
 
-    public function test_filter_raw_with_explicit_no_column_dependencies_flag_is_allowed_with_empty_watches(): void
+    #[Test]
+    public function filter_raw_with_explicit_no_column_dependencies_flag_is_allowed_with_empty_watches(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'tickets_total',
@@ -326,7 +350,8 @@ final class NestedSetAggregateTest extends TestCase
         $this->assertSame([], $definition->filter->watchColumns());
     }
 
-    public function test_definition_has_no_filter_when_none_declared(): void
+    #[Test]
+    public function definition_has_no_filter_when_none_declared(): void
     {
         $definition = (new NestedSetAggregate(
             column: 'tickets_total',
@@ -344,7 +369,8 @@ final class NestedSetAggregateTest extends TestCase
      * declaredFunctions(), so each builder must reject it.
      */
     #[DataProvider('invalidDeclarations')]
-    public function test_to_definition_rejects_invalid_declaration(NestedSetAggregate $attribute, string $messageFragment): void
+    #[Test]
+    public function to_definition_rejects_invalid_declaration(NestedSetAggregate $attribute, string $messageFragment): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage($messageFragment);

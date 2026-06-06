@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates\Repair;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
@@ -25,7 +26,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class QueueFixAggregatesTest extends TestCase
 {
-    public function test_queue_fix_aggregates_dispatches_a_job(): void
+    #[Test]
+    public function queue_fix_aggregates_dispatches_a_job(): void
     {
         Queue::fake();
 
@@ -38,7 +40,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertPushed(FixAggregatesJob::class, fn (FixAggregatesJob $job): bool => $job->modelClass === Area::class && $job->anchorId === null);
     }
 
-    public function test_queue_fix_aggregates_with_anchor_carries_the_id(): void
+    #[Test]
+    public function queue_fix_aggregates_with_anchor_carries_the_id(): void
     {
         Queue::fake();
 
@@ -52,7 +55,8 @@ final class QueueFixAggregatesTest extends TestCase
             && $job->anchorId === (int) $root->id);
     }
 
-    public function test_per_call_queue_and_connection_overrides_take_precedence(): void
+    #[Test]
+    public function per_call_queue_and_connection_overrides_take_precedence(): void
     {
         Queue::fake();
 
@@ -65,7 +69,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertPushedOn('aggregates-low', FixAggregatesJob::class);
     }
 
-    public function test_config_defaults_route_when_no_per_call_overrides(): void
+    #[Test]
+    public function config_defaults_route_when_no_per_call_overrides(): void
     {
         Queue::fake();
         config(['nestedset.queue.queue' => 'aggregates-default']);
@@ -75,7 +80,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertPushedOn('aggregates-default', FixAggregatesJob::class);
     }
 
-    public function test_scoped_model_without_anchor_throws_at_dispatch_time(): void
+    #[Test]
+    public function scoped_model_without_anchor_throws_at_dispatch_time(): void
     {
         Queue::fake();
 
@@ -84,7 +90,8 @@ final class QueueFixAggregatesTest extends TestCase
         MenuItem::queueFixAggregates();
     }
 
-    public function test_unsaved_anchor_is_rejected_at_dispatch_time(): void
+    #[Test]
+    public function unsaved_anchor_is_rejected_at_dispatch_time(): void
     {
         Queue::fake();
 
@@ -100,7 +107,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_cross_class_anchor_is_rejected_at_dispatch_time(): void
+    #[Test]
+    public function cross_class_anchor_is_rejected_at_dispatch_time(): void
     {
         Queue::fake();
 
@@ -120,7 +128,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_handle_repairs_drifted_aggregates_end_to_end(): void
+    #[Test]
+    public function handle_repairs_drifted_aggregates_end_to_end(): void
     {
         // No Queue::fake() — run the job's handle() synchronously.
         $root = new Area(['name' => 'r', 'tickets' => 0]);
@@ -141,7 +150,8 @@ final class QueueFixAggregatesTest extends TestCase
         $this->assertSame(5, (int) $root->refresh()->tickets_total);
     }
 
-    public function test_handle_with_missing_anchor_throws_runtime_exception(): void
+    #[Test]
+    public function handle_with_missing_anchor_throws_runtime_exception(): void
     {
         $job = new FixAggregatesJob(modelClass: Area::class, anchorId: 999_999);
 
@@ -151,7 +161,8 @@ final class QueueFixAggregatesTest extends TestCase
         $job->handle();
     }
 
-    public function test_handle_is_idempotent_on_clean_tree(): void
+    #[Test]
+    public function handle_is_idempotent_on_clean_tree(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -185,7 +196,8 @@ final class QueueFixAggregatesTest extends TestCase
         }
     }
 
-    public function test_chunked_job_dispatches_a_followup_when_more_rows_remain(): void
+    #[Test]
+    public function chunked_job_dispatches_a_followup_when_more_rows_remain(): void
     {
         Queue::fake();
 
@@ -199,7 +211,8 @@ final class QueueFixAggregatesTest extends TestCase
             && $next->cursorAfterId !== null);
     }
 
-    public function test_chunked_job_stops_when_the_last_chunk_is_short(): void
+    #[Test]
+    public function chunked_job_stops_when_the_last_chunk_is_short(): void
     {
         Queue::fake();
 
@@ -211,7 +224,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertNotPushed(FixAggregatesJob::class);
     }
 
-    public function test_chunked_redispatch_inherits_queue_and_connection(): void
+    #[Test]
+    public function chunked_redispatch_inherits_queue_and_connection(): void
     {
         Queue::fake();
 
@@ -224,7 +238,8 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::assertPushed(FixAggregatesJob::class, fn (FixAggregatesJob $next): bool => $next->connection === 'redis' && $next->queue === 'aggregates-low');
     }
 
-    public function test_chunked_end_to_end_repairs_a_drifted_tree(): void
+    #[Test]
+    public function chunked_end_to_end_repairs_a_drifted_tree(): void
     {
         // No Queue::fake() — drive the chunk walk manually so we
         // exercise the real recursion logic without needing a worker.
@@ -253,7 +268,8 @@ final class QueueFixAggregatesTest extends TestCase
         $this->assertGreaterThanOrEqual(3, $passes, 'multiple chunks were required (6 rows / chunk=2)');
     }
 
-    public function test_queue_fix_aggregates_chunk_size_param_carries_to_job(): void
+    #[Test]
+    public function queue_fix_aggregates_chunk_size_param_carries_to_job(): void
     {
         Queue::fake();
 
@@ -274,7 +290,8 @@ final class QueueFixAggregatesTest extends TestCase
     // ternary arm-swap mutant escaping in the master Infection run.
     // ----------------------------------------------------------------
 
-    public function test_display_name_includes_anchor_id_suffix_when_set(): void
+    #[Test]
+    public function display_name_includes_anchor_id_suffix_when_set(): void
     {
         $job = new FixAggregatesJob(
             modelClass: Area::class,
@@ -284,7 +301,8 @@ final class QueueFixAggregatesTest extends TestCase
         $this->assertSame('fixAggregates('.Area::class.'#42)', $job->displayName());
     }
 
-    public function test_display_name_omits_suffix_when_anchor_id_is_null(): void
+    #[Test]
+    public function display_name_omits_suffix_when_anchor_id_is_null(): void
     {
         $job = new FixAggregatesJob(
             modelClass: Area::class,
@@ -306,7 +324,8 @@ final class QueueFixAggregatesTest extends TestCase
     // FixAggregatesChunkCompleted; the non-chunked path doesn't).
     // ----------------------------------------------------------------
 
-    public function test_handle_with_chunk_size_zero_takes_non_chunked_path(): void
+    #[Test]
+    public function handle_with_chunk_size_zero_takes_non_chunked_path(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -341,7 +360,8 @@ final class QueueFixAggregatesTest extends TestCase
     // runs end-to-end.
     // ----------------------------------------------------------------
 
-    public function test_job_round_trips_through_php_serialization_with_anchor_id(): void
+    #[Test]
+    public function job_round_trips_through_php_serialization_with_anchor_id(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 7]);
         $root->saveAsRoot();
@@ -372,7 +392,8 @@ final class QueueFixAggregatesTest extends TestCase
         $this->assertInstanceOf(AggregateFixResult::class, $result);
     }
 
-    public function test_job_round_trips_through_php_serialization_without_anchor(): void
+    #[Test]
+    public function job_round_trips_through_php_serialization_without_anchor(): void
     {
         $original = new FixAggregatesJob(modelClass: Area::class);
 
@@ -397,7 +418,8 @@ final class QueueFixAggregatesTest extends TestCase
     // failure modes surface the expected exception class.
     // ----------------------------------------------------------------
 
-    public function test_handle_exception_is_propagated_for_queue_runtime_to_record(): void
+    #[Test]
+    public function handle_exception_is_propagated_for_queue_runtime_to_record(): void
     {
         // Anchor id that doesn't exist → handle() throws RuntimeException
         // unchanged. The job has no try/catch, so the queue runtime

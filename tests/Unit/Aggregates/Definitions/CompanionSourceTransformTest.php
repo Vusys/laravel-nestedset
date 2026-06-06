@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Definitions;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 
@@ -59,12 +60,14 @@ final class CompanionSourceTransformTest extends TestCase
     }
 
     #[DataProvider('asIntCases')]
-    public function test_as_int_matches_sql_case_when_truthiness(mixed $value, int $expected): void
+    #[Test]
+    public function as_int_matches_sql_case_when_truthiness(mixed $value, int $expected): void
     {
         $this->assertSame($expected, CompanionSourceTransform::AsInt->applyPhp($value));
     }
 
-    public function test_identity_returns_the_numeric_value_or_zero(): void
+    #[Test]
+    public function identity_returns_the_numeric_value_or_zero(): void
     {
         $this->assertEqualsWithDelta(7.0, CompanionSourceTransform::Identity->applyPhp(7), 1e-9);
         $this->assertEqualsWithDelta(-5.0, CompanionSourceTransform::Identity->applyPhp(-5), 1e-9);
@@ -74,7 +77,8 @@ final class CompanionSourceTransformTest extends TestCase
         $this->assertSame(0, CompanionSourceTransform::Identity->applyPhp('not-numeric'));
     }
 
-    public function test_square_multiplies_the_value_by_itself(): void
+    #[Test]
+    public function square_multiplies_the_value_by_itself(): void
     {
         $this->assertEqualsWithDelta(9.0, CompanionSourceTransform::Square->applyPhp(3), 1e-9);
         $this->assertEqualsWithDelta(9.0, CompanionSourceTransform::Square->applyPhp(-3), 1e-9);

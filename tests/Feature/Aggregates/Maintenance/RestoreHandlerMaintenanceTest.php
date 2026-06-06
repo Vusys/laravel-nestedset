@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\BitwiseArea;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
@@ -26,7 +27,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class RestoreHandlerMaintenanceTest extends TestCase
 {
-    public function test_branch_restore_handler_routes_exclusive_and_raw_filter_defs(): void
+    #[Test]
+    public function branch_restore_handler_routes_exclusive_and_raw_filter_defs(): void
     {
         $root = new Branch(['name' => 'root', 'tickets' => 10, 'active' => 1]);
         $root->saveAsRoot();
@@ -50,7 +52,8 @@ final class RestoreHandlerMaintenanceTest extends TestCase
         $this->assertFalse(Branch::aggregatesAreBroken(), 'tree stays consistent after delete+restore');
     }
 
-    public function test_bitwise_restore_handler_routes_through_chain_recompute(): void
+    #[Test]
+    public function bitwise_restore_handler_routes_through_chain_recompute(): void
     {
         $root = new BitwiseArea(['name' => 'root', 'feature_bits' => 0b0001]);
         $root->saveAsRoot();
@@ -68,7 +71,8 @@ final class RestoreHandlerMaintenanceTest extends TestCase
         $this->assertFalse(BitwiseArea::aggregatesAreBroken());
     }
 
-    public function test_listener_restore_handler_routes_inclusive_sum_delta(): void
+    #[Test]
+    public function listener_restore_handler_routes_inclusive_sum_delta(): void
     {
         $root = new UuidTag(['name' => 'root', 'tickets' => 10]);
         $root->saveAsRoot();

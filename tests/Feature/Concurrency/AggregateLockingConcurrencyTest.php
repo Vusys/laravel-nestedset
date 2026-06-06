@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Concurrency;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -41,7 +42,8 @@ final class AggregateLockingConcurrencyTest extends TestCase
     use ConcurrencyHarness;
     use InteractsWithTrees;
 
-    public function test_recompute_min_max_under_auto_locking_converges_to_fresh_values(): void
+    #[Test]
+    public function recompute_min_max_under_auto_locking_converges_to_fresh_values(): void
     {
         $this->requireForkableMultiWriterBackend();
 
@@ -115,7 +117,8 @@ final class AggregateLockingConcurrencyTest extends TestCase
         $this->assertAggregatesAreIntact(Area::class);
     }
 
-    public function test_recompute_under_always_locking_converges_to_fresh_values(): void
+    #[Test]
+    public function recompute_under_always_locking_converges_to_fresh_values(): void
     {
         // `'always'` locks even where `'auto'` would short-circuit.
         // Same end-state contract as `'auto'`; pinning both prevents

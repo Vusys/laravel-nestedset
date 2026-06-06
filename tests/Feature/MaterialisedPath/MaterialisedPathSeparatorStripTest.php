@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\EmptyPathSegment;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
@@ -66,7 +67,8 @@ final class MaterialisedPathSeparatorStripTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_separators_are_stripped_silently_when_rejection_is_off(): void
+    #[Test]
+    public function separators_are_stripped_silently_when_rejection_is_off(): void
     {
         $node = new StripSepNode(['name' => 'a-b-c']);
         $node->makeRoot()->save();
@@ -74,7 +76,8 @@ final class MaterialisedPathSeparatorStripTest extends TestCase
         $this->assertSame('abc', $node->p);
     }
 
-    public function test_segment_made_empty_by_strip_still_throws(): void
+    #[Test]
+    public function segment_made_empty_by_strip_still_throws(): void
     {
         $this->expectException(EmptyPathSegment::class);
         $this->expectExceptionMessageMatches('/empty after stripping the separator/');

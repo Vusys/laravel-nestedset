@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -37,7 +38,8 @@ final class BoundsPredicatesTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_where_is_before_returns_nodes_whose_rgt_is_less_than_bounds_lft(): void
+    #[Test]
+    public function where_is_before_returns_nodes_whose_rgt_is_less_than_bounds_lft(): void
     {
         // Bounds = Child B (lft=8, rgt=9). "Before B" = nodes whose rgt < 8.
         $boundsB = new NodeBounds(lft: 8, rgt: 9, depth: 1);
@@ -50,7 +52,8 @@ final class BoundsPredicatesTest extends TestCase
         $this->assertSame(['A', 'AA', 'AB'], $names);
     }
 
-    public function test_where_is_before_excludes_node_whose_rgt_equals_bounds_lft(): void
+    #[Test]
+    public function where_is_before_excludes_node_whose_rgt_equals_bounds_lft(): void
     {
         // Synthetic bounds whose lft (8) matches A.rgt (7) + 1 — wait,
         // A.rgt=7, B.lft=8 — so picking lft=7 would match A.rgt=7
@@ -65,7 +68,8 @@ final class BoundsPredicatesTest extends TestCase
         $this->assertNotContains('A', $names, 'whereIsBefore must use strict < (A.rgt == bounds.lft must be excluded)');
     }
 
-    public function test_where_is_after_returns_nodes_whose_lft_is_greater_than_bounds_rgt(): void
+    #[Test]
+    public function where_is_after_returns_nodes_whose_lft_is_greater_than_bounds_rgt(): void
     {
         // Bounds = A (lft=2, rgt=7). "After A" = nodes whose lft > 7.
         $boundsA = new NodeBounds(lft: 2, rgt: 7, depth: 1);
@@ -76,7 +80,8 @@ final class BoundsPredicatesTest extends TestCase
         $this->assertSame(['B'], $names);
     }
 
-    public function test_where_is_after_excludes_node_whose_lft_equals_bounds_rgt(): void
+    #[Test]
+    public function where_is_after_excludes_node_whose_lft_equals_bounds_rgt(): void
     {
         // Synthetic bounds whose rgt (8) matches B.lft (8) — the strict
         // `>` predicate must exclude B.

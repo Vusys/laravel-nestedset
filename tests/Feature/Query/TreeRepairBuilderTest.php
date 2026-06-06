@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Columns;
 use Vusys\NestedSet\Query\TreeRepairBuilder;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -64,7 +65,8 @@ final class TreeRepairBuilderTest extends TestCase
     // countErrors / isBroken / getTotalErrors
     // ----------------------------------------------------------------
 
-    public function test_count_errors_returns_zeros_for_valid_tree(): void
+    #[Test]
+    public function count_errors_returns_zeros_for_valid_tree(): void
     {
         $this->seedValid();
 
@@ -76,28 +78,32 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertSame(0, $errors['orphans']);
     }
 
-    public function test_is_broken_returns_false_for_valid_tree(): void
+    #[Test]
+    public function is_broken_returns_false_for_valid_tree(): void
     {
         $this->seedValid();
 
         $this->assertFalse($this->repair->isBroken());
     }
 
-    public function test_is_broken_returns_true_for_broken_tree(): void
+    #[Test]
+    public function is_broken_returns_true_for_broken_tree(): void
     {
         $this->seedBroken();
 
         $this->assertTrue($this->repair->isBroken());
     }
 
-    public function test_get_total_errors_sums_all_error_types(): void
+    #[Test]
+    public function get_total_errors_sums_all_error_types(): void
     {
         $this->seedBroken();
 
         $this->assertGreaterThan(0, $this->repair->getTotalErrors());
     }
 
-    public function test_count_errors_detects_invalid_bounds(): void
+    #[Test]
+    public function count_errors_detects_invalid_bounds(): void
     {
         // lft >= rgt for every node.
         $this->seedBroken();
@@ -107,7 +113,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertGreaterThan(0, $errors['invalid_bounds']);
     }
 
-    public function test_count_errors_detects_orphans(): void
+    #[Test]
+    public function count_errors_detects_orphans(): void
     {
         DB::table('categories')->insert([
             ['id' => 1, 'name' => 'Root',    'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
@@ -123,7 +130,8 @@ final class TreeRepairBuilderTest extends TestCase
     // rebuildTree
     // ----------------------------------------------------------------
 
-    public function test_rebuild_tree_restores_valid_structure(): void
+    #[Test]
+    public function rebuild_tree_restores_valid_structure(): void
     {
         $this->seedBroken();
         $this->repair->rebuildTree();
@@ -131,7 +139,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertFalse($this->repair->isBroken());
     }
 
-    public function test_rebuild_tree_assigns_correct_lft_rgt_to_root(): void
+    #[Test]
+    public function rebuild_tree_assigns_correct_lft_rgt_to_root(): void
     {
         $this->seedBroken();
         $this->repair->rebuildTree();
@@ -143,7 +152,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertSame(0, (int) $root->depth);
     }
 
-    public function test_rebuild_tree_assigns_correct_depth(): void
+    #[Test]
+    public function rebuild_tree_assigns_correct_depth(): void
     {
         $this->seedBroken();
         $this->repair->rebuildTree();
@@ -153,7 +163,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertSame(2, (int) $aa->depth);
     }
 
-    public function test_rebuild_tree_produces_contiguous_lft_values(): void
+    #[Test]
+    public function rebuild_tree_produces_contiguous_lft_values(): void
     {
         $this->seedBroken();
         $this->repair->rebuildTree();
@@ -171,7 +182,8 @@ final class TreeRepairBuilderTest extends TestCase
     // fixTree
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_returns_tree_fix_result(): void
+    #[Test]
+    public function fix_tree_returns_tree_fix_result(): void
     {
         $this->seedBroken();
 
@@ -181,7 +193,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertFalse($result->hasErrors());
     }
 
-    public function test_fix_tree_leaves_valid_tree_intact(): void
+    #[Test]
+    public function fix_tree_leaves_valid_tree_intact(): void
     {
         $this->seedValid();
 
@@ -195,7 +208,8 @@ final class TreeRepairBuilderTest extends TestCase
     // rebuildSubtree
     // ----------------------------------------------------------------
 
-    public function test_rebuild_subtree_restores_child_a_bounds(): void
+    #[Test]
+    public function rebuild_subtree_restores_child_a_bounds(): void
     {
         // Child A's lft and depth are correct; only the rgt and descendants are broken.
         // rebuildSubtree reads the root's lft/depth as the starting anchor.
@@ -224,7 +238,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertSame(2, (int) $ab->depth);
     }
 
-    public function test_rebuild_subtree_shifts_surroundings_when_subtree_grows(): void
+    #[Test]
+    public function rebuild_subtree_shifts_surroundings_when_subtree_grows(): void
     {
         // Child A's reserved band (lft=2,rgt=3) is sized for zero descendants,
         // but parent_id says it has two — so the rebuilt subtree needs four
@@ -252,7 +267,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertFalse($this->repair->isBroken());
     }
 
-    public function test_rebuild_subtree_shifts_surroundings_when_subtree_shrinks(): void
+    #[Test]
+    public function rebuild_subtree_shifts_surroundings_when_subtree_shrinks(): void
     {
         // Child A's reserved band (lft=2,rgt=9) is sized for three descendants,
         // but parent_id says it only has one — so four positions need to
@@ -276,7 +292,8 @@ final class TreeRepairBuilderTest extends TestCase
         $this->assertFalse($this->repair->isBroken());
     }
 
-    public function test_rebuild_subtree_is_noop_for_already_correctly_sized_band(): void
+    #[Test]
+    public function rebuild_subtree_is_noop_for_already_correctly_sized_band(): void
     {
         // Reserved band matches the subtree size exactly — delta is zero
         // and no surrounding rows should move.

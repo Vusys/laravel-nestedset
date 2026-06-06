@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -12,7 +13,8 @@ final class JsonImportToParentTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_nested_payload_inserts_under_existing_parent(): void
+    #[Test]
+    public function nested_payload_inserts_under_existing_parent(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -41,7 +43,8 @@ final class JsonImportToParentTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_nested_payload_inserts_as_roots_when_parent_null(): void
+    #[Test]
+    public function nested_payload_inserts_as_roots_when_parent_null(): void
     {
         $payload = [
             ['name' => 'r1', 'children' => []],

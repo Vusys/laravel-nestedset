@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\KeyPathCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathKeyBasedInsertionTest extends TestCase
 {
-    public function test_key_path_is_set_after_insert(): void
+    #[Test]
+    public function key_path_is_set_after_insert(): void
     {
         $root = new KeyPathCategory(['name' => 'R']);
         $root->makeRoot()->save();
@@ -20,7 +22,8 @@ final class MaterialisedPathKeyBasedInsertionTest extends TestCase
         $this->assertSame($expected, $root->id_path);
     }
 
-    public function test_key_path_for_child_includes_parent_chain(): void
+    #[Test]
+    public function key_path_for_child_includes_parent_chain(): void
     {
         $root = new KeyPathCategory(['name' => 'R']);
         $root->makeRoot()->save();

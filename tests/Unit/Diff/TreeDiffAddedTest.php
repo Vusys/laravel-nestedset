@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeChange\Added;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffAddedTest extends TestCase
 {
-    public function test_single_added_root_in_flat_form(): void
+    #[Test]
+    public function single_added_root_in_flat_form(): void
     {
         $before = [];
         $after = [
@@ -32,7 +34,8 @@ final class TreeDiffAddedTest extends TestCase
         $this->assertSame(0, $added->siblingPosition);
     }
 
-    public function test_added_descendant_uses_after_position(): void
+    #[Test]
+    public function added_descendant_uses_after_position(): void
     {
         $before = [
             ['id' => 1, 'name' => 'Root', 'parent_id' => null],
@@ -53,7 +56,8 @@ final class TreeDiffAddedTest extends TestCase
         $this->assertSame(1, $added->siblingPosition);
     }
 
-    public function test_nested_form_input_is_accepted(): void
+    #[Test]
+    public function nested_form_input_is_accepted(): void
     {
         $before = [];
         $after = [

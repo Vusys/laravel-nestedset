@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Query;
 
 use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -41,7 +42,8 @@ final class ChainFoldAccumulatorTest extends TestCase
      * @param  list<int|float|bool|null>  $expectedInclusive
      */
     #[DataProvider('exactKindCases')]
-    public function test_exact_running_inclusive(Closure $makeDefinition, array $rows, array $expectedInclusive): void
+    #[Test]
+    public function exact_running_inclusive(Closure $makeDefinition, array $rows, array $expectedInclusive): void
     {
         $this->assertSame($expectedInclusive, $this->runningInclusive($makeDefinition(), $rows));
     }
@@ -52,7 +54,8 @@ final class ChainFoldAccumulatorTest extends TestCase
      * @param  list<float|null>  $expectedInclusive
      */
     #[DataProvider('floatKindCases')]
-    public function test_float_running_inclusive(Closure $makeDefinition, array $rows, array $expectedInclusive): void
+    #[Test]
+    public function float_running_inclusive(Closure $makeDefinition, array $rows, array $expectedInclusive): void
     {
         $actual = $this->runningInclusive($makeDefinition(), $rows);
 

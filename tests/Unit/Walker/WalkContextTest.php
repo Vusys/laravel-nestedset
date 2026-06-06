@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Walker;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Walker\SubtreeWalker;
@@ -13,7 +14,8 @@ use Vusys\NestedSet\Walker\WalkContext;
 
 final class WalkContextTest extends TestCase
 {
-    public function test_depth_is_relative_to_walk_root_not_the_absolute_depth_column(): void
+    #[Test]
+    public function depth_is_relative_to_walk_root_not_the_absolute_depth_column(): void
     {
         // Build a fragment of a larger tree: root sits at absolute depth
         // 5 in the stored column, but the walker treats it as depth 0.
@@ -34,7 +36,8 @@ final class WalkContextTest extends TestCase
         $this->assertSame(6, $observed['child']['absolute']);
     }
 
-    public function test_parent_is_null_at_the_walk_root_and_the_hydrated_parent_elsewhere(): void
+    #[Test]
+    public function parent_is_null_at_the_walk_root_and_the_hydrated_parent_elsewhere(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 4, depth: 0, parentId: null);
         $child = $this->node(2, name: 'child', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -51,7 +54,8 @@ final class WalkContextTest extends TestCase
         $this->assertSame($root, $parents['child']);
     }
 
-    public function test_sibling_index_is_zero_based_and_count_matches_sibling_set(): void
+    #[Test]
+    public function sibling_index_is_zero_based_and_count_matches_sibling_set(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 8, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -70,7 +74,8 @@ final class WalkContextTest extends TestCase
         $this->assertSame([2, 3], $observed['C']);
     }
 
-    public function test_first_and_last_sibling_flags_are_derived_correctly_including_only_child(): void
+    #[Test]
+    public function first_and_last_sibling_flags_are_derived_correctly_including_only_child(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 8, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -101,7 +106,8 @@ final class WalkContextTest extends TestCase
         $this->assertSame([true, true], $flagsSolo['soloChild']);
     }
 
-    public function test_path_to_root_is_empty_at_the_walk_root_and_the_ancestor_chain_below(): void
+    #[Test]
+    public function path_to_root_is_empty_at_the_walk_root_and_the_ancestor_chain_below(): void
     {
         // Root → A → X → Y (a chain so pathToRoot has multiple entries).
         $root = $this->node(1, name: 'root', lft: 1, rgt: 8, depth: 0, parentId: null);

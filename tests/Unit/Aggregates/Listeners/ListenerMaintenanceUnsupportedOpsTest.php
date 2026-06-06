@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Listeners;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -52,7 +53,8 @@ final class ListenerMaintenanceUnsupportedOpsTest extends TestCase
      * @param  class-string<Throwable>  $exceptionClass
      */
     #[DataProvider('unsupportedOps')]
-    public function test_apply_listener_operation_rejects_unsupported_op(
+    #[Test]
+    public function apply_listener_operation_rejects_unsupported_op(
         AggregateFunction $op,
         string $exceptionClass,
         string $messagePattern,
@@ -69,7 +71,8 @@ final class ListenerMaintenanceUnsupportedOpsTest extends TestCase
         ListenerMaintenance::applyListenerOperation($def, [1, 2, 3]);
     }
 
-    public function test_collection_arm_message_points_at_nested_set_aggregate(): void
+    #[Test]
+    public function collection_arm_message_points_at_nested_set_aggregate(): void
     {
         $def = new ListenerAggregateDefinition(
             column: 'x',

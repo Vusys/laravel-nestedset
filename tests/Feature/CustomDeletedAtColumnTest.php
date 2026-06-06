@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\ArchivedBranch;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -27,7 +28,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class CustomDeletedAtColumnTest extends TestCase
 {
-    public function test_soft_delete_cascades_using_custom_archived_at_column(): void
+    #[Test]
+    public function soft_delete_cascades_using_custom_archived_at_column(): void
     {
         [$root, $left, $right] = $this->seedThreeNodeTree();
 
@@ -46,7 +48,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         $this->assertFalse($hasDeletedAtColumn, 'archived_branches must not have a deleted_at column');
     }
 
-    public function test_restore_cascades_using_custom_archived_at_column(): void
+    #[Test]
+    public function restore_cascades_using_custom_archived_at_column(): void
     {
         [$root, $left, $right] = $this->seedThreeNodeTree();
         $root->delete();
@@ -63,7 +66,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         $this->assertNull($rightRow->archived_at, 'right child archived_at should be cleared by cascade restore');
     }
 
-    public function test_restore_recovers_aggregate_decrement_using_custom_column(): void
+    #[Test]
+    public function restore_recovers_aggregate_decrement_using_custom_column(): void
     {
         // The on_restore aggregate hook re-credits the contribution
         // that the on_delete hook subtracted. The restore-marker
@@ -88,7 +92,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         );
     }
 
-    public function test_restore_of_subtree_recovers_descendant_aggregate_contributions(): void
+    #[Test]
+    public function restore_of_subtree_recovers_descendant_aggregate_contributions(): void
     {
         // Two-level cascade: trashing the parent soft-deletes the
         // grandchild via getDeletedAtColumn(). On restore, captureRestoreMarker
@@ -127,7 +132,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         $this->assertNull($leafRow->archived_at, 'leaf archived_at cleared via cascade restore on the custom column');
     }
 
-    public function test_force_delete_after_soft_delete_does_not_double_decrement_aggregates(): void
+    #[Test]
+    public function force_delete_after_soft_delete_does_not_double_decrement_aggregates(): void
     {
         // Two children + root. After soft-deleting `left`, root's
         // tickets_total drops by left's tickets. If NodeTrait's
@@ -150,7 +156,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         $this->assertSame($expectedTotal, (int) $root->tickets_total, 'force-delete after soft-delete must not decrement again');
     }
 
-    public function test_replicate_clears_custom_archived_at_on_the_clone(): void
+    #[Test]
+    public function replicate_clears_custom_archived_at_on_the_clone(): void
     {
         [, $left] = $this->seedThreeNodeTree();
 
@@ -167,7 +174,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         );
     }
 
-    public function test_with_fresh_aggregates_excludes_trashed_descendants(): void
+    #[Test]
+    public function with_fresh_aggregates_excludes_trashed_descendants(): void
     {
         [$root, $left, $right] = $this->seedThreeNodeTree();
 
@@ -187,7 +195,8 @@ final class CustomDeletedAtColumnTest extends TestCase
         );
     }
 
-    public function test_with_fresh_aggregates_includes_trashed_leaf_under_with_trashed_query(): void
+    #[Test]
+    public function with_fresh_aggregates_includes_trashed_leaf_under_with_trashed_query(): void
     {
         // When the outer query has SoftDeletingScope removed
         // (withTrashed / onlyTrashed), the fresh recompute matches —

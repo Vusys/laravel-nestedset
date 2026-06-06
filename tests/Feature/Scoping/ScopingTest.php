@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Scoping;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Columns;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeBounds;
@@ -83,12 +84,14 @@ final class ScopingTest extends TestCase
     // Resolver
     // ----------------------------------------------------------------
 
-    public function test_resolver_reads_columns_from_attribute(): void
+    #[Test]
+    public function resolver_reads_columns_from_attribute(): void
     {
         $this->assertSame(['menu_id'], NestedSetScopeResolver::columns(MenuItem::class));
     }
 
-    public function test_resolver_returns_empty_for_unscoped_model(): void
+    #[Test]
+    public function resolver_returns_empty_for_unscoped_model(): void
     {
         $this->assertSame(
             [],
@@ -96,7 +99,8 @@ final class ScopingTest extends TestCase
         );
     }
 
-    public function test_resolver_reads_values_from_node(): void
+    #[Test]
+    public function resolver_reads_values_from_node(): void
     {
         $item = MenuItem::query()->findOrFail(2);
 
@@ -107,7 +111,8 @@ final class ScopingTest extends TestCase
     // Scope isolation — mutations
     // ----------------------------------------------------------------
 
-    public function test_make_gap_in_menu1_does_not_shift_menu2_rows(): void
+    #[Test]
+    public function make_gap_in_menu1_does_not_shift_menu2_rows(): void
     {
         $this->mutator(['menu_id' => $this->menu1->id])->makeGap(at: 1, size: 2);
 
@@ -126,7 +131,8 @@ final class ScopingTest extends TestCase
         $this->assertSame(8, (int) $menu1Root->rgt);
     }
 
-    public function test_move_node_in_menu1_does_not_affect_menu2(): void
+    #[Test]
+    public function move_node_in_menu1_does_not_affect_menu2(): void
     {
         // Swap A (lft 2-3) and B (lft 4-5) within Menu 1.
         // position = B.rgt + 1 = 6 in original coordinates.
@@ -150,7 +156,8 @@ final class ScopingTest extends TestCase
     // Scope isolation — repair
     // ----------------------------------------------------------------
 
-    public function test_rebuild_tree_scoped_to_menu1_does_not_touch_menu2(): void
+    #[Test]
+    public function rebuild_tree_scoped_to_menu1_does_not_touch_menu2(): void
     {
         // Break menu 1 only; expect repair to fix it while leaving menu 2 alone.
         DB::table('menu_items')->where('menu_id', $this->menu1->id)->update([
@@ -168,7 +175,8 @@ final class ScopingTest extends TestCase
         $this->assertSame(3, (int) $menu2X->rgt);
     }
 
-    public function test_count_errors_scoped_to_one_menu_only(): void
+    #[Test]
+    public function count_errors_scoped_to_one_menu_only(): void
     {
         // Break menu 1; menu 2 stays valid.
         $this->allowBrokenTreeAtTearDown = true;
@@ -183,7 +191,8 @@ final class ScopingTest extends TestCase
         $this->assertSame(0, $menu2Errors['invalid_bounds']);
     }
 
-    public function test_orphan_detection_joins_parent_within_scope(): void
+    #[Test]
+    public function orphan_detection_joins_parent_within_scope(): void
     {
         // Cross-scope parent pretender: menu_items id=2 is a child in
         // menu 1 with parent_id=1, but suppose its parent_id were 4
@@ -213,7 +222,8 @@ final class ScopingTest extends TestCase
     // through it.
     // ----------------------------------------------------------------
 
-    public function test_is_broken_on_scoped_model_without_anchor_throws(): void
+    #[Test]
+    public function is_broken_on_scoped_model_without_anchor_throws(): void
     {
         $this->expectException(ScopeViolationException::class);
         $this->expectExceptionMessageMatches('/menu_id/');
@@ -221,14 +231,16 @@ final class ScopingTest extends TestCase
         MenuItem::isBroken();
     }
 
-    public function test_count_errors_on_scoped_model_without_anchor_throws(): void
+    #[Test]
+    public function count_errors_on_scoped_model_without_anchor_throws(): void
     {
         $this->expectException(ScopeViolationException::class);
 
         MenuItem::countErrors();
     }
 
-    public function test_fix_tree_on_scoped_model_without_anchor_throws(): void
+    #[Test]
+    public function fix_tree_on_scoped_model_without_anchor_throws(): void
     {
         $this->expectException(ScopeViolationException::class);
 
@@ -239,7 +251,8 @@ final class ScopingTest extends TestCase
     // assertSameScope
     // ----------------------------------------------------------------
 
-    public function test_assert_same_scope_passes_for_same_menu(): void
+    #[Test]
+    public function assert_same_scope_passes_for_same_menu(): void
     {
         $a = MenuItem::query()->findOrFail(2);
         $b = MenuItem::query()->findOrFail(3);
@@ -249,7 +262,8 @@ final class ScopingTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function test_assert_same_scope_throws_for_different_menus(): void
+    #[Test]
+    public function assert_same_scope_throws_for_different_menus(): void
     {
         $a = MenuItem::query()->findOrFail(2); // menu 1
         $b = MenuItem::query()->findOrFail(5); // menu 2
@@ -260,7 +274,8 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
-    public function test_assert_same_scope_throws_for_different_models(): void
+    #[Test]
+    public function assert_same_scope_throws_for_different_models(): void
     {
         $a = MenuItem::query()->findOrFail(2);
         $b = Category::query()->forceCreate([
@@ -272,7 +287,8 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
-    public function test_assert_same_scope_treats_numeric_string_and_int_as_equal(): void
+    #[Test]
+    public function assert_same_scope_treats_numeric_string_and_int_as_equal(): void
     {
         // Eloquent casts usually normalise menu_id to int, but a model
         // hydrated via setRawAttributes without casts (or a raw DB
@@ -288,7 +304,8 @@ final class ScopingTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function test_assert_same_scope_treats_distinct_numeric_values_as_different(): void
+    #[Test]
+    public function assert_same_scope_treats_distinct_numeric_values_as_different(): void
     {
         $a = MenuItem::query()->findOrFail(2);
         $b = MenuItem::query()->findOrFail(2);
@@ -299,7 +316,8 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
-    public function test_assert_same_scope_treats_null_and_zero_as_different(): void
+    #[Test]
+    public function assert_same_scope_treats_null_and_zero_as_different(): void
     {
         // PHP's loose-equality `null == 0` is true. The comparator's
         // early-exit on either side being null is therefore load-bearing,
@@ -316,7 +334,8 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
-    public function test_assert_same_scope_treats_zero_and_null_as_different(): void
+    #[Test]
+    public function assert_same_scope_treats_zero_and_null_as_different(): void
     {
         // Reverse argument order to also exercise the right-hand
         // `$b === null` branch of the null guard.
@@ -330,7 +349,8 @@ final class ScopingTest extends TestCase
         NestedSetScopeResolver::assertSameScope($a, $b);
     }
 
-    public function test_force_delete_cascade_uses_persisted_scope_not_dirty_in_memory_value(): void
+    #[Test]
+    public function force_delete_cascade_uses_persisted_scope_not_dirty_in_memory_value(): void
     {
         // A user could mutate the scope attribute in memory without
         // saving and then call forceDelete(). The cascade query must
@@ -364,7 +384,8 @@ final class ScopingTest extends TestCase
     // nowhere or (worse) read from the wrong partition.
     // ----------------------------------------------------------------
 
-    public function test_prev_sibling_on_root_does_not_cross_scope(): void
+    #[Test]
+    public function prev_sibling_on_root_does_not_cross_scope(): void
     {
         $this->seedSiblingForestAcrossScopes();
 
@@ -381,7 +402,8 @@ final class ScopingTest extends TestCase
         $this->assertSame(3, $prev->id, 'prevSibling() must return menu 1 leading root, not menu 2');
     }
 
-    public function test_next_sibling_on_root_does_not_cross_scope(): void
+    #[Test]
+    public function next_sibling_on_root_does_not_cross_scope(): void
     {
         $this->seedSiblingForestAcrossScopes();
 
@@ -398,7 +420,8 @@ final class ScopingTest extends TestCase
         $this->assertSame(4, $next->id, 'nextSibling() must return menu 1 trailing root, not menu 2');
     }
 
-    public function test_up_on_root_swaps_only_within_same_scope(): void
+    #[Test]
+    public function up_on_root_swaps_only_within_same_scope(): void
     {
         $this->seedSiblingForestAcrossScopes();
 

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Events;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\ChangeFeed\ChangeFeedRecorder;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Events\Aggregates\NestedSetAggregateChanged;
@@ -30,7 +31,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_create_fires_one_event_per_ancestor_column_with_old_and_new_values(): void
+    #[Test]
+    public function create_fires_one_event_per_ancestor_column_with_old_and_new_values(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -61,7 +63,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertContains($child->getKey(), $rootTotal->ancestorChain);
     }
 
-    public function test_source_column_update_fires_only_for_columns_that_actually_changed(): void
+    #[Test]
+    public function source_column_update_fires_only_for_columns_that_actually_changed(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -91,7 +94,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertArrayNotHasKey('tickets_count_all', $changedColumns);
     }
 
-    public function test_delete_fires_with_oldvalue_greater_than_newvalue(): void
+    #[Test]
+    public function delete_fires_with_oldvalue_greater_than_newvalue(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -119,7 +123,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         }
     }
 
-    public function test_move_fires_two_passes_one_for_old_chain_one_for_new(): void
+    #[Test]
+    public function move_fires_two_passes_one_for_old_chain_one_for_new(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -158,7 +163,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertNotContains($branchA->getKey(), $bTotal->ancestorChain);
     }
 
-    public function test_value_equality_uses_string_compare_for_large_64bit_integers(): void
+    #[Test]
+    public function value_equality_uses_string_compare_for_large_64bit_integers(): void
     {
         // Two integers that exceed the 2^53 float-mantissa limit but
         // differ only in the low-order bits collapse to the same float
@@ -186,7 +192,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertFalse($reflection->invoke(null, 1.5, '1.500001'));
     }
 
-    public function test_value_equality_uses_string_compare_for_high_precision_decimals(): void
+    #[Test]
+    public function value_equality_uses_string_compare_for_high_precision_decimals(): void
     {
         // DECIMAL(38, 10) columns return as driver-side strings.
         // Two values differing past IEEE-754 precision (~15 significant
@@ -218,7 +225,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         $this->assertFalse($reflection->invoke(null, '1.25', '1.26'));
     }
 
-    public function test_event_does_not_fire_when_no_listener_is_registered(): void
+    #[Test]
+    public function event_does_not_fire_when_no_listener_is_registered(): void
     {
         // Fake the event WITHOUT registering a listener first. The
         // firing site short-circuits when nobody is subscribed, so no
@@ -252,7 +260,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         }
     }
 
-    public function test_event_does_not_fire_for_models_without_aggregates(): void
+    #[Test]
+    public function event_does_not_fire_for_models_without_aggregates(): void
     {
         // Listener registered but model has no aggregates: the firing
         // site early-exits because $columns is empty before any work.
@@ -266,7 +275,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         Event::assertNotDispatched(NestedSetAggregateChanged::class);
     }
 
-    public function test_event_payload_carries_modelclass_and_column_metadata(): void
+    #[Test]
+    public function event_payload_carries_modelclass_and_column_metadata(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -286,7 +296,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         }
     }
 
-    public function test_internal_companion_columns_are_excluded_from_events(): void
+    #[Test]
+    public function internal_companion_columns_are_excluded_from_events(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -306,7 +317,8 @@ final class NestedSetAggregateChangedTest extends TestCase
         }
     }
 
-    public function test_restore_fires_on_restore_stage(): void
+    #[Test]
+    public function restore_fires_on_restore_stage(): void
     {
         $root = new SoftBranch(['name' => 'Root', 'tickets' => 0, 'active' => 1]);
         $root->saveAsRoot();

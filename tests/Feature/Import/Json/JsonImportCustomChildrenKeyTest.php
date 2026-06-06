@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Import\JsonImportOptions;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -19,7 +20,8 @@ final class JsonImportCustomChildrenKeyTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_nested_shape_is_detected_when_children_key_is_customised(): void
+    #[Test]
+    public function nested_shape_is_detected_when_children_key_is_customised(): void
     {
         $payload = [
             ['name' => 'r', 'kids' => [

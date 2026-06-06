@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Database\Query\Grammars\MySqlGrammar;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -28,7 +29,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class TreeBaseQueryBuilderTest extends TestCase
 {
-    public function test_default_run_select_emits_no_set_statement_prefix(): void
+    #[Test]
+    public function default_run_select_emits_no_set_statement_prefix(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -51,7 +53,8 @@ final class TreeBaseQueryBuilderTest extends TestCase
         }
     }
 
-    public function test_flag_injects_set_statement_prefix_into_dispatched_sql(): void
+    #[Test]
+    public function flag_injects_set_statement_prefix_into_dispatched_sql(): void
     {
         $connection = DB::connection();
         // Compile against the MySQL grammar so the inner SQL surfaces

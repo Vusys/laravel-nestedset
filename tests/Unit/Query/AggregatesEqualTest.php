@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Query;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 
@@ -25,30 +26,35 @@ use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
  */
 final class AggregatesEqualTest extends TestCase
 {
-    public function test_null_equals_null(): void
+    #[Test]
+    public function null_equals_null(): void
     {
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(null, null));
     }
 
-    public function test_null_differs_from_zero(): void
+    #[Test]
+    public function null_differs_from_zero(): void
     {
         $this->assertFalse(AggregateValueComparator::aggregatesEqual(null, 0));
         $this->assertFalse(AggregateValueComparator::aggregatesEqual(0, null));
     }
 
-    public function test_exact_int_equality(): void
+    #[Test]
+    public function exact_int_equality(): void
     {
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(42, 42));
     }
 
-    public function test_int_and_decimal_string_with_same_value(): void
+    #[Test]
+    public function int_and_decimal_string_with_same_value(): void
     {
         // Postgres returns DECIMAL columns as strings; the comparator
         // must not flag them as drift.
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(42, '42.0000'));
     }
 
-    public function test_avg_rounding_at_typical_magnitude_is_tolerated(): void
+    #[Test]
+    public function avg_rounding_at_typical_magnitude_is_tolerated(): void
     {
         // 175 / 3 = 58.333... — stored as 58.3333 by the SQL layer
         // and re-computed as 58.33333333333333 in PHP. Should compare
@@ -56,7 +62,8 @@ final class AggregatesEqualTest extends TestCase
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(58.3333, 175 / 3));
     }
 
-    public function test_relative_tolerance_handles_float_noise_at_large_magnitudes(): void
+    #[Test]
+    public function relative_tolerance_handles_float_noise_at_large_magnitudes(): void
     {
         // At 1e9 scale, accumulated float-arithmetic noise can exceed
         // the 1e-4 absolute floor. The relative-tolerance branch
@@ -67,7 +74,8 @@ final class AggregatesEqualTest extends TestCase
         $this->assertTrue(AggregateValueComparator::aggregatesEqual($stored, $computed));
     }
 
-    public function test_genuine_drift_at_large_magnitudes_is_caught(): void
+    #[Test]
+    public function genuine_drift_at_large_magnitudes_is_caught(): void
     {
         // An honest drift of 0.5 against a stored 1B exceeds both
         // tolerances (5e-1 absolute, 5e-10 relative is borderline).
@@ -76,7 +84,8 @@ final class AggregatesEqualTest extends TestCase
         $this->assertFalse(AggregateValueComparator::aggregatesEqual(1_000_000_000, 1_000_001_000));
     }
 
-    public function test_small_distinct_avg_values_are_not_collapsed(): void
+    #[Test]
+    public function small_distinct_avg_values_are_not_collapsed(): void
     {
         // The old absolute-1e-4 form swallowed the difference here.
         // Source values in the 1e-3 scale (e.g. AVG over per-mille
@@ -84,7 +93,8 @@ final class AggregatesEqualTest extends TestCase
         $this->assertFalse(AggregateValueComparator::aggregatesEqual(0.001, 0.002));
     }
 
-    public function test_zero_is_equal_to_zero_for_all_representations(): void
+    #[Test]
+    public function zero_is_equal_to_zero_for_all_representations(): void
     {
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(0, 0));
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(0, 0.0));
@@ -92,7 +102,8 @@ final class AggregatesEqualTest extends TestCase
         $this->assertTrue(AggregateValueComparator::aggregatesEqual('0.0000', 0));
     }
 
-    public function test_negative_values_compare_correctly(): void
+    #[Test]
+    public function negative_values_compare_correctly(): void
     {
         $this->assertTrue(AggregateValueComparator::aggregatesEqual(-42, -42));
         $this->assertFalse(AggregateValueComparator::aggregatesEqual(-42, 42));
@@ -104,7 +115,8 @@ final class AggregatesEqualTest extends TestCase
      * @param  numeric|null  $b
      */
     #[DataProvider('absoluteToleranceBoundaryCases')]
-    public function test_absolute_tolerance_boundary(int|float|string|null $a, int|float|string|null $b, bool $expectedEqual, string $why): void
+    #[Test]
+    public function absolute_tolerance_boundary(int|float|string|null $a, int|float|string|null $b, bool $expectedEqual, string $why): void
     {
         $this->assertSame($expectedEqual, AggregateValueComparator::aggregatesEqual($a, $b), $why);
     }
@@ -145,7 +157,8 @@ final class AggregatesEqualTest extends TestCase
      * @param  numeric|null  $b
      */
     #[DataProvider('relativeToleranceBoundaryCases')]
-    public function test_relative_tolerance_boundary(int|float|string|null $a, int|float|string|null $b, bool $expectedEqual, string $why): void
+    #[Test]
+    public function relative_tolerance_boundary(int|float|string|null $a, int|float|string|null $b, bool $expectedEqual, string $why): void
     {
         $this->assertSame($expectedEqual, AggregateValueComparator::aggregatesEqual($a, $b), $why);
     }
@@ -186,7 +199,8 @@ final class AggregatesEqualTest extends TestCase
     // overwrites the corrupted column.
     // ----------------------------------------------------------------
 
-    public function test_nan_stored_value_never_compares_equal_even_to_itself(): void
+    #[Test]
+    public function nan_stored_value_never_compares_equal_even_to_itself(): void
     {
         // PHP's IEEE-754 NaN is not equal to itself; the comparator
         // must propagate that — never silently match a corrupted NaN
@@ -196,7 +210,8 @@ final class AggregatesEqualTest extends TestCase
         $this->assertFalse(AggregateValueComparator::aggregatesEqual(NAN, 1e9));
     }
 
-    public function test_infinity_stored_value_is_flagged_as_drift_against_finite_recompute(): void
+    #[Test]
+    public function infinity_stored_value_is_flagged_as_drift_against_finite_recompute(): void
     {
         // A row hand-corrupted to +Inf must register as drift against
         // any finite fresh value, so aggregateErrors surfaces the

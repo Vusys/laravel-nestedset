@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPathDefaults;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
@@ -55,7 +56,8 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         ]);
     }
 
-    public function test_class_attribute_defaults_override_global_config(): void
+    #[Test]
+    public function class_attribute_defaults_override_global_config(): void
     {
         $paths = MaterialisedPathRegistry::for(DefaultsAttrFixture::class);
         $path = $paths['doc_path'];
@@ -64,7 +66,8 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         $this->assertSame(2048, $path->getMaxLength());
     }
 
-    public function test_global_config_wins_when_no_class_attribute(): void
+    #[Test]
+    public function global_config_wins_when_no_class_attribute(): void
     {
         $paths = MaterialisedPathRegistry::for(NoDefaultsFixture::class);
         $path = $paths['doc_path'];
@@ -73,7 +76,8 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         $this->assertSame(1024, $path->getMaxLength());
     }
 
-    public function test_class_defaults_config_overrides_global(): void
+    #[Test]
+    public function class_defaults_config_overrides_global(): void
     {
         config([
             'nestedset.materialised_path.class_defaults' => [
@@ -89,7 +93,8 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         $this->assertTrue($path->getWrap(), 'unset field falls through to global');
     }
 
-    public function test_class_defaults_only_match_exact_fqcn(): void
+    #[Test]
+    public function class_defaults_only_match_exact_fqcn(): void
     {
         // Configure defaults under a real ancestor of NoDefaultsFixture
         // (every Eloquent fixture extends Model). With exact-FQCN
@@ -105,7 +110,8 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         $this->assertSame('/', $paths['doc_path']->getSeparator(), 'no inheritance from ancestor');
     }
 
-    public function test_per_path_attribute_wins_over_every_defaults_layer(): void
+    #[Test]
+    public function per_path_attribute_wins_over_every_defaults_layer(): void
     {
         // PerPathOverridesDefaultsFixture sets wrap=true on the path
         // attribute itself. Class-level attribute defaults say
@@ -127,14 +133,16 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         );
     }
 
-    public function test_registry_caches_per_fqcn(): void
+    #[Test]
+    public function registry_caches_per_fqcn(): void
     {
         $a = MaterialisedPathRegistry::for(NoDefaultsFixture::class);
         $b = MaterialisedPathRegistry::for(NoDefaultsFixture::class);
         $this->assertSame($a['doc_path'], $b['doc_path'], 'cache returns the same instance');
     }
 
-    public function test_forget_cache_invalidates_one_class(): void
+    #[Test]
+    public function forget_cache_invalidates_one_class(): void
     {
         $first = MaterialisedPathRegistry::for(NoDefaultsFixture::class);
         config(['nestedset.materialised_path.defaults.separator' => '~']);
@@ -146,7 +154,8 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         $this->assertSame('~', $fresh['doc_path']->getSeparator());
     }
 
-    public function test_forget_cache_with_null_invalidates_everything(): void
+    #[Test]
+    public function forget_cache_with_null_invalidates_everything(): void
     {
         MaterialisedPathRegistry::for(NoDefaultsFixture::class);
         MaterialisedPathRegistry::for(DefaultsAttrFixture::class);
@@ -157,19 +166,22 @@ final class MaterialisedPathDefaultsResolutionTest extends OrchestraTestCase
         $this->assertSame('*', MaterialisedPathRegistry::for(NoDefaultsFixture::class)['doc_path']->getSeparator());
     }
 
-    public function test_columns_for_returns_just_the_column_names(): void
+    #[Test]
+    public function columns_for_returns_just_the_column_names(): void
     {
         $columns = MaterialisedPathRegistry::columnsFor(DefaultsAttrFixture::class);
         $this->assertSame(['doc_path'], $columns);
     }
 
-    public function test_defaults_to_array_is_partial(): void
+    #[Test]
+    public function defaults_to_array_is_partial(): void
     {
         $defaults = new NestedSetMaterialisedPathDefaults(separator: '.', maxLength: 100);
         $this->assertSame(['separator' => '.', 'maxLength' => 100], $defaults->toArray());
     }
 
-    public function test_defaults_to_array_returns_empty_when_nothing_set(): void
+    #[Test]
+    public function defaults_to_array_returns_empty_when_nothing_set(): void
     {
         $this->assertSame([], (new NestedSetMaterialisedPathDefaults)->toArray());
     }

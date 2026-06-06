@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -39,7 +40,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // Create: listener aggregates initialise correctly on creation
     // ----------------------------------------------------------------
 
-    public function test_create_monster_updates_weighted_power_on_ancestors(): void
+    #[Test]
+    public function create_monster_updates_weighted_power_on_ancestors(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();
@@ -61,7 +63,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(30, $this->asInt($child->weighted_power));
     }
 
-    public function test_create_monster_updates_fire_count_on_ancestors(): void
+    #[Test]
+    public function create_monster_updates_fire_count_on_ancestors(): void
     {
         $root = new Monster(['name' => 'RootFire', 'type' => 'fire', 'base_power' => 5, 'level' => 1]);
         $root->saveAsRoot();
@@ -83,7 +86,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // Update: listener aggregates propagate deltas correctly
     // ----------------------------------------------------------------
 
-    public function test_update_base_power_updates_weighted_power_on_ancestors(): void
+    #[Test]
+    public function update_base_power_updates_weighted_power_on_ancestors(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
@@ -107,7 +111,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(21, $this->asInt($root->weighted_power));
     }
 
-    public function test_update_type_to_fire_increments_fire_count(): void
+    #[Test]
+    public function update_type_to_fire_increments_fire_count(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
@@ -126,7 +131,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(1, $this->asInt($root->fire_count));
     }
 
-    public function test_update_type_from_fire_decrements_fire_count(): void
+    #[Test]
+    public function update_type_from_fire_decrements_fire_count(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
@@ -149,7 +155,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // Delete: listener aggregates subtract contributions on deletion
     // ----------------------------------------------------------------
 
-    public function test_delete_monster_updates_listener_aggregates_on_ancestors(): void
+    #[Test]
+    public function delete_monster_updates_listener_aggregates_on_ancestors(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
         $root->saveAsRoot();
@@ -178,7 +185,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // No-op: listener aggregates not updated when watch column unchanged
     // ----------------------------------------------------------------
 
-    public function test_listener_aggregate_not_updated_when_watch_column_unchanged(): void
+    #[Test]
+    public function listener_aggregate_not_updated_when_watch_column_unchanged(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
@@ -215,7 +223,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         return (float) $value;
     }
 
-    public function test_float_listener_preserves_half_on_create(): void
+    #[Test]
+    public function float_listener_preserves_half_on_create(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 3, 'level' => 5]);
         $root->saveAsRoot();
@@ -232,7 +241,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(15.0, $this->asFloat($root->half_weighted_power));
     }
 
-    public function test_float_listener_preserves_half_on_update(): void
+    #[Test]
+    public function float_listener_preserves_half_on_update(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 4]);
         $root->saveAsRoot();
@@ -263,7 +273,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(7.0, $this->asFloat($root->half_weighted_power));
     }
 
-    public function test_float_listener_preserves_half_on_delete(): void
+    #[Test]
+    public function float_listener_preserves_half_on_delete(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 2]);
         $root->saveAsRoot();
@@ -292,7 +303,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
     // for each affected ancestor. Covers the batched-read refactor.
     // ----------------------------------------------------------------
 
-    public function test_min_listener_recomputes_on_delete_of_extremum_holder(): void
+    #[Test]
+    public function min_listener_recomputes_on_delete_of_extremum_holder(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
         $root->saveAsRoot();
@@ -318,7 +330,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(5, $this->asInt($root->weakest_level));
     }
 
-    public function test_max_listener_recomputes_on_delete_of_extremum_holder(): void
+    #[Test]
+    public function max_listener_recomputes_on_delete_of_extremum_holder(): void
     {
         // Companion to the Min-listener test above. The chain-inclusion
         // logic in HasNestedSetAggregates checks both
@@ -353,7 +366,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(7, $this->asInt($root->strongest_level));
     }
 
-    public function test_min_listener_recompute_batches_subtree_reads(): void
+    #[Test]
+    public function min_listener_recompute_batches_subtree_reads(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 10]);
         $root->saveAsRoot();
@@ -415,7 +429,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(6, $this->asInt($root->weakest_level));
     }
 
-    public function test_min_listener_recomputes_after_soft_delete_and_restore(): void
+    #[Test]
+    public function min_listener_recomputes_after_soft_delete_and_restore(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 1, 'level' => 5]);
         $root->saveAsRoot();
@@ -447,7 +462,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(2, $this->asInt($root->weakest_level));
     }
 
-    public function test_min_listener_recomputes_after_structural_move(): void
+    #[Test]
+    public function min_listener_recomputes_after_structural_move(): void
     {
         // Two sibling subtrees under a single root. Move a child from
         // one subtree to another and verify both ancestor chains' Min
@@ -513,7 +529,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         return (float) $value;
     }
 
-    public function test_listener_avg_computes_correctly_on_create(): void
+    #[Test]
+    public function listener_avg_computes_correctly_on_create(): void
     {
         // Root: base_power=2, level=5 → contribution 10
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
@@ -535,7 +552,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(12.0, $this->asFloatOrNull($a->weighted_avg));
     }
 
-    public function test_listener_avg_updates_on_source_column_change(): void
+    #[Test]
+    public function listener_avg_updates_on_source_column_change(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();
@@ -556,7 +574,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(20.0, $this->asFloatOrNull($root->weighted_avg));
     }
 
-    public function test_listener_avg_updates_on_delete(): void
+    #[Test]
+    public function listener_avg_updates_on_delete(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();
@@ -575,7 +594,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(10.0, $this->asFloatOrNull($root->weighted_avg));
     }
 
-    public function test_listener_avg_no_drift_via_aggregate_errors(): void
+    #[Test]
+    public function listener_avg_no_drift_via_aggregate_errors(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();
@@ -590,7 +610,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(0, $errors['weighted_avg'] ?? -1);
     }
 
-    public function test_fresh_aggregate_returns_listener_avg(): void
+    #[Test]
+    public function fresh_aggregate_returns_listener_avg(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();
@@ -604,7 +625,8 @@ final class ListenerAggregateMaintenanceTest extends TestCase
         $this->assertSame(11.0, $this->asFloatOrNull($fresh));
     }
 
-    public function test_fix_aggregates_recovers_listener_avg(): void
+    #[Test]
+    public function fix_aggregates_recovers_listener_avg(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();

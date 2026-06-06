@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
@@ -52,7 +53,8 @@ final class QuantileMaintenanceInteractionTest extends TestCase
         $this->root = $root->refresh();
     }
 
-    public function test_declaring_median_via_nested_set_aggregate_throws_with_pointer_to_fresh_read(): void
+    #[Test]
+    public function declaring_median_via_nested_set_aggregate_throws_with_pointer_to_fresh_read(): void
     {
         // The attribute constructor is what surfaces this — instantiate
         // and call toDefinition() directly to bypass the registry's
@@ -75,7 +77,8 @@ final class QuantileMaintenanceInteractionTest extends TestCase
         }
     }
 
-    public function test_declaring_percentile_via_nested_set_aggregate_throws_with_pointer_to_fresh_read(): void
+    #[Test]
+    public function declaring_percentile_via_nested_set_aggregate_throws_with_pointer_to_fresh_read(): void
     {
         $attribute = new NestedSetAggregate(column: 'subtree_p90', percentile: 'tickets');
 
@@ -99,7 +102,8 @@ final class QuantileMaintenanceInteractionTest extends TestCase
         return (float) $value;
     }
 
-    public function test_fix_aggregates_leaves_quantile_fresh_reads_unaffected(): void
+    #[Test]
+    public function fix_aggregates_leaves_quantile_fresh_reads_unaffected(): void
     {
         // Baseline: maintained aggregates are clean and quantile fresh
         // read returns the expected median (50.0 across {25,50,50,100}).
@@ -134,7 +138,8 @@ final class QuantileMaintenanceInteractionTest extends TestCase
         $this->assertEqualsWithDelta(50.0, $this->asFloat($rootMedianAfter), 0.0001);
     }
 
-    public function test_quantile_fresh_read_composes_with_maintained_aggregate_columns_on_same_query(): void
+    #[Test]
+    public function quantile_fresh_read_composes_with_maintained_aggregate_columns_on_same_query(): void
     {
         // Stored tickets_total (SUM) and tickets_avg coexist with an
         // ad-hoc median alias on the same row. The two come from

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Diff;
 
 use Closure;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Diff\TreeChange\Modified;
 use Vusys\NestedSet\Diff\TreeChange\Moved;
 use Vusys\NestedSet\Diff\TreeDiff;
@@ -20,7 +21,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class TreeDiffApplyEdgeCasesTest extends TestCase
 {
-    public function test_apply_on_empty_diff_short_circuits(): void
+    #[Test]
+    public function apply_on_empty_diff_short_circuits(): void
     {
         $diff = TreeDiff::between([], []);
 
@@ -33,7 +35,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $this->assertFalse($result->dryRun);
     }
 
-    public function test_dry_run_reports_planned_statements_for_every_category(): void
+    #[Test]
+    public function dry_run_reports_planned_statements_for_every_category(): void
     {
         $a = new Category(['name' => 'A']);
         $a->makeRoot()->save();
@@ -61,7 +64,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $this->assertNull(Category::query()->where('name', 'C')->first());
     }
 
-    public function test_schema_mismatch_throws_logic_exception_with_offender_list(): void
+    #[Test]
+    public function schema_mismatch_throws_logic_exception_with_offender_list(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -77,7 +81,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $diff->apply(Category::class);
     }
 
-    public function test_modify_throws_when_resolver_returns_null_for_modified_key(): void
+    #[Test]
+    public function modify_throws_when_resolver_returns_null_for_modified_key(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -95,7 +100,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $diff->apply(Category::class, resolver: static fn (mixed $i): null => null);
     }
 
-    public function test_added_root_via_apply_writes_at_top_level(): void
+    #[Test]
+    public function added_root_via_apply_writes_at_top_level(): void
     {
         $diff = TreeDiff::between(
             [],
@@ -109,7 +115,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $this->assertSame(0, $row->depth);
     }
 
-    public function test_move_throws_missing_parent_when_to_parent_does_not_resolve(): void
+    #[Test]
+    public function move_throws_missing_parent_when_to_parent_does_not_resolve(): void
     {
         $a = new Category(['name' => 'A']);
         $a->makeRoot()->save();
@@ -127,7 +134,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $diff->apply(Category::class);
     }
 
-    public function test_dry_run_with_all_change_types_lists_every_statement_kind(): void
+    #[Test]
+    public function dry_run_with_all_change_types_lists_every_statement_kind(): void
     {
         $a = new Category(['name' => 'A']);
         $a->makeRoot()->save();
@@ -160,7 +168,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $this->assertContains('update', $kinds);
     }
 
-    public function test_move_throws_missing_parent_when_custom_resolver_returns_null_for_destination(): void
+    #[Test]
+    public function move_throws_missing_parent_when_custom_resolver_returns_null_for_destination(): void
     {
         $row = new Category(['name' => 'row']);
         $row->makeRoot()->save();
@@ -181,7 +190,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         );
     }
 
-    public function test_move_throws_when_source_row_no_longer_exists_at_apply_time(): void
+    #[Test]
+    public function move_throws_when_source_row_no_longer_exists_at_apply_time(): void
     {
         $diff = new TreeDiff(
             added: [],
@@ -197,7 +207,8 @@ final class TreeDiffApplyEdgeCasesTest extends TestCase
         $diff->apply(Category::class);
     }
 
-    public function test_closure_based_on_uses_custom_resolver(): void
+    #[Test]
+    public function closure_based_on_uses_custom_resolver(): void
     {
         $root = new Category(['name' => 'Slugged']);
         $root->makeRoot()->save();

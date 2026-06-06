@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\DuplicatePathSegment;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\KeyPathCategory;
@@ -12,7 +13,8 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathListenerBranchesTest extends TestCase
 {
-    public function test_materialised_path_for_returns_value_object_for_declared_column(): void
+    #[Test]
+    public function materialised_path_for_returns_value_object_for_declared_column(): void
     {
         $node = new SluggedCategory(['name' => 'X']);
         $path = $node->materialisedPathFor('url_path');
@@ -20,7 +22,8 @@ final class MaterialisedPathListenerBranchesTest extends TestCase
         $this->assertSame('/', $path->getSeparator());
     }
 
-    public function test_models_with_no_declared_paths_save_without_listener_work(): void
+    #[Test]
+    public function models_with_no_declared_paths_save_without_listener_work(): void
     {
         // Exercises the early-return branches in both saving and saved
         // listeners (Category declares no path columns).
@@ -33,7 +36,8 @@ final class MaterialisedPathListenerBranchesTest extends TestCase
         $this->assertSame(2, Category::query()->count());
     }
 
-    public function test_determinism_guard_double_call_passes_for_deterministic_builder(): void
+    #[Test]
+    public function determinism_guard_double_call_passes_for_deterministic_builder(): void
     {
         // app.debug=true exercises the guard; the deterministic slug source
         // returns the same value on repeated calls so unset($second) runs.
@@ -48,7 +52,8 @@ final class MaterialisedPathListenerBranchesTest extends TestCase
         config(['app.debug' => false]);
     }
 
-    public function test_root_unique_per_parent_collision_detected_with_null_parent_id(): void
+    #[Test]
+    public function root_unique_per_parent_collision_detected_with_null_parent_id(): void
     {
         $a = new SluggedCategory(['name' => 'Root']);
         $a->makeRoot()->save();
@@ -61,7 +66,8 @@ final class MaterialisedPathListenerBranchesTest extends TestCase
         $b->makeRoot()->save();
     }
 
-    public function test_key_dependent_path_skipped_when_column_already_set(): void
+    #[Test]
+    public function key_dependent_path_skipped_when_column_already_set(): void
     {
         // Force a key-dependent column to already have a value before
         // save, then ensure the saved listener leaves it alone.

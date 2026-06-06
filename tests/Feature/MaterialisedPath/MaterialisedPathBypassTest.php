@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathBypassTest extends TestCase
 {
-    public function test_without_maintenance_skips_path_writes(): void
+    #[Test]
+    public function without_maintenance_skips_path_writes(): void
     {
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -25,7 +27,8 @@ final class MaterialisedPathBypassTest extends TestCase
         $this->assertSame('Renamed', $root->name);
     }
 
-    public function test_follow_up_fix_restores_paths(): void
+    #[Test]
+    public function follow_up_fix_restores_paths(): void
     {
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();

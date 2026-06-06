@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
@@ -30,7 +31,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_avg_does_not_adopt_a_user_sum_with_a_different_filter(): void
+    #[Test]
+    public function avg_does_not_adopt_a_user_sum_with_a_different_filter(): void
     {
         $definitions = AggregateRegistry::for(MismatchedFilterAvgArea::class);
 
@@ -78,7 +80,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
     //   - both Raw           → match arm `FilterPredicateKind::Raw`
     // ----------------------------------------------------------------
 
-    public function test_avg_adopts_user_companions_when_neither_has_a_filter(): void
+    #[Test]
+    public function avg_adopts_user_companions_when_neither_has_a_filter(): void
     {
         $companions = AggregateRegistry::avgCompanionsFor(AvgWithCompanionsArea::class);
 
@@ -91,7 +94,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
         );
     }
 
-    public function test_avg_adopts_user_companions_when_filters_share_equality_predicate(): void
+    #[Test]
+    public function avg_adopts_user_companions_when_filters_share_equality_predicate(): void
     {
         $companions = AggregateRegistry::avgCompanionsFor(AvgWithMatchingEqualityFilterArea::class);
 
@@ -101,7 +105,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
         );
     }
 
-    public function test_avg_adopts_user_companions_when_filters_share_not_null_predicate(): void
+    #[Test]
+    public function avg_adopts_user_companions_when_filters_share_not_null_predicate(): void
     {
         $companions = AggregateRegistry::avgCompanionsFor(AvgWithMatchingNotNullFilterArea::class);
 
@@ -111,7 +116,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
         );
     }
 
-    public function test_avg_adopts_user_companions_when_filters_share_raw_predicate(): void
+    #[Test]
+    public function avg_adopts_user_companions_when_filters_share_raw_predicate(): void
     {
         $companions = AggregateRegistry::avgCompanionsFor(AvgWithMatchingRawFilterArea::class);
 
@@ -121,7 +127,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
         );
     }
 
-    public function test_avg_does_not_adopt_a_user_sum_with_different_inclusivity(): void
+    #[Test]
+    public function avg_does_not_adopt_a_user_sum_with_different_inclusivity(): void
     {
         $definitions = AggregateRegistry::for(MismatchedInclusiveAvgArea::class);
         $companions = AggregateRegistry::avgCompanionsFor(MismatchedInclusiveAvgArea::class);
@@ -142,7 +149,8 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
         );
     }
 
-    public function test_avg_does_not_adopt_a_user_count_with_different_inclusivity(): void
+    #[Test]
+    public function avg_does_not_adopt_a_user_count_with_different_inclusivity(): void
     {
         $definitions = AggregateRegistry::for(MismatchedInclusiveAvgArea::class);
         $companions = AggregateRegistry::avgCompanionsFor(MismatchedInclusiveAvgArea::class);

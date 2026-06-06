@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
@@ -54,19 +55,22 @@ final class ListenerMeanMaintenanceTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_geometric_mean_value_matches_formula(): void
+    #[Test]
+    public function geometric_mean_value_matches_formula(): void
     {
         $root = $this->seedThree();
         $this->assertEqualsWithDelta(4.0, $this->asFloat($root->score_geomean), 1e-9);
     }
 
-    public function test_harmonic_mean_value_matches_formula(): void
+    #[Test]
+    public function harmonic_mean_value_matches_formula(): void
     {
         $root = $this->seedThree();
         $this->assertEqualsWithDelta(3.0 / 0.875, $this->asFloat($root->score_harmean), 1e-9);
     }
 
-    public function test_geomean_companions_only_count_positive_rows(): void
+    #[Test]
+    public function geomean_companions_only_count_positive_rows(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 2.0]);
         $root->saveAsRoot();
@@ -85,7 +89,8 @@ final class ListenerMeanMaintenanceTest extends TestCase
         $this->assertSame(2, (int) $root->score_geomean__count);
     }
 
-    public function test_harmonic_companions_only_count_non_zero_rows(): void
+    #[Test]
+    public function harmonic_companions_only_count_non_zero_rows(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 2.0]);
         $root->saveAsRoot();
@@ -103,7 +108,8 @@ final class ListenerMeanMaintenanceTest extends TestCase
         $this->assertSame(2, (int) $root->score_harmean__count);
     }
 
-    public function test_empty_geomean_subtree_yields_null(): void
+    #[Test]
+    public function empty_geomean_subtree_yields_null(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => null]);
         $root->saveAsRoot();
@@ -113,7 +119,8 @@ final class ListenerMeanMaintenanceTest extends TestCase
         $this->assertNull($root->score_harmean);
     }
 
-    public function test_fix_aggregates_restores_drifted_means(): void
+    #[Test]
+    public function fix_aggregates_restores_drifted_means(): void
     {
         $root = $this->seedThree();
 
@@ -139,7 +146,8 @@ final class ListenerMeanMaintenanceTest extends TestCase
      * Without these the companion would store Σ(x) and Count(*),
      * silently driving the display formula off.
      */
-    public function test_companions_carry_domain_transforms(): void
+    #[Test]
+    public function companions_carry_domain_transforms(): void
     {
         $defs = AggregateRegistry::for(StatsMonster::class);
 

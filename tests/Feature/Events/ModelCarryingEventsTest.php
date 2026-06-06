@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Events;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Events\Aggregates\AggregateDriftDetected;
 use Vusys\NestedSet\Events\Aggregates\DeferredMaintenanceStarting;
@@ -63,7 +64,8 @@ final class ModelCarryingEventsTest extends TestCase
     // Bulk insert lifecycle
     // ================================================================
 
-    public function test_bulk_insert_emits_full_lifecycle_in_order(): void
+    #[Test]
+    public function bulk_insert_emits_full_lifecycle_in_order(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -148,7 +150,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_bulk_insert_starting_carries_null_appendto_for_new_roots(): void
+    #[Test]
+    public function bulk_insert_starting_carries_null_appendto_for_new_roots(): void
     {
         Event::fake([BulkInsertTreeStarting::class]);
 
@@ -163,7 +166,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_bulk_insert_emits_nothing_for_empty_input(): void
+    #[Test]
+    public function bulk_insert_emits_nothing_for_empty_input(): void
     {
         Event::fake([
             BulkInsertTreeStarting::class,
@@ -197,7 +201,8 @@ final class ModelCarryingEventsTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_subtree_soft_delete_pair_fires_with_descendant_ids(): void
+    #[Test]
+    public function subtree_soft_delete_pair_fires_with_descendant_ids(): void
     {
         $this->seedSoftDeleteTree();
         $a = Category::query()->where('name', 'A')->firstOrFail();
@@ -225,7 +230,8 @@ final class ModelCarryingEventsTest extends TestCase
         $this->assertCount(1, $deleted[0]->descendantIds);
     }
 
-    public function test_subtree_restore_pair_fires_with_descendant_ids(): void
+    #[Test]
+    public function subtree_restore_pair_fires_with_descendant_ids(): void
     {
         $this->seedSoftDeleteTree();
         $a = Category::query()->where('name', 'A')->firstOrFail();
@@ -257,7 +263,8 @@ final class ModelCarryingEventsTest extends TestCase
         $this->assertCount(1, $restored[0]->descendantIds);
     }
 
-    public function test_subtree_force_delete_pair_fires_with_descendant_ids(): void
+    #[Test]
+    public function subtree_force_delete_pair_fires_with_descendant_ids(): void
     {
         $root = new Category(['name' => 'r']);
         $root->saveAsRoot();
@@ -307,7 +314,8 @@ final class ModelCarryingEventsTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_subtree_moving_and_subtree_moved_bracket_a_move(): void
+    #[Test]
+    public function subtree_moving_and_subtree_moved_bracket_a_move(): void
     {
         $this->seedMoveTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -337,7 +345,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_subtree_moved_includes_descendant_ids_for_interior_moves(): void
+    #[Test]
+    public function subtree_moved_includes_descendant_ids_for_interior_moves(): void
     {
         $this->seedMoveTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -361,7 +370,8 @@ final class ModelCarryingEventsTest extends TestCase
         $this->assertCount(2, $moved[0]->descendantIds);
     }
 
-    public function test_node_promoted_to_root_fires_only_for_makeroot(): void
+    #[Test]
+    public function node_promoted_to_root_fires_only_for_makeroot(): void
     {
         $this->seedMoveTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -382,7 +392,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_node_promoted_to_root_does_not_fire_for_other_operations(): void
+    #[Test]
+    public function node_promoted_to_root_does_not_fire_for_other_operations(): void
     {
         $this->seedMoveTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -395,7 +406,8 @@ final class ModelCarryingEventsTest extends TestCase
         Event::assertNotDispatched(NodePromotedToRoot::class);
     }
 
-    public function test_nodes_swapped_fires_for_up_and_down(): void
+    #[Test]
+    public function nodes_swapped_fires_for_up_and_down(): void
     {
         $this->seedMoveTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -428,7 +440,8 @@ final class ModelCarryingEventsTest extends TestCase
     // Observability
     // ================================================================
 
-    public function test_node_aggregates_recomputed_fires_on_create_when_aggregates_declared(): void
+    #[Test]
+    public function node_aggregates_recomputed_fires_on_create_when_aggregates_declared(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -447,7 +460,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_node_aggregates_recomputed_does_not_fire_for_models_without_aggregates(): void
+    #[Test]
+    public function node_aggregates_recomputed_does_not_fire_for_models_without_aggregates(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -460,7 +474,8 @@ final class ModelCarryingEventsTest extends TestCase
         Event::assertNotDispatched(NodeAggregatesRecomputed::class);
     }
 
-    public function test_aggregate_drift_detected_fires_only_when_drift_exists(): void
+    #[Test]
+    public function aggregate_drift_detected_fires_only_when_drift_exists(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -484,7 +499,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_tree_integrity_checked_fires_on_every_check(): void
+    #[Test]
+    public function tree_integrity_checked_fires_on_every_check(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -503,7 +519,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_deferred_maintenance_starting_pairs_with_completed(): void
+    #[Test]
+    public function deferred_maintenance_starting_pairs_with_completed(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -523,7 +540,8 @@ final class ModelCarryingEventsTest extends TestCase
         });
     }
 
-    public function test_deferred_maintenance_starting_only_fires_for_outermost(): void
+    #[Test]
+    public function deferred_maintenance_starting_only_fires_for_outermost(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -540,7 +558,8 @@ final class ModelCarryingEventsTest extends TestCase
         Event::assertDispatchedTimes(DeferredMaintenanceStarting::class, 1);
     }
 
-    public function test_throwing_deferred_maintenance_listener_does_not_leak_depth(): void
+    #[Test]
+    public function throwing_deferred_maintenance_listener_does_not_leak_depth(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -582,7 +601,8 @@ final class ModelCarryingEventsTest extends TestCase
         $this->assertSame(7, (int) $rolledUp);
     }
 
-    public function test_scope_violation_detected_fires_before_exception(): void
+    #[Test]
+    public function scope_violation_detected_fires_before_exception(): void
     {
         Event::fake([ScopeViolationDetected::class]);
 
@@ -605,7 +625,8 @@ final class ModelCarryingEventsTest extends TestCase
     // events_enabled = false suppresses every new event
     // ================================================================
 
-    public function test_new_events_are_suppressed_when_telemetry_disabled(): void
+    #[Test]
+    public function new_events_are_suppressed_when_telemetry_disabled(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();

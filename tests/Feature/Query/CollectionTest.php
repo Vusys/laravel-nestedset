@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\NodeCollection;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -47,7 +48,8 @@ final class CollectionTest extends TestCase
     // newCollection wiring
     // ----------------------------------------------------------------
 
-    public function test_get_returns_node_collection(): void
+    #[Test]
+    public function get_returns_node_collection(): void
     {
         $this->assertInstanceOf(NodeCollection::class, $this->all());
     }
@@ -56,7 +58,8 @@ final class CollectionTest extends TestCase
     // linkNodes
     // ----------------------------------------------------------------
 
-    public function test_link_nodes_sets_parent_relation(): void
+    #[Test]
+    public function link_nodes_sets_parent_relation(): void
     {
         $rows = $this->all()->linkNodes();
         $byId = $rows->keyBy('id');
@@ -74,7 +77,8 @@ final class CollectionTest extends TestCase
         $this->assertNull($root->getRelation('parent'));
     }
 
-    public function test_link_nodes_sets_children_relation(): void
+    #[Test]
+    public function link_nodes_sets_children_relation(): void
     {
         $rows = $this->all()->linkNodes();
         $byId = $rows->keyBy('id');
@@ -103,7 +107,8 @@ final class CollectionTest extends TestCase
         $this->assertCount(0, $aaChildren);
     }
 
-    public function test_link_nodes_on_empty_collection_returns_self(): void
+    #[Test]
+    public function link_nodes_on_empty_collection_returns_self(): void
     {
         $empty = new NodeCollection;
         $this->assertSame($empty, $empty->linkNodes());
@@ -113,7 +118,8 @@ final class CollectionTest extends TestCase
     // toTree
     // ----------------------------------------------------------------
 
-    public function test_to_tree_returns_single_root_for_complete_tree(): void
+    #[Test]
+    public function to_tree_returns_single_root_for_complete_tree(): void
     {
         $tree = $this->all()->toTree();
 
@@ -123,7 +129,8 @@ final class CollectionTest extends TestCase
         $this->assertSame('Root', $top->name);
     }
 
-    public function test_to_tree_links_children_recursively(): void
+    #[Test]
+    public function to_tree_links_children_recursively(): void
     {
         $tree = $this->all()->toTree();
         $root = $tree->first();
@@ -146,7 +153,8 @@ final class CollectionTest extends TestCase
         );
     }
 
-    public function test_to_tree_with_subtree_uses_supplied_root(): void
+    #[Test]
+    public function to_tree_with_subtree_uses_supplied_root(): void
     {
         $childA = Category::query()->findOrFail(2);
 
@@ -164,13 +172,15 @@ final class CollectionTest extends TestCase
         );
     }
 
-    public function test_to_tree_on_empty_collection_returns_empty_collection(): void
+    #[Test]
+    public function to_tree_on_empty_collection_returns_empty_collection(): void
     {
         $tree = (new NodeCollection)->toTree();
         $this->assertCount(0, $tree);
     }
 
-    public function test_to_tree_infers_root_from_lowest_lft_when_root_is_not_in_collection(): void
+    #[Test]
+    public function to_tree_infers_root_from_lowest_lft_when_root_is_not_in_collection(): void
     {
         // When toTree() is called with no explicit root and the actual
         // tree root isn't in the collection, the implementation walks
@@ -213,7 +223,8 @@ final class CollectionTest extends TestCase
     // toFlatTree
     // ----------------------------------------------------------------
 
-    public function test_to_flat_tree_preserves_depth_first_order(): void
+    #[Test]
+    public function to_flat_tree_preserves_depth_first_order(): void
     {
         $flat = $this->all()->toFlatTree();
 
@@ -223,7 +234,8 @@ final class CollectionTest extends TestCase
         );
     }
 
-    public function test_to_flat_tree_with_subtree(): void
+    #[Test]
+    public function to_flat_tree_with_subtree(): void
     {
         $childA = Category::query()->findOrFail(2);
         $sub = Category::query()
@@ -236,13 +248,15 @@ final class CollectionTest extends TestCase
         $this->assertSame(['AA', 'AB'], $flat->pluck('name')->all());
     }
 
-    public function test_to_flat_tree_on_empty_collection_returns_empty(): void
+    #[Test]
+    public function to_flat_tree_on_empty_collection_returns_empty(): void
     {
         $flat = (new NodeCollection)->toFlatTree();
         $this->assertCount(0, $flat);
     }
 
-    public function test_to_flat_tree_with_root_outside_collection_returns_its_children_only(): void
+    #[Test]
+    public function to_flat_tree_with_root_outside_collection_returns_its_children_only(): void
     {
         // The root needn't be in the collection — only its descendants do.
         $externalRoot = Category::query()->findOrFail(1);
@@ -260,7 +274,8 @@ final class CollectionTest extends TestCase
         );
     }
 
-    public function test_to_flat_tree_with_unknown_root_key_returns_empty(): void
+    #[Test]
+    public function to_flat_tree_with_unknown_root_key_returns_empty(): void
     {
         // Unknown root key yields an empty result — no fallback to inference, no throw.
         $orphan = new Category(['name' => 'orphan']);
@@ -275,7 +290,8 @@ final class CollectionTest extends TestCase
     // Query count — collection methods must not hit the database
     // ----------------------------------------------------------------
 
-    public function test_to_tree_issues_no_queries_after_initial_fetch(): void
+    #[Test]
+    public function to_tree_issues_no_queries_after_initial_fetch(): void
     {
         $rows = $this->all();
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\BitwiseArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -43,7 +44,8 @@ final class BitwiseMaintenanceTest extends TestCase
     // Insert path
     // ----------------------------------------------------------------
 
-    public function test_root_inclusive_bitwise_equals_self_value_on_insert(): void
+    #[Test]
+    public function root_inclusive_bitwise_equals_self_value_on_insert(): void
     {
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b1010]);
         $root->saveAsRoot();
@@ -54,7 +56,8 @@ final class BitwiseMaintenanceTest extends TestCase
         $this->assertSame(0b1010, $this->asInt($root->features_xor));
     }
 
-    public function test_bitwise_for_motivating_tree(): void
+    #[Test]
+    public function bitwise_for_motivating_tree(): void
     {
         // Root(0001) > A(0010) > A1(0100); Root > B(1000).
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b0001]);
@@ -105,7 +108,8 @@ final class BitwiseMaintenanceTest extends TestCase
         $this->assertSame(0b1000, $this->asInt($b->features_xor));
     }
 
-    public function test_bitwise_with_shared_bits_in_and_fold(): void
+    #[Test]
+    public function bitwise_with_shared_bits_in_and_fold(): void
     {
         // Root(1100) > A(1110) > A1(1111). Every row has bits 2 and 3
         // set, so the AND fold preserves those at every level.
@@ -132,7 +136,8 @@ final class BitwiseMaintenanceTest extends TestCase
     // Source-update path (capture deltas)
     // ----------------------------------------------------------------
 
-    public function test_source_update_propagates_through_bit_xor_delta(): void
+    #[Test]
+    public function source_update_propagates_through_bit_xor_delta(): void
     {
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b0001]);
         $root->saveAsRoot();
@@ -155,7 +160,8 @@ final class BitwiseMaintenanceTest extends TestCase
         $this->assertSame(0b0100, $this->asInt($child->features_xor));
     }
 
-    public function test_source_update_triggers_recompute_for_bit_or_and_bit_and(): void
+    #[Test]
+    public function source_update_triggers_recompute_for_bit_or_and_bit_and(): void
     {
         // Root(0001) > A(1110). After mutation A drops bit 1 (0010 cleared)
         // — Root's bitOr was 1111 but A was the only holder of bit 1.
@@ -188,7 +194,8 @@ final class BitwiseMaintenanceTest extends TestCase
     // Delete path
     // ----------------------------------------------------------------
 
-    public function test_delete_undoes_bit_xor_contribution_via_self_inverse(): void
+    #[Test]
+    public function delete_undoes_bit_xor_contribution_via_self_inverse(): void
     {
         // Build Root(0001) > A(0010) > A1(0100). XOR root = 0111.
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b0001]);
@@ -216,7 +223,8 @@ final class BitwiseMaintenanceTest extends TestCase
         $this->assertSame(0b0000, $this->asInt($root->features_and));
     }
 
-    public function test_delete_triggers_recompute_for_bit_or_when_only_holder_disappears(): void
+    #[Test]
+    public function delete_triggers_recompute_for_bit_or_when_only_holder_disappears(): void
     {
         // Root(0001) > A(1000). A is the only holder of bit 3. Deleting
         // A should drop bit 3 from Root's bitOr.
@@ -235,7 +243,8 @@ final class BitwiseMaintenanceTest extends TestCase
         $this->assertSame(0b0001, $this->asInt($root->features_or));
     }
 
-    public function test_deleting_subtree_with_internal_node_replays_bit_xor_correctly(): void
+    #[Test]
+    public function deleting_subtree_with_internal_node_replays_bit_xor_correctly(): void
     {
         // Root > A > A1, A > A2. Delete the A node (and cascade
         // recompute via NodeTrait); Root's XOR should match a freshly
@@ -270,7 +279,8 @@ final class BitwiseMaintenanceTest extends TestCase
     // Empty subtree
     // ----------------------------------------------------------------
 
-    public function test_solitary_root_then_all_descendants_deleted_keeps_self_value(): void
+    #[Test]
+    public function solitary_root_then_all_descendants_deleted_keeps_self_value(): void
     {
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b0101]);
         $root->saveAsRoot();
@@ -292,7 +302,8 @@ final class BitwiseMaintenanceTest extends TestCase
     // fixAggregates round-trip
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_is_a_no_op_on_a_correctly_maintained_tree(): void
+    #[Test]
+    public function fix_aggregates_is_a_no_op_on_a_correctly_maintained_tree(): void
     {
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b0001]);
         $root->saveAsRoot();
@@ -308,7 +319,8 @@ final class BitwiseMaintenanceTest extends TestCase
         $this->assertSame(0, $result->totalRowsUpdated);
     }
 
-    public function test_fix_aggregates_repairs_drift_in_bitwise_columns(): void
+    #[Test]
+    public function fix_aggregates_repairs_drift_in_bitwise_columns(): void
     {
         $root = new BitwiseArea(['name' => 'Root', 'feature_bits' => 0b0001]);
         $root->saveAsRoot();

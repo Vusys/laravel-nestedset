@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Exceptions\DuplicateNodeIdentityException;
@@ -20,7 +21,8 @@ use Vusys\NestedSet\Exceptions\DuplicateNodeIdentityException;
  */
 final class TreeDiffNestedFormErrorsTest extends TestCase
 {
-    public function test_duplicate_identity_in_nested_input_throws(): void
+    #[Test]
+    public function duplicate_identity_in_nested_input_throws(): void
     {
         $this->expectException(DuplicateNodeIdentityException::class);
         TreeDiff::between(

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Fuzzers;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
@@ -40,7 +41,8 @@ final class TreeQueryBuilderFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_builder_methods_match_oracle(int $seed, int $size): void
+    #[Test]
+    public function builder_methods_match_oracle(int $seed, int $size): void
     {
         mt_srand($seed);
 

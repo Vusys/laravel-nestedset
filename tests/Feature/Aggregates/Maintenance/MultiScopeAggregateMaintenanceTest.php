@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\MultiScopedBranch;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -96,7 +97,8 @@ final class MultiScopeAggregateMaintenanceTest extends TestCase
         return ['root' => $root, 'x' => $x, 'y' => $y];
     }
 
-    public function test_delta_aggregates_stay_inside_the_composite_scope(): void
+    #[Test]
+    public function delta_aggregates_stay_inside_the_composite_scope(): void
     {
         $tA = $this->buildChain(tenantId: 1, siteId: 1, rootAmt: 10, aAmt: 5, bAmt: 3);
         $tB = $this->buildBranching(tenantId: 1, siteId: 2, rootAmt: 100, xAmt: 70, yAmt: 40);
@@ -123,7 +125,8 @@ final class MultiScopeAggregateMaintenanceTest extends TestCase
      * throws on execution. Catching the regression doesn't require an
      * assertion on the result; just that `aggregateErrors()` runs.
      */
-    public function test_chain_shape_detector_runs_with_composite_scope(): void
+    #[Test]
+    public function chain_shape_detector_runs_with_composite_scope(): void
     {
         $tA = $this->buildChain(tenantId: 1, siteId: 1, rootAmt: 10, aAmt: 5, bAmt: 3);
         $this->buildBranching(tenantId: 1, siteId: 2, rootAmt: 100, xAmt: 70, yAmt: 40);
@@ -145,7 +148,8 @@ final class MultiScopeAggregateMaintenanceTest extends TestCase
      * prefix doesn't raise (e.g. permissive sqlite parses), the captured
      * SQL must list `tenant_id` and `site_id` as separate predicates.
      */
-    public function test_chain_shape_detector_sql_references_every_scope_column(): void
+    #[Test]
+    public function chain_shape_detector_sql_references_every_scope_column(): void
     {
         $tA = $this->buildChain(tenantId: 1, siteId: 1, rootAmt: 10, aAmt: 5, bAmt: 3);
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
 
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
  */
 final class InsertionBenchmarkTest extends PerformanceTestCase
 {
-    public function test_append_leaf_to_root_in_balanced_tree(): void
+    #[Test]
+    public function append_leaf_to_root_in_balanced_tree(): void
     {
         foreach ($this->scales() as $scale) {
             // Truncate before each scale (PerformanceTestCase doesn't reset between cases)
@@ -38,7 +40,8 @@ final class InsertionBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_append_leaf_to_root_in_deep_chain(): void
+    #[Test]
+    public function append_leaf_to_root_in_deep_chain(): void
     {
         // Deep chain bounds the depth dimension. Append at the end —
         // worst case for depth.

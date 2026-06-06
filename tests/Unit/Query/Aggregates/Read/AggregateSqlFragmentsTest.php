@@ -10,6 +10,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\SQLiteConnection;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -99,7 +100,8 @@ final class AggregateSqlFragmentsTest extends TestCase
      * @param  Closure(): AggregateDefinition  $makeDefinition
      */
     #[DataProvider('aggregateExpressionCases')]
-    public function test_aggregate_expression(Closure $makeDefinition, string $qualifier, string $expected): void
+    #[Test]
+    public function aggregate_expression(Closure $makeDefinition, string $qualifier, string $expected): void
     {
         $fragment = AggregateSqlFragments::aggregateExpression($makeDefinition(), $qualifier, $this->sqliteConnection);
 
@@ -316,7 +318,8 @@ final class AggregateSqlFragmentsTest extends TestCase
      * @param  list<scalar|null>  $expectedBindings
      */
     #[DataProvider('filterPredicateCases')]
-    public function test_filter_predicate_to_fragment(
+    #[Test]
+    public function filter_predicate_to_fragment(
         FilterPredicate $filter,
         string $qualifier,
         string $expectedSql,
@@ -347,7 +350,8 @@ final class AggregateSqlFragmentsTest extends TestCase
         ];
     }
 
-    public function test_collection_aggregate_without_connection_throws(): void
+    #[Test]
+    public function collection_aggregate_without_connection_throws(): void
     {
         // A collection aggregate (DistinctCount) is backend-specific, so
         // an absent connection routes through requireConnection()'s throw.
@@ -358,7 +362,8 @@ final class AggregateSqlFragmentsTest extends TestCase
         );
     }
 
-    public function test_aggregate_expression_missing_source_throws(): void
+    #[Test]
+    public function aggregate_expression_missing_source_throws(): void
     {
         // AVG requires a source column; a null-source definition routes
         // through requireSource()'s throw.
@@ -373,7 +378,8 @@ final class AggregateSqlFragmentsTest extends TestCase
         AggregateSqlFragments::aggregateExpression($definition, 'd.', $this->sqliteConnection);
     }
 
-    public function test_leaf_inline_weighted_avg_missing_weight_throws(): void
+    #[Test]
+    public function leaf_inline_weighted_avg_missing_weight_throws(): void
     {
         // A WeightedAvg definition with no weight column routes through
         // leafInlineWeightedAvg()'s throw via the leaf fast-path.
@@ -400,7 +406,8 @@ final class AggregateSqlFragmentsTest extends TestCase
     /**
      * hasRawFilter detection.
      */
-    public function test_has_raw_filter(): void
+    #[Test]
+    public function has_raw_filter(): void
     {
         $this->assertTrue(AggregateSqlFragments::hasRawFilter([
             Aggregate::sum('x')->into('a'),
@@ -421,7 +428,8 @@ final class AggregateSqlFragmentsTest extends TestCase
      * @param  array{from: string, outerLft: string, outerRgt: string, outerId: string, outerScope: array<string, string>, outerSoftDeleted: string|null}  $expected
      */
     #[DataProvider('outerFromCases')]
-    public function test_outer_from_fragment(bool $rawFilterPresent, ?string $softDeletedColumn, array $expected): void
+    #[Test]
+    public function outer_from_fragment(bool $rawFilterPresent, ?string $softDeletedColumn, array $expected): void
     {
         $result = AggregateSqlFragments::outerFromFragment(
             table: 'branches',
@@ -483,7 +491,8 @@ final class AggregateSqlFragmentsTest extends TestCase
      * @param  Closure(): AggregateDefinition  $makeDefinition
      */
     #[DataProvider('joinedContextCases')]
-    public function test_aggregate_expression_in_joined_context(
+    #[Test]
+    public function aggregate_expression_in_joined_context(
         Closure $makeDefinition,
         bool $rawFilterContext,
         string $expected,
@@ -641,7 +650,8 @@ final class AggregateSqlFragmentsTest extends TestCase
      * tenant boundaries. Single-column fixtures can't observe this; the
      * data provider's other cases all use scopeCols=['menu_id'].
      */
-    public function test_correlated_raw_filter_emits_every_scope_predicate(): void
+    #[Test]
+    public function correlated_raw_filter_emits_every_scope_predicate(): void
     {
         $sql = AggregateSqlFragments::aggregateExpressionInJoinedContext(
             Aggregate::sum('x')->filterRaw('active = 1', ['active'])->into('col'),
@@ -666,7 +676,8 @@ final class AggregateSqlFragmentsTest extends TestCase
      * @param  Closure(): AggregateDefinition  $makeDefinition
      */
     #[DataProvider('leafFastPathCases')]
-    public function test_wrap_leaf_fast_path(
+    #[Test]
+    public function wrap_leaf_fast_path(
         Closure $makeDefinition,
         ?string $softDeletedColumn,
         string $expected,
@@ -843,7 +854,8 @@ final class AggregateSqlFragmentsTest extends TestCase
     /**
      * Driver detection helpers.
      */
-    public function test_driver_detection(): void
+    #[Test]
+    public function driver_detection(): void
     {
         $this->assertFalse(AggregateSqlFragments::isMariaDb($this->sqliteConnection));
         $this->assertFalse(AggregateSqlFragments::isMySql($this->sqliteConnection));
@@ -855,7 +867,8 @@ final class AggregateSqlFragmentsTest extends TestCase
         $this->assertTrue(AggregateSqlFragments::isMySql($mysql));
     }
 
-    public function test_driver_detection_non_concrete_connection(): void
+    #[Test]
+    public function driver_detection_non_concrete_connection(): void
     {
         // A ConnectionInterface that is not the concrete Connection class
         // can never be MySQL/MariaDB — both helpers short-circuit false.
@@ -865,7 +878,8 @@ final class AggregateSqlFragmentsTest extends TestCase
         $this->assertFalse(AggregateSqlFragments::isMySql($stub));
     }
 
-    public function test_is_maria_db_swallows_pdo_failure(): void
+    #[Test]
+    public function is_maria_db_swallows_pdo_failure(): void
     {
         // When the driver is mysql but reading ATTR_SERVER_VERSION throws,
         // isMariaDb() swallows the error and reports false.

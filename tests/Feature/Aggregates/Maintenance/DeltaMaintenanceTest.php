@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
@@ -43,7 +44,8 @@ final class DeltaMaintenanceTest extends TestCase
     // Insertion: stored aggregates initialise correctly
     // ----------------------------------------------------------------
 
-    public function test_save_as_root_initialises_self_aggregates(): void
+    #[Test]
+    public function save_as_root_initialises_self_aggregates(): void
     {
         $root = (new Area(['name' => 'Root', 'tickets' => 100]));
         $root->saveAsRoot();
@@ -53,7 +55,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $this->asInt($root->tickets_count_all));
     }
 
-    public function test_append_propagates_sum_and_count_to_parent(): void
+    #[Test]
+    public function append_propagates_sum_and_count_to_parent(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -71,7 +74,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $this->asInt($a->tickets_count_all), 'leaf count = self');
     }
 
-    public function test_motivating_example_tree_aggregates_correctly(): void
+    #[Test]
+    public function motivating_example_tree_aggregates_correctly(): void
     {
         // Matches AGGREGATES.md §1: Root(100) > A(50) > A1(50); Root > B(25).
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
@@ -104,7 +108,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $this->asInt($b->tickets_count_all));
     }
 
-    public function test_create_without_placement_throws_and_does_not_touch_other_rows(): void
+    #[Test]
+    public function create_without_placement_throws_and_does_not_touch_other_rows(): void
     {
         // Build a tree first so we have rows that could be wrongly updated.
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
@@ -134,7 +139,8 @@ final class DeltaMaintenanceTest extends TestCase
     // Source-column update: delta propagates to self + ancestors
     // ----------------------------------------------------------------
 
-    public function test_source_update_propagates_positive_delta_up_the_chain(): void
+    #[Test]
+    public function source_update_propagates_positive_delta_up_the_chain(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -153,7 +159,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(180, $this->asInt($root->tickets_total)); // 100 + 80
     }
 
-    public function test_source_update_propagates_negative_delta(): void
+    #[Test]
+    public function source_update_propagates_negative_delta(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -172,7 +179,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(110, $this->asInt($root->tickets_total)); // 100 + 10
     }
 
-    public function test_source_update_does_not_change_count(): void
+    #[Test]
+    public function source_update_does_not_change_count(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -193,7 +201,8 @@ final class DeltaMaintenanceTest extends TestCase
         );
     }
 
-    public function test_save_with_no_source_change_does_not_touch_aggregates(): void
+    #[Test]
+    public function save_with_no_source_change_does_not_touch_aggregates(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -216,7 +225,8 @@ final class DeltaMaintenanceTest extends TestCase
     // Deletion: ancestors lose the deleted subtree's contribution
     // ----------------------------------------------------------------
 
-    public function test_force_delete_leaf_subtracts_from_ancestors(): void
+    #[Test]
+    public function force_delete_leaf_subtracts_from_ancestors(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -239,7 +249,8 @@ final class DeltaMaintenanceTest extends TestCase
     // Stored vs fresh: drift check across a batch of mixed operations
     // ----------------------------------------------------------------
 
-    public function test_stored_aggregates_match_fresh_after_mixed_batch(): void
+    #[Test]
+    public function stored_aggregates_match_fresh_after_mixed_batch(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -280,7 +291,8 @@ final class DeltaMaintenanceTest extends TestCase
     // Query-count assertions: exactly one extra UPDATE per mutation
     // ----------------------------------------------------------------
 
-    public function test_appending_a_leaf_fires_exactly_one_extra_aggregate_update(): void
+    #[Test]
+    public function appending_a_leaf_fires_exactly_one_extra_aggregate_update(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -293,7 +305,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $extraUpdates, 'one extra UPDATE expected for the aggregate cascade');
     }
 
-    public function test_source_column_update_fires_exactly_one_extra_aggregate_update(): void
+    #[Test]
+    public function source_column_update_fires_exactly_one_extra_aggregate_update(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -310,7 +323,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $extraUpdates);
     }
 
-    public function test_force_delete_fires_exactly_one_extra_aggregate_update(): void
+    #[Test]
+    public function force_delete_fires_exactly_one_extra_aggregate_update(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -326,7 +340,8 @@ final class DeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $extraUpdates);
     }
 
-    public function test_save_with_no_source_change_fires_no_extra_aggregate_update(): void
+    #[Test]
+    public function save_with_no_source_change_fires_no_extra_aggregate_update(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();

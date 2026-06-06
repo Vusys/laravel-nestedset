@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
 use Generator;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 
@@ -14,7 +15,8 @@ use Vusys\NestedSet\Diff\TreeDiff;
  */
 final class TreeDiffIterableInputTest extends TestCase
 {
-    public function test_generator_input_is_materialised_and_diffed(): void
+    #[Test]
+    public function generator_input_is_materialised_and_diffed(): void
     {
         $beforeGen = $this->generator([
             ['id' => 1, 'name' => 'r', 'parent_id' => null],

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates\Collections;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 use Vusys\NestedSet\Tests\Fixtures\Models\TextJsonArea;
@@ -52,7 +53,8 @@ final class CollectionAggregatesFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_random_walk_keeps_new_kind_aggregates_in_sync(int $seed, int $steps): void
+    #[Test]
+    public function random_walk_keeps_new_kind_aggregates_in_sync(int $seed, int $steps): void
     {
         mt_srand($seed);
 

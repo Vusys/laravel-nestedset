@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Tests\Fixtures\Models\BitwiseArea;
@@ -62,7 +63,8 @@ final class BitwiseFreshReadTest extends TestCase
         return ['root' => $root->refresh(), 'a' => $a->refresh(), 'a1' => $a1->refresh(), 'b' => $b->refresh()];
     }
 
-    public function test_with_fresh_aggregates_evaluates_bitwise_subqueries(): void
+    #[Test]
+    public function with_fresh_aggregates_evaluates_bitwise_subqueries(): void
     {
         $t = $this->buildTree();
 
@@ -76,7 +78,8 @@ final class BitwiseFreshReadTest extends TestCase
         $this->assertSame(0b1111, (int) $row->features_xor);
     }
 
-    public function test_with_fresh_aggregates_for_a_subtree(): void
+    #[Test]
+    public function with_fresh_aggregates_for_a_subtree(): void
     {
         $t = $this->buildTree();
 
@@ -91,7 +94,8 @@ final class BitwiseFreshReadTest extends TestCase
         $this->assertSame(0b0110, (int) $row->features_xor);
     }
 
-    public function test_with_fresh_aggregates_on_a_leaf(): void
+    #[Test]
+    public function with_fresh_aggregates_on_a_leaf(): void
     {
         $t = $this->buildTree();
 
@@ -106,7 +110,8 @@ final class BitwiseFreshReadTest extends TestCase
         $this->assertSame(0b1000, (int) $row->features_xor);
     }
 
-    public function test_aggregate_errors_evaluates_bitwise_subqueries(): void
+    #[Test]
+    public function aggregate_errors_evaluates_bitwise_subqueries(): void
     {
         $this->buildTree();
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Filters;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicateKind;
@@ -11,7 +12,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class FilterPredicateTest extends TestCase
 {
-    public function test_equality_stores_conditions_kind_and_watch_columns(): void
+    #[Test]
+    public function equality_stores_conditions_kind_and_watch_columns(): void
     {
         $predicate = FilterPredicate::equality(['type' => 'fire', 'active' => true]);
 
@@ -20,7 +22,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertSame(['type', 'active'], $predicate->watchColumns());
     }
 
-    public function test_equality_with_empty_array_throws(): void
+    #[Test]
+    public function equality_with_empty_array_throws(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('at least one condition');
@@ -28,7 +31,8 @@ final class FilterPredicateTest extends TestCase
         FilterPredicate::equality([]);
     }
 
-    public function test_not_null_stores_kind_and_watch_column(): void
+    #[Test]
+    public function not_null_stores_kind_and_watch_column(): void
     {
         $predicate = FilterPredicate::notNull('deleted_at');
 
@@ -37,7 +41,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertSame(['deleted_at'], $predicate->watchColumns());
     }
 
-    public function test_raw_stores_sql_and_explicit_watches(): void
+    #[Test]
+    public function raw_stores_sql_and_explicit_watches(): void
     {
         $predicate = FilterPredicate::raw('status = 1', ['status']);
 
@@ -46,7 +51,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertSame(['status'], $predicate->watchColumns());
     }
 
-    public function test_raw_with_explicit_empty_watches_has_no_watch_columns(): void
+    #[Test]
+    public function raw_with_explicit_empty_watches_has_no_watch_columns(): void
     {
         // `[]` is valid for genuinely column-free predicates — the
         // parameter is just required so callers can't silently omit
@@ -57,7 +63,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertSame([], $predicate->watchColumns());
     }
 
-    public function test_equality_getters_return_null_for_non_equality_fields(): void
+    #[Test]
+    public function equality_getters_return_null_for_non_equality_fields(): void
     {
         $predicate = FilterPredicate::equality(['type' => 'fire']);
 
@@ -65,7 +72,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertNull($predicate->getRawSql());
     }
 
-    public function test_not_null_getters_return_empty_conditions_and_null_raw(): void
+    #[Test]
+    public function not_null_getters_return_empty_conditions_and_null_raw(): void
     {
         $predicate = FilterPredicate::notNull('col');
 
@@ -73,7 +81,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertNull($predicate->getRawSql());
     }
 
-    public function test_raw_getters_return_empty_conditions_and_null_not_null_column(): void
+    #[Test]
+    public function raw_getters_return_empty_conditions_and_null_not_null_column(): void
     {
         $predicate = FilterPredicate::raw('1 = 1', []);
 
@@ -81,7 +90,8 @@ final class FilterPredicateTest extends TestCase
         $this->assertNull($predicate->getNotNullColumn());
     }
 
-    public function test_to_fragment_rejects_non_scalar_equality_value(): void
+    #[Test]
+    public function to_fragment_rejects_non_scalar_equality_value(): void
     {
         $predicate = FilterPredicate::equality(['payload' => ['nested' => 'array']]);
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Corruption;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
@@ -64,7 +65,8 @@ final class ScopedCorruptionRecoveryTest extends TestCase
         return $snapshot;
     }
 
-    public function test_cross_scope_parent_id_is_treated_as_orphan_by_same_scope_check(): void
+    #[Test]
+    public function cross_scope_parent_id_is_treated_as_orphan_by_same_scope_check(): void
     {
         // Real-world cause: a raw UPDATE moved A1 between menus by
         // pointing parent_id at Root2 (id=3) — a row that exists in the
@@ -98,7 +100,8 @@ final class ScopedCorruptionRecoveryTest extends TestCase
         );
     }
 
-    public function test_cross_scope_parent_id_is_not_auto_recovered_by_fix_tree(): void
+    #[Test]
+    public function cross_scope_parent_id_is_not_auto_recovered_by_fix_tree(): void
     {
         $boundsBefore = $this->snapshotBounds();
 

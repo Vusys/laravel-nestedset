@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation;
 
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class MutationEdgeCasesTest extends TestCase
 {
-    public function test_save_without_pending_operation_works_as_normal_update(): void
+    #[Test]
+    public function save_without_pending_operation_works_as_normal_update(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -31,7 +33,8 @@ final class MutationEdgeCasesTest extends TestCase
         $this->assertSame(2, $root->rgt);
     }
 
-    public function test_save_after_mutation_clears_pending_so_resaving_is_a_noop(): void
+    #[Test]
+    public function save_after_mutation_clears_pending_so_resaving_is_a_noop(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -51,7 +54,8 @@ final class MutationEdgeCasesTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_appending_node_to_its_own_descendant_throws(): void
+    #[Test]
+    public function appending_node_to_its_own_descendant_throws(): void
     {
         DB::table('categories')->insert([
             ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 6, 'depth' => 0, 'parent_id' => null],
@@ -70,7 +74,8 @@ final class MutationEdgeCasesTest extends TestCase
         $a->appendToNode($aa)->save();
     }
 
-    public function test_move_to_same_position_is_a_no_op(): void
+    #[Test]
+    public function move_to_same_position_is_a_no_op(): void
     {
         DB::table('categories')->insert([
             ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 6, 'depth' => 0, 'parent_id' => null],
@@ -90,7 +95,8 @@ final class MutationEdgeCasesTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_up_returns_false_on_lone_root(): void
+    #[Test]
+    public function up_returns_false_on_lone_root(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();

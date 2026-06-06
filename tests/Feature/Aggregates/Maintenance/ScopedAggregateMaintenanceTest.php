@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\ScopedArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -38,7 +39,8 @@ final class ScopedAggregateMaintenanceTest extends TestCase
         return ['root' => $root, 'a' => $a, 'b' => $b];
     }
 
-    public function test_delta_sum_and_recompute_min_stay_within_the_acting_scope(): void
+    #[Test]
+    public function delta_sum_and_recompute_min_stay_within_the_acting_scope(): void
     {
         // Two independent tenant forests.
         $t1 = $this->buildTenantTree(tenantId: 1, rootAmount: 10, aAmount: 5, bAmount: 3);
@@ -63,7 +65,8 @@ final class ScopedAggregateMaintenanceTest extends TestCase
         $this->assertSame(40, $t2['root']->amount_min);
     }
 
-    public function test_update_in_one_scope_does_not_leak_into_another(): void
+    #[Test]
+    public function update_in_one_scope_does_not_leak_into_another(): void
     {
         $t1 = $this->buildTenantTree(tenantId: 1, rootAmount: 10, aAmount: 5, bAmount: 3);
         $t2 = $this->buildTenantTree(tenantId: 2, rootAmount: 100, aAmount: 70, bAmount: 40);
@@ -77,7 +80,8 @@ final class ScopedAggregateMaintenanceTest extends TestCase
         $this->assertSame(210, $t2['root']->refresh()->amount_total); // unchanged
     }
 
-    public function test_aggregate_errors_without_an_anchor_throws_on_a_scoped_model(): void
+    #[Test]
+    public function aggregate_errors_without_an_anchor_throws_on_a_scoped_model(): void
     {
         // A scoped model can't be repaired/inspected forest-wide: every
         // aggregate operation must be anchored to one tree so it stays

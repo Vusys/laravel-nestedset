@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateDefinitionValidator;
@@ -24,29 +25,34 @@ final class AggregateRegistryRawFilterNormalizationTest extends TestCase
         return AggregateDefinitionValidator::normalizeRawSql($sql);
     }
 
-    public function test_null_normalises_to_null(): void
+    #[Test]
+    public function null_normalises_to_null(): void
     {
         $this->assertNull($this->normalize(null));
     }
 
-    public function test_simple_predicate_round_trips(): void
+    #[Test]
+    public function simple_predicate_round_trips(): void
     {
         $this->assertSame('active = 1', $this->normalize('active = 1'));
     }
 
-    public function test_extra_whitespace_collapses_to_single_space(): void
+    #[Test]
+    public function extra_whitespace_collapses_to_single_space(): void
     {
         $this->assertSame('active = 1', $this->normalize('active  =  1'));
         $this->assertSame('active = 1', $this->normalize("active\t=\t1"));
         $this->assertSame('active = 1', $this->normalize("active\n=\n1"));
     }
 
-    public function test_leading_and_trailing_whitespace_is_trimmed(): void
+    #[Test]
+    public function leading_and_trailing_whitespace_is_trimmed(): void
     {
         $this->assertSame('active = 1', $this->normalize('  active = 1  '));
     }
 
-    public function test_case_is_lowered(): void
+    #[Test]
+    public function case_is_lowered(): void
     {
         $this->assertSame('active = 1', $this->normalize('ACTIVE = 1'));
         $this->assertSame('status = "open"', $this->normalize('Status = "OPEN"'));
@@ -57,7 +63,8 @@ final class AggregateRegistryRawFilterNormalizationTest extends TestCase
      * with whitespace / case drift must produce equal normalised
      * forms so `filtersMatch` accepts them as the same companion.
      */
-    public function test_filter_predicate_raw_normalises_equally(): void
+    #[Test]
+    public function filter_predicate_raw_normalises_equally(): void
     {
         $a = FilterPredicate::raw('active = 1', ['active']);
         $b = FilterPredicate::raw('ACTIVE  =  1', ['active']);
@@ -69,7 +76,8 @@ final class AggregateRegistryRawFilterNormalizationTest extends TestCase
         );
     }
 
-    public function test_clauses_in_different_order_are_not_considered_equal(): void
+    #[Test]
+    public function clauses_in_different_order_are_not_considered_equal(): void
     {
         // Out of scope: the normaliser absorbs cosmetic drift but
         // doesn't parse SQL. Reordered AND clauses stay distinct —

@@ -5,19 +5,22 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 
 final class MaterialisedPathValueObjectTest extends TestCase
 {
-    public function test_key_factory_marks_path_as_key_dependent(): void
+    #[Test]
+    public function key_factory_marks_path_as_key_dependent(): void
     {
         $path = MaterialisedPath::key();
         $this->assertTrue($path->isDependentOnKey());
         $this->assertSame(MaterialisedPath::SOURCE_KEY, $path->sourceKind());
     }
 
-    public function test_attribute_factory_is_not_key_dependent(): void
+    #[Test]
+    public function attribute_factory_is_not_key_dependent(): void
     {
         $path = MaterialisedPath::attribute('name');
         $this->assertFalse($path->isDependentOnKey());
@@ -25,7 +28,8 @@ final class MaterialisedPathValueObjectTest extends TestCase
         $this->assertSame('name', $path->sourceColumn());
     }
 
-    public function test_slug_factory_lowercases_via_str_slug(): void
+    #[Test]
+    public function slug_factory_lowercases_via_str_slug(): void
     {
         $path = MaterialisedPath::slug('title');
         $model = new class extends Model
@@ -37,19 +41,22 @@ final class MaterialisedPathValueObjectTest extends TestCase
         $this->assertSame('hello-world', $path->segmentFor($model));
     }
 
-    public function test_from_closure_is_not_key_dependent_by_default(): void
+    #[Test]
+    public function from_closure_is_not_key_dependent_by_default(): void
     {
         $path = MaterialisedPath::from(static fn (Model $m): string => 'static');
         $this->assertFalse($path->isDependentOnKey());
     }
 
-    public function test_depends_on_key_opt_in_is_sticky(): void
+    #[Test]
+    public function depends_on_key_opt_in_is_sticky(): void
     {
         $path = MaterialisedPath::from(static fn (Model $m): string => 'x')->dependsOnKey();
         $this->assertTrue($path->isDependentOnKey());
     }
 
-    public function test_fluent_setters_return_a_new_instance(): void
+    #[Test]
+    public function fluent_setters_return_a_new_instance(): void
     {
         $a = MaterialisedPath::slug('name');
         $b = $a->separator('.');
@@ -68,7 +75,8 @@ final class MaterialisedPathValueObjectTest extends TestCase
         $this->assertSame(1024, $a->getMaxLength(), 'package fallback default');
     }
 
-    public function test_with_resolved_defaults_only_fills_nulls(): void
+    #[Test]
+    public function with_resolved_defaults_only_fills_nulls(): void
     {
         $path = MaterialisedPath::slug('name')->separator('.');
         $resolved = $path->withResolvedDefaults([
@@ -82,7 +90,8 @@ final class MaterialisedPathValueObjectTest extends TestCase
         $this->assertSame(256, $resolved->getMaxLength(), 'null filled from defaults');
     }
 
-    public function test_segment_for_handles_int_keys(): void
+    #[Test]
+    public function segment_for_handles_int_keys(): void
     {
         $path = MaterialisedPath::key();
         $model = new class extends Model

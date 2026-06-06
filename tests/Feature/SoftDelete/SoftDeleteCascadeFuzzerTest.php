@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -41,7 +42,8 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_random_soft_delete_sequences_keep_aggregates_consistent(
+    #[Test]
+    public function random_soft_delete_sequences_keep_aggregates_consistent(
         int $seed,
         int $steps,
     ): void {

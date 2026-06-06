@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\MultiPathCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathMultiTest extends TestCase
 {
-    public function test_two_paths_maintain_independently(): void
+    #[Test]
+    public function two_paths_maintain_independently(): void
     {
         $root = new MultiPathCategory(['name' => 'Electronics', 'display_name' => 'Electronics']);
         $root->makeRoot()->save();
@@ -22,7 +24,8 @@ final class MaterialisedPathMultiTest extends TestCase
         $this->assertSame('Electronics > Laptops & Notebooks', $child->crumb_path);
     }
 
-    public function test_renaming_one_source_only_changes_the_relevant_path(): void
+    #[Test]
+    public function renaming_one_source_only_changes_the_relevant_path(): void
     {
         $root = new MultiPathCategory(['name' => 'Electronics', 'display_name' => 'Electronics']);
         $root->makeRoot()->save();

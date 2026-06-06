@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
@@ -203,7 +204,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('treeShapeProvider')]
-    public function test_area_stored_matches_fresh_after_create(array $spec): void
+    #[Test]
+    public function area_stored_matches_fresh_after_create(array $spec): void
     {
         $nodes = $this->buildAreaTree($spec);
 
@@ -214,7 +216,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('treeShapeProvider')]
-    public function test_area_stored_matches_fresh_after_source_update(array $spec): void
+    #[Test]
+    public function area_stored_matches_fresh_after_source_update(array $spec): void
     {
         $nodes = $this->buildAreaTree($spec);
 
@@ -238,7 +241,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('treeShapeProvider')]
-    public function test_area_stored_matches_fresh_after_delete(array $spec): void
+    #[Test]
+    public function area_stored_matches_fresh_after_delete(array $spec): void
     {
         $nodes = $this->refreshAll($this->buildAreaTree($spec));
 
@@ -270,7 +274,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('treeShapeProvider')]
-    public function test_area_stored_matches_fresh_after_move(array $spec): void
+    #[Test]
+    public function area_stored_matches_fresh_after_move(array $spec): void
     {
         $nodes = $this->buildAreaTree($spec);
         if (count($nodes) < 3) {
@@ -333,7 +338,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('branchTreeShapeProvider')]
-    public function test_branch_stored_matches_fresh_after_create(array $spec): void
+    #[Test]
+    public function branch_stored_matches_fresh_after_create(array $spec): void
     {
         $nodes = $this->buildBranchTree($spec);
         // Exclusive + raw-filter aggregates skip incremental maintenance on
@@ -347,7 +353,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('branchTreeShapeProvider')]
-    public function test_branch_stored_matches_fresh_after_source_update(array $spec): void
+    #[Test]
+    public function branch_stored_matches_fresh_after_source_update(array $spec): void
     {
         $nodes = $this->buildBranchTree($spec);
 
@@ -367,7 +374,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('branchTreeShapeProvider')]
-    public function test_branch_stored_matches_fresh_after_active_flag_flip(array $spec): void
+    #[Test]
+    public function branch_stored_matches_fresh_after_active_flag_flip(array $spec): void
     {
         $nodes = $this->buildBranchTree($spec);
 
@@ -393,7 +401,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('typedTreeShapeProvider')]
-    public function test_typed_area_stored_matches_fresh_after_create(array $spec): void
+    #[Test]
+    public function typed_area_stored_matches_fresh_after_create(array $spec): void
     {
         $nodes = $this->buildTypedAreaTree($spec);
 
@@ -404,7 +413,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('typedTreeShapeProvider')]
-    public function test_typed_area_stored_matches_fresh_after_type_change(array $spec): void
+    #[Test]
+    public function typed_area_stored_matches_fresh_after_type_change(array $spec): void
     {
         $nodes = $this->buildTypedAreaTree($spec);
 
@@ -425,7 +435,8 @@ final class AggregateCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('typedTreeShapeProvider')]
-    public function test_typed_area_stored_matches_fresh_after_source_change(array $spec): void
+    #[Test]
+    public function typed_area_stored_matches_fresh_after_source_change(array $spec): void
     {
         $nodes = $this->buildTypedAreaTree($spec);
 

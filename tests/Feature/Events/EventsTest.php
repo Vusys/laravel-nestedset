@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Events;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
@@ -70,7 +71,8 @@ final class EventsTest extends TestCase
     // FixTreeCompleted
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_fires_completion_event_with_aggregate_count(): void
+    #[Test]
+    public function fix_tree_fires_completion_event_with_aggregate_count(): void
     {
         $this->seedMotivatingTree();
         Event::fake([FixTreeCompleted::class]);
@@ -89,7 +91,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_fix_tree_aggregates_fixed_is_null_when_model_has_no_aggregates(): void
+    #[Test]
+    public function fix_tree_aggregates_fixed_is_null_when_model_has_no_aggregates(): void
     {
         $category = new Category(['name' => 'Root']);
         $category->saveAsRoot();
@@ -104,7 +107,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_fix_tree_with_anchor_carries_anchor_id(): void
+    #[Test]
+    public function fix_tree_with_anchor_carries_anchor_id(): void
     {
         // The whole-table fixTree() test above already pins anchorId=null.
         // This is the per-subtree case where fixTree($anchor) is given a
@@ -134,7 +138,8 @@ final class EventsTest extends TestCase
     // FixAggregatesCompleted (non-chunked + chunked end-of-loop)
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_fires_completion_event_non_chunked(): void
+    #[Test]
+    public function fix_aggregates_fires_completion_event_non_chunked(): void
     {
         $this->seedMotivatingTree();
         Event::fake([FixAggregatesCompleted::class, FixAggregatesChunkCompleted::class]);
@@ -151,7 +156,8 @@ final class EventsTest extends TestCase
         Event::assertNotDispatched(FixAggregatesChunkCompleted::class);
     }
 
-    public function test_fix_aggregates_chunked_fires_chunk_events_then_completion(): void
+    #[Test]
+    public function fix_aggregates_chunked_fires_chunk_events_then_completion(): void
     {
         // Seed enough rows that chunkSize=2 produces multiple chunks.
         // The exact count depends on the loop's termination condition
@@ -172,7 +178,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_fix_aggregates_chunk_event_carries_progress_fields(): void
+    #[Test]
+    public function fix_aggregates_chunk_event_carries_progress_fields(): void
     {
         $this->seedMotivatingTree();
         Event::fake([FixAggregatesChunkCompleted::class]);
@@ -188,7 +195,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_fix_aggregates_with_anchor_carries_anchor_id(): void
+    #[Test]
+    public function fix_aggregates_with_anchor_carries_anchor_id(): void
     {
         // Companion to the whole-table test above. `fixAggregates($anchor)`
         // narrows the anchor's key into the event's `anchorId` field via
@@ -211,7 +219,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_fix_aggregates_chunk_event_with_anchor_carries_anchor_id(): void
+    #[Test]
+    public function fix_aggregates_chunk_event_with_anchor_carries_anchor_id(): void
     {
         // Chunked variant: same narrowing applies to every chunk event
         // and to the closing completion event in the chunked path. The
@@ -243,7 +252,8 @@ final class EventsTest extends TestCase
     // FixAggregatesJobDispatched
     // ----------------------------------------------------------------
 
-    public function test_queue_fix_aggregates_fires_dispatch_event(): void
+    #[Test]
+    public function queue_fix_aggregates_fires_dispatch_event(): void
     {
         $this->seedMotivatingTree();
         Event::fake([FixAggregatesJobDispatched::class]);
@@ -258,7 +268,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_queue_fix_aggregates_with_anchor_event_carries_anchor_id(): void
+    #[Test]
+    public function queue_fix_aggregates_with_anchor_event_carries_anchor_id(): void
     {
         // `queueFixAggregates($anchor)` fires FixAggregatesJobDispatched
         // with the anchor's key narrowed through `anchorRootId()`. The
@@ -283,7 +294,8 @@ final class EventsTest extends TestCase
     // BulkInsertTreeCompleted
     // ----------------------------------------------------------------
 
-    public function test_bulk_insert_tree_fires_completion_event(): void
+    #[Test]
+    public function bulk_insert_tree_fires_completion_event(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -309,7 +321,8 @@ final class EventsTest extends TestCase
     // DeferredAggregateMaintenanceCompleted
     // ----------------------------------------------------------------
 
-    public function test_deferred_aggregate_maintenance_fires_boundary_event(): void
+    #[Test]
+    public function deferred_aggregate_maintenance_fires_boundary_event(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -335,7 +348,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_deferred_aggregate_maintenance_event_not_fired_when_closure_throws(): void
+    #[Test]
+    public function deferred_aggregate_maintenance_event_not_fired_when_closure_throws(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -366,7 +380,8 @@ final class EventsTest extends TestCase
         };
     }
 
-    public function test_deferred_aggregate_maintenance_event_fires_only_at_outermost_exit(): void
+    #[Test]
+    public function deferred_aggregate_maintenance_event_fires_only_at_outermost_exit(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -388,7 +403,8 @@ final class EventsTest extends TestCase
     // NodeMoved
     // ----------------------------------------------------------------
 
-    public function test_node_moved_fires_for_existing_node_append_to_node(): void
+    #[Test]
+    public function node_moved_fires_for_existing_node_append_to_node(): void
     {
         $this->seedMotivatingTree();
         $a = Area::query()->where('name', 'A')->firstOrFail();
@@ -409,7 +425,8 @@ final class EventsTest extends TestCase
         });
     }
 
-    public function test_node_moved_does_not_fire_on_new_node_create(): void
+    #[Test]
+    public function node_moved_does_not_fire_on_new_node_create(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -428,7 +445,8 @@ final class EventsTest extends TestCase
     // AggregateMaintenanceFailed
     // ----------------------------------------------------------------
 
-    public function test_aggregate_maintenance_failed_fires_when_hook_throws(): void
+    #[Test]
+    public function aggregate_maintenance_failed_fires_when_hook_throws(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -497,7 +515,8 @@ final class EventsTest extends TestCase
         }
     }
 
-    public function test_aggregate_maintenance_failed_anchor_id_is_string_for_uuid_keyed_model(): void
+    #[Test]
+    public function aggregate_maintenance_failed_anchor_id_is_string_for_uuid_keyed_model(): void
     {
         // Companion to the int-keyed test above. UuidTag uses HasUuids,
         // so `getKey()` returns a string. The anchorId narrowing
@@ -546,7 +565,8 @@ final class EventsTest extends TestCase
     // Config flag
     // ----------------------------------------------------------------
 
-    public function test_events_enabled_false_suppresses_every_event(): void
+    #[Test]
+    public function events_enabled_false_suppresses_every_event(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Columns;
 
@@ -15,27 +16,32 @@ use Vusys\NestedSet\Columns;
  */
 final class ColumnsTest extends TestCase
 {
-    public function test_lft_constant_is_string_lft_matching_default_migration_column(): void
+    #[Test]
+    public function lft_constant_is_string_lft_matching_default_migration_column(): void
     {
         $this->assertSame('lft', Columns::LFT);
     }
 
-    public function test_rgt_constant_is_string_rgt_matching_default_migration_column(): void
+    #[Test]
+    public function rgt_constant_is_string_rgt_matching_default_migration_column(): void
     {
         $this->assertSame('rgt', Columns::RGT);
     }
 
-    public function test_parent_id_constant_is_string_parent_id_matching_default_migration_column(): void
+    #[Test]
+    public function parent_id_constant_is_string_parent_id_matching_default_migration_column(): void
     {
         $this->assertSame('parent_id', Columns::PARENT_ID);
     }
 
-    public function test_depth_constant_is_string_depth_matching_default_migration_column(): void
+    #[Test]
+    public function depth_constant_is_string_depth_matching_default_migration_column(): void
     {
         $this->assertSame('depth', Columns::DEPTH);
     }
 
-    public function test_all_returns_the_four_structural_columns_in_lft_rgt_parent_depth_order(): void
+    #[Test]
+    public function all_returns_the_four_structural_columns_in_lft_rgt_parent_depth_order(): void
     {
         // Order matters: the composite index in nestedSet() blueprint
         // macro uses the same order, and changing it would invalidate

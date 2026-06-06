@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -18,7 +19,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class MoveSubtreeWithTrashedDescendantsTest extends TestCase
 {
-    public function test_move_preserves_trashed_descendant_timestamps_and_shifts_bounds(): void
+    #[Test]
+    public function move_preserves_trashed_descendant_timestamps_and_shifts_bounds(): void
     {
         // Tree:
         //   Root
@@ -98,7 +100,8 @@ final class MoveSubtreeWithTrashedDescendantsTest extends TestCase
         $this->assertSame(['A1', 'A2'], $aAllChildren);
     }
 
-    public function test_move_does_not_implicitly_restore_a_trashed_descendant(): void
+    #[Test]
+    public function move_does_not_implicitly_restore_a_trashed_descendant(): void
     {
         // A move is structural, not lifecycle. Moving a subtree that
         // contains a soft-deleted descendant must not silently

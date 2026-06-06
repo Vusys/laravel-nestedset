@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Walk;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\UnloadedSubtreeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -58,7 +59,8 @@ final class HasTreeWalkTest extends TestCase
         ];
     }
 
-    public function test_walk_with_no_subtree_and_no_loaded_descendants_throws_and_fires_no_query(): void
+    #[Test]
+    public function walk_with_no_subtree_and_no_loaded_descendants_throws_and_fires_no_query(): void
     {
         [$electronics] = $this->buildElectronicsTree();
 
@@ -81,7 +83,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(0, $queries, 'Walker must not query the database');
     }
 
-    public function test_walk_uses_loaded_descendants_relation_without_extra_query(): void
+    #[Test]
+    public function walk_uses_loaded_descendants_relation_without_extra_query(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->load('descendants');
@@ -101,7 +104,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(0, $queries, 'Walker must not query the database when descendants is loaded');
     }
 
-    public function test_walk_respects_explicit_subtree_argument_over_loaded_relation(): void
+    #[Test]
+    public function walk_respects_explicit_subtree_argument_over_loaded_relation(): void
     {
         [$electronics, $laptops] = $this->buildElectronicsTree();
         $electronics->load('descendants');
@@ -123,7 +127,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(['Electronics', 'Laptops'], $names);
     }
 
-    public function test_walker_honours_partial_subtree_treating_unreached_nodes_as_leaves(): void
+    #[Test]
+    public function walker_honours_partial_subtree_treating_unreached_nodes_as_leaves(): void
     {
         [$electronics, , $phones] = $this->buildElectronicsTree();
 
@@ -150,7 +155,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(2, $phones->children()->count());
     }
 
-    public function test_walk_filter_integration_honours_depth_and_predicate_against_real_subtree(): void
+    #[Test]
+    public function walk_filter_integration_honours_depth_and_predicate_against_real_subtree(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->load('descendants');
@@ -172,7 +178,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(['Electronics', 'Laptops'], $visited);
     }
 
-    public function test_walking_a_scoped_node_stays_within_its_scopes_subtree(): void
+    #[Test]
+    public function walking_a_scoped_node_stays_within_its_scopes_subtree(): void
     {
         $menuA = Menu::create(['name' => 'Menu A']);
         $menuB = Menu::create(['name' => 'Menu B']);
@@ -200,7 +207,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(['Root A', 'Child A'], $names);
     }
 
-    public function test_dfs_post_order_and_bfs_wrappers_delegate_to_the_walker(): void
+    #[Test]
+    public function dfs_post_order_and_bfs_wrappers_delegate_to_the_walker(): void
     {
         // The DFS-post and BFS wrappers on HasTreeWalk are one-liners
         // but are part of the public surface — pin their behaviour
@@ -222,7 +230,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(['Electronics', 'Laptops', 'Phones', 'iPhone', 'Android'], $bfs);
     }
 
-    public function test_flattened_subtree_returns_collection_in_strategy_order(): void
+    #[Test]
+    public function flattened_subtree_returns_collection_in_strategy_order(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->load('descendants');
@@ -236,7 +245,8 @@ final class HasTreeWalkTest extends TestCase
         $this->assertSame(['Electronics', 'Laptops', 'Phones', 'iPhone', 'Android'], $names);
     }
 
-    public function test_stop_signal_short_circuits_the_walk(): void
+    #[Test]
+    public function stop_signal_short_circuits_the_walk(): void
     {
         [$electronics] = $this->buildElectronicsTree();
         $electronics->load('descendants');

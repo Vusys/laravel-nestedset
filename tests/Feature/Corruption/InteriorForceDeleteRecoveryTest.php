@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Corruption;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -20,7 +21,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class InteriorForceDeleteRecoveryTest extends TestCase
 {
-    public function test_force_delete_of_interior_node_cascades(): void
+    #[Test]
+    public function force_delete_of_interior_node_cascades(): void
     {
         // Tree:
         //   Root
@@ -54,7 +56,8 @@ final class InteriorForceDeleteRecoveryTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_recovery_from_raw_orphan_via_re_parenting(): void
+    #[Test]
+    public function recovery_from_raw_orphan_via_re_parenting(): void
     {
         // Recovery recipe for orphans introduced by bypassing the
         // trait (raw DELETE, direct DB::table updates): re-parent
@@ -93,7 +96,8 @@ final class InteriorForceDeleteRecoveryTest extends TestCase
         $this->assertSame(1, $a1After->depth);
     }
 
-    public function test_recovery_via_promote_orphan_to_root(): void
+    #[Test]
+    public function recovery_via_promote_orphan_to_root(): void
     {
         // Alternative recovery: promote the orphan to a sibling root.
         $this->allowBrokenTreeAtTearDown = true;

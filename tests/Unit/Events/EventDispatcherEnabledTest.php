@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Events;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -23,7 +24,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class EventDispatcherEnabledTest extends TestCase
 {
-    public function test_default_when_config_missing_is_enabled(): void
+    #[Test]
+    public function default_when_config_missing_is_enabled(): void
     {
         config()->set('nestedset.events_enabled');
         // null != false → enabled. Means a published-but-incomplete
@@ -31,21 +33,24 @@ final class EventDispatcherEnabledTest extends TestCase
         $this->assertTrue(EventDispatcher::enabled(), 'missing/null config defaults to enabled');
     }
 
-    public function test_explicit_true_is_enabled(): void
+    #[Test]
+    public function explicit_true_is_enabled(): void
     {
         config()->set('nestedset.events_enabled', true);
 
         $this->assertTrue(EventDispatcher::enabled());
     }
 
-    public function test_explicit_false_is_disabled(): void
+    #[Test]
+    public function explicit_false_is_disabled(): void
     {
         config()->set('nestedset.events_enabled', false);
 
         $this->assertFalse(EventDispatcher::enabled());
     }
 
-    public function test_integer_zero_does_not_disable(): void
+    #[Test]
+    public function integer_zero_does_not_disable(): void
     {
         // Documents the surprising case: env('NESTEDSET_EVENTS', 0)
         // does NOT disable events because 0 !== false. The user-facing
@@ -58,7 +63,8 @@ final class EventDispatcherEnabledTest extends TestCase
         );
     }
 
-    public function test_empty_string_does_not_disable(): void
+    #[Test]
+    public function empty_string_does_not_disable(): void
     {
         config()->set('nestedset.events_enabled', '');
 
@@ -68,7 +74,8 @@ final class EventDispatcherEnabledTest extends TestCase
         );
     }
 
-    public function test_string_false_does_not_disable(): void
+    #[Test]
+    public function string_false_does_not_disable(): void
     {
         // env('NESTEDSET_EVENTS', 'false') returns the literal string
         // 'false' (not the boolean). Pinning that this still leaves
