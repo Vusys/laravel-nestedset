@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Attributes\NestedSetAggregate;
@@ -62,7 +63,8 @@ final class QuantileFreshReadTest extends TestCase
     // median() — withFreshAggregates() row set
     // ----------------------------------------------------------------
 
-    public function test_median_inclusive_at_root(): void
+    #[Test]
+    public function median_inclusive_at_root(): void
     {
         $root = Area::query()
             ->withFreshAggregates(['subtree_median' => Aggregate::median('tickets')])
@@ -72,7 +74,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(50.0, $this->asFloat($root->getAttribute('subtree_median')), 0.0001);
     }
 
-    public function test_median_inclusive_all_nodes(): void
+    #[Test]
+    public function median_inclusive_all_nodes(): void
     {
         $rows = Area::query()
             ->withFreshAggregates(['subtree_median' => Aggregate::median('tickets')])
@@ -88,7 +91,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(25.0, $this->asFloat($rows[4]), 0.0001);
     }
 
-    public function test_median_exclusive_all_nodes(): void
+    #[Test]
+    public function median_exclusive_all_nodes(): void
     {
         $rows = Area::query()
             ->withFreshAggregates(['excl_median' => Aggregate::median('tickets')->exclusive()])
@@ -108,7 +112,8 @@ final class QuantileFreshReadTest extends TestCase
     // percentile() — withFreshAggregates() row set
     // ----------------------------------------------------------------
 
-    public function test_percentile_p25_at_root(): void
+    #[Test]
+    public function percentile_p25_at_root(): void
     {
         $root = Area::query()
             ->withFreshAggregates(['p25' => Aggregate::percentile('tickets', 0.25)])
@@ -119,7 +124,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(43.75, $this->asFloat($root->getAttribute('p25')), 0.001);
     }
 
-    public function test_percentile_p75_at_root(): void
+    #[Test]
+    public function percentile_p75_at_root(): void
     {
         $root = Area::query()
             ->withFreshAggregates(['p75' => Aggregate::percentile('tickets', 0.75)])
@@ -130,7 +136,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(62.5, $this->asFloat($root->getAttribute('p75')), 0.001);
     }
 
-    public function test_percentile_p0_returns_minimum(): void
+    #[Test]
+    public function percentile_p0_returns_minimum(): void
     {
         $root = Area::query()
             ->withFreshAggregates(['p0' => Aggregate::percentile('tickets', 0.0)])
@@ -140,7 +147,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(25.0, $this->asFloat($root->getAttribute('p0')), 0.001);
     }
 
-    public function test_percentile_p1_returns_maximum(): void
+    #[Test]
+    public function percentile_p1_returns_maximum(): void
     {
         $root = Area::query()
             ->withFreshAggregates(['p1' => Aggregate::percentile('tickets', 1.0)])
@@ -154,7 +162,8 @@ final class QuantileFreshReadTest extends TestCase
     // percentiles() and quartiles() convenience methods
     // ----------------------------------------------------------------
 
-    public function test_percentiles_spreads_multiple_into_fresh_aggregates(): void
+    #[Test]
+    public function percentiles_spreads_multiple_into_fresh_aggregates(): void
     {
         $root = Area::query()
             ->withFreshAggregates([...Aggregate::percentiles('tickets', ['p25' => 0.25, 'p50' => 0.5, 'p75' => 0.75])])
@@ -166,7 +175,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(62.5, $this->asFloat($root->getAttribute('p75')), 0.001);
     }
 
-    public function test_quartiles_returns_q1_median_q3(): void
+    #[Test]
+    public function quartiles_returns_q1_median_q3(): void
     {
         $root = Area::query()
             ->withFreshAggregates([...Aggregate::quartiles('tickets')])
@@ -182,7 +192,8 @@ final class QuantileFreshReadTest extends TestCase
     // FreshAggregateProjector::scalar() — single-node read
     // ----------------------------------------------------------------
 
-    public function test_scalar_median_at_root(): void
+    #[Test]
+    public function scalar_median_at_root(): void
     {
         $root = Area::query()->findOrFail(1);
         $def = Aggregate::median('tickets')->into('m');
@@ -192,7 +203,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(50.0, $this->asFloat($value), 0.0001);
     }
 
-    public function test_scalar_median_at_leaf(): void
+    #[Test]
+    public function scalar_median_at_leaf(): void
     {
         $b = Area::query()->findOrFail(4);
         $def = Aggregate::median('tickets')->into('m');
@@ -202,7 +214,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertEqualsWithDelta(25.0, $this->asFloat($value), 0.0001);
     }
 
-    public function test_scalar_median_exclusive_at_leaf_is_null(): void
+    #[Test]
+    public function scalar_median_exclusive_at_leaf_is_null(): void
     {
         $b = Area::query()->findOrFail(4);
         $def = Aggregate::median('tickets')->exclusive()->into('m');
@@ -212,7 +225,8 @@ final class QuantileFreshReadTest extends TestCase
         $this->assertNull($value);
     }
 
-    public function test_scalar_percentile_p25_at_root(): void
+    #[Test]
+    public function scalar_percentile_p25_at_root(): void
     {
         $root = Area::query()->findOrFail(1);
         $def = Aggregate::percentile('tickets', 0.25)->into('p');
@@ -226,7 +240,8 @@ final class QuantileFreshReadTest extends TestCase
     // Leaf fast-path: leaf node is a single-element subtree
     // ----------------------------------------------------------------
 
-    public function test_median_leaf_equals_its_own_source_value(): void
+    #[Test]
+    public function median_leaf_equals_its_own_source_value(): void
     {
         // A1 is a leaf (lft=3, rgt=4). Its inclusive subtree is {50}.
         // The leaf fast-path must return 50, not NULL.
@@ -242,7 +257,8 @@ final class QuantileFreshReadTest extends TestCase
     // Validation — factory guards
     // ----------------------------------------------------------------
 
-    public function test_median_rejects_empty_source(): void
+    #[Test]
+    public function median_rejects_empty_source(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('source column must not be empty');
@@ -250,7 +266,8 @@ final class QuantileFreshReadTest extends TestCase
         Aggregate::median('');
     }
 
-    public function test_percentile_rejects_empty_source(): void
+    #[Test]
+    public function percentile_rejects_empty_source(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('source column must not be empty');
@@ -258,7 +275,8 @@ final class QuantileFreshReadTest extends TestCase
         Aggregate::percentile('', 0.5);
     }
 
-    public function test_percentile_rejects_p_below_zero(): void
+    #[Test]
+    public function percentile_rejects_p_below_zero(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('percentile point must be in [0.0, 1.0]');
@@ -266,7 +284,8 @@ final class QuantileFreshReadTest extends TestCase
         Aggregate::percentile('tickets', -0.1);
     }
 
-    public function test_percentile_rejects_p_above_one(): void
+    #[Test]
+    public function percentile_rejects_p_above_one(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('percentile point must be in [0.0, 1.0]');
@@ -274,21 +293,24 @@ final class QuantileFreshReadTest extends TestCase
         Aggregate::percentile('tickets', 1.1);
     }
 
-    public function test_percentiles_rejects_empty_source(): void
+    #[Test]
+    public function percentiles_rejects_empty_source(): void
     {
         $this->expectException(AggregateConfigurationException::class);
 
         Aggregate::percentiles('', ['p50' => 0.5]);
     }
 
-    public function test_percentiles_rejects_empty_points_array(): void
+    #[Test]
+    public function percentiles_rejects_empty_points_array(): void
     {
         $this->expectException(AggregateConfigurationException::class);
 
         Aggregate::percentiles('tickets', []);
     }
 
-    public function test_percentiles_rejects_empty_alias(): void
+    #[Test]
+    public function percentiles_rejects_empty_alias(): void
     {
         $this->expectException(AggregateConfigurationException::class);
 
@@ -299,7 +321,8 @@ final class QuantileFreshReadTest extends TestCase
     // NestedSetAggregate attribute rejection
     // ----------------------------------------------------------------
 
-    public function test_nested_set_aggregate_attribute_rejects_median(): void
+    #[Test]
+    public function nested_set_aggregate_attribute_rejects_median(): void
     {
         $attr = new NestedSetAggregate(column: 'x', median: 'tickets');
 
@@ -309,7 +332,8 @@ final class QuantileFreshReadTest extends TestCase
         $attr->toDefinition();
     }
 
-    public function test_nested_set_aggregate_attribute_rejects_percentile(): void
+    #[Test]
+    public function nested_set_aggregate_attribute_rejects_percentile(): void
     {
         $attr = new NestedSetAggregate(column: 'x', percentile: 'tickets');
 

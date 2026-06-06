@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -31,7 +32,8 @@ final class ReorderChildrenByTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_sorts_children_by_column_name(): void
+    #[Test]
+    public function sorts_children_by_column_name(): void
     {
         Category::query()->findOrFail(1)->reorderChildrenBy('name');
 
@@ -41,7 +43,8 @@ final class ReorderChildrenByTest extends TestCase
         );
     }
 
-    public function test_sorts_children_by_closure(): void
+    #[Test]
+    public function sorts_children_by_closure(): void
     {
         // Sort by name length descending using a closure that returns
         // a negative-length tie-broken-on-id sort key.
@@ -55,7 +58,8 @@ final class ReorderChildrenByTest extends TestCase
         );
     }
 
-    public function test_empty_parent_is_silent_no_op(): void
+    #[Test]
+    public function empty_parent_is_silent_no_op(): void
     {
         $leaf = Category::query()->findOrFail(3); // Apple
 
@@ -74,7 +78,8 @@ final class ReorderChildrenByTest extends TestCase
         $this->assertSame(0, $sniffer->updates);
     }
 
-    public function test_unsaved_parent_throws(): void
+    #[Test]
+    public function unsaved_parent_throws(): void
     {
         $this->expectException(UnplacedNodeException::class);
 

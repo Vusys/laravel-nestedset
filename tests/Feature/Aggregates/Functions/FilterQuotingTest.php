@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
 use Vusys\NestedSet\Tests\TestCase;
@@ -19,7 +20,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class FilterQuotingTest extends TestCase
 {
-    public function test_equality_filter_with_quote_bearing_value_is_safely_quoted(): void
+    #[Test]
+    public function equality_filter_with_quote_bearing_value_is_safely_quoted(): void
     {
         // Set up a single-row tree so we can read a fresh aggregate
         // through the equality-filter path. The filter value below
@@ -49,7 +51,8 @@ final class FilterQuotingTest extends TestCase
         $this->assertSame(5, (int) $value1);
     }
 
-    public function test_equality_filter_with_backslash_bearing_value_does_not_break_sql(): void
+    #[Test]
+    public function equality_filter_with_backslash_bearing_value_does_not_break_sql(): void
     {
         // MySQL with its default sql_mode treats backslash as an
         // escape character in single-quoted literals — a naive

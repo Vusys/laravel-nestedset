@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Collections;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\TextJsonArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -45,7 +46,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_distinct_count_drift_is_detected_and_repaired(): void
+    #[Test]
+    public function distinct_count_drift_is_detected_and_repaired(): void
     {
         $root = $this->buildFixture();
         DB::table('text_json_areas')->where('id', $root->getKey())
@@ -63,7 +65,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         $this->assertSame(0, $result->totalRowsUpdated);
     }
 
-    public function test_string_agg_drift_is_detected_and_repaired(): void
+    #[Test]
+    public function string_agg_drift_is_detected_and_repaired(): void
     {
         $root = $this->buildFixture();
         DB::table('text_json_areas')->where('id', $root->getKey())
@@ -77,7 +80,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         $this->assertNotSame('GARBAGE', $root->child_names);
     }
 
-    public function test_distinct_string_agg_with_reordered_values_does_not_report_drift(): void
+    #[Test]
+    public function distinct_string_agg_with_reordered_values_does_not_report_drift(): void
     {
         $root = $this->buildFixture();
         // SQLite preserves insertion order; PG/MySQL would emit ORDER BY.
@@ -96,7 +100,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         $this->assertSame(0, $errors['distinct_tags'] ?? 0);
     }
 
-    public function test_json_agg_drift_is_detected_and_repaired(): void
+    #[Test]
+    public function json_agg_drift_is_detected_and_repaired(): void
     {
         $root = $this->buildFixture();
         DB::table('text_json_areas')->where('id', $root->getKey())
@@ -112,7 +117,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         $this->assertNotContains(999, $ids);
     }
 
-    public function test_json_agg_with_semantically_equal_but_byte_different_json_is_not_drift(): void
+    #[Test]
+    public function json_agg_with_semantically_equal_but_byte_different_json_is_not_drift(): void
     {
         $root = $this->buildFixture();
         // Write the same logical value with extra whitespace — should still
@@ -129,7 +135,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         $this->assertSame(0, $errors['descendant_ids'] ?? 0);
     }
 
-    public function test_json_object_agg_drift_is_detected_and_repaired(): void
+    #[Test]
+    public function json_object_agg_drift_is_detected_and_repaired(): void
     {
         $root = $this->buildFixture();
         DB::table('text_json_areas')->where('id', $root->getKey())
@@ -146,7 +153,8 @@ final class CollectionAggregatesDriftTest extends TestCase
         $this->assertArrayHasKey('Root', $lookup);
     }
 
-    public function test_json_object_agg_with_reordered_keys_is_not_drift(): void
+    #[Test]
+    public function json_object_agg_with_reordered_keys_is_not_drift(): void
     {
         $root = $this->buildFixture();
         $currentValue = $root->name_lookup;

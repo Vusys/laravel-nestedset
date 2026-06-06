@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Collections;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Tests\Fixtures\Models\TextJsonArea;
@@ -50,7 +51,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_distinct_count_after_create(): void
+    #[Test]
+    public function distinct_count_after_create(): void
     {
         $root = $this->buildFixture();
 
@@ -58,7 +60,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertSame(3, (int) $root->distinct_owners);
     }
 
-    public function test_string_agg_concatenates_descendant_names(): void
+    #[Test]
+    public function string_agg_concatenates_descendant_names(): void
     {
         $root = $this->buildFixture();
 
@@ -69,7 +72,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertSame(['A', 'A1', 'B', 'Root'], $names);
     }
 
-    public function test_string_agg_distinct_collapses_duplicates(): void
+    #[Test]
+    public function string_agg_distinct_collapses_duplicates(): void
     {
         $root = $this->buildFixture();
 
@@ -81,7 +85,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertSame(['blue', 'green', 'red'], $tags);
     }
 
-    public function test_json_agg_scalar_form_array_of_ids(): void
+    #[Test]
+    public function json_agg_scalar_form_array_of_ids(): void
     {
         $root = $this->buildFixture();
 
@@ -90,7 +95,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertCount(4, $ids);
     }
 
-    public function test_json_agg_multi_column_array_of_objects(): void
+    #[Test]
+    public function json_agg_multi_column_array_of_objects(): void
     {
         $root = $this->buildFixture();
 
@@ -105,7 +111,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         }
     }
 
-    public function test_json_object_agg_builds_lookup_map(): void
+    #[Test]
+    public function json_object_agg_builds_lookup_map(): void
     {
         $root = $this->buildFixture();
 
@@ -121,7 +128,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertSame('green', $lookup['B']);
     }
 
-    public function test_delete_recomputes_descendant_aggregates_on_ancestors(): void
+    #[Test]
+    public function delete_recomputes_descendant_aggregates_on_ancestors(): void
     {
         $root = $this->buildFixture();
         $b = TextJsonArea::query()->where('name', 'B')->firstOrFail();
@@ -136,7 +144,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertSame(['A', 'A1', 'Root'], $names);
     }
 
-    public function test_move_recomputes_aggregates_on_old_and_new_chain(): void
+    #[Test]
+    public function move_recomputes_aggregates_on_old_and_new_chain(): void
     {
         $this->buildFixture();
         $a = TextJsonArea::query()->where('name', 'A')->firstOrFail();
@@ -151,7 +160,8 @@ final class CollectionAggregatesMaintenanceTest extends TestCase
         $this->assertSame(3, (int) $b->distinct_owners); // Carol + Bob + Alice
     }
 
-    public function test_with_fresh_aggregates_matches_stored_columns(): void
+    #[Test]
+    public function with_fresh_aggregates_matches_stored_columns(): void
     {
         $root = $this->buildFixture();
 

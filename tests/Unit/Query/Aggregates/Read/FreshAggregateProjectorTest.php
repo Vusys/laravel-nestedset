@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Query\Aggregates\Read;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
@@ -70,7 +71,8 @@ final class FreshAggregateProjectorTest extends TestCase
     }
 
     #[DataProvider('versions')]
-    public function test_mysql_version_supports_lateral(?string $version, bool $expected): void
+    #[Test]
+    public function mysql_version_supports_lateral(?string $version, bool $expected): void
     {
         $this->assertSame($expected, $this->call($version));
     }

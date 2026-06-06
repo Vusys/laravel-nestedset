@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Mutation;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -49,7 +50,8 @@ final class UnplacedTargetGuardTest extends TestCase
         return $unplaced;
     }
 
-    public function test_append_to_node_rejects_unplaced_target(): void
+    #[Test]
+    public function append_to_node_rejects_unplaced_target(): void
     {
         $unplaced = $this->seedUnplacedCategory('Unplaced');
 
@@ -60,7 +62,8 @@ final class UnplacedTargetGuardTest extends TestCase
         $child->save();
     }
 
-    public function test_prepend_to_node_rejects_unplaced_target(): void
+    #[Test]
+    public function prepend_to_node_rejects_unplaced_target(): void
     {
         $unplaced = $this->seedUnplacedCategory('Unplaced');
 
@@ -71,7 +74,8 @@ final class UnplacedTargetGuardTest extends TestCase
         $child->save();
     }
 
-    public function test_insert_before_node_rejects_unplaced_sibling(): void
+    #[Test]
+    public function insert_before_node_rejects_unplaced_sibling(): void
     {
         $unplaced = $this->seedUnplacedCategory('Unplaced');
 
@@ -82,7 +86,8 @@ final class UnplacedTargetGuardTest extends TestCase
         $sibling->save();
     }
 
-    public function test_insert_after_node_rejects_unplaced_sibling(): void
+    #[Test]
+    public function insert_after_node_rejects_unplaced_sibling(): void
     {
         $unplaced = $this->seedUnplacedCategory('Unplaced');
 
@@ -93,7 +98,8 @@ final class UnplacedTargetGuardTest extends TestCase
         $sibling->save();
     }
 
-    public function test_guard_does_not_corrupt_pre_existing_tree(): void
+    #[Test]
+    public function guard_does_not_corrupt_pre_existing_tree(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -25,7 +26,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class ReplicateInteractionTest extends TestCase
 {
-    public function test_replicate_resets_stored_sql_aggregates(): void
+    #[Test]
+    public function replicate_resets_stored_sql_aggregates(): void
     {
         // Area has SUM/COUNT/AVG/MIN/MAX aggregates declared. After a
         // replicate, the clone must read 0 / null on each — taking the
@@ -50,7 +52,8 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertNull($clone->getAttribute('tickets_max'));
     }
 
-    public function test_replicate_resets_listener_aggregate_columns(): void
+    #[Test]
+    public function replicate_resets_listener_aggregate_columns(): void
     {
         $root = new Monster(['name' => 'root', 'type' => 'fire', 'base_power' => 1, 'level' => 1]);
         $root->saveAsRoot();
@@ -74,7 +77,8 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertNull($clone->getAttribute('weighted_avg'));
     }
 
-    public function test_replicate_keeps_source_user_attributes(): void
+    #[Test]
+    public function replicate_keeps_source_user_attributes(): void
     {
         // The user-facing source attributes (name, tickets, etc.) DO
         // copy over — that's the whole point of replicate.
@@ -91,7 +95,8 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertSame(42, $clone->tickets);
     }
 
-    public function test_replicate_clears_structural_columns(): void
+    #[Test]
+    public function replicate_clears_structural_columns(): void
     {
         // Without resetting lft/rgt/depth/parent_id on the clone, an
         // accidental ->save() (no appendToNode/makeRoot) would write a
@@ -118,7 +123,8 @@ final class ReplicateInteractionTest extends TestCase
         );
     }
 
-    public function test_replicate_can_be_placed_via_append_to_node_after_clone(): void
+    #[Test]
+    public function replicate_can_be_placed_via_append_to_node_after_clone(): void
     {
         // Counterpart to the above: once the clone IS placed via the
         // public API, the clone lands at the new spot and the tree
@@ -144,7 +150,8 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertFalse(Area::isBroken());
     }
 
-    public function test_replicate_of_soft_deleted_row_drops_deleted_at(): void
+    #[Test]
+    public function replicate_of_soft_deleted_row_drops_deleted_at(): void
     {
         // Category has SoftDeletes. Replicating a trashed row should
         // produce a fresh model that ISN'T trashed by default — it's
@@ -168,7 +175,8 @@ final class ReplicateInteractionTest extends TestCase
         );
     }
 
-    public function test_replicate_preserves_source_scope_and_cross_scope_placement_requires_realignment(): void
+    #[Test]
+    public function replicate_preserves_source_scope_and_cross_scope_placement_requires_realignment(): void
     {
         // MenuItem is scoped by menu_id. The package does not auto-inherit
         // scope from a placement anchor — it enforces consistency via
@@ -219,7 +227,8 @@ final class ReplicateInteractionTest extends TestCase
         $this->assertFalse(MenuItem::isBroken(new MenuItem(['menu_id' => $menuB->id])));
     }
 
-    public function test_save_on_unplaced_clone_throws(): void
+    #[Test]
+    public function save_on_unplaced_clone_throws(): void
     {
         // Counterpart to test_replicate_clears_structural_columns: the
         // clone is unplaced, so calling ->save() without first placing
@@ -246,7 +255,8 @@ final class ReplicateInteractionTest extends TestCase
         }
     }
 
-    public function test_replicate_returns_an_unsaved_instance(): void
+    #[Test]
+    public function replicate_returns_an_unsaved_instance(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();

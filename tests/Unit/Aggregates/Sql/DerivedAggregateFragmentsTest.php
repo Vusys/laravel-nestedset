@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Aggregates\Sql;
 
 use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -25,7 +26,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 final class DerivedAggregateFragmentsTest extends TestCase
 {
     #[DataProvider('handlesCases')]
-    public function test_handles_identifies_derived_kinds(AggregateFunction $function, bool $expected): void
+    #[Test]
+    public function handles_identifies_derived_kinds(AggregateFunction $function, bool $expected): void
     {
         $this->assertSame($expected, DerivedAggregateFragments::handles($function));
     }
@@ -51,7 +53,8 @@ final class DerivedAggregateFragmentsTest extends TestCase
      * @param  Closure(): AggregateDefinition  $makeDefinition
      */
     #[DataProvider('buildCases')]
-    public function test_build_emits_derived_sql(Closure $makeDefinition, ?string $filterSql, string $expected): void
+    #[Test]
+    public function build_emits_derived_sql(Closure $makeDefinition, ?string $filterSql, string $expected): void
     {
         $filter = $filterSql === null ? null : BoundFragment::literal($filterSql);
         $this->assertSame($expected, DerivedAggregateFragments::build($makeDefinition(), 'i.', $filter)->sql);
@@ -109,7 +112,8 @@ final class DerivedAggregateFragmentsTest extends TestCase
         ];
     }
 
-    public function test_build_rejects_a_definition_without_a_source(): void
+    #[Test]
+    public function build_rejects_a_definition_without_a_source(): void
     {
         $definition = new AggregateDefinition(
             column: 'col',
@@ -124,7 +128,8 @@ final class DerivedAggregateFragmentsTest extends TestCase
         DerivedAggregateFragments::build($definition, 'i.');
     }
 
-    public function test_build_rejects_weighted_avg_without_a_weight(): void
+    #[Test]
+    public function build_rejects_weighted_avg_without_a_weight(): void
     {
         $definition = new AggregateDefinition(
             column: 'col',

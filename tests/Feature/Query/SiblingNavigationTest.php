@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -58,13 +59,15 @@ final class SiblingNavigationTest extends TestCase
     // prevSibling
     // ----------------------------------------------------------------
 
-    public function test_prev_sibling_of_first_child_is_null(): void
+    #[Test]
+    public function prev_sibling_of_first_child_is_null(): void
     {
         // A is the leftmost child; there is no sibling to its left.
         $this->assertNull($this->find(2)->prevSibling());
     }
 
-    public function test_prev_sibling_of_middle_child_is_the_immediate_left_neighbour(): void
+    #[Test]
+    public function prev_sibling_of_middle_child_is_the_immediate_left_neighbour(): void
     {
         // C's previous sibling is B, not A.
         $prev = $this->find(4)->prevSibling();
@@ -74,7 +77,8 @@ final class SiblingNavigationTest extends TestCase
         $this->assertSame('B', $prev->name);
     }
 
-    public function test_prev_sibling_of_last_child_is_the_immediate_left_neighbour(): void
+    #[Test]
+    public function prev_sibling_of_last_child_is_the_immediate_left_neighbour(): void
     {
         $prev = $this->find(5)->prevSibling();
 
@@ -86,13 +90,15 @@ final class SiblingNavigationTest extends TestCase
     // nextSibling
     // ----------------------------------------------------------------
 
-    public function test_next_sibling_of_last_child_is_null(): void
+    #[Test]
+    public function next_sibling_of_last_child_is_null(): void
     {
         // D is the rightmost child; no sibling to its right.
         $this->assertNull($this->find(5)->nextSibling());
     }
 
-    public function test_next_sibling_of_middle_child_is_the_immediate_right_neighbour(): void
+    #[Test]
+    public function next_sibling_of_middle_child_is_the_immediate_right_neighbour(): void
     {
         // B's next sibling is C, not D.
         $next = $this->find(3)->nextSibling();
@@ -102,7 +108,8 @@ final class SiblingNavigationTest extends TestCase
         $this->assertSame('C', $next->name);
     }
 
-    public function test_next_sibling_of_first_child_is_the_immediate_right_neighbour(): void
+    #[Test]
+    public function next_sibling_of_first_child_is_the_immediate_right_neighbour(): void
     {
         $next = $this->find(2)->nextSibling();
 
@@ -114,7 +121,8 @@ final class SiblingNavigationTest extends TestCase
     // Only-child + lone-root edge cases
     // ----------------------------------------------------------------
 
-    public function test_only_child_has_no_siblings_in_either_direction(): void
+    #[Test]
+    public function only_child_has_no_siblings_in_either_direction(): void
     {
         // Fresh isolated tree so the "only child" status is unambiguous.
         DB::table('categories')->delete();
@@ -129,7 +137,8 @@ final class SiblingNavigationTest extends TestCase
         $this->assertNull($only->nextSibling());
     }
 
-    public function test_lone_root_has_no_siblings_in_either_direction(): void
+    #[Test]
+    public function lone_root_has_no_siblings_in_either_direction(): void
     {
         DB::table('categories')->delete();
 

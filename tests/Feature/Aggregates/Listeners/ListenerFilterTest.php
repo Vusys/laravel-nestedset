@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\StatsMonster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -38,7 +39,8 @@ final class ListenerFilterTest extends TestCase
      * where type = 'fire'. Non-fire nodes are excluded entirely from
      * the ancestor roll-up.
      */
-    public function test_equality_filter_excludes_non_matching_rows(): void
+    #[Test]
+    public function equality_filter_excludes_non_matching_rows(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 10.0]);
         $root->saveAsRoot();
@@ -62,7 +64,8 @@ final class ListenerFilterTest extends TestCase
      * very next save — proves the filter watch columns reach the
      * dirty-detection path that drives ancestor maintenance.
      */
-    public function test_filter_watch_columns_trigger_recompute_when_membership_changes(): void
+    #[Test]
+    public function filter_watch_columns_trigger_recompute_when_membership_changes(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 10.0]);
         $root->saveAsRoot();
@@ -85,7 +88,8 @@ final class ListenerFilterTest extends TestCase
      * `score` is non-null. Auto-promoted Sum + Count companions
      * inherit the filter, so the AVG arithmetic uses the right N.
      */
-    public function test_filter_not_null_excludes_null_source_rows_from_avg(): void
+    #[Test]
+    public function filter_not_null_excludes_null_source_rows_from_avg(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 10.0]);
         $root->saveAsRoot();
@@ -112,7 +116,8 @@ final class ListenerFilterTest extends TestCase
      * the parent's filter. Without inheritance the companion sums every
      * row and the AVG silently drifts.
      */
-    public function test_companions_inherit_filter_from_parent(): void
+    #[Test]
+    public function companions_inherit_filter_from_parent(): void
     {
         $defs = AggregateRegistry::for(StatsMonster::class);
 
@@ -135,7 +140,8 @@ final class ListenerFilterTest extends TestCase
      * sums to their correct value — proves the DFS-fix path also
      * applies the filter (not just the per-mutation path).
      */
-    public function test_fix_aggregates_respects_filter(): void
+    #[Test]
+    public function fix_aggregates_respects_filter(): void
     {
         $root = new StatsMonster(['name' => 'r', 'type' => 'fire', 'score' => 1.0]);
         $root->saveAsRoot();

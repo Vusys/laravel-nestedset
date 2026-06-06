@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
@@ -30,7 +31,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_resolves_listener_attribute_declarations(): void
+    #[Test]
+    public function resolves_listener_attribute_declarations(): void
     {
         $definitions = AggregateRegistry::for(ListenerOnlyArea::class);
 
@@ -53,7 +55,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertContains('fire_count', $columns);
     }
 
-    public function test_resolves_listener_method_override_declarations(): void
+    #[Test]
+    public function resolves_listener_method_override_declarations(): void
     {
         $definitions = AggregateRegistry::for(ListenerMethodArea::class);
 
@@ -64,7 +67,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertSame('weighted_power', $def->getColumn());
     }
 
-    public function test_resolves_mixed_sql_and_listener_declarations(): void
+    #[Test]
+    public function resolves_mixed_sql_and_listener_declarations(): void
     {
         $definitions = AggregateRegistry::for(MixedAggregatesArea::class);
 
@@ -86,7 +90,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertSame('weighted_power', $listenerDefs[0]->column);
     }
 
-    public function test_listener_definitions_survive_avg_promotion(): void
+    #[Test]
+    public function listener_definitions_survive_avg_promotion(): void
     {
         // MixedAggregatesArea has no AVG, so promotion is a no-op.
         // The count must remain at 2 (no extra internal companions added).
@@ -95,7 +100,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertCount(2, $definitions);
     }
 
-    public function test_listener_avg_promotes_internal_sum_and_count_companions(): void
+    #[Test]
+    public function listener_avg_promotes_internal_sum_and_count_companions(): void
     {
         $definitions = AggregateRegistry::for(ListenerAvgArea::class);
 
@@ -122,7 +128,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertTrue($count->isInternal());
     }
 
-    public function test_user_declared_listener_companions_suppress_avg_promotion(): void
+    #[Test]
+    public function user_declared_listener_companions_suppress_avg_promotion(): void
     {
         $definitions = AggregateRegistry::for(ListenerAvgWithDeclaredCompanionsArea::class);
 
@@ -140,7 +147,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertNotContains('power_avg__count', $columns);
     }
 
-    public function test_listener_method_override_returns_every_declaration(): void
+    #[Test]
+    public function listener_method_override_returns_every_declaration(): void
     {
         $definitions = AggregateRegistry::for(MultiListenerMethodArea::class);
 
@@ -155,7 +163,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         $this->assertContains('fire_count', $columns);
     }
 
-    public function test_duplicate_column_across_sql_and_listener_throws(): void
+    #[Test]
+    public function duplicate_column_across_sql_and_listener_throws(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('declared more than once');
@@ -163,7 +172,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         AggregateRegistry::for(DuplicateListenerArea::class);
     }
 
-    public function test_listener_definitions_are_never_internal(): void
+    #[Test]
+    public function listener_definitions_are_never_internal(): void
     {
         $definitions = AggregateRegistry::for(ListenerOnlyArea::class);
 
@@ -176,7 +186,8 @@ final class ListenerAggregateRegistryTest extends TestCase
         }
     }
 
-    public function test_caches_mixed_definitions(): void
+    #[Test]
+    public function caches_mixed_definitions(): void
     {
         $first = AggregateRegistry::for(MixedAggregatesArea::class);
         $second = AggregateRegistry::for(MixedAggregatesArea::class);

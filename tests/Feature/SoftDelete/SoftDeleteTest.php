@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -40,7 +41,8 @@ final class SoftDeleteTest extends TestCase
         ]);
     }
 
-    public function test_subtree_soft_delete_cascades_to_every_descendant(): void
+    #[Test]
+    public function subtree_soft_delete_cascades_to_every_descendant(): void
     {
         $a = Category::query()->findOrFail(2);
         $a->delete();
@@ -55,7 +57,8 @@ final class SoftDeleteTest extends TestCase
         $this->assertNotNull(Category::query()->find(5));
     }
 
-    public function test_subtree_restore_brings_back_every_cascade_trashed_descendant(): void
+    #[Test]
+    public function subtree_restore_brings_back_every_cascade_trashed_descendant(): void
     {
         Category::query()->findOrFail(2)->delete();
         Category::withTrashed()->findOrFail(2)->restore();
@@ -66,7 +69,8 @@ final class SoftDeleteTest extends TestCase
         $this->assertNotNull(Category::query()->find(4));
     }
 
-    public function test_restore_does_not_bring_back_a_descendant_trashed_at_an_earlier_timestamp(): void
+    #[Test]
+    public function restore_does_not_bring_back_a_descendant_trashed_at_an_earlier_timestamp(): void
     {
         // Trash AA at an earlier moment.
         $aa = Category::query()->findOrFail(3);
@@ -88,7 +92,8 @@ final class SoftDeleteTest extends TestCase
         $this->assertNull(Category::query()->find(3));      // AA still trashed
     }
 
-    public function test_soft_deleting_a_leaf_does_not_touch_unrelated_rows(): void
+    #[Test]
+    public function soft_deleting_a_leaf_does_not_touch_unrelated_rows(): void
     {
         // Leaf delete — the cascade UPDATE has no descendants to mark,
         // so siblings/ancestors/cousins must keep their `deleted_at`
@@ -104,7 +109,8 @@ final class SoftDeleteTest extends TestCase
         $this->assertNotNull(Category::query()->find(4), 'cousin AB untouched');
     }
 
-    public function test_restoring_a_row_that_was_never_trashed_is_a_no_op_for_the_subtree(): void
+    #[Test]
+    public function restoring_a_row_that_was_never_trashed_is_a_no_op_for_the_subtree(): void
     {
         // Eloquent's restore() on a row with `deleted_at = NULL` is a
         // documented no-op for that row; the package's cascade
@@ -119,7 +125,8 @@ final class SoftDeleteTest extends TestCase
         $this->assertSame(0, $deletedAtCounts, 'restore on a non-trashed node must not mark any row');
     }
 
-    public function test_double_delete_re_stamps_parent_but_does_not_re_stamp_already_trashed_descendants(): void
+    #[Test]
+    public function double_delete_re_stamps_parent_but_does_not_re_stamp_already_trashed_descendants(): void
     {
         // Eloquent's `delete()` on an already-soft-deleted model is
         // documented to re-stamp `deleted_at`. The package's cascade

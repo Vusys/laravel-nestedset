@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Attributes;
 
 use Attribute;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 
 final class NestedSetAggregateListenerAttributeTest extends TestCase
 {
-    public function test_to_definition_returns_listener_aggregate_definition_with_expected_column(): void
+    #[Test]
+    public function to_definition_returns_listener_aggregate_definition_with_expected_column(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'weighted_power',
@@ -30,7 +32,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertSame('weighted_power', $definition->column);
     }
 
-    public function test_to_definition_carries_listener_class(): void
+    #[Test]
+    public function to_definition_carries_listener_class(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'weighted_power',
@@ -43,7 +46,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertSame(WeightedPowerListener::class, $definition->listenerClass);
     }
 
-    public function test_to_definition_carries_operation(): void
+    #[Test]
+    public function to_definition_carries_operation(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'fire_count',
@@ -56,7 +60,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertSame(AggregateFunction::Sum, $definition->operation);
     }
 
-    public function test_to_definition_carries_min_operation(): void
+    #[Test]
+    public function to_definition_carries_min_operation(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'min_power',
@@ -69,7 +74,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertSame(AggregateFunction::Min, $definition->operation);
     }
 
-    public function test_to_definition_carries_max_operation(): void
+    #[Test]
+    public function to_definition_carries_max_operation(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'max_power',
@@ -82,7 +88,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertSame(AggregateFunction::Max, $definition->operation);
     }
 
-    public function test_inclusive_is_the_default(): void
+    #[Test]
+    public function inclusive_is_the_default(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'weighted_power',
@@ -95,7 +102,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertTrue($definition->isInclusive());
     }
 
-    public function test_exclusive_true_maps_to_inclusive_false(): void
+    #[Test]
+    public function exclusive_true_maps_to_inclusive_false(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'weighted_power',
@@ -109,7 +117,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertFalse($definition->isInclusive());
     }
 
-    public function test_avg_operation_produces_definition(): void
+    #[Test]
+    public function avg_operation_produces_definition(): void
     {
         // AVG listener defs are supported; the registry auto-promotes
         // Sum + Count companions over the same listener class so the
@@ -126,7 +135,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $this->assertSame(AggregateFunction::Avg, $definition->operation);
     }
 
-    public function test_empty_column_throws(): void
+    #[Test]
+    public function empty_column_throws(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: '',
@@ -139,7 +149,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         $attribute->toDefinition();
     }
 
-    public function test_is_declared_as_a_repeatable_class_level_attribute(): void
+    #[Test]
+    public function is_declared_as_a_repeatable_class_level_attribute(): void
     {
         $reflection = new ReflectionClass(NestedSetAggregateListener::class);
         $attributes = $reflection->getAttributes(Attribute::class);
@@ -155,7 +166,8 @@ final class NestedSetAggregateListenerAttributeTest extends TestCase
         );
     }
 
-    public function test_sum_is_the_default_operation(): void
+    #[Test]
+    public function sum_is_the_default_operation(): void
     {
         $attribute = new NestedSetAggregateListener(
             column: 'fire_count',

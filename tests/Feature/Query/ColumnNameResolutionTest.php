@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Columns;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -24,12 +25,14 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class ColumnNameResolutionTest extends TestCase
 {
-    public function test_lft_column_returns_default_constant_when_no_config_override(): void
+    #[Test]
+    public function lft_column_returns_default_constant_when_no_config_override(): void
     {
         $this->assertSame(Columns::LFT, Category::query()->lftColumn());
     }
 
-    public function test_lft_column_returns_config_override_when_set(): void
+    #[Test]
+    public function lft_column_returns_config_override_when_set(): void
     {
         $this->allowBrokenTreeAtTearDown = true;
         config(['nestedset.columns.lft' => 'left_bound']);
@@ -37,12 +40,14 @@ final class ColumnNameResolutionTest extends TestCase
         $this->assertSame('left_bound', Category::query()->lftColumn());
     }
 
-    public function test_rgt_column_returns_default_constant_when_no_config_override(): void
+    #[Test]
+    public function rgt_column_returns_default_constant_when_no_config_override(): void
     {
         $this->assertSame(Columns::RGT, Category::query()->rgtColumn());
     }
 
-    public function test_rgt_column_returns_config_override_when_set(): void
+    #[Test]
+    public function rgt_column_returns_config_override_when_set(): void
     {
         $this->allowBrokenTreeAtTearDown = true;
         config(['nestedset.columns.rgt' => 'right_bound']);
@@ -50,12 +55,14 @@ final class ColumnNameResolutionTest extends TestCase
         $this->assertSame('right_bound', Category::query()->rgtColumn());
     }
 
-    public function test_parent_id_column_returns_default_constant_when_no_config_override(): void
+    #[Test]
+    public function parent_id_column_returns_default_constant_when_no_config_override(): void
     {
         $this->assertSame(Columns::PARENT_ID, Category::query()->parentIdColumn());
     }
 
-    public function test_parent_id_column_returns_config_override_when_set(): void
+    #[Test]
+    public function parent_id_column_returns_config_override_when_set(): void
     {
         $this->allowBrokenTreeAtTearDown = true;
         config(['nestedset.columns.parent_id' => 'node_parent']);
@@ -63,12 +70,14 @@ final class ColumnNameResolutionTest extends TestCase
         $this->assertSame('node_parent', Category::query()->parentIdColumn());
     }
 
-    public function test_depth_column_returns_default_constant_when_no_config_override(): void
+    #[Test]
+    public function depth_column_returns_default_constant_when_no_config_override(): void
     {
         $this->assertSame(Columns::DEPTH, Category::query()->depthColumn());
     }
 
-    public function test_depth_column_returns_config_override_when_set(): void
+    #[Test]
+    public function depth_column_returns_config_override_when_set(): void
     {
         $this->allowBrokenTreeAtTearDown = true;
         config(['nestedset.columns.depth' => 'node_depth']);

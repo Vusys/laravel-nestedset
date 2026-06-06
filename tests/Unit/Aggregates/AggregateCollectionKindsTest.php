@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -11,7 +12,8 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 
 final class AggregateCollectionKindsTest extends TestCase
 {
-    public function test_distinct_count_factory(): void
+    #[Test]
+    public function distinct_count_factory(): void
     {
         $agg = Aggregate::distinctCount('owner_id');
 
@@ -20,13 +22,15 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertTrue($agg->inclusive);
     }
 
-    public function test_distinct_count_rejects_empty_source(): void
+    #[Test]
+    public function distinct_count_rejects_empty_source(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::distinctCount('');
     }
 
-    public function test_string_agg_captures_separator_limit_and_order_by(): void
+    #[Test]
+    public function string_agg_captures_separator_limit_and_order_by(): void
     {
         $agg = Aggregate::stringAgg('name', separator: '; ', limit: 20, orderBy: 'name');
 
@@ -38,21 +42,24 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertFalse($agg->distinct);
     }
 
-    public function test_string_agg_defaults_order_by_to_source(): void
+    #[Test]
+    public function string_agg_defaults_order_by_to_source(): void
     {
         $agg = Aggregate::stringAgg('name');
 
         $this->assertSame('name', $agg->orderBy);
     }
 
-    public function test_string_agg_distinct_modifier(): void
+    #[Test]
+    public function string_agg_distinct_modifier(): void
     {
         $agg = Aggregate::stringAgg('tag')->distinct();
 
         $this->assertTrue($agg->distinct);
     }
 
-    public function test_string_agg_distinct_rejects_custom_order_by(): void
+    #[Test]
+    public function string_agg_distinct_rejects_custom_order_by(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('orderBy is incompatible with distinct');
@@ -60,25 +67,29 @@ final class AggregateCollectionKindsTest extends TestCase
         Aggregate::stringAgg('tag', orderBy: 'created_at')->distinct();
     }
 
-    public function test_distinct_modifier_only_works_on_string_agg(): void
+    #[Test]
+    public function distinct_modifier_only_works_on_string_agg(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::sum('tickets')->distinct();
     }
 
-    public function test_string_agg_rejects_empty_source(): void
+    #[Test]
+    public function string_agg_rejects_empty_source(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::stringAgg('');
     }
 
-    public function test_string_agg_rejects_negative_limit(): void
+    #[Test]
+    public function string_agg_rejects_negative_limit(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::stringAgg('name', limit: -1);
     }
 
-    public function test_json_agg_scalar_form(): void
+    #[Test]
+    public function json_agg_scalar_form(): void
     {
         $agg = Aggregate::jsonAgg('id');
 
@@ -88,7 +99,8 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertSame('id', $agg->orderBy);
     }
 
-    public function test_json_agg_list_form_uses_column_name_as_key(): void
+    #[Test]
+    public function json_agg_list_form_uses_column_name_as_key(): void
     {
         $agg = Aggregate::jsonAgg(['id', 'name']);
 
@@ -96,38 +108,44 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertSame(['id' => 'id', 'name' => 'name'], $agg->sources);
     }
 
-    public function test_json_agg_assoc_form_renames_keys(): void
+    #[Test]
+    public function json_agg_assoc_form_renames_keys(): void
     {
         $agg = Aggregate::jsonAgg(['nodeId' => 'id', 'label' => 'name']);
 
         $this->assertSame(['nodeId' => 'id', 'label' => 'name'], $agg->sources);
     }
 
-    public function test_json_agg_rejects_empty_array(): void
+    #[Test]
+    public function json_agg_rejects_empty_array(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::jsonAgg([]);
     }
 
-    public function test_json_agg_rejects_duplicate_list_keys(): void
+    #[Test]
+    public function json_agg_rejects_duplicate_list_keys(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::jsonAgg(['name', 'name']);
     }
 
-    public function test_json_agg_rejects_empty_string_key(): void
+    #[Test]
+    public function json_agg_rejects_empty_string_key(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::jsonAgg(['' => 'id']);
     }
 
-    public function test_json_agg_rejects_empty_string_column(): void
+    #[Test]
+    public function json_agg_rejects_empty_string_column(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::jsonAgg(['k' => '']);
     }
 
-    public function test_json_object_agg_captures_key_and_value(): void
+    #[Test]
+    public function json_object_agg_captures_key_and_value(): void
     {
         $agg = Aggregate::jsonObjectAgg(key: 'slug', value: 'name');
 
@@ -138,19 +156,22 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertFalse($agg->allowNullKeys);
     }
 
-    public function test_json_object_agg_allow_null_keys_opt_out(): void
+    #[Test]
+    public function json_object_agg_allow_null_keys_opt_out(): void
     {
         $agg = Aggregate::jsonObjectAgg(key: 'slug', value: 'name', allowNullKeys: true);
         $this->assertTrue($agg->allowNullKeys);
     }
 
-    public function test_json_object_agg_rejects_empty_key_or_value(): void
+    #[Test]
+    public function json_object_agg_rejects_empty_key_or_value(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         Aggregate::jsonObjectAgg(key: '', value: 'name');
     }
 
-    public function test_new_kinds_default_to_inclusive(): void
+    #[Test]
+    public function new_kinds_default_to_inclusive(): void
     {
         $this->assertTrue(Aggregate::distinctCount('x')->inclusive);
         $this->assertTrue(Aggregate::stringAgg('x')->inclusive);
@@ -158,7 +179,8 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertTrue(Aggregate::jsonObjectAgg(key: 'k', value: 'v')->inclusive);
     }
 
-    public function test_new_kinds_carry_exclusive_into_definition(): void
+    #[Test]
+    public function new_kinds_carry_exclusive_into_definition(): void
     {
         $this->assertFalse(Aggregate::distinctCount('x')->exclusive()->into('c')->inclusive);
         $this->assertFalse(Aggregate::stringAgg('x')->exclusive()->into('c')->inclusive);
@@ -166,7 +188,8 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertFalse(Aggregate::jsonObjectAgg(key: 'k', value: 'v')->exclusive()->into('c')->inclusive);
     }
 
-    public function test_into_propagates_new_kind_settings(): void
+    #[Test]
+    public function into_propagates_new_kind_settings(): void
     {
         $def = Aggregate::stringAgg('tag', separator: '; ', limit: 5)
             ->distinct()
@@ -179,7 +202,8 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertSame('tag', $def->orderBy);
     }
 
-    public function test_into_propagates_json_agg_multi_column_sources(): void
+    #[Test]
+    public function into_propagates_json_agg_multi_column_sources(): void
     {
         $def = Aggregate::jsonAgg(['id' => 'id', 'label' => 'name'])
             ->into('descendant_summary');
@@ -188,7 +212,8 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertNull($def->source);
     }
 
-    public function test_into_propagates_json_object_agg_key_and_value(): void
+    #[Test]
+    public function into_propagates_json_object_agg_key_and_value(): void
     {
         $def = Aggregate::jsonObjectAgg(key: 'slug', value: 'name', allowNullKeys: true)
             ->into('lookup');
@@ -198,7 +223,8 @@ final class AggregateCollectionKindsTest extends TestCase
         $this->assertTrue($def->allowNullKeys);
     }
 
-    public function test_filter_carries_into_new_kinds(): void
+    #[Test]
+    public function filter_carries_into_new_kinds(): void
     {
         $agg = Aggregate::stringAgg('tag')->filter(['published' => true]);
 

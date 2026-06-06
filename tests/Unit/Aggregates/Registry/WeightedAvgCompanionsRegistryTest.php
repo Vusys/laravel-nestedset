@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
@@ -28,7 +29,8 @@ final class WeightedAvgCompanionsRegistryTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_weighted_avg_auto_promotes_two_internal_sum_companions(): void
+    #[Test]
+    public function weighted_avg_auto_promotes_two_internal_sum_companions(): void
     {
         $definitions = AggregateRegistry::for(WeightedArea::class);
 
@@ -65,7 +67,8 @@ final class WeightedAvgCompanionsRegistryTest extends TestCase
         $this->assertTrue($sumW->isInternal());
     }
 
-    public function test_companion_resolver_returns_both_column_names(): void
+    #[Test]
+    public function companion_resolver_returns_both_column_names(): void
     {
         $companions = AggregateRegistry::weightedAvgCompanionsFor(WeightedArea::class);
 

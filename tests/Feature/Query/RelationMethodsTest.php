@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -41,7 +42,8 @@ final class RelationMethodsTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_fresh_aggregate_on_unknown_column_throws(): void
+    #[Test]
+    public function fresh_aggregate_on_unknown_column_throws(): void
     {
         // Category has no aggregate columns. Asking for one must throw,
         // not silently return null.
@@ -53,7 +55,8 @@ final class RelationMethodsTest extends TestCase
         $root->freshAggregate('nonexistent_column');
     }
 
-    public function test_descendants_relation_can_be_bounded_by_depth(): void
+    #[Test]
+    public function descendants_relation_can_be_bounded_by_depth(): void
     {
         // The docs say:
         //   $root->load([
@@ -72,7 +75,8 @@ final class RelationMethodsTest extends TestCase
         $this->assertSame(['A', 'B'], array_values($names));
     }
 
-    public function test_with_count_descendants_counts_strict_descendants(): void
+    #[Test]
+    public function with_count_descendants_counts_strict_descendants(): void
     {
         $rows = Category::query()->withCount('descendants')->orderBy('id')->get()->keyBy('id');
 
@@ -88,7 +92,8 @@ final class RelationMethodsTest extends TestCase
         $this->assertSame(0, (int) $aa->descendants_count);
     }
 
-    public function test_with_count_ancestors_counts_strict_ancestors(): void
+    #[Test]
+    public function with_count_ancestors_counts_strict_ancestors(): void
     {
         $rows = Category::query()->withCount('ancestors')->orderBy('id')->get()->keyBy('id');
 
@@ -101,7 +106,8 @@ final class RelationMethodsTest extends TestCase
         $this->assertSame(2, (int) $aa->ancestors_count);
     }
 
-    public function test_where_has_descendants_with_predicate_filters_to_matching_ancestors(): void
+    #[Test]
+    public function where_has_descendants_with_predicate_filters_to_matching_ancestors(): void
     {
         // Doc shape: Category::whereHas('descendants', fn ($q) => $q->where(...)).
         // Here: "find every ancestor of AB by name". Only AB exists with
@@ -116,7 +122,8 @@ final class RelationMethodsTest extends TestCase
         $this->assertSame(['Root', 'A'], $names);
     }
 
-    public function test_where_has_descendants_excludes_rows_with_no_matching_descendants(): void
+    #[Test]
+    public function where_has_descendants_excludes_rows_with_no_matching_descendants(): void
     {
         // Leaves (AA, AB, B) cannot satisfy whereHas('descendants', anything)
         // because they have no descendants at all — the relation predicate
@@ -131,7 +138,8 @@ final class RelationMethodsTest extends TestCase
         $this->assertSame(['Root', 'A'], $names);
     }
 
-    public function test_where_has_ancestors_filters_to_rows_with_matching_ancestor(): void
+    #[Test]
+    public function where_has_ancestors_filters_to_rows_with_matching_ancestor(): void
     {
         // "Find every node whose ancestor chain includes 'A'" = AA + AB.
         $names = Category::query()

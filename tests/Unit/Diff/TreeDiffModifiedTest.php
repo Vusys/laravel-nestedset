@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeChange\Modified;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffModifiedTest extends TestCase
 {
-    public function test_column_change_surfaces_as_modified(): void
+    #[Test]
+    public function column_change_surfaces_as_modified(): void
     {
         $before = [['id' => 1, 'name' => 'Old', 'parent_id' => null]];
         $after = [['id' => 1, 'name' => 'New', 'parent_id' => null]];
@@ -25,7 +27,8 @@ final class TreeDiffModifiedTest extends TestCase
         $this->assertSame(['name' => 'New'], $m->after);
     }
 
-    public function test_ignored_columns_do_not_count(): void
+    #[Test]
+    public function ignored_columns_do_not_count(): void
     {
         $before = [['id' => 1, 'name' => 'X', 'parent_id' => null, 'updated_at' => '2026-01-01']];
         $after = [['id' => 1, 'name' => 'X', 'parent_id' => null, 'updated_at' => '2026-05-31']];
@@ -36,7 +39,8 @@ final class TreeDiffModifiedTest extends TestCase
         $this->assertTrue($diff->isEmpty());
     }
 
-    public function test_structural_columns_are_never_modified(): void
+    #[Test]
+    public function structural_columns_are_never_modified(): void
     {
         $before = [['id' => 1, 'name' => 'X', 'parent_id' => null, 'lft' => 1, 'rgt' => 2, 'depth' => 0]];
         $after = [['id' => 1, 'name' => 'X', 'parent_id' => null, 'lft' => 5, 'rgt' => 6, 'depth' => 1]];
@@ -46,7 +50,8 @@ final class TreeDiffModifiedTest extends TestCase
         $this->assertSame([], $diff->modified);
     }
 
-    public function test_json_column_equality_is_canonical(): void
+    #[Test]
+    public function json_column_equality_is_canonical(): void
     {
         $before = [['id' => 1, 'parent_id' => null, 'meta' => ['a' => 1, 'b' => 2]]];
         $after = [['id' => 1, 'parent_id' => null, 'meta' => ['b' => 2, 'a' => 1]]];

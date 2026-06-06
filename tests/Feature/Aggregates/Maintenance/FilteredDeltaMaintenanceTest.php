@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\TypedArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -72,7 +73,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
     // Create: filter guards on applyAggregateOnCreate
     // ----------------------------------------------------------------
 
-    public function test_create_fire_node_increments_parent_fire_sum(): void
+    #[Test]
+    public function create_fire_node_increments_parent_fire_sum(): void
     {
         $this->insertChild(20, 'fire');
 
@@ -81,7 +83,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
         $this->assertSame(20, $this->asInt($parent->fire_tickets));
     }
 
-    public function test_create_water_node_does_not_increment_parent_fire_sum(): void
+    #[Test]
+    public function create_water_node_does_not_increment_parent_fire_sum(): void
     {
         $this->insertChild(20, 'water');
 
@@ -90,7 +93,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
         $this->assertSame(0, $this->asInt($parent->fire_tickets));
     }
 
-    public function test_create_fire_node_increments_fire_count(): void
+    #[Test]
+    public function create_fire_node_increments_fire_count(): void
     {
         $this->insertChild(10, 'fire');
 
@@ -99,7 +103,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
         $this->assertSame(1, $this->asInt($parent->fire_count));
     }
 
-    public function test_not_null_count_increments_on_create(): void
+    #[Test]
+    public function not_null_count_increments_on_create(): void
     {
         // has_tickets uses filterNotNull: 'tickets'; tickets=5 (non-null) should increment.
         $this->insertChild(5, null);
@@ -113,7 +118,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
     // Update: delta maintenance with filter awareness
     // ----------------------------------------------------------------
 
-    public function test_update_source_increments_fire_sum_for_fire_node(): void
+    #[Test]
+    public function update_source_increments_fire_sum_for_fire_node(): void
     {
         $child = $this->insertChild(10, 'fire');
         $child->refresh();
@@ -126,7 +132,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
         $this->assertSame(30, $this->asInt($parent->fire_tickets));
     }
 
-    public function test_reclassify_to_fire_adds_contribution(): void
+    #[Test]
+    public function reclassify_to_fire_adds_contribution(): void
     {
         $child = $this->insertChild(20, 'water');
 
@@ -144,7 +151,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
         $this->assertSame(20, $this->asInt($parent->fire_tickets));
     }
 
-    public function test_reclassify_away_from_fire_removes_contribution(): void
+    #[Test]
+    public function reclassify_away_from_fire_removes_contribution(): void
     {
         $child = $this->insertChild(20, 'fire');
 
@@ -176,7 +184,8 @@ final class FilteredDeltaMaintenanceTest extends TestCase
      * with 0. Caught by the multi-mutation random walk's seed=1
      * step 33.
      */
-    public function test_move_subtree_with_null_filtered_max_leaves_destination_null(): void
+    #[Test]
+    public function move_subtree_with_null_filtered_max_leaves_destination_null(): void
     {
         // A is type=null (so own type='water' filter does not match);
         // A starts as a leaf with no water descendants → water_max = NULL.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
@@ -83,7 +84,8 @@ final class ExclusiveAggregateTest extends TestCase
     // Fresh-read path: withFreshAggregates() correctly excludes self.
     // ----------------------------------------------------------------
 
-    public function test_fresh_read_excludes_self_for_descendants_total(): void
+    #[Test]
+    public function fresh_read_excludes_self_for_descendants_total(): void
     {
         $this->buildTree();
 
@@ -96,7 +98,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertSame(0, (int) $this->freshById($this->ids['B'], ['descendants_total'])->descendants_total);
     }
 
-    public function test_fresh_read_excludes_self_for_descendants_count(): void
+    #[Test]
+    public function fresh_read_excludes_self_for_descendants_count(): void
     {
         $this->buildTree();
 
@@ -109,7 +112,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertSame(0, (int) $this->freshById($this->ids['B'], ['descendants_count'])->descendants_count);
     }
 
-    public function test_fresh_read_excludes_self_for_descendants_max(): void
+    #[Test]
+    public function fresh_read_excludes_self_for_descendants_max(): void
     {
         $this->buildTree();
 
@@ -122,7 +126,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertNull($this->freshById($this->ids['B'], ['descendants_max'])->descendants_max);
     }
 
-    public function test_fresh_aggregate_scalar_for_exclusive_column(): void
+    #[Test]
+    public function fresh_aggregate_scalar_for_exclusive_column(): void
     {
         $this->buildTree();
 
@@ -138,7 +143,8 @@ final class ExclusiveAggregateTest extends TestCase
     // via the chain-recompute path. No fixAggregates() required.
     // ----------------------------------------------------------------
 
-    public function test_save_maintains_exclusive_columns_on_create(): void
+    #[Test]
+    public function save_maintains_exclusive_columns_on_create(): void
     {
         $this->buildTree();
 
@@ -168,7 +174,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertSame(100, (int) $root->tickets_total); // 10+20+30+40
     }
 
-    public function test_save_maintains_exclusive_columns_on_source_update(): void
+    #[Test]
+    public function save_maintains_exclusive_columns_on_source_update(): void
     {
         $this->buildTree();
 
@@ -198,7 +205,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertSame(50, (int) $root->descendants_max);
     }
 
-    public function test_save_maintains_exclusive_columns_on_delete(): void
+    #[Test]
+    public function save_maintains_exclusive_columns_on_delete(): void
     {
         $this->buildTree();
 
@@ -218,7 +226,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertNull($a->descendants_max);
     }
 
-    public function test_aggregate_errors_reports_no_drift_when_maintained(): void
+    #[Test]
+    public function aggregate_errors_reports_no_drift_when_maintained(): void
     {
         $this->buildTree();
 
@@ -230,7 +239,8 @@ final class ExclusiveAggregateTest extends TestCase
         $this->assertSame(0, $errors['descendants_max'] ?? -1);
     }
 
-    public function test_fix_aggregates_idempotent_after_save(): void
+    #[Test]
+    public function fix_aggregates_idempotent_after_save(): void
     {
         $this->buildTree();
 
@@ -245,7 +255,8 @@ final class ExclusiveAggregateTest extends TestCase
     // modifier path through FreshAggregateProjector.
     // ----------------------------------------------------------------
 
-    public function test_adhoc_exclusive_aggregate_in_with_fresh_aggregates(): void
+    #[Test]
+    public function adhoc_exclusive_aggregate_in_with_fresh_aggregates(): void
     {
         $this->buildTree();
 

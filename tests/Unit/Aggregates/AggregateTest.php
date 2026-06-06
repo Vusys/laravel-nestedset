@@ -9,6 +9,7 @@ use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
 use Illuminate\Database\Grammar;
 use Illuminate\Database\Query\Expression;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
@@ -24,7 +25,8 @@ final class AggregateTest extends TestCase
      * @param  Closure(): Aggregate  $factory
      */
     #[DataProvider('factoryCases')]
-    public function test_factory_captures_function_source_and_weight(
+    #[Test]
+    public function factory_captures_function_source_and_weight(
         Closure $factory,
         AggregateFunction $expectedFunction,
         ?string $expectedSource,
@@ -71,7 +73,8 @@ final class AggregateTest extends TestCase
      * @param  Closure(): mixed  $call
      */
     #[DataProvider('factoryValidationCases')]
-    public function test_factory_rejects_invalid_configuration(Closure $call, string $expectedMessageFragment): void
+    #[Test]
+    public function factory_rejects_invalid_configuration(Closure $call, string $expectedMessageFragment): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage($expectedMessageFragment);
@@ -109,7 +112,8 @@ final class AggregateTest extends TestCase
      * @param  Closure(): Aggregate  $factory
      */
     #[DataProvider('validLimitCases')]
-    public function test_factory_accepts_zero_and_positive_limits(Closure $factory, int $expectedLimit): void
+    #[Test]
+    public function factory_accepts_zero_and_positive_limits(Closure $factory, int $expectedLimit): void
     {
         $this->assertSame($expectedLimit, $factory()->limit);
     }
@@ -127,27 +131,32 @@ final class AggregateTest extends TestCase
         yield 'json_object_agg positive limit' => [fn (): Aggregate => Aggregate::jsonObjectAgg('k', 'v', limit: 5), 5];
     }
 
-    public function test_json_agg_explicit_order_by_overrides_the_source_default(): void
+    #[Test]
+    public function json_agg_explicit_order_by_overrides_the_source_default(): void
     {
         $this->assertSame('sort_col', Aggregate::jsonAgg('x', orderBy: 'sort_col')->orderBy);
     }
 
-    public function test_json_agg_order_by_defaults_to_the_source_column(): void
+    #[Test]
+    public function json_agg_order_by_defaults_to_the_source_column(): void
     {
         $this->assertSame('x', Aggregate::jsonAgg('x')->orderBy);
     }
 
-    public function test_json_object_agg_explicit_order_by_overrides_the_key_default(): void
+    #[Test]
+    public function json_object_agg_explicit_order_by_overrides_the_key_default(): void
     {
         $this->assertSame('sort_col', Aggregate::jsonObjectAgg('k', 'v', orderBy: 'sort_col')->orderBy);
     }
 
-    public function test_json_object_agg_order_by_defaults_to_the_key_column(): void
+    #[Test]
+    public function json_object_agg_order_by_defaults_to_the_key_column(): void
     {
         $this->assertSame('k', Aggregate::jsonObjectAgg('k', 'v')->orderBy);
     }
 
-    public function test_json_agg_array_source_is_inclusive_and_captures_sources(): void
+    #[Test]
+    public function json_agg_array_source_is_inclusive_and_captures_sources(): void
     {
         $aggregate = Aggregate::jsonAgg(['a', 'b']);
 
@@ -156,29 +165,34 @@ final class AggregateTest extends TestCase
         $this->assertSame(['a' => 'a', 'b' => 'b'], $aggregate->sources);
     }
 
-    public function test_variance_factory_defaults_to_population(): void
+    #[Test]
+    public function variance_factory_defaults_to_population(): void
     {
         $aggregate = Aggregate::variance('tickets');
 
         $this->assertFalse($aggregate->sample, 'variance() default is population variance');
     }
 
-    public function test_variance_factory_with_sample_flag(): void
+    #[Test]
+    public function variance_factory_with_sample_flag(): void
     {
         $this->assertTrue(Aggregate::variance('tickets', sample: true)->sample);
     }
 
-    public function test_stddev_factory_defaults_to_population(): void
+    #[Test]
+    public function stddev_factory_defaults_to_population(): void
     {
         $this->assertFalse(Aggregate::stddev('tickets')->sample);
     }
 
-    public function test_stddev_factory_with_sample_flag(): void
+    #[Test]
+    public function stddev_factory_with_sample_flag(): void
     {
         $this->assertTrue(Aggregate::stddev('tickets', sample: true)->sample);
     }
 
-    public function test_sample_flag_persists_across_modifier_calls(): void
+    #[Test]
+    public function sample_flag_persists_across_modifier_calls(): void
     {
         $aggregate = Aggregate::stddev('tickets', sample: true)
             ->exclusive()
@@ -188,14 +202,16 @@ final class AggregateTest extends TestCase
         $this->assertFalse($aggregate->inclusive);
     }
 
-    public function test_into_propagates_sample_flag_to_definition(): void
+    #[Test]
+    public function into_propagates_sample_flag_to_definition(): void
     {
         $definition = Aggregate::stddev('tickets', sample: true)->into('tickets_stddev');
 
         $this->assertTrue($definition->sample);
     }
 
-    public function test_allow_non_positive_sets_the_flag_and_preserves_the_rest(): void
+    #[Test]
+    public function allow_non_positive_sets_the_flag_and_preserves_the_rest(): void
     {
         $base = Aggregate::geometricMean('rate')->exclusive();
         $relaxed = $base->allowNonPositive();
@@ -207,21 +223,24 @@ final class AggregateTest extends TestCase
         $this->assertFalse($relaxed->inclusive, 'allowNonPositive() preserves the exclusive flag');
     }
 
-    public function test_exclusive_modifier_flips_the_inclusive_flag(): void
+    #[Test]
+    public function exclusive_modifier_flips_the_inclusive_flag(): void
     {
         $aggregate = Aggregate::sum('tickets')->exclusive();
 
         $this->assertFalse($aggregate->inclusive);
     }
 
-    public function test_inclusive_modifier_restores_the_default(): void
+    #[Test]
+    public function inclusive_modifier_restores_the_default(): void
     {
         $aggregate = Aggregate::sum('tickets')->exclusive()->inclusive();
 
         $this->assertTrue($aggregate->inclusive);
     }
 
-    public function test_modifiers_return_new_instances(): void
+    #[Test]
+    public function modifiers_return_new_instances(): void
     {
         $base = Aggregate::sum('tickets');
         $exclusive = $base->exclusive();
@@ -231,7 +250,8 @@ final class AggregateTest extends TestCase
         $this->assertFalse($exclusive->inclusive);
     }
 
-    public function test_into_produces_a_definition_with_all_fields(): void
+    #[Test]
+    public function into_produces_a_definition_with_all_fields(): void
     {
         $definition = Aggregate::sum('tickets')->into('tickets_total');
 
@@ -242,7 +262,8 @@ final class AggregateTest extends TestCase
         $this->assertFalse($definition->isInternal());
     }
 
-    public function test_into_carries_exclusive_flag_into_the_definition(): void
+    #[Test]
+    public function into_carries_exclusive_flag_into_the_definition(): void
     {
         $definition = Aggregate::sum('tickets')
             ->exclusive()
@@ -251,7 +272,8 @@ final class AggregateTest extends TestCase
         $this->assertFalse($definition->inclusive);
     }
 
-    public function test_into_rejects_empty_column_name(): void
+    #[Test]
+    public function into_rejects_empty_column_name(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('must not be empty');
@@ -259,12 +281,14 @@ final class AggregateTest extends TestCase
         Aggregate::sum('tickets')->into('');
     }
 
-    public function test_filter_is_null_by_default(): void
+    #[Test]
+    public function filter_is_null_by_default(): void
     {
         $this->assertNull(Aggregate::sum('tickets')->filter);
     }
 
-    public function test_filter_method_sets_equality_predicate(): void
+    #[Test]
+    public function filter_method_sets_equality_predicate(): void
     {
         $aggregate = Aggregate::sum('tickets')->filter(['type' => 'fire']);
 
@@ -273,7 +297,8 @@ final class AggregateTest extends TestCase
         $this->assertSame(['type' => 'fire'], $aggregate->filter->getConditions());
     }
 
-    public function test_filter_not_null_method_sets_not_null_predicate(): void
+    #[Test]
+    public function filter_not_null_method_sets_not_null_predicate(): void
     {
         $aggregate = Aggregate::sum('tickets')->filterNotNull('deleted_at');
 
@@ -281,7 +306,8 @@ final class AggregateTest extends TestCase
         $this->assertSame(FilterPredicateKind::NotNull, $aggregate->filter->getKind());
     }
 
-    public function test_filter_raw_method_sets_raw_predicate(): void
+    #[Test]
+    public function filter_raw_method_sets_raw_predicate(): void
     {
         $aggregate = Aggregate::sum('tickets')->filterRaw('status = 1', ['status']);
 
@@ -291,7 +317,8 @@ final class AggregateTest extends TestCase
         $this->assertSame(['status'], $aggregate->filter->watchColumns());
     }
 
-    public function test_filter_raw_accepts_db_raw_expression(): void
+    #[Test]
+    public function filter_raw_accepts_db_raw_expression(): void
     {
         // DB::raw() returns a Laravel Expression — the package extracts
         // the underlying SQL string via reflection (Expression::getValue
@@ -305,7 +332,8 @@ final class AggregateTest extends TestCase
         $this->assertSame(['status'], $aggregate->filter->watchColumns());
     }
 
-    public function test_filter_raw_rejects_an_expression_without_a_scalar_value(): void
+    #[Test]
+    public function filter_raw_rejects_an_expression_without_a_scalar_value(): void
     {
         // expressionToString() reads the Expression's underlying `value`
         // via reflection. A malformed Expression whose value is non-scalar
@@ -327,7 +355,8 @@ final class AggregateTest extends TestCase
         Aggregate::sum('tickets')->filterRaw($weird, ['status']);
     }
 
-    public function test_filter_modifier_returns_new_instance(): void
+    #[Test]
+    public function filter_modifier_returns_new_instance(): void
     {
         $base = Aggregate::sum('tickets');
         $filtered = $base->filter(['type' => 'fire']);
@@ -337,7 +366,8 @@ final class AggregateTest extends TestCase
         $this->assertNotNull($filtered->filter);
     }
 
-    public function test_into_carries_filter_to_definition(): void
+    #[Test]
+    public function into_carries_filter_to_definition(): void
     {
         $definition = Aggregate::sum('tickets')
             ->filter(['type' => 'fire'])
@@ -347,7 +377,8 @@ final class AggregateTest extends TestCase
         $this->assertSame(FilterPredicateKind::Equality, $definition->filter->getKind());
     }
 
-    public function test_exclusive_preserves_filter(): void
+    #[Test]
+    public function exclusive_preserves_filter(): void
     {
         $aggregate = Aggregate::sum('tickets')
             ->filter(['type' => 'fire'])

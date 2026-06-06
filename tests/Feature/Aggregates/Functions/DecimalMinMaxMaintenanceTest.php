@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\PricedArea;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -18,7 +19,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class DecimalMinMaxMaintenanceTest extends TestCase
 {
-    public function test_delete_holder_with_decimal_price_recomputes_ancestor_max(): void
+    #[Test]
+    public function delete_holder_with_decimal_price_recomputes_ancestor_max(): void
     {
         $root = new PricedArea(['name' => 'Root', 'price' => '1.00']);
         $root->saveAsRoot();
@@ -41,7 +43,8 @@ final class DecimalMinMaxMaintenanceTest extends TestCase
         $this->assertSame('5.50', $root->refresh()->price_max);
     }
 
-    public function test_delete_holder_with_decimal_price_recomputes_ancestor_min(): void
+    #[Test]
+    public function delete_holder_with_decimal_price_recomputes_ancestor_min(): void
     {
         $root = new PricedArea(['name' => 'Root', 'price' => '10.00']);
         $root->saveAsRoot();
@@ -62,7 +65,8 @@ final class DecimalMinMaxMaintenanceTest extends TestCase
         $this->assertSame('5.50', $root->refresh()->price_min);
     }
 
-    public function test_move_decimal_min_holder_out_of_subtree_recomputes_old_ancestor(): void
+    #[Test]
+    public function move_decimal_min_holder_out_of_subtree_recomputes_old_ancestor(): void
     {
         $root = new PricedArea(['name' => 'Root', 'price' => '10.00']);
         $root->saveAsRoot();

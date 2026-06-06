@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance\Investigations;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
 use Vusys\NestedSet\Tests\Performance\PerformanceTestCase;
 
@@ -25,7 +26,8 @@ use Vusys\NestedSet\Tests\Performance\PerformanceTestCase;
  */
 final class MysqlFixAggregatesInvestigationTest extends PerformanceTestCase
 {
-    public function test_explore_query_shapes(): void
+    #[Test]
+    public function explore_query_shapes(): void
     {
         if (getenv('INVESTIGATE') !== '1') {
             $this->markTestSkipped('Set INVESTIGATE=1 to run this investigation.');

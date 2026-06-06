@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathInsertionTest extends TestCase
 {
-    public function test_root_path_wraps_segment(): void
+    #[Test]
+    public function root_path_wraps_segment(): void
     {
         $root = new SluggedCategory(['name' => 'Electronics']);
         $root->makeRoot()->save();
@@ -18,7 +20,8 @@ final class MaterialisedPathInsertionTest extends TestCase
         $this->assertSame('/electronics/', $root->url_path);
     }
 
-    public function test_child_path_appends_to_parent(): void
+    #[Test]
+    public function child_path_appends_to_parent(): void
     {
         $root = new SluggedCategory(['name' => 'Electronics']);
         $root->makeRoot()->save();
@@ -30,7 +33,8 @@ final class MaterialisedPathInsertionTest extends TestCase
         $this->assertSame('/electronics/laptops/', $child->url_path);
     }
 
-    public function test_grandchild_path_assembles_full_chain(): void
+    #[Test]
+    public function grandchild_path_assembles_full_chain(): void
     {
         $root = new SluggedCategory(['name' => 'Electronics']);
         $root->makeRoot()->save();
@@ -45,7 +49,8 @@ final class MaterialisedPathInsertionTest extends TestCase
         $this->assertSame('/electronics/laptops/ultrabooks/', $grandchild->url_path);
     }
 
-    public function test_unchanged_save_does_not_rewrite_path(): void
+    #[Test]
+    public function unchanged_save_does_not_rewrite_path(): void
     {
         $root = new SluggedCategory(['name' => 'Electronics']);
         $root->makeRoot()->save();

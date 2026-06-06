@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\Sequence;
 use InvalidArgumentException;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -30,7 +31,8 @@ final class FactoryTreeTest extends TestCase
     // Uniform tree shapes
     // ----------------------------------------------------------------
 
-    public function test_uniform_tree_produces_expected_node_count(): void
+    #[Test]
+    public function uniform_tree_produces_expected_node_count(): void
     {
         $root = Category::factory()->tree(depth: 3, branching: 2)->create();
 
@@ -39,7 +41,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_variable_branching_array_produces_per_depth_counts(): void
+    #[Test]
+    public function variable_branching_array_produces_per_depth_counts(): void
     {
         $root = Category::factory()->tree(depth: 3, branching: [5, 2, 1])->create();
 
@@ -51,7 +54,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_variable_branching_closure_invoked_per_parent_depth(): void
+    #[Test]
+    public function variable_branching_closure_invoked_per_parent_depth(): void
     {
         $seenDepths = [];
         $root = Category::factory()
@@ -72,7 +76,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_star_shape_one_root_n_siblings(): void
+    #[Test]
+    public function star_shape_one_root_n_siblings(): void
     {
         Category::factory()->tree(depth: 1, branching: 5)->create();
 
@@ -81,7 +86,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_spine_shape_single_chain(): void
+    #[Test]
+    public function spine_shape_single_chain(): void
     {
         Category::factory()->tree(depth: 4, branching: 1)->create();
 
@@ -91,7 +97,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_single_root_shape(): void
+    #[Test]
+    public function single_root_shape(): void
     {
         $root = Category::factory()->tree(depth: 0, branching: 0)->create();
 
@@ -105,7 +112,8 @@ final class FactoryTreeTest extends TestCase
     // Explicit shape
     // ----------------------------------------------------------------
 
-    public function test_tree_from_shape_with_explicit_attributes(): void
+    #[Test]
+    public function tree_from_shape_with_explicit_attributes(): void
     {
         $roots = Category::factory()->treeFromShape([
             ['name' => 'Electronics', 'children' => [
@@ -128,7 +136,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_tree_from_shape_under_existing_parent_grafts_subtree(): void
+    #[Test]
+    public function tree_from_shape_under_existing_parent_grafts_subtree(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -147,7 +156,8 @@ final class FactoryTreeTest extends TestCase
         }
     }
 
-    public function test_explicit_shape_with_single_top_level_entry_returns_model(): void
+    #[Test]
+    public function explicit_shape_with_single_top_level_entry_returns_model(): void
     {
         $root = Category::factory()->treeFromShape([
             ['name' => 'Solo', 'children' => [
@@ -160,7 +170,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertSame(2, Category::query()->count());
     }
 
-    public function test_empty_shape_throws(): void
+    #[Test]
+    public function empty_shape_throws(): void
     {
         $this->expectException(InvalidArgumentException::class);
         Category::factory()->treeFromShape([])->create();
@@ -170,28 +181,32 @@ final class FactoryTreeTest extends TestCase
     // Argument validation
     // ----------------------------------------------------------------
 
-    public function test_negative_depth_rejected(): void
+    #[Test]
+    public function negative_depth_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/depth must be >= 0/');
         Category::factory()->tree(depth: -1, branching: 1);
     }
 
-    public function test_int_branching_zero_with_positive_depth_rejected(): void
+    #[Test]
+    public function int_branching_zero_with_positive_depth_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/branching must be >= 1/');
         Category::factory()->tree(depth: 2, branching: 0);
     }
 
-    public function test_branching_array_shorter_than_depth_rejected(): void
+    #[Test]
+    public function branching_array_shorter_than_depth_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/branching array length \(2\) is less than depth \(3\)/');
         Category::factory()->tree(depth: 3, branching: [2, 2]);
     }
 
-    public function test_branching_array_zero_entry_with_deeper_levels_rejected(): void
+    #[Test]
+    public function branching_array_zero_entry_with_deeper_levels_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/branching\[0\] is 0/');
@@ -202,7 +217,8 @@ final class FactoryTreeTest extends TestCase
     // create() / make() passthrough
     // ----------------------------------------------------------------
 
-    public function test_create_without_tree_shape_delegates_to_parent(): void
+    #[Test]
+    public function create_without_tree_shape_delegates_to_parent(): void
     {
         $row = Category::factory()
             ->afterMaking(fn (Category $c): Category => $c->makeRoot())
@@ -214,7 +230,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertNull($row->parent_id);
     }
 
-    public function test_create_with_attributes_under_tree_shape_applies_state_first(): void
+    #[Test]
+    public function create_with_attributes_under_tree_shape_applies_state_first(): void
     {
         $root = Category::factory()
             ->tree(depth: 0, branching: 0, labelColumn: null)
@@ -225,7 +242,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertSame(1, Category::query()->count());
     }
 
-    public function test_make_without_tree_shape_delegates_to_parent(): void
+    #[Test]
+    public function make_without_tree_shape_delegates_to_parent(): void
     {
         $row = Category::factory()->make();
 
@@ -234,14 +252,16 @@ final class FactoryTreeTest extends TestCase
         $this->assertSame(0, Category::query()->count());
     }
 
-    public function test_preview_tree_without_queued_shape_throws(): void
+    #[Test]
+    public function preview_tree_without_queued_shape_throws(): void
     {
         $this->expectException(LogicException::class);
         $this->expectExceptionMessageMatches('/call tree\(\) or treeFromShape\(\) first/');
         Category::factory()->previewTree();
     }
 
-    public function test_count_zero_returns_empty_collection(): void
+    #[Test]
+    public function count_zero_returns_empty_collection(): void
     {
         $result = Category::factory()->count(0)->tree(depth: 1, branching: 2)->create();
 
@@ -254,7 +274,8 @@ final class FactoryTreeTest extends TestCase
     // Labels
     // ----------------------------------------------------------------
 
-    public function test_default_label_writes_depth_and_sibling_to_name(): void
+    #[Test]
+    public function default_label_writes_depth_and_sibling_to_name(): void
     {
         Category::factory()->tree(depth: 1, branching: 2)->create();
 
@@ -265,7 +286,8 @@ final class FactoryTreeTest extends TestCase
         );
     }
 
-    public function test_label_column_override_writes_to_alternative_column(): void
+    #[Test]
+    public function label_column_override_writes_to_alternative_column(): void
     {
         Category::factory()->tree(depth: 1, branching: 1, labelColumn: 'title')->create();
 
@@ -278,7 +300,8 @@ final class FactoryTreeTest extends TestCase
         }
     }
 
-    public function test_label_column_null_defers_entirely_to_definition(): void
+    #[Test]
+    public function label_column_null_defers_entirely_to_definition(): void
     {
         Category::factory()->tree(depth: 0, branching: 0, labelColumn: null)->create();
 
@@ -287,7 +310,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertStringNotContainsString('Depth ', $name);
     }
 
-    public function test_missing_label_column_rejected_upfront(): void
+    #[Test]
+    public function missing_label_column_rejected_upfront(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/no_such_column/');
@@ -299,7 +323,8 @@ final class FactoryTreeTest extends TestCase
     // Per-row closure
     // ----------------------------------------------------------------
 
-    public function test_per_row_closure_receives_depth_sibling_index_and_parent_attrs(): void
+    #[Test]
+    public function per_row_closure_receives_depth_sibling_index_and_parent_attrs(): void
     {
         $observed = [];
         Category::factory()->tree(
@@ -317,7 +342,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertContains([2, 1, true], $observed);
     }
 
-    public function test_per_row_closure_can_propagate_parent_attribute_down_tree(): void
+    #[Test]
+    public function per_row_closure_can_propagate_parent_attribute_down_tree(): void
     {
         Category::factory()->tree(
             depth: 2,
@@ -336,7 +362,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertSame(['rootdomain', 'rootdomain', 'rootdomain'], $names);
     }
 
-    public function test_per_row_closure_does_not_receive_primary_key(): void
+    #[Test]
+    public function per_row_closure_does_not_receive_primary_key(): void
     {
         $sawPrimary = false;
         Category::factory()->tree(
@@ -354,7 +381,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertFalse($sawPrimary, 'Parent attrs must not expose the primary key — rows have not been inserted yet.');
     }
 
-    public function test_per_row_closure_returning_non_array_throws(): void
+    #[Test]
+    public function per_row_closure_returning_non_array_throws(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
@@ -369,7 +397,8 @@ final class FactoryTreeTest extends TestCase
     // count() composition
     // ----------------------------------------------------------------
 
-    public function test_count_then_tree_produces_independent_trees(): void
+    #[Test]
+    public function count_then_tree_produces_independent_trees(): void
     {
         $result = Category::factory()->count(3)->tree(depth: 1, branching: 2)->create();
 
@@ -380,7 +409,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_sibling_index_resets_per_count_iteration(): void
+    #[Test]
+    public function sibling_index_resets_per_count_iteration(): void
     {
         $perRowSeen = [];
         Category::factory()->count(2)->tree(
@@ -397,7 +427,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertCount(2, $depthOneIndices, 'Each tree contributes one siblingIndex=1; global indexing would yield 0 or 3.');
     }
 
-    public function test_tree_then_count_rejected(): void
+    #[Test]
+    public function tree_then_count_rejected(): void
     {
         $this->expectException(LogicException::class);
 
@@ -408,14 +439,16 @@ final class FactoryTreeTest extends TestCase
     // make() rejection
     // ----------------------------------------------------------------
 
-    public function test_tree_then_make_throws(): void
+    #[Test]
+    public function tree_then_make_throws(): void
     {
         $this->expectException(LogicException::class);
 
         Category::factory()->tree(depth: 1, branching: 1)->make();
     }
 
-    public function test_tree_from_shape_then_make_throws(): void
+    #[Test]
+    public function tree_from_shape_then_make_throws(): void
     {
         $this->expectException(LogicException::class);
 
@@ -426,7 +459,8 @@ final class FactoryTreeTest extends TestCase
     // Scoped models
     // ----------------------------------------------------------------
 
-    public function test_scoped_factory_with_anchor_produces_scoped_tree(): void
+    #[Test]
+    public function scoped_factory_with_anchor_produces_scoped_tree(): void
     {
         $menu = Menu::create(['name' => 'Sidebar']);
         $anchor = new MenuItem(['name' => 'Anchor', 'menu_id' => $menu->id]);
@@ -446,14 +480,16 @@ final class FactoryTreeTest extends TestCase
         }
     }
 
-    public function test_scoped_factory_without_scope_state_raises_scope_violation(): void
+    #[Test]
+    public function scoped_factory_without_scope_state_raises_scope_violation(): void
     {
         $this->expectException(ScopeViolationException::class);
 
         MenuItem::factory()->tree(depth: 0, branching: 0)->create();
     }
 
-    public function test_parent_scope_mismatch_rejected_upfront(): void
+    #[Test]
+    public function parent_scope_mismatch_rejected_upfront(): void
     {
         $menuA = Menu::create(['name' => 'A']);
         $menuB = Menu::create(['name' => 'B']);
@@ -469,7 +505,8 @@ final class FactoryTreeTest extends TestCase
             ->create();
     }
 
-    public function test_scoped_factory_without_scope_state_falls_through_to_anchor_scope(): void
+    #[Test]
+    public function scoped_factory_without_scope_state_falls_through_to_anchor_scope(): void
     {
         $menu = Menu::create(['name' => 'Inherited']);
         $anchor = new MenuItem(['name' => 'Anchor', 'menu_id' => $menu->id]);
@@ -484,7 +521,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertSame($menu->id, $result->menu_id, 'menu_id flows from the anchor when factory state is silent.');
     }
 
-    public function test_parent_class_mismatch_rejected_upfront(): void
+    #[Test]
+    public function parent_class_mismatch_rejected_upfront(): void
     {
         $crossClassAnchor = new ScopedArea(['name' => 'cross-class', 'tenant_id' => 1]);
         $crossClassAnchor->saveAsRoot();
@@ -503,7 +541,8 @@ final class FactoryTreeTest extends TestCase
     // Soft-deleted parent rejection
     // ----------------------------------------------------------------
 
-    public function test_grafting_onto_trashed_parent_rejected_upfront(): void
+    #[Test]
+    public function grafting_onto_trashed_parent_rejected_upfront(): void
     {
         $trashed = new Category(['name' => 'gone']);
         $trashed->saveAsRoot();
@@ -521,7 +560,8 @@ final class FactoryTreeTest extends TestCase
     // Aggregate recompute
     // ----------------------------------------------------------------
 
-    public function test_aggregate_factory_populates_source_columns_and_recomputes(): void
+    #[Test]
+    public function aggregate_factory_populates_source_columns_and_recomputes(): void
     {
         $root = Area::factory()
             ->state(['tickets' => 5])
@@ -543,7 +583,8 @@ final class FactoryTreeTest extends TestCase
     // afterCreating hooks
     // ----------------------------------------------------------------
 
-    public function test_after_creating_fires_once_per_inserted_row(): void
+    #[Test]
+    public function after_creating_fires_once_per_inserted_row(): void
     {
         $touched = [];
         $factory = Category::factory()->afterCreating(function (Category $row) use (&$touched): void {
@@ -556,7 +597,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertSame(Category::query()->pluck('id')->all(), $touched);
     }
 
-    public function test_after_creating_opt_out_skips_hooks(): void
+    #[Test]
+    public function after_creating_opt_out_skips_hooks(): void
     {
         $touched = 0;
         $factory = Category::factory()->afterCreating(function () use (&$touched): void {
@@ -572,7 +614,8 @@ final class FactoryTreeTest extends TestCase
     // Sequences
     // ----------------------------------------------------------------
 
-    public function test_sequence_cycles_in_dfs_pre_order(): void
+    #[Test]
+    public function sequence_cycles_in_dfs_pre_order(): void
     {
         Category::factory()
             ->state(new Sequence(['title' => 'A'], ['title' => 'B'], ['title' => 'C']))
@@ -587,7 +630,8 @@ final class FactoryTreeTest extends TestCase
     // previewTree
     // ----------------------------------------------------------------
 
-    public function test_preview_tree_does_not_persist(): void
+    #[Test]
+    public function preview_tree_does_not_persist(): void
     {
         $payload = Category::factory()->tree(depth: 1, branching: 2)->previewTree();
 
@@ -596,7 +640,8 @@ final class FactoryTreeTest extends TestCase
         $this->assertCount(2, $payload[0]['children']);
     }
 
-    public function test_preview_tree_replays_via_tree_from_shape(): void
+    #[Test]
+    public function preview_tree_replays_via_tree_from_shape(): void
     {
         $payload = Category::factory()->tree(depth: 1, branching: 2)->previewTree();
 

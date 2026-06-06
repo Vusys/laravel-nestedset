@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Mutation;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -20,7 +21,8 @@ final class InsertionTest extends TestCase
         $this->root = $root->refresh();
     }
 
-    public function test_save_as_root_assigns_lft_rgt_depth(): void
+    #[Test]
+    public function save_as_root_assigns_lft_rgt_depth(): void
     {
         $this->assertSame(1, $this->root->lft);
         $this->assertSame(2, $this->root->rgt);
@@ -28,7 +30,8 @@ final class InsertionTest extends TestCase
         $this->assertNull($this->root->parent_id);
     }
 
-    public function test_append_to_node_inserts_after_existing_children(): void
+    #[Test]
+    public function append_to_node_inserts_after_existing_children(): void
     {
         $a = new Category(['name' => 'A']);
         $a->appendToNode($this->root)->save();
@@ -54,7 +57,8 @@ final class InsertionTest extends TestCase
         $this->assertSame($root->id, $b->parent_id);
     }
 
-    public function test_prepend_to_node_inserts_before_existing_children(): void
+    #[Test]
+    public function prepend_to_node_inserts_before_existing_children(): void
     {
         // Pre: Root(1,2). After appending A: Root(1,4), A(2,3).
         // Prepending First under Root must place First at lft=2, rgt=3
@@ -84,7 +88,8 @@ final class InsertionTest extends TestCase
         $this->assertSame(1, $a->depth);
     }
 
-    public function test_insert_before_node_places_new_sibling_to_the_left(): void
+    #[Test]
+    public function insert_before_node_places_new_sibling_to_the_left(): void
     {
         // Pre: Root(1,4) > A(2,3). Inserting Before to A's left should
         // produce Root(1,6) > Before(2,3) + A(4,5). Asserts the exact
@@ -112,7 +117,8 @@ final class InsertionTest extends TestCase
         $this->assertSame(6, $root->rgt);
     }
 
-    public function test_insert_after_node_places_new_sibling_to_the_right(): void
+    #[Test]
+    public function insert_after_node_places_new_sibling_to_the_right(): void
     {
         // Pre: Root(1,4) > A(2,3). Inserting After to A's right should
         // produce Root(1,6) > A(2,3) + After(4,5). Pinning A's bounds
@@ -141,7 +147,8 @@ final class InsertionTest extends TestCase
         $this->assertSame(6, $root->rgt);
     }
 
-    public function test_deep_nesting_maintains_correct_bounds(): void
+    #[Test]
+    public function deep_nesting_maintains_correct_bounds(): void
     {
         $a = new Category(['name' => 'A']);
         $a->appendToNode($this->root)->save();

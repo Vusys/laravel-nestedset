@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -132,7 +133,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_monster_stored_matches_fresh_after_create(array $spec): void
+    #[Test]
+    public function monster_stored_matches_fresh_after_create(array $spec): void
     {
         $nodes = $this->buildMonsterTree($spec);
 
@@ -143,7 +145,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_monster_stored_matches_fresh_after_base_power_update(array $spec): void
+    #[Test]
+    public function monster_stored_matches_fresh_after_base_power_update(array $spec): void
     {
         $nodes = $this->buildMonsterTree($spec);
 
@@ -166,7 +169,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_monster_stored_matches_fresh_after_level_update(array $spec): void
+    #[Test]
+    public function monster_stored_matches_fresh_after_level_update(array $spec): void
     {
         $nodes = $this->buildMonsterTree($spec);
 
@@ -191,7 +195,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_monster_stored_matches_fresh_after_type_flip(array $spec): void
+    #[Test]
+    public function monster_stored_matches_fresh_after_type_flip(array $spec): void
     {
         $nodes = $this->buildMonsterTree($spec);
 
@@ -214,7 +219,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_monster_stored_matches_fresh_after_soft_delete(array $spec): void
+    #[Test]
+    public function monster_stored_matches_fresh_after_soft_delete(array $spec): void
     {
         $nodes = $this->refreshAll($this->buildMonsterTree($spec));
 
@@ -242,7 +248,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_monster_stored_matches_fresh_after_soft_delete_then_restore(array $spec): void
+    #[Test]
+    public function monster_stored_matches_fresh_after_soft_delete_then_restore(array $spec): void
     {
         $nodes = $this->refreshAll($this->buildMonsterTree($spec));
 
@@ -283,7 +290,8 @@ final class ListenerCalculationCorrectnessTest extends TestCase
      * @param  array<string, mixed>  $spec
      */
     #[DataProvider('monsterTreeShapeProvider')]
-    public function test_fix_aggregates_is_a_noop_on_clean_tree(array $spec): void
+    #[Test]
+    public function fix_aggregates_is_a_noop_on_clean_tree(array $spec): void
     {
         $this->buildMonsterTree($spec);
 

@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Fuzzers;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -53,7 +54,8 @@ final class FixTreeFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_fix_tree_recovers_random_corruption(
+    #[Test]
+    public function fix_tree_recovers_random_corruption(
         int $seed,
         int $treeSize,
         int $corruptionCount,

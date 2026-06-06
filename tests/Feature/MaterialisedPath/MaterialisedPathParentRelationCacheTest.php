@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathParentRelationCacheTest extends TestCase
 {
-    public function test_eager_loaded_parent_skips_the_db_lookup(): void
+    #[Test]
+    public function eager_loaded_parent_skips_the_db_lookup(): void
     {
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();

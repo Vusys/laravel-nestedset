@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -33,7 +34,8 @@ final class BulkInsertTest extends TestCase
     // Shape correctness
     // ----------------------------------------------------------------
 
-    public function test_empty_input_returns_empty_array_and_does_no_writes(): void
+    #[Test]
+    public function empty_input_returns_empty_array_and_does_no_writes(): void
     {
         DB::enableQueryLog();
         $result = Area::bulkInsertTree([]);
@@ -42,7 +44,8 @@ final class BulkInsertTest extends TestCase
         $this->assertSame([], DB::getQueryLog());
     }
 
-    public function test_inserts_flat_forest_when_no_anchor(): void
+    #[Test]
+    public function inserts_flat_forest_when_no_anchor(): void
     {
         $models = Area::bulkInsertTree([
             ['name' => 'r1', 'tickets' => 10],
@@ -59,7 +62,8 @@ final class BulkInsertTest extends TestCase
         $this->assertSame([2, 4], array_map(fn (Area $a): int => $a->rgt, $models));
     }
 
-    public function test_inserts_nested_tree_under_existing_anchor(): void
+    #[Test]
+    public function inserts_nested_tree_under_existing_anchor(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -100,7 +104,8 @@ final class BulkInsertTest extends TestCase
         $this->assertSame(1, $root->lft);
     }
 
-    public function test_returns_hydrated_models_with_ids_and_attributes(): void
+    #[Test]
+    public function returns_hydrated_models_with_ids_and_attributes(): void
     {
         $models = Area::bulkInsertTree([
             ['name' => 'one', 'tickets' => 5],
@@ -119,7 +124,8 @@ final class BulkInsertTest extends TestCase
     // Eloquent semantics — events, casts, mass-assignment
     // ----------------------------------------------------------------
 
-    public function test_eloquent_events_fire_per_row(): void
+    #[Test]
+    public function eloquent_events_fire_per_row(): void
     {
         Event::fake();
 
@@ -137,7 +143,8 @@ final class BulkInsertTest extends TestCase
         Event::assertDispatchedTimes('eloquent.saved: '.Area::class, 3);
     }
 
-    public function test_casts_apply_to_tree_columns_on_returned_models(): void
+    #[Test]
+    public function casts_apply_to_tree_columns_on_returned_models(): void
     {
         // Area::$casts maps lft/rgt/depth/parent_id/tickets to integer.
         // If casts were bypassed, the underlying attributes (DB driver
@@ -155,7 +162,8 @@ final class BulkInsertTest extends TestCase
         $this->assertNull($only->parent_id);
     }
 
-    public function test_mass_assignment_respects_fillable(): void
+    #[Test]
+    public function mass_assignment_respects_fillable(): void
     {
         // Area::$fillable = ['name', 'tickets']. Anything else passed via
         // the constructor must be silently dropped before save() — this
@@ -190,7 +198,8 @@ final class BulkInsertTest extends TestCase
     }
 
     #[DataProvider('reservedAttributeProvider')]
-    public function test_rejects_reserved_attribute_keys(string $reserved): void
+    #[Test]
+    public function rejects_reserved_attribute_keys(string $reserved): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage($reserved);
@@ -200,14 +209,16 @@ final class BulkInsertTest extends TestCase
         ]);
     }
 
-    public function test_rejects_non_array_branch(): void
+    #[Test]
+    public function rejects_non_array_branch(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
         Area::bulkInsertTree(['this is not an array']); /** @phpstan-ignore-line */
     }
 
-    public function test_rejects_non_array_children(): void
+    #[Test]
+    public function rejects_non_array_children(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
@@ -220,7 +231,8 @@ final class BulkInsertTest extends TestCase
     // Aggregate correctness end-to-end
     // ----------------------------------------------------------------
 
-    public function test_aggregate_columns_are_correct_after_bulk_insert(): void
+    #[Test]
+    public function aggregate_columns_are_correct_after_bulk_insert(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -245,7 +257,8 @@ final class BulkInsertTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_aggregates_on_ancestors_above_the_anchor_are_refreshed(): void
+    #[Test]
+    public function aggregates_on_ancestors_above_the_anchor_are_refreshed(): void
     {
         // Regression: the post-bulk fixAggregates pass needs to cover
         // the anchor's ancestors, not just the inserted subtree. If it
@@ -285,7 +298,8 @@ final class BulkInsertTest extends TestCase
     // Transactional rollback
     // ----------------------------------------------------------------
 
-    public function test_failure_inside_save_rolls_back_the_whole_operation(): void
+    #[Test]
+    public function failure_inside_save_rolls_back_the_whole_operation(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -325,7 +339,8 @@ final class BulkInsertTest extends TestCase
     // Scope handling
     // ----------------------------------------------------------------
 
-    public function test_scoped_model_without_anchor_throws(): void
+    #[Test]
+    public function scoped_model_without_anchor_throws(): void
     {
         $this->expectException(ScopeViolationException::class);
 
@@ -334,7 +349,8 @@ final class BulkInsertTest extends TestCase
         ]);
     }
 
-    public function test_scoped_model_with_valid_anchor_inserts_under_anchor(): void
+    #[Test]
+    public function scoped_model_with_valid_anchor_inserts_under_anchor(): void
     {
         // Pins the happy-path inverse of the no-anchor case above. The
         // scope guard at the top of bulkInsertTree should NOT trip
@@ -362,7 +378,8 @@ final class BulkInsertTest extends TestCase
         }
     }
 
-    public function test_unsaved_anchor_rejected(): void
+    #[Test]
+    public function unsaved_anchor_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('persisted');
@@ -373,7 +390,8 @@ final class BulkInsertTest extends TestCase
         );
     }
 
-    public function test_bulk_insert_with_stale_anchor_uses_in_memory_bounds(): void
+    #[Test]
+    public function bulk_insert_with_stale_anchor_uses_in_memory_bounds(): void
     {
         // Footgun: bulkInsertTree reads $appendTo->getRgt() from the
         // in-memory model and trusts it. When the caller's reference
@@ -421,7 +439,8 @@ final class BulkInsertTest extends TestCase
         $this->assertFalse(Area::isBroken(), 'tree remains integral despite the stale anchor');
     }
 
-    public function test_bulk_insert_with_refreshed_anchor_appends_after_existing_children(): void
+    #[Test]
+    public function bulk_insert_with_refreshed_anchor_appends_after_existing_children(): void
     {
         // Mirror image of the stale-anchor test: when the caller
         // refreshes the anchor, bulkInsertTree picks up the live rgt
@@ -456,7 +475,8 @@ final class BulkInsertTest extends TestCase
         $this->assertFalse(Area::isBroken());
     }
 
-    public function test_cross_class_anchor_rejected(): void
+    #[Test]
+    public function cross_class_anchor_rejected(): void
     {
         // Persist a non-Area anchor so it passes the `exists` gate.
         // Without the class guard, bulkInsertTree would read this Category's
@@ -479,7 +499,8 @@ final class BulkInsertTest extends TestCase
     // for users who want events off.
     // ----------------------------------------------------------------
 
-    public function test_handles_deeply_nested_input_without_blowing_the_stack(): void
+    #[Test]
+    public function handles_deeply_nested_input_without_blowing_the_stack(): void
     {
         // Build a 2,000-level chain in the input array. The
         // previously-recursive plan walker would exhaust PHP's
@@ -498,7 +519,8 @@ final class BulkInsertTest extends TestCase
         $this->assertFalse(Area::isBroken());
     }
 
-    public function test_without_events_wrapper_suppresses_events_but_still_inserts(): void
+    #[Test]
+    public function without_events_wrapper_suppresses_events_but_still_inserts(): void
     {
         Event::fake();
 

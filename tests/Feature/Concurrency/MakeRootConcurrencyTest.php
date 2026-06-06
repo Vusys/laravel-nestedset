@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Concurrency;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -31,7 +32,8 @@ final class MakeRootConcurrencyTest extends TestCase
 {
     use ConcurrencyHarness;
 
-    public function test_parallel_make_root_callers_do_not_produce_duplicate_lft_or_rgt(): void
+    #[Test]
+    public function parallel_make_root_callers_do_not_produce_duplicate_lft_or_rgt(): void
     {
         $this->requireForkableMultiWriterBackend();
 
@@ -102,7 +104,8 @@ final class MakeRootConcurrencyTest extends TestCase
         $this->assertFalse(Category::isBroken(), 'tree must remain intact after concurrent makeRoot');
     }
 
-    public function test_parallel_make_root_in_a_scope_does_not_leak_into_sibling_scope(): void
+    #[Test]
+    public function parallel_make_root_in_a_scope_does_not_leak_into_sibling_scope(): void
     {
         // Scope-isolation cousin of the test above. Two scopes' roots
         // each restart `lft` / `rgt` at 1, so a missing scope filter

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffOnSlugTest extends TestCase
 {
-    public function test_diff_keyed_by_slug_uses_slug_as_identity(): void
+    #[Test]
+    public function diff_keyed_by_slug_uses_slug_as_identity(): void
     {
         $before = [
             ['id' => 1, 'slug' => 'root', 'name' => 'Root', 'parent_id' => null],
@@ -25,7 +27,8 @@ final class TreeDiffOnSlugTest extends TestCase
         $this->assertTrue($diff->isEmpty(), 'differing IDs should not be a diff when keyed by slug');
     }
 
-    public function test_renamed_slug_surfaces_as_removed_plus_added(): void
+    #[Test]
+    public function renamed_slug_surfaces_as_removed_plus_added(): void
     {
         $before = [
             ['id' => 1, 'slug' => 'old', 'parent_id' => null],

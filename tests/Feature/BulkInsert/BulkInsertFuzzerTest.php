@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
@@ -60,7 +61,8 @@ final class BulkInsertFuzzerTest extends TestCase
     // ================================================================
 
     #[DataProvider('seedProvider')]
-    public function test_random_specs_round_trip_for_area(int $seed, int $runs): void
+    #[Test]
+    public function random_specs_round_trip_for_area(int $seed, int $runs): void
     {
         mt_srand($seed);
 
@@ -155,7 +157,8 @@ final class BulkInsertFuzzerTest extends TestCase
     // ================================================================
 
     #[DataProvider('seedProvider')]
-    public function test_random_specs_scope_correctly_for_menu_item(int $seed, int $runs): void
+    #[Test]
+    public function random_specs_scope_correctly_for_menu_item(int $seed, int $runs): void
     {
         mt_srand($seed);
 

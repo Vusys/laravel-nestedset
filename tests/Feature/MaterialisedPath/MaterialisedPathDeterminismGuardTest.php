@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Exceptions\NonDeterministicPathSegment;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
@@ -63,7 +64,8 @@ final class MaterialisedPathDeterminismGuardTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_non_deterministic_builder_throws_in_debug_mode(): void
+    #[Test]
+    public function non_deterministic_builder_throws_in_debug_mode(): void
     {
         config(['app.debug' => true]);
 
@@ -74,7 +76,8 @@ final class MaterialisedPathDeterminismGuardTest extends TestCase
         $node->makeRoot()->save();
     }
 
-    public function test_non_deterministic_builder_does_not_throw_when_debug_is_false(): void
+    #[Test]
+    public function non_deterministic_builder_does_not_throw_when_debug_is_false(): void
     {
         config(['app.debug' => false]);
 

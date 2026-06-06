@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\WeightedArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -31,7 +32,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         return (float) $value;
     }
 
-    public function test_root_alone_has_weighted_average_equal_to_its_own_value(): void
+    #[Test]
+    public function root_alone_has_weighted_average_equal_to_its_own_value(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 50, 'weight' => 3]);
         $root->saveAsRoot();
@@ -41,7 +43,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(50.0, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_zero_weight_root_yields_null_weighted_average(): void
+    #[Test]
+    public function zero_weight_root_yields_null_weighted_average(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 50, 'weight' => 0]);
         $root->saveAsRoot();
@@ -51,7 +54,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertNull($root->value_wavg);
     }
 
-    public function test_weighted_average_across_subtree(): void
+    #[Test]
+    public function weighted_average_across_subtree(): void
     {
         // Root(value=10, weight=1) > A(value=20, weight=2)
         //                          > B(value=30, weight=7)
@@ -73,7 +77,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(20.0, $this->asFloat($a->value_wavg), 0.0001);
     }
 
-    public function test_updating_value_propagates_to_ancestor_weighted_average(): void
+    #[Test]
+    public function updating_value_propagates_to_ancestor_weighted_average(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 1]);
         $root->saveAsRoot();
@@ -89,7 +94,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(110 / 3, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_updating_weight_propagates_to_ancestor_weighted_average(): void
+    #[Test]
+    public function updating_weight_propagates_to_ancestor_weighted_average(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 1]);
         $root->saveAsRoot();
@@ -107,7 +113,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(170 / 9, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_deleting_descendant_rolls_out_of_weighted_average(): void
+    #[Test]
+    public function deleting_descendant_rolls_out_of_weighted_average(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 1]);
         $root->saveAsRoot();
@@ -126,7 +133,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(50 / 3, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_fix_aggregates_reproduces_delta_maintained_weighted_average(): void
+    #[Test]
+    public function fix_aggregates_reproduces_delta_maintained_weighted_average(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 5, 'weight' => 1]);
         $root->saveAsRoot();
@@ -146,7 +154,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta($deltaMaintained, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_fix_aggregates_repairs_corrupted_display_column(): void
+    #[Test]
+    public function fix_aggregates_repairs_corrupted_display_column(): void
     {
         $root = new WeightedArea(['name' => 'Root', 'value' => 10, 'weight' => 1]);
         $root->saveAsRoot();
@@ -168,7 +177,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
 
     // ── Edge cases on the weight axis ─────────────────────────────────
 
-    public function test_updating_a_descendants_weight_to_zero_removes_its_contribution(): void
+    #[Test]
+    public function updating_a_descendants_weight_to_zero_removes_its_contribution(): void
     {
         // Root(10, w=1) + A(50, w=4). Pre: Σ(w·x) = 10 + 200 = 210,
         // Σ(w) = 5, wavg = 42.
@@ -190,7 +200,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(10.0, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_negative_weight_is_accepted_and_subtracts_from_running_sums(): void
+    #[Test]
+    public function negative_weight_is_accepted_and_subtracts_from_running_sums(): void
     {
         // The package doesn't constrain weight sign — Σ(w·x) and Σ(w)
         // are linear, so negative weights just subtract their
@@ -208,7 +219,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(20 / 3, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_subtree_with_total_weight_zero_yields_null_display(): void
+    #[Test]
+    public function subtree_with_total_weight_zero_yields_null_display(): void
     {
         // Mixed positive + negative weights that sum to exactly zero
         // → SQL `Σ(w·x) / 0 = NULL`. Pin that the package surfaces NULL
@@ -223,7 +235,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertNull($root->value_wavg, 'zero total weight must yield NULL, not the last-good value');
     }
 
-    public function test_deleting_every_weight_carrying_descendant_keeps_root_self_weight(): void
+    #[Test]
+    public function deleting_every_weight_carrying_descendant_keeps_root_self_weight(): void
     {
         // Build Root(10, w=1) + A(50, w=2) + B(20, w=3). Then delete
         // A and B in succession. After both deletes, only the root
@@ -244,7 +257,8 @@ final class WeightedAvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(10.0, $this->asFloat($root->value_wavg), 0.0001);
     }
 
-    public function test_cross_parent_move_subtracts_from_old_chain_and_adds_to_new(): void
+    #[Test]
+    public function cross_parent_move_subtracts_from_old_chain_and_adds_to_new(): void
     {
         //   Root(0, w=0)            ← contributes nothing of its own
         //   ├── A(10, w=1)          ← A is its own subtree

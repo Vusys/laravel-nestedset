@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
@@ -60,7 +61,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
     // wideShallow: 1 root × N leaves
     // ----------------------------------------------------------------
 
-    public function test_wide_shallow_fix_aggregates(): void
+    #[Test]
+    public function wide_shallow_fix_aggregates(): void
     {
         foreach ([100, 1_000, 10_000] as $n) {
             DB::table('areas')->delete();
@@ -74,7 +76,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_wide_shallow_with_fresh_aggregates(): void
+    #[Test]
+    public function wide_shallow_with_fresh_aggregates(): void
     {
         foreach ([100, 1_000, 10_000] as $n) {
             DB::table('areas')->delete();
@@ -88,7 +91,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_wide_shallow_append_one_more_child(): void
+    #[Test]
+    public function wide_shallow_append_one_more_child(): void
     {
         foreach ([100, 1_000, 10_000] as $n) {
             DB::table('areas')->delete();
@@ -111,7 +115,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
     // leftLeaning: spine ≈ N/2 deep
     // ----------------------------------------------------------------
 
-    public function test_left_leaning_fix_aggregates(): void
+    #[Test]
+    public function left_leaning_fix_aggregates(): void
     {
         // Capped at N=1000 (spine ≈ 500 deep). Higher N risks the
         // recursive PHP walker in TreeRepairBuilder hitting stack
@@ -128,7 +133,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_left_leaning_fix_tree_recursion_probe(): void
+    #[Test]
+    public function left_leaning_fix_tree_recursion_probe(): void
     {
         // Smaller scale — fixTree's walker is the deepest-recursion
         // path in the package.
@@ -152,7 +158,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
     // fragmentedForest: 100 + 10×100 + 1×1000
     // ----------------------------------------------------------------
 
-    public function test_fragmented_forest_fix_aggregates(): void
+    #[Test]
+    public function fragmented_forest_fix_aggregates(): void
     {
         DB::table('areas')->delete();
         TreeShapes::fragmentedForest('areas');
@@ -164,7 +171,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_fragmented_forest_with_fresh_aggregates(): void
+    #[Test]
+    public function fragmented_forest_with_fresh_aggregates(): void
     {
         DB::table('areas')->delete();
         TreeShapes::fragmentedForest('areas');
@@ -180,7 +188,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
     // deepChain at N=10000 — explicit stack-depth probe
     // ----------------------------------------------------------------
 
-    public function test_deep_chain_10k_fix_aggregates(): void
+    #[Test]
+    public function deep_chain_10k_fix_aggregates(): void
     {
         DB::table('areas')->delete();
         TreeShapes::deepChain('areas', nodes: 10_000);
@@ -192,7 +201,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_deep_chain_10k_fix_tree_recursion_limit(): void
+    #[Test]
+    public function deep_chain_10k_fix_tree_recursion_limit(): void
     {
         // The most stressful test in this file: rebuildTree's walker
         // is a recursive PHP closure. At depth 10K we're a few hundred
@@ -217,7 +227,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
     // size (wideShallow). The cost-per-save is O(depth × subtree-size).
     // ----------------------------------------------------------------
 
-    public function test_deep_chain_raw_filter_source_update(): void
+    #[Test]
+    public function deep_chain_raw_filter_source_update(): void
     {
         // Deep chain stresses chain length — recompute touches every
         // ancestor (D = N). Inner subquery per ancestor is small
@@ -239,7 +250,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_wide_shallow_raw_filter_source_update(): void
+    #[Test]
+    public function wide_shallow_raw_filter_source_update(): void
     {
         // Wide-shallow: depth = 1 but the root's subtree size = N. The
         // recompute touches one ancestor (root) but the inner subquery
@@ -261,7 +273,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_wide_shallow_raw_filter_fix_aggregates(): void
+    #[Test]
+    public function wide_shallow_raw_filter_fix_aggregates(): void
     {
         foreach ([100, 1_000, 10_000] as $n) {
             DB::table('branches')->delete();
@@ -281,7 +294,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
     // for each affected ancestor when an extremum is lost.
     // ----------------------------------------------------------------
 
-    public function test_deep_chain_listener_min_recompute(): void
+    #[Test]
+    public function deep_chain_listener_min_recompute(): void
     {
         // Each ancestor's contribution cache + bounds check runs in PHP
         // — pure-O(N²) on the deep-chain shape because the topmost
@@ -308,7 +322,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_wide_shallow_listener_min_delete(): void
+    #[Test]
+    public function wide_shallow_listener_min_delete(): void
     {
         foreach ([100, 1_000, 10_000] as $n) {
             DB::table('monsters')->delete();
@@ -331,7 +346,8 @@ final class PathologicalShapesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_wide_shallow_listener_fix_aggregates(): void
+    #[Test]
+    public function wide_shallow_listener_fix_aggregates(): void
     {
         // ListenerMaintenance::fixListenerAggregatesPhp is O(N²) — guard against silent
         // regressions in that bound.

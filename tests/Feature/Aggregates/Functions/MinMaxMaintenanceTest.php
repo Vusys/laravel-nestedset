@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
@@ -55,7 +56,8 @@ final class MinMaxMaintenanceTest extends TestCase
     // Insert: cheap delta extends the extremum
     // ----------------------------------------------------------------
 
-    public function test_root_after_insertion_holds_its_own_value_as_min_and_max(): void
+    #[Test]
+    public function root_after_insertion_holds_its_own_value_as_min_and_max(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -65,7 +67,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(100, $this->asInt($root->tickets_max));
     }
 
-    public function test_appending_a_smaller_child_lowers_min_but_keeps_max(): void
+    #[Test]
+    public function appending_a_smaller_child_lowers_min_but_keeps_max(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -79,7 +82,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(100, $this->asInt($root->tickets_max));
     }
 
-    public function test_appending_a_larger_child_raises_max_but_keeps_min(): void
+    #[Test]
+    public function appending_a_larger_child_raises_max_but_keeps_min(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -93,7 +97,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(200, $this->asInt($root->tickets_max));
     }
 
-    public function test_motivating_example_min_and_max(): void
+    #[Test]
+    public function motivating_example_min_and_max(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -121,7 +126,8 @@ final class MinMaxMaintenanceTest extends TestCase
     // Source-update: cheap delta when more extreme
     // ----------------------------------------------------------------
 
-    public function test_source_update_extends_max_via_cheap_delta(): void
+    #[Test]
+    public function source_update_extends_max_via_cheap_delta(): void
     {
         // Source going UP exercises the cheap-delta path for MAX (new value
         // can only extend the stored max). MIN may still need a recompute
@@ -141,7 +147,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(200, $this->asInt($root->refresh()->tickets_max));
     }
 
-    public function test_source_update_extends_min_via_cheap_delta(): void
+    #[Test]
+    public function source_update_extends_min_via_cheap_delta(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -157,7 +164,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(10, $this->asInt($root->refresh()->tickets_min));
     }
 
-    public function test_ascending_source_update_does_not_trigger_max_recompute(): void
+    #[Test]
+    public function ascending_source_update_does_not_trigger_max_recompute(): void
     {
         // Going up cannot invalidate MAX — only MIN. So a recompute SELECT
         // may fire for MIN, but the cheap-delta path is enough for MAX.
@@ -193,7 +201,8 @@ final class MinMaxMaintenanceTest extends TestCase
     // Source-update: recompute when less extreme + cheap-skip
     // ----------------------------------------------------------------
 
-    public function test_source_update_reducing_max_holder_recomputes(): void
+    #[Test]
+    public function source_update_reducing_max_holder_recomputes(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -217,7 +226,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(75, $this->asInt($a->refresh()->tickets_max));
     }
 
-    public function test_source_update_on_non_max_holder_skips_recompute(): void
+    #[Test]
+    public function source_update_on_non_max_holder_skips_recompute(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -251,7 +261,8 @@ final class MinMaxMaintenanceTest extends TestCase
     // Delete: recompute when extremum is lost + cheap-skip otherwise
     // ----------------------------------------------------------------
 
-    public function test_delete_current_max_holder_drops_ancestor_max(): void
+    #[Test]
+    public function delete_current_max_holder_drops_ancestor_max(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -271,7 +282,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(100, $this->asInt($root->refresh()->tickets_max));
     }
 
-    public function test_delete_non_holding_leaf_does_not_change_max(): void
+    #[Test]
+    public function delete_non_holding_leaf_does_not_change_max(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -289,7 +301,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertSame(200, $this->asInt($root->refresh()->tickets_max));
     }
 
-    public function test_delete_recompute_fires_only_when_extremum_is_at_risk(): void
+    #[Test]
+    public function delete_recompute_fires_only_when_extremum_is_at_risk(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -329,7 +342,8 @@ final class MinMaxMaintenanceTest extends TestCase
     // Drift check: stored vs fresh across a mixed batch
     // ----------------------------------------------------------------
 
-    public function test_stored_min_max_match_fresh_after_mixed_batch(): void
+    #[Test]
+    public function stored_min_max_match_fresh_after_mixed_batch(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -373,7 +387,8 @@ final class MinMaxMaintenanceTest extends TestCase
     // Locking config flag honoured
     // ----------------------------------------------------------------
 
-    public function test_locking_auto_issues_select_for_update_on_recompute(): void
+    #[Test]
+    public function locking_auto_issues_select_for_update_on_recompute(): void
     {
         if (DB::connection()->getDriverName() === 'sqlite') {
             $this->markTestSkipped('SQLite has no row-level locking; FOR UPDATE is a no-op there.');
@@ -398,7 +413,8 @@ final class MinMaxMaintenanceTest extends TestCase
         $this->assertGreaterThan(0, $forUpdateCount);
     }
 
-    public function test_locking_never_skips_select_for_update(): void
+    #[Test]
+    public function locking_never_skips_select_for_update(): void
     {
         config(['nestedset.aggregate_locking' => 'never']);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\DuplicatePathSegment;
 use Vusys\NestedSet\Exceptions\EmptyPathSegment;
 use Vusys\NestedSet\Exceptions\InvalidPathSegment;
@@ -13,7 +14,8 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathValidationTest extends TestCase
 {
-    public function test_empty_segment_throws(): void
+    #[Test]
+    public function empty_segment_throws(): void
     {
         $this->expectException(EmptyPathSegment::class);
         $this->expectExceptionMessageMatches('/empty string/');
@@ -22,7 +24,8 @@ final class MaterialisedPathValidationTest extends TestCase
         $node->makeRoot()->save();
     }
 
-    public function test_duplicate_sibling_throws(): void
+    #[Test]
+    public function duplicate_sibling_throws(): void
     {
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -37,7 +40,8 @@ final class MaterialisedPathValidationTest extends TestCase
         $b->appendToNode($root)->save();
     }
 
-    public function test_separator_in_segment_throws_by_default(): void
+    #[Test]
+    public function separator_in_segment_throws_by_default(): void
     {
         $this->expectException(InvalidPathSegment::class);
 

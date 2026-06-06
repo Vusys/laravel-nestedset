@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\KeyPathCategory;
 use Vusys\NestedSet\Tests\Fixtures\Models\MultiPathCategory;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
@@ -11,7 +12,8 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class MaterialisedPathBulkInsertTest extends TestCase
 {
-    public function test_bulk_insert_populates_paths_on_every_row(): void
+    #[Test]
+    public function bulk_insert_populates_paths_on_every_row(): void
     {
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -36,7 +38,8 @@ final class MaterialisedPathBulkInsertTest extends TestCase
         $this->assertSame('/root/branch/leaf-2/', $byName['Leaf-2']);
     }
 
-    public function test_bulk_insert_populates_key_dependent_paths(): void
+    #[Test]
+    public function bulk_insert_populates_key_dependent_paths(): void
     {
         $root = new KeyPathCategory(['name' => 'R']);
         $root->makeRoot()->save();
@@ -58,7 +61,8 @@ final class MaterialisedPathBulkInsertTest extends TestCase
         );
     }
 
-    public function test_bulk_insert_multi_path_keeps_each_column_independent(): void
+    #[Test]
+    public function bulk_insert_multi_path_keeps_each_column_independent(): void
     {
         $root = new MultiPathCategory(['name' => 'Electronics', 'display_name' => 'Electronics']);
         $root->makeRoot()->save();

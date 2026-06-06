@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\StatsMonster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -175,7 +176,8 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
         );
     }
 
-    public function test_move_subtree_recomputes_companion_derived_ops_on_both_chains(): void
+    #[Test]
+    public function move_subtree_recomputes_companion_derived_ops_on_both_chains(): void
     {
         ['root' => $root, 'leftRoot' => $leftRoot, 'rightRoot' => $rightRoot] = $this->seedTree();
 
@@ -190,7 +192,8 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
         $this->assertAggregatesMatch($leftRoot, 'post-move leftRoot (now under rightRoot)');
     }
 
-    public function test_move_subtree_out_of_old_chain_recomputes_companion_derived_ops_on_the_old_chain(): void
+    #[Test]
+    public function move_subtree_out_of_old_chain_recomputes_companion_derived_ops_on_the_old_chain(): void
     {
         ['root' => $root, 'leftRoot' => $leftRoot] = $this->seedTree();
 
@@ -217,7 +220,8 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
         $this->assertAggregatesMatch($leftRoot, 'post-move leftRoot (now under other)');
     }
 
-    public function test_hard_delete_recomputes_companion_derived_ops_on_chain(): void
+    #[Test]
+    public function hard_delete_recomputes_companion_derived_ops_on_chain(): void
     {
         ['root' => $root, 'leftRoot' => $leftRoot] = $this->seedTree();
 
@@ -235,7 +239,8 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
      * positive Min down to 0. This mirrors the guard already present
      * in collectMoveSubtreeContribution().
      */
-    public function test_non_soft_delete_restore_skips_null_listener_min(): void
+    #[Test]
+    public function non_soft_delete_restore_skips_null_listener_min(): void
     {
         // Ancestor with a legit Min of 5.
         $root = new StatsMonster(['name' => 'root', 'type' => 'fire', 'score' => 5.0]);
@@ -271,7 +276,8 @@ final class ListenerCompanionDerivedMoveRestoreTest extends TestCase
      * got rewritten by DeltaMaintenance::buildExtremeSetClauses() —
      * silently corrupting the display column on every restore.
      */
-    public function test_non_soft_delete_restore_recomputes_companion_derived_ops(): void
+    #[Test]
+    public function non_soft_delete_restore_recomputes_companion_derived_ops(): void
     {
         ['root' => $root, 'leftRoot' => $leftRoot] = $this->seedTree();
 

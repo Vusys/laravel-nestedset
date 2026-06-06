@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Repair;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
@@ -49,7 +50,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         ]);
     }
 
-    public function test_chunked_loop_repairs_a_drifted_tree(): void
+    #[Test]
+    public function chunked_loop_repairs_a_drifted_tree(): void
     {
         $this->seedAreaTree(7);
         $this->corruptAllAggregates();
@@ -62,7 +64,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken(), 'every chunk repaired');
     }
 
-    public function test_returned_result_aggregates_per_chunk_totals(): void
+    #[Test]
+    public function returned_result_aggregates_per_chunk_totals(): void
     {
         $this->seedAreaTree(5);
         $this->corruptAllAggregates();
@@ -82,7 +85,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         );
     }
 
-    public function test_on_chunk_callback_receives_result_index_and_cursor(): void
+    #[Test]
+    public function on_chunk_callback_receives_result_index_and_cursor(): void
     {
         $this->seedAreaTree(6);
         $this->corruptAllAggregates();
@@ -112,7 +116,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         $this->assertSame($sorted, $intermediates, 'cursors advance monotonically');
     }
 
-    public function test_chunked_loop_on_clean_tree_is_a_noop_per_chunk(): void
+    #[Test]
+    public function chunked_loop_on_clean_tree_is_a_noop_per_chunk(): void
     {
         $this->seedAreaTree(4);
         $this->assertFalse(Area::aggregatesAreBroken());
@@ -131,7 +136,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         }
     }
 
-    public function test_chunked_loop_short_circuits_on_empty_table(): void
+    #[Test]
+    public function chunked_loop_short_circuits_on_empty_table(): void
     {
         $this->assertSame(0, DB::table('areas')->count(), 'baseline: empty table');
 
@@ -149,7 +155,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         $this->assertSame(1, $invoked);
     }
 
-    public function test_chunked_path_with_chunk_size_zero_falls_back_to_one_shot(): void
+    #[Test]
+    public function chunked_path_with_chunk_size_zero_falls_back_to_one_shot(): void
     {
         $this->seedAreaTree(3);
         $this->corruptAllAggregates();
@@ -169,7 +176,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken(), 'one-shot path still repaired the tree');
     }
 
-    public function test_low_level_fix_aggregates_chunk_rejects_a_non_positive_chunk_size(): void
+    #[Test]
+    public function low_level_fix_aggregates_chunk_rejects_a_non_positive_chunk_size(): void
     {
         // The public `fixAggregates(chunkSize: 0)` wrapper treats 0 as
         // "no chunking", but the lower-level cursor entry point requires
@@ -182,7 +190,8 @@ final class SyncChunkedFixAggregatesTest extends TestCase
         Area::fixAggregatesChunk(null, null, 0);
     }
 
-    public function test_fix_aggregates_chunk_throws_when_anchor_row_is_missing(): void
+    #[Test]
+    public function fix_aggregates_chunk_throws_when_anchor_row_is_missing(): void
     {
         // A queued chunk job picked up minutes after dispatch can find
         // its anchor gone (hard-delete between dispatch and execution).

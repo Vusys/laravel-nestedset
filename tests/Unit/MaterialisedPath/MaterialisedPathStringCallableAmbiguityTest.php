@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\MaterialisedPath;
 
 use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
@@ -26,7 +27,8 @@ final class FunctionNameColumnFixture extends Model implements MaintainsTreeAggr
 
 final class MaterialisedPathStringCallableAmbiguityTest extends OrchestraTestCase
 {
-    public function test_string_entry_resolves_to_attribute_even_when_a_global_function_shares_the_name(): void
+    #[Test]
+    public function string_entry_resolves_to_attribute_even_when_a_global_function_shares_the_name(): void
     {
         MaterialisedPathRegistry::forgetCache();
 

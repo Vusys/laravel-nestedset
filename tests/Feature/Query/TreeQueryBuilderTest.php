@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -61,28 +62,32 @@ final class TreeQueryBuilderTest extends TestCase
     // whereDescendantOf
     // ----------------------------------------------------------------
 
-    public function test_where_descendant_of_returns_strict_descendants(): void
+    #[Test]
+    public function where_descendant_of_returns_strict_descendants(): void
     {
         $names = $this->q()->whereDescendantOf($this->root)->pluck('name')->sort()->values()->all();
 
         $this->assertSame(['AA', 'AB', 'Child A', 'Child B'], $names);
     }
 
-    public function test_where_descendant_of_excludes_self(): void
+    #[Test]
+    public function where_descendant_of_excludes_self(): void
     {
         $names = $this->q()->whereDescendantOf($this->root)->pluck('name')->all();
 
         $this->assertNotContains('Root', $names);
     }
 
-    public function test_where_descendant_of_subtree(): void
+    #[Test]
+    public function where_descendant_of_subtree(): void
     {
         $names = $this->q()->whereDescendantOf($this->childA)->pluck('name')->sort()->values()->all();
 
         $this->assertSame(['AA', 'AB'], $names);
     }
 
-    public function test_where_descendant_of_leaf_returns_empty(): void
+    #[Test]
+    public function where_descendant_of_leaf_returns_empty(): void
     {
         $result = $this->q()->whereDescendantOf($this->aa)->get();
 
@@ -93,7 +98,8 @@ final class TreeQueryBuilderTest extends TestCase
     // whereDescendantOrSelf
     // ----------------------------------------------------------------
 
-    public function test_where_descendant_or_self_includes_self(): void
+    #[Test]
+    public function where_descendant_or_self_includes_self(): void
     {
         $names = $this->q()->whereDescendantOrSelf($this->childA)->pluck('name')->sort()->values()->all();
 
@@ -104,14 +110,16 @@ final class TreeQueryBuilderTest extends TestCase
     // whereAncestorOf
     // ----------------------------------------------------------------
 
-    public function test_where_ancestor_of_returns_strict_ancestors(): void
+    #[Test]
+    public function where_ancestor_of_returns_strict_ancestors(): void
     {
         $names = $this->q()->whereAncestorOf($this->aa)->pluck('name')->sort()->values()->all();
 
         $this->assertSame(['Child A', 'Root'], $names);
     }
 
-    public function test_where_ancestor_of_excludes_self(): void
+    #[Test]
+    public function where_ancestor_of_excludes_self(): void
     {
         $names = $this->q()->whereAncestorOf($this->aa)->pluck('name')->all();
 
@@ -122,7 +130,8 @@ final class TreeQueryBuilderTest extends TestCase
     // whereAncestorOrSelf
     // ----------------------------------------------------------------
 
-    public function test_where_ancestor_or_self_includes_self(): void
+    #[Test]
+    public function where_ancestor_or_self_includes_self(): void
     {
         $names = $this->q()->whereAncestorOrSelf($this->aa)->pluck('name')->sort()->values()->all();
 
@@ -133,14 +142,16 @@ final class TreeQueryBuilderTest extends TestCase
     // whereIsRoot / whereIsLeaf
     // ----------------------------------------------------------------
 
-    public function test_where_is_root_returns_only_root(): void
+    #[Test]
+    public function where_is_root_returns_only_root(): void
     {
         $names = $this->q()->whereIsRoot()->pluck('name')->all();
 
         $this->assertSame(['Root'], $names);
     }
 
-    public function test_where_is_leaf_returns_leaves_only(): void
+    #[Test]
+    public function where_is_leaf_returns_leaves_only(): void
     {
         $names = $this->q()->whereIsLeaf()->pluck('name')->sort()->values()->all();
 
@@ -151,14 +162,16 @@ final class TreeQueryBuilderTest extends TestCase
     // whereIsAfter / whereIsBefore
     // ----------------------------------------------------------------
 
-    public function test_where_is_after_child_a_returns_child_b(): void
+    #[Test]
+    public function where_is_after_child_a_returns_child_b(): void
     {
         $names = $this->q()->whereIsAfter($this->childA)->pluck('name')->all();
 
         $this->assertSame(['Child B'], $names);
     }
 
-    public function test_where_is_before_child_a_returns_root_only(): void
+    #[Test]
+    public function where_is_before_child_a_returns_root_only(): void
     {
         // Only Root comes entirely before Child A's lft
         $names = $this->q()->whereIsBefore($this->childA)->pluck('name')->all();
@@ -166,7 +179,8 @@ final class TreeQueryBuilderTest extends TestCase
         $this->assertCount(0, $names); // nothing has rgt < 2
     }
 
-    public function test_where_is_before_child_b(): void
+    #[Test]
+    public function where_is_before_child_b(): void
     {
         // Nodes whose rgt < 8: Root has rgt=10 (no), Child A rgt=7 (yes), AA rgt=4, AB rgt=6
         $names = $this->q()->whereIsBefore($this->childB)->pluck('name')->sort()->values()->all();
@@ -178,7 +192,8 @@ final class TreeQueryBuilderTest extends TestCase
     // withDepth
     // ----------------------------------------------------------------
 
-    public function test_with_depth_default_alias_selects_depth_column(): void
+    #[Test]
+    public function with_depth_default_alias_selects_depth_column(): void
     {
         $row = $this->q()->withDepth()->whereIsRoot()->first();
 
@@ -186,7 +201,8 @@ final class TreeQueryBuilderTest extends TestCase
         $this->assertSame(0, (int) $row->depth);
     }
 
-    public function test_with_depth_custom_alias(): void
+    #[Test]
+    public function with_depth_custom_alias(): void
     {
         $row = $this->q()->withDepth('level')->whereIsRoot()->first();
 
@@ -198,14 +214,16 @@ final class TreeQueryBuilderTest extends TestCase
     // defaultOrder / reversed
     // ----------------------------------------------------------------
 
-    public function test_default_order_walks_tree_in_pre_order_traversal(): void
+    #[Test]
+    public function default_order_walks_tree_in_pre_order_traversal(): void
     {
         $names = $this->q()->defaultOrder()->pluck('name')->all();
 
         $this->assertSame(['Root', 'Child A', 'AA', 'AB', 'Child B'], $names);
     }
 
-    public function test_reversed_walks_tree_bottom_up_in_reverse_pre_order(): void
+    #[Test]
+    public function reversed_walks_tree_bottom_up_in_reverse_pre_order(): void
     {
         $names = $this->q()->reversed()->pluck('name')->all();
 
@@ -216,7 +234,8 @@ final class TreeQueryBuilderTest extends TestCase
     // withoutRoot
     // ----------------------------------------------------------------
 
-    public function test_without_root_excludes_root_nodes(): void
+    #[Test]
+    public function without_root_excludes_root_nodes(): void
     {
         $names = $this->q()->withoutRoot()->pluck('name')->all();
 
@@ -228,7 +247,8 @@ final class TreeQueryBuilderTest extends TestCase
     // leaves / root
     // ----------------------------------------------------------------
 
-    public function test_leaves_is_an_alias_for_where_is_leaf(): void
+    #[Test]
+    public function leaves_is_an_alias_for_where_is_leaf(): void
     {
         $via_leaves = $this->q()->leaves()->pluck('name')->sort()->values()->all();
         $via_where = $this->q()->whereIsLeaf()->pluck('name')->sort()->values()->all();
@@ -236,7 +256,8 @@ final class TreeQueryBuilderTest extends TestCase
         $this->assertSame($via_where, $via_leaves);
     }
 
-    public function test_root_returns_root_model(): void
+    #[Test]
+    public function root_returns_root_model(): void
     {
         $root = $this->q()->root();
 
@@ -248,7 +269,8 @@ final class TreeQueryBuilderTest extends TestCase
     // ancestorsOf / descendantsOf (aliases)
     // ----------------------------------------------------------------
 
-    public function test_ancestors_of_is_alias_for_where_ancestor_of(): void
+    #[Test]
+    public function ancestors_of_is_alias_for_where_ancestor_of(): void
     {
         $viaAlias = $this->q()->ancestorsOf($this->aa)->pluck('name')->sort()->values()->all();
         $viaDirect = $this->q()->whereAncestorOf($this->aa)->pluck('name')->sort()->values()->all();
@@ -256,7 +278,8 @@ final class TreeQueryBuilderTest extends TestCase
         $this->assertSame($viaDirect, $viaAlias);
     }
 
-    public function test_descendants_of_is_alias_for_where_descendant_of(): void
+    #[Test]
+    public function descendants_of_is_alias_for_where_descendant_of(): void
     {
         $viaAlias = $this->q()->descendantsOf($this->root)->pluck('name')->sort()->values()->all();
         $viaDirect = $this->q()->whereDescendantOf($this->root)->pluck('name')->sort()->values()->all();
@@ -268,7 +291,8 @@ final class TreeQueryBuilderTest extends TestCase
     // Query count assertions — no silent N+1s
     // ----------------------------------------------------------------
 
-    public function test_where_descendant_of_issues_one_query(): void
+    #[Test]
+    public function where_descendant_of_issues_one_query(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -280,7 +304,8 @@ final class TreeQueryBuilderTest extends TestCase
         $this->assertSame(1, $count);
     }
 
-    public function test_where_ancestor_of_issues_one_query(): void
+    #[Test]
+    public function where_ancestor_of_issues_one_query(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -292,7 +317,8 @@ final class TreeQueryBuilderTest extends TestCase
         $this->assertSame(1, $count);
     }
 
-    public function test_root_method_issues_one_query(): void
+    #[Test]
+    public function root_method_issues_one_query(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {

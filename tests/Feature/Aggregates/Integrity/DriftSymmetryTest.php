@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
@@ -123,7 +124,8 @@ final class DriftSymmetryTest extends TestCase
     }
 
     #[DataProvider('areaSqlDriftProvider')]
-    public function test_drift_detection_and_repair_are_consistent_for_sql_aggregates(
+    #[Test]
+    public function drift_detection_and_repair_are_consistent_for_sql_aggregates(
         string $column,
         Closure $mutate,
     ): void {
@@ -245,7 +247,8 @@ final class DriftSymmetryTest extends TestCase
     }
 
     #[DataProvider('monsterListenerDriftProvider')]
-    public function test_drift_detection_and_repair_are_consistent_for_listener_aggregates(
+    #[Test]
+    public function drift_detection_and_repair_are_consistent_for_listener_aggregates(
         string $column,
         Closure $mutate,
     ): void {
@@ -344,7 +347,8 @@ final class DriftSymmetryTest extends TestCase
     }
 
     #[DataProvider('branchDriftProvider')]
-    public function test_drift_detection_and_repair_are_consistent_for_branch(
+    #[Test]
+    public function drift_detection_and_repair_are_consistent_for_branch(
         string $column,
         Closure $mutate,
     ): void {

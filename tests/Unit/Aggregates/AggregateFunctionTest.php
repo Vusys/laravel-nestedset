@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
 
 final class AggregateFunctionTest extends TestCase
 {
-    public function test_has_exactly_twenty_two_cases(): void
+    #[Test]
+    public function has_exactly_twenty_two_cases(): void
     {
         $this->assertCount(22, AggregateFunction::cases());
     }
@@ -22,7 +24,8 @@ final class AggregateFunctionTest extends TestCase
      * whether its empty-subtree answer is NULL rather than zero.
      */
     #[DataProvider('caseProperties')]
-    public function test_case_value_delta_and_nullability(
+    #[Test]
+    public function case_value_delta_and_nullability(
         AggregateFunction $case,
         string $value,
         bool $supportsDelta,
@@ -72,7 +75,8 @@ final class AggregateFunctionTest extends TestCase
      * @param  list<array{0: string, 1: string, 2: string}>  $expected
      */
     #[DataProvider('companionSetCases')]
-    public function test_companion_set(AggregateFunction $function, array $expected): void
+    #[Test]
+    public function companion_set(AggregateFunction $function, array $expected): void
     {
         $actual = array_map(
             static fn (CompanionSpec $spec): array => [

@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\StuckCursorUuidTag;
@@ -33,7 +34,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Inserts and moves work
     // ----------------------------------------------------------------
 
-    public function test_save_as_root_assigns_uuid(): void
+    #[Test]
+    public function save_as_root_assigns_uuid(): void
     {
         $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -45,7 +47,8 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertTreeIsIntact(UuidTag::class);
     }
 
-    public function test_append_to_node_resolves_via_uuid_pk(): void
+    #[Test]
+    public function append_to_node_resolves_via_uuid_pk(): void
     {
         $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -64,7 +67,8 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertTreeIsIntact(UuidTag::class);
     }
 
-    public function test_move_existing_node_via_uuid_pk_keeps_tree_intact(): void
+    #[Test]
+    public function move_existing_node_via_uuid_pk_keeps_tree_intact(): void
     {
         $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -90,7 +94,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Repair paths
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_rebuilds_uuid_keyed_tree(): void
+    #[Test]
+    public function fix_tree_rebuilds_uuid_keyed_tree(): void
     {
         $rootId = (string) Str::uuid7();
         $aId = (string) Str::uuid7();
@@ -114,7 +119,8 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertSame(0, array_sum(UuidTag::countErrors()));
     }
 
-    public function test_orphan_detection_uses_uuid_pk(): void
+    #[Test]
+    public function orphan_detection_uses_uuid_pk(): void
     {
         $rootId = (string) Str::uuid7();
         $orphanId = (string) Str::uuid7();
@@ -135,7 +141,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Aggregate maintenance + repair
     // ----------------------------------------------------------------
 
-    public function test_aggregate_delta_path_uses_uuid_pk(): void
+    #[Test]
+    public function aggregate_delta_path_uses_uuid_pk(): void
     {
         $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -154,7 +161,8 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertSame(12, $root->tickets_total);
     }
 
-    public function test_fix_aggregates_resolves_uuid_anchor(): void
+    #[Test]
+    public function fix_aggregates_resolves_uuid_anchor(): void
     {
         $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -176,7 +184,8 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertFalse(UuidTag::aggregatesAreBroken());
     }
 
-    public function test_fix_aggregates_chunked_walks_uuid_cursor(): void
+    #[Test]
+    public function fix_aggregates_chunked_walks_uuid_cursor(): void
     {
         // `fixAggregatesChunk` issues `WHERE id > ? ORDER BY id LIMIT N`.
         // UUIDv7 is monotonic, so the lexicographic ordering matches
@@ -201,7 +210,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Bulk insert
     // ----------------------------------------------------------------
 
-    public function test_bulk_insert_tree_under_uuid_anchor(): void
+    #[Test]
+    public function bulk_insert_tree_under_uuid_anchor(): void
     {
         $root = new UuidTag(['name' => 'Root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -234,7 +244,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Job serialization
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_job_serialises_uuid_anchor(): void
+    #[Test]
+    public function fix_aggregates_job_serialises_uuid_anchor(): void
     {
         $anchorId = (string) Str::uuid7();
         $cursorId = (string) Str::uuid7();
@@ -259,7 +270,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Scoped UUID model — both PK and scope column are UUID-typed
     // ----------------------------------------------------------------
 
-    public function test_scoped_uuid_model_isolates_trees_per_menu(): void
+    #[Test]
+    public function scoped_uuid_model_isolates_trees_per_menu(): void
     {
         $menuA = UuidMenu::create(['name' => 'A']);
         $menuB = UuidMenu::create(['name' => 'B']);
@@ -286,7 +298,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Listener aggregate path with UUID keys
     // ----------------------------------------------------------------
 
-    public function test_chunked_listener_repair_walks_uuid_outer_ids(): void
+    #[Test]
+    public function chunked_listener_repair_walks_uuid_outer_ids(): void
     {
         // Pins the previous bug where `ListenerMaintenance::fixListenerAggregatesPhp` cast
         // each outer node's key to int before its in_array membership
@@ -322,7 +335,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // fixTree / fixAggregates reject unsaved anchors
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_rejects_unsaved_anchor(): void
+    #[Test]
+    public function fix_tree_rejects_unsaved_anchor(): void
     {
         $unsaved = new UuidTag(['name' => 'Unsaved', 'tickets' => 0]);
 
@@ -332,7 +346,8 @@ final class UuidPrimaryKeyTest extends TestCase
         UuidTag::fixTree($unsaved);
     }
 
-    public function test_fix_aggregates_rejects_unsaved_anchor(): void
+    #[Test]
+    public function fix_aggregates_rejects_unsaved_anchor(): void
     {
         $unsaved = new UuidTag(['name' => 'Unsaved', 'tickets' => 0]);
 
@@ -346,7 +361,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // Stuck-cursor detection in the chunked repair loop
     // ----------------------------------------------------------------
 
-    public function test_chunked_repair_aborts_when_cursor_does_not_advance(): void
+    #[Test]
+    public function chunked_repair_aborts_when_cursor_does_not_advance(): void
     {
         // A buggy backend (or corrupted index) could return the same
         // `nextAfterId` forever. The chunk loop now detects the
@@ -366,7 +382,8 @@ final class UuidPrimaryKeyTest extends TestCase
     // getParentId() on a string-keyed model
     // ----------------------------------------------------------------
 
-    public function test_get_parent_id_coerces_a_non_string_scalar_to_string(): void
+    #[Test]
+    public function get_parent_id_coerces_a_non_string_scalar_to_string(): void
     {
         // On a string-keyed model the parent_id is returned as a string.
         // A raw int/float attribute (e.g. a hand-built row, or a DB that
@@ -377,7 +394,8 @@ final class UuidPrimaryKeyTest extends TestCase
         $this->assertSame('123', $tag->getParentId());
     }
 
-    public function test_get_parent_id_rejects_a_non_scalar_parent_id(): void
+    #[Test]
+    public function get_parent_id_rejects_a_non_scalar_parent_id(): void
     {
         $tag = new UuidTag(['name' => 'child']);
         $tag->setAttribute('parent_id', ['not', 'scalar']);

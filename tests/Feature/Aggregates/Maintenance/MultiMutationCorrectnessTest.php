@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
@@ -52,7 +53,8 @@ final class MultiMutationCorrectnessTest extends TestCase
     // Scripted scenarios — realistic, hand-curated multi-step flows
     // ================================================================
 
-    public function test_interleaved_inserts_updates_moves_and_deletes_keep_sum_count_avg_min_max_in_sync(): void
+    #[Test]
+    public function interleaved_inserts_updates_moves_and_deletes_keep_sum_count_avg_min_max_in_sync(): void
     {
         // Seed: 5-node tree.
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
@@ -153,7 +155,8 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertAreaInvariants('15: delete interior A2');
     }
 
-    public function test_raw_filter_aggregates_stay_consistent_across_inserts_source_updates_and_predicate_flips(): void
+    #[Test]
+    public function raw_filter_aggregates_stay_consistent_across_inserts_source_updates_and_predicate_flips(): void
     {
         // Branch: inclusive SUM + exclusive SUM/COUNT/MAX + raw-filter SUM.
         // Builds and mutates a 7-node tree with mixed active flags.
@@ -235,7 +238,8 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertBranchInvariants('10: delete interior A');
     }
 
-    public function test_listener_aggregates_stay_consistent_through_inserts_updates_soft_deletes_and_restores(): void
+    #[Test]
+    public function listener_aggregates_stay_consistent_through_inserts_updates_soft_deletes_and_restores(): void
     {
         // Monster: Sum (weighted_power, fire_count), Min (weakest_level),
         // Avg (weighted_avg). Includes the listener-AVG promotion path.
@@ -329,7 +333,8 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertMonsterInvariants('13: A back under Root');
     }
 
-    public function test_typed_filtered_aggregates_stay_consistent_when_source_values_flip_in_and_out_of_filter_predicates(): void
+    #[Test]
+    public function typed_filtered_aggregates_stay_consistent_when_source_values_flip_in_and_out_of_filter_predicates(): void
     {
         $root = new TypedArea(['name' => 'Root', 'tickets' => 10, 'type' => 'fire']);
         $root->saveAsRoot();
@@ -389,7 +394,8 @@ final class MultiMutationCorrectnessTest extends TestCase
         $this->assertTypedAreaInvariants('8: append C (fire)');
     }
 
-    public function test_deferred_maintenance_closure_keeps_aggregates_correct_after_mixed_inserts_updates_and_deletes(): void
+    #[Test]
+    public function deferred_maintenance_closure_keeps_aggregates_correct_after_mixed_inserts_updates_and_deletes(): void
     {
         // Build a small tree first.
         $root = new Area(['name' => 'Root', 'tickets' => 0]);
@@ -454,7 +460,8 @@ final class MultiMutationCorrectnessTest extends TestCase
     }
 
     #[DataProvider('randomWalkSeedProvider')]
-    public function test_random_walk_area(int $seed, int $steps): void
+    #[Test]
+    public function random_walk_area(int $seed, int $steps): void
     {
         mt_srand($seed);
 
@@ -476,7 +483,8 @@ final class MultiMutationCorrectnessTest extends TestCase
     }
 
     #[DataProvider('randomWalkSeedProvider')]
-    public function test_random_walk_monster(int $seed, int $steps): void
+    #[Test]
+    public function random_walk_monster(int $seed, int $steps): void
     {
         mt_srand($seed);
 

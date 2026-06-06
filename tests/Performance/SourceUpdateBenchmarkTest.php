@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
 
@@ -15,7 +16,8 @@ use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
  */
 final class SourceUpdateBenchmarkTest extends PerformanceTestCase
 {
-    public function test_source_update_at_leaf_with_no_extremum_change(): void
+    #[Test]
+    public function source_update_at_leaf_with_no_extremum_change(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();
@@ -40,7 +42,8 @@ final class SourceUpdateBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_source_update_at_leaf_invalidating_max(): void
+    #[Test]
+    public function source_update_at_leaf_invalidating_max(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();

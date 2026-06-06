@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -40,7 +41,8 @@ final class SoftBranchFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_random_sequences_keep_sql_aggregates_consistent(
+    #[Test]
+    public function random_sequences_keep_sql_aggregates_consistent(
         int $seed,
         int $steps,
     ): void {

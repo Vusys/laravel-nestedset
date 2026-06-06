@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Connection;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
@@ -51,7 +52,8 @@ final class AggregateSqlEmitterTest extends TestCase
      * @param  Closure(): AggregateDefinition  $makeDefinition
      */
     #[DataProvider('emitCases')]
-    public function test_emit(string $driver, Closure $makeDefinition, ?string $filterSql, string $expected): void
+    #[Test]
+    public function emit(string $driver, Closure $makeDefinition, ?string $filterSql, string $expected): void
     {
         $filterFragment = $filterSql === null ? null : BoundFragment::literal($filterSql);
         $fragment = AggregateSqlEmitter::emit($this->fakeDriver($driver), $makeDefinition(), 'i.', $filterFragment);
@@ -184,7 +186,8 @@ final class AggregateSqlEmitterTest extends TestCase
      * @param  Closure(): AggregateDefinition  $makeDefinition
      */
     #[DataProvider('leafInlineCases')]
-    public function test_leaf_inline(string $driver, Closure $makeDefinition, string $expected): void
+    #[Test]
+    public function leaf_inline(string $driver, Closure $makeDefinition, string $expected): void
     {
         $fragment = AggregateSqlEmitter::leafInline($this->fakeDriver($driver), $makeDefinition(), 't.');
 
@@ -232,7 +235,8 @@ final class AggregateSqlEmitterTest extends TestCase
      * @param  list<string>  $expected
      */
     #[DataProvider('watchColumnsCases')]
-    public function test_watch_columns(Closure $makeDefinition, array $expected): void
+    #[Test]
+    public function watch_columns(Closure $makeDefinition, array $expected): void
     {
         $this->assertSame($expected, AggregateSqlEmitter::watchColumns($makeDefinition()));
     }

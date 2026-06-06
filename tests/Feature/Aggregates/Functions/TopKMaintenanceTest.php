@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\TopKArea;
@@ -57,7 +58,8 @@ final class TopKMaintenanceTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_root_stores_top_three_descendants_by_revenue(): void
+    #[Test]
+    public function root_stores_top_three_descendants_by_revenue(): void
     {
         $root = $this->buildFixture();
 
@@ -73,7 +75,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([700, 500, 300], $revenues);
     }
 
-    public function test_intermediate_node_stores_its_own_subtree(): void
+    #[Test]
+    public function intermediate_node_stores_its_own_subtree(): void
     {
         $this->buildFixture();
 
@@ -86,7 +89,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([700, 500], $revenues);
     }
 
-    public function test_leaf_node_holds_its_own_singleton(): void
+    #[Test]
+    public function leaf_node_holds_its_own_singleton(): void
     {
         $this->buildFixture();
 
@@ -97,7 +101,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame(200, (int) $top[0][1]);
     }
 
-    public function test_inserting_higher_value_promotes_into_top_k(): void
+    #[Test]
+    public function inserting_higher_value_promotes_into_top_k(): void
     {
         $root = $this->buildFixture();
 
@@ -113,7 +118,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([999, 700, 500], $revenues);
     }
 
-    public function test_deleting_top_entry_promotes_runner_up(): void
+    #[Test]
+    public function deleting_top_entry_promotes_runner_up(): void
     {
         $root = $this->buildFixture();
 
@@ -128,7 +134,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([500, 300, 200], $revenues);
     }
 
-    public function test_updating_revenue_re_ranks(): void
+    #[Test]
+    public function updating_revenue_re_ranks(): void
     {
         $root = $this->buildFixture();
 
@@ -143,7 +150,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([800, 700, 500], $revenues);
     }
 
-    public function test_null_revenue_rows_are_excluded(): void
+    #[Test]
+    public function null_revenue_rows_are_excluded(): void
     {
         $root = $this->buildFixture();
 
@@ -160,7 +168,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([700, 500, 300], $revenues);
     }
 
-    public function test_filtered_topk_respects_predicate(): void
+    #[Test]
+    public function filtered_topk_respects_predicate(): void
     {
         $root = $this->buildFixture();
 
@@ -172,7 +181,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame([500, 300, 200], $revenues);
     }
 
-    public function test_fresh_aggregate_matches_stored_value(): void
+    #[Test]
+    public function fresh_aggregate_matches_stored_value(): void
     {
         $root = $this->buildFixture();
 
@@ -189,7 +199,8 @@ final class TopKMaintenanceTest extends TestCase
         $this->assertSame($storedRevenues, $freshRevenues);
     }
 
-    public function test_with_fresh_aggregates_for_ad_hoc_top_k(): void
+    #[Test]
+    public function with_fresh_aggregates_for_ad_hoc_top_k(): void
     {
         $this->buildFixture();
 

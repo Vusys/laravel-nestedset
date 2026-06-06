@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Exceptions\CyclicMoveException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -11,7 +12,8 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class TreeDiffApplyCycleTest extends TestCase
 {
-    public function test_swap_parents_in_move_set_is_rejected(): void
+    #[Test]
+    public function swap_parents_in_move_set_is_rejected(): void
     {
         $a = new Category(['name' => 'A']);
         $a->makeRoot()->save();

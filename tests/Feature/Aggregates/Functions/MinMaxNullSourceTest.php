@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\NullableMetricArea;
@@ -27,7 +28,8 @@ final class MinMaxNullSourceTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_create_with_null_source_does_not_lower_ancestor_max(): void
+    #[Test]
+    public function create_with_null_source_does_not_lower_ancestor_max(): void
     {
         $root = new NullableMetricArea(['name' => 'Root', 'score' => 100]);
         $root->saveAsRoot();
@@ -50,7 +52,8 @@ final class MinMaxNullSourceTest extends TestCase
         $this->assertAggregateMatchesFresh($root, 'score_min');
     }
 
-    public function test_create_with_null_source_at_root_keeps_extrema_null(): void
+    #[Test]
+    public function create_with_null_source_at_root_keeps_extrema_null(): void
     {
         // Root with NULL score: its own MIN/MAX should stay NULL,
         // not be stamped to 0 by an asNumericOrZero coercion.
@@ -65,7 +68,8 @@ final class MinMaxNullSourceTest extends TestCase
         $this->assertAggregateMatchesFresh($root, 'score_min');
     }
 
-    public function test_hard_restore_with_null_stored_extremum_does_not_clobber_ancestor(): void
+    #[Test]
+    public function hard_restore_with_null_stored_extremum_does_not_clobber_ancestor(): void
     {
         // The non-soft-delete branch of RestoreHookApplier reads the
         // stored aggregate column on the restored node and would push

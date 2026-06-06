@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 
 /**
@@ -26,7 +27,8 @@ use Vusys\NestedSet\Tests\Fixtures\Models\Area;
  */
 final class BulkInsertBenchmarkTest extends PerformanceTestCase
 {
-    public function test_bulk_insert_tree_balanced_fanout(): void
+    #[Test]
+    public function bulk_insert_tree_balanced_fanout(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();
@@ -47,7 +49,8 @@ final class BulkInsertBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_naive_append_to_node_per_row(): void
+    #[Test]
+    public function naive_append_to_node_per_row(): void
     {
         // Cap at N=1000 — at 10K the naive loop runs for minutes on
         // every backend (O(N²) gap-shift cost). This benchmark exists

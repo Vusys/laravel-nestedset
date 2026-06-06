@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Schema;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\NestedSetServiceProvider;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -23,7 +24,8 @@ final class BlueprintMacroTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_nested_set_macro_adds_lft_rgt_parent_id_and_depth_columns(): void
+    #[Test]
+    public function nested_set_macro_adds_lft_rgt_parent_id_and_depth_columns(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -36,7 +38,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertTrue(Schema::hasColumn($this->table, 'depth'));
     }
 
-    public function test_parent_id_is_nullable_and_bounds_are_not(): void
+    #[Test]
+    public function parent_id_is_nullable_and_bounds_are_not(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -56,7 +59,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse($byName['depth']['nullable']);
     }
 
-    public function test_drop_nested_set_macro_removes_four_columns(): void
+    #[Test]
+    public function drop_nested_set_macro_removes_four_columns(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -73,7 +77,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse(Schema::hasColumn($this->table, 'depth'));
     }
 
-    public function test_nested_set_index_columns_helper_default(): void
+    #[Test]
+    public function nested_set_index_columns_helper_default(): void
     {
         $cols = NestedSetServiceProvider::nestedSetIndexColumns(
             lft: 'lft',
@@ -84,7 +89,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertSame(['lft', 'rgt', 'parent_id'], $cols);
     }
 
-    public function test_nested_set_index_columns_helper_with_scope_and_cover(): void
+    #[Test]
+    public function nested_set_index_columns_helper_with_scope_and_cover(): void
     {
         $cols = NestedSetServiceProvider::nestedSetIndexColumns(
             lft: 'lft',
@@ -101,7 +107,8 @@ final class BlueprintMacroTest extends TestCase
         );
     }
 
-    public function test_nested_set_index_columns_helper_accepts_strings(): void
+    #[Test]
+    public function nested_set_index_columns_helper_accepts_strings(): void
     {
         $cols = NestedSetServiceProvider::nestedSetIndexColumns(
             lft: 'lft',
@@ -114,7 +121,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertSame(['tenant_id', 'lft', 'rgt', 'parent_id', 'tickets'], $cols);
     }
 
-    public function test_nested_set_macro_respects_custom_column_names(): void
+    #[Test]
+    public function nested_set_macro_respects_custom_column_names(): void
     {
         config([
             'nestedset.columns.lft' => 'left_bound',
@@ -141,7 +149,8 @@ final class BlueprintMacroTest extends TestCase
     // nestedSetAggregate() — Phase C
     // ----------------------------------------------------------------
 
-    public function test_nested_set_aggregate_default_creates_non_null_default_zero_column(): void
+    #[Test]
+    public function nested_set_aggregate_default_creates_non_null_default_zero_column(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -154,7 +163,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsZero($column['default']);
     }
 
-    public function test_nested_set_aggregate_sum_count_type_creates_non_null_default_zero_column(): void
+    #[Test]
+    public function nested_set_aggregate_sum_count_type_creates_non_null_default_zero_column(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -167,7 +177,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsZero($column['default']);
     }
 
-    public function test_nested_set_aggregate_avg_type_creates_nullable_column_with_no_default(): void
+    #[Test]
+    public function nested_set_aggregate_avg_type_creates_nullable_column_with_no_default(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -180,7 +191,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsNull($column['default']);
     }
 
-    public function test_nested_set_aggregate_min_max_type_creates_nullable_column_with_no_default(): void
+    #[Test]
+    public function nested_set_aggregate_min_max_type_creates_nullable_column_with_no_default(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -193,7 +205,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsNull($column['default']);
     }
 
-    public function test_nested_set_aggregate_rejects_unknown_type(): void
+    #[Test]
+    public function nested_set_aggregate_rejects_unknown_type(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('unknown type "bogus"');
@@ -204,7 +217,8 @@ final class BlueprintMacroTest extends TestCase
         });
     }
 
-    public function test_drop_nested_set_aggregate_removes_the_column(): void
+    #[Test]
+    public function drop_nested_set_aggregate_removes_the_column(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -220,7 +234,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse(Schema::hasColumn($this->table, 'tickets_total'));
     }
 
-    public function test_nested_set_aggregate_avg_type_also_allocates_companion_columns(): void
+    #[Test]
+    public function nested_set_aggregate_avg_type_also_allocates_companion_columns(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -243,7 +258,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsZero($byName['tickets_avg__count']['default']);
     }
 
-    public function test_drop_nested_set_aggregate_avg_type_also_drops_companion_columns(): void
+    #[Test]
+    public function drop_nested_set_aggregate_avg_type_also_drops_companion_columns(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -263,20 +279,23 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse(Schema::hasColumn($this->table, 'tickets_avg__count'));
     }
 
-    public function test_companion_columns_for_returns_avg_companion_names(): void
+    #[Test]
+    public function companion_columns_for_returns_avg_companion_names(): void
     {
         $companions = NestedSetServiceProvider::companionColumnsFor('tickets_avg', 'avg');
 
         $this->assertSame(['tickets_avg__sum', 'tickets_avg__count'], $companions);
     }
 
-    public function test_companion_columns_for_returns_empty_list_for_non_avg_types(): void
+    #[Test]
+    public function companion_columns_for_returns_empty_list_for_non_avg_types(): void
     {
         $this->assertSame([], NestedSetServiceProvider::companionColumnsFor('tickets_total', 'sum_count'));
         $this->assertSame([], NestedSetServiceProvider::companionColumnsFor('tickets_max', 'min_max'));
     }
 
-    public function test_nested_set_aggregate_variance_and_stddev_types_allocate_three_companions_each(): void
+    #[Test]
+    public function nested_set_aggregate_variance_and_stddev_types_allocate_three_companions_each(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -301,7 +320,8 @@ final class BlueprintMacroTest extends TestCase
         }
     }
 
-    public function test_drop_nested_set_aggregate_variance_type_drops_all_three_companions(): void
+    #[Test]
+    public function drop_nested_set_aggregate_variance_type_drops_all_three_companions(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -321,7 +341,8 @@ final class BlueprintMacroTest extends TestCase
         }
     }
 
-    public function test_companion_columns_for_returns_variance_companions(): void
+    #[Test]
+    public function companion_columns_for_returns_variance_companions(): void
     {
         $this->assertSame(
             ['tickets_variance__sum', 'tickets_variance__sum_sq', 'tickets_variance__count'],
@@ -333,7 +354,8 @@ final class BlueprintMacroTest extends TestCase
         );
     }
 
-    public function test_companion_allocations_assign_sum_sq_to_a_wider_decimal_shape(): void
+    #[Test]
+    public function companion_allocations_assign_sum_sq_to_a_wider_decimal_shape(): void
     {
         $this->assertSame(
             [
@@ -345,7 +367,8 @@ final class BlueprintMacroTest extends TestCase
         );
     }
 
-    public function test_sum_sq_companion_is_emitted_as_a_high_precision_decimal(): void
+    #[Test]
+    public function sum_sq_companion_is_emitted_as_a_high_precision_decimal(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -383,7 +406,8 @@ final class BlueprintMacroTest extends TestCase
         return is_string($type) ? $type : '';
     }
 
-    public function test_companion_columns_for_rejects_unknown_type(): void
+    #[Test]
+    public function companion_columns_for_rejects_unknown_type(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('unknown type "bogus"');
@@ -391,7 +415,8 @@ final class BlueprintMacroTest extends TestCase
         NestedSetServiceProvider::companionColumnsFor('tickets', 'bogus');
     }
 
-    public function test_nested_set_aggregate_supports_every_function_family_on_one_table(): void
+    #[Test]
+    public function nested_set_aggregate_supports_every_function_family_on_one_table(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -411,7 +436,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertTrue($byName['tickets_max']['nullable']);
     }
 
-    public function test_nested_set_aggregate_geometric_mean_type_allocates_high_precision_sum_and_integer_count(): void
+    #[Test]
+    public function nested_set_aggregate_geometric_mean_type_allocates_high_precision_sum_and_integer_count(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -427,7 +453,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsZero($byName['value_gmean__count']['default']);
     }
 
-    public function test_nested_set_aggregate_harmonic_mean_type_allocates_high_precision_sum_and_integer_count(): void
+    #[Test]
+    public function nested_set_aggregate_harmonic_mean_type_allocates_high_precision_sum_and_integer_count(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -443,7 +470,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertDefaultIsZero($byName['value_hmean__count']['default']);
     }
 
-    public function test_drop_nested_set_aggregate_geometric_mean_type_drops_all_companions(): void
+    #[Test]
+    public function drop_nested_set_aggregate_geometric_mean_type_drops_all_companions(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -461,7 +489,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertArrayNotHasKey('value_gmean__count', $byName);
     }
 
-    public function test_drop_nested_set_aggregate_harmonic_mean_type_drops_all_companions(): void
+    #[Test]
+    public function drop_nested_set_aggregate_harmonic_mean_type_drops_all_companions(): void
     {
         Schema::create($this->table, function (Blueprint $table): void {
             $table->id();
@@ -479,7 +508,8 @@ final class BlueprintMacroTest extends TestCase
         $this->assertArrayNotHasKey('value_hmean__count', $byName);
     }
 
-    public function test_companion_allocations_for_returns_per_companion_storage_types(): void
+    #[Test]
+    public function companion_allocations_for_returns_per_companion_storage_types(): void
     {
         $gmean = NestedSetServiceProvider::companionAllocationsFor('v_gmean', 'geometric_mean');
         $hmean = NestedSetServiceProvider::companionAllocationsFor('v_hmean', 'harmonic_mean');

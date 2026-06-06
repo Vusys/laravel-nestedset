@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\CountArea;
@@ -58,7 +59,8 @@ final class CountContributionMaintenanceTest extends TestCase
         return ['root' => $root->refresh(), 'child' => $child->refresh()];
     }
 
-    public function test_sql_and_listener_count_increment_when_a_child_enters_the_fire_filter(): void
+    #[Test]
+    public function sql_and_listener_count_increment_when_a_child_enters_the_fire_filter(): void
     {
         // child starts as water with tickets — counted by neither.
         ['root' => $root, 'child' => $child] = $this->seedCountTree(['type' => 'water', 'tickets' => 3]);
@@ -74,7 +76,8 @@ final class CountContributionMaintenanceTest extends TestCase
         $this->assertAggregatesAreIntact(CountArea::class);
     }
 
-    public function test_sql_and_listener_count_decrement_when_a_child_leaves_the_fire_filter(): void
+    #[Test]
+    public function sql_and_listener_count_decrement_when_a_child_leaves_the_fire_filter(): void
     {
         ['root' => $root, 'child' => $child] = $this->seedCountTree(['type' => 'fire', 'tickets' => 3]);
 
@@ -89,7 +92,8 @@ final class CountContributionMaintenanceTest extends TestCase
         $this->assertAggregatesAreIntact(CountArea::class);
     }
 
-    public function test_sql_count_drops_a_fire_row_whose_source_becomes_null(): void
+    #[Test]
+    public function sql_count_drops_a_fire_row_whose_source_becomes_null(): void
     {
         // Same filter membership before/after (stays fire) — only the
         // source goes null. COUNT(tickets) must stop counting the row;
@@ -108,7 +112,8 @@ final class CountContributionMaintenanceTest extends TestCase
         $this->assertAggregatesAreIntact(CountArea::class);
     }
 
-    public function test_sql_count_picks_up_a_fire_row_whose_source_becomes_non_null(): void
+    #[Test]
+    public function sql_count_picks_up_a_fire_row_whose_source_becomes_non_null(): void
     {
         // Mirror of the above on the old-contribution side: the row was
         // fire-but-null (uncounted), and gains a source value.

@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Fuzzers;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -55,7 +56,8 @@ final class TreeStructureFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_random_mutation_sequence_preserves_invariants(int $seed, int $steps): void
+    #[Test]
+    public function random_mutation_sequence_preserves_invariants(int $seed, int $steps): void
     {
         mt_srand($seed);
 

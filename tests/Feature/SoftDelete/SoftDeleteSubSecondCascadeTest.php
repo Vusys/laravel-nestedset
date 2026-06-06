@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -25,7 +26,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class SoftDeleteSubSecondCascadeTest extends TestCase
 {
-    public function test_two_cascades_in_the_same_second_do_not_share_a_marker(): void
+    #[Test]
+    public function two_cascades_in_the_same_second_do_not_share_a_marker(): void
     {
         // Two independent subtrees:
         //   Root1 → A1 → B1

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\Performance\Fixtures\AggregateTreeShapes;
@@ -26,7 +27,8 @@ use Vusys\NestedSet\Tests\Performance\Fixtures\AggregateTreeShapes;
  */
 final class ListenerMaintenanceBenchmarkTest extends PerformanceTestCase
 {
-    public function test_listener_sum_source_update_at_leaf(): void
+    #[Test]
+    public function listener_sum_source_update_at_leaf(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('monsters')->delete();
@@ -46,7 +48,8 @@ final class ListenerMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_listener_min_recompute_when_extremum_lost(): void
+    #[Test]
+    public function listener_min_recompute_when_extremum_lost(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('monsters')->delete();
@@ -73,7 +76,8 @@ final class ListenerMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_listener_insert_leaf(): void
+    #[Test]
+    public function listener_insert_leaf(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('monsters')->delete();
@@ -101,7 +105,8 @@ final class ListenerMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_listener_delete_leaf_with_min_recompute(): void
+    #[Test]
+    public function listener_delete_leaf_with_min_recompute(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('monsters')->delete();
@@ -120,7 +125,8 @@ final class ListenerMaintenanceBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_fix_aggregates_listener_columns(): void
+    #[Test]
+    public function fix_aggregates_listener_columns(): void
     {
         // ListenerMaintenance::fixListenerAggregatesPhp is O(N²) by design (per-node scan
         // of the full in-scope set). Smaller scales than the SQL

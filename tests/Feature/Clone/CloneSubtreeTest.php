@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Clone;
 use Illuminate\Support\Facades\Event;
 use InvalidArgumentException;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Events\Subtree\SubtreeCloned;
 use Vusys\NestedSet\Exceptions\InvalidCloneTargetException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
@@ -37,7 +38,8 @@ final class CloneSubtreeTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_clone_leaf_produces_fresh_key_and_copies_attributes(): void
+    #[Test]
+    public function clone_leaf_produces_fresh_key_and_copies_attributes(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -61,7 +63,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertIsLeaf($clone);
     }
 
-    public function test_clone_subtree_copies_full_shape(): void
+    #[Test]
+    public function clone_subtree_copies_full_shape(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -102,7 +105,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertTreeIsIntact(Category::class);
     }
 
-    public function test_clone_subtree_as_root_creates_new_root_in_same_scope(): void
+    #[Test]
+    public function clone_subtree_as_root_creates_new_root_in_same_scope(): void
     {
         $menu = Menu::create(['name' => 'm']);
         $rootItem = new MenuItem(['name' => 'root', 'menu_id' => $menu->id]);
@@ -132,7 +136,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame(6, MenuItem::query()->where('menu_id', $menu->id)->count());
     }
 
-    public function test_clone_as_root_position_first_places_at_forest_start(): void
+    #[Test]
+    public function clone_as_root_position_first_places_at_forest_start(): void
     {
         $menu = Menu::create(['name' => 'm']);
 
@@ -157,7 +162,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame(1, $clone->lft, 'clone landed at the start of the forest');
     }
 
-    public function test_clone_into_own_subtree_throws(): void
+    #[Test]
+    public function clone_into_own_subtree_throws(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -171,7 +177,8 @@ final class CloneSubtreeTest extends TestCase
         $root->cloneSubtreeTo($child);
     }
 
-    public function test_clone_into_self_throws(): void
+    #[Test]
+    public function clone_into_self_throws(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -181,7 +188,8 @@ final class CloneSubtreeTest extends TestCase
         $root->cloneSubtreeTo($root);
     }
 
-    public function test_cross_scope_clone_throws(): void
+    #[Test]
+    public function cross_scope_clone_throws(): void
     {
         $menuA = Menu::create(['name' => 'A']);
         $menuB = Menu::create(['name' => 'B']);
@@ -198,7 +206,8 @@ final class CloneSubtreeTest extends TestCase
         $srcRoot->cloneSubtreeTo($dstRoot);
     }
 
-    public function test_clone_uuid_keyed_model(): void
+    #[Test]
+    public function clone_uuid_keyed_model(): void
     {
         $menu = UuidMenu::create(['name' => 'm']);
 
@@ -224,7 +233,8 @@ final class CloneSubtreeTest extends TestCase
             ->count());
     }
 
-    public function test_transform_rewrites_attributes(): void
+    #[Test]
+    public function transform_rewrites_attributes(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -256,7 +266,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame('lvl1:a1', $childClone->name);
     }
 
-    public function test_transform_setting_structural_column_throws(): void
+    #[Test]
+    public function transform_setting_structural_column_throws(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -277,7 +288,8 @@ final class CloneSubtreeTest extends TestCase
         );
     }
 
-    public function test_transform_setting_scope_column_throws(): void
+    #[Test]
+    public function transform_setting_scope_column_throws(): void
     {
         $menu = Menu::create(['name' => 'm']);
         $otherMenu = Menu::create(['name' => 'other']);
@@ -301,7 +313,8 @@ final class CloneSubtreeTest extends TestCase
         );
     }
 
-    public function test_transform_exception_propagates_and_rolls_back(): void
+    #[Test]
+    public function transform_exception_propagates_and_rolls_back(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -331,7 +344,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame($countBefore, Category::query()->count(), 'transaction rolled back');
     }
 
-    public function test_clone_emits_subtree_cloned_event_once(): void
+    #[Test]
+    public function clone_emits_subtree_cloned_event_once(): void
     {
         Event::fake([SubtreeCloned::class]);
 
@@ -356,7 +370,8 @@ final class CloneSubtreeTest extends TestCase
         Event::assertDispatched(SubtreeCloned::class, fn (SubtreeCloned $e): bool => $e->rowCount === 2 && $e->includeTrashed === false && $e->modelClass === Category::class);
     }
 
-    public function test_clone_suppresses_per_row_eloquent_events(): void
+    #[Test]
+    public function clone_suppresses_per_row_eloquent_events(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -383,7 +398,8 @@ final class CloneSubtreeTest extends TestCase
         Event::assertNotDispatched('eloquent.creating: '.Category::class);
     }
 
-    public function test_clone_soft_deleted_source_rejected_by_default(): void
+    #[Test]
+    public function clone_soft_deleted_source_rejected_by_default(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -403,7 +419,8 @@ final class CloneSubtreeTest extends TestCase
         $source->cloneSubtreeTo($destination);
     }
 
-    public function test_clone_soft_deleted_source_allowed_with_include_trashed(): void
+    #[Test]
+    public function clone_soft_deleted_source_allowed_with_include_trashed(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -425,7 +442,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertNull($clone->deleted_at, 'clones land as live rows even when source was trashed');
     }
 
-    public function test_clone_skips_trashed_descendants_by_default(): void
+    #[Test]
+    public function clone_skips_trashed_descendants_by_default(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -457,7 +475,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame(['live'], $cloneNames, 'trashed descendant skipped by default');
     }
 
-    public function test_clone_includes_trashed_descendants_when_requested(): void
+    #[Test]
+    public function clone_includes_trashed_descendants_when_requested(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -491,7 +510,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertNull($trashedClone->deleted_at, 'cloned trashed descendant lands as live');
     }
 
-    public function test_clone_into_trashed_destination_throws_regardless_of_include_trashed(): void
+    #[Test]
+    public function clone_into_trashed_destination_throws_regardless_of_include_trashed(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -511,7 +531,8 @@ final class CloneSubtreeTest extends TestCase
         $source->cloneSubtreeTo($destination, includeTrashed: true);
     }
 
-    public function test_aggregate_columns_recompute_on_clone(): void
+    #[Test]
+    public function aggregate_columns_recompute_on_clone(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -538,7 +559,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame(8, $source->tickets_total, 'source unchanged');
     }
 
-    public function test_clone_as_root_zeroes_then_recomputes_aggregates(): void
+    #[Test]
+    public function clone_as_root_zeroes_then_recomputes_aggregates(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -557,7 +579,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame(1, $clone->tickets_count_all);
     }
 
-    public function test_replicate_parity_on_leaf(): void
+    #[Test]
+    public function replicate_parity_on_leaf(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -575,7 +598,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame($root->getKey(), $clone->parent_id);
     }
 
-    public function test_static_clone_subtree_helper_matches_instance_method(): void
+    #[Test]
+    public function static_clone_subtree_helper_matches_instance_method(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -595,7 +619,8 @@ final class CloneSubtreeTest extends TestCase
         $this->assertSame($destination->getKey(), $clone->parent_id);
     }
 
-    public function test_unplaced_source_throws(): void
+    #[Test]
+    public function unplaced_source_throws(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();
@@ -608,7 +633,8 @@ final class CloneSubtreeTest extends TestCase
         $unplaced->cloneSubtreeTo($root);
     }
 
-    public function test_unplaced_destination_throws(): void
+    #[Test]
+    public function unplaced_destination_throws(): void
     {
         $root = new Category(['name' => 'root']);
         $root->saveAsRoot();

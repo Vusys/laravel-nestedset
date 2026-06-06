@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
 
@@ -23,7 +24,8 @@ use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
  */
 final class FixAggregatesBenchmarkTest extends PerformanceTestCase
 {
-    public function test_fix_aggregates_on_intact_tree(): void
+    #[Test]
+    public function fix_aggregates_on_intact_tree(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();
@@ -40,7 +42,8 @@ final class FixAggregatesBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_fix_aggregates_on_fully_drifted_tree(): void
+    #[Test]
+    public function fix_aggregates_on_fully_drifted_tree(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();

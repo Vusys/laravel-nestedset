@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
 use Vusys\NestedSet\Tests\TestCase;
@@ -55,7 +56,8 @@ final class RawFilterAggregateTest extends TestCase
         ];
     }
 
-    public function test_raw_filter_column_maintained_on_create(): void
+    #[Test]
+    public function raw_filter_column_maintained_on_create(): void
     {
         $this->buildTree();
 
@@ -74,7 +76,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(70, (int) $root->tickets_total);
     }
 
-    public function test_no_drift_after_create(): void
+    #[Test]
+    public function no_drift_after_create(): void
     {
         $this->buildTree();
 
@@ -83,7 +86,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(0, $errors['active_tickets_total'] ?? -1);
     }
 
-    public function test_fresh_read_applies_raw_filter(): void
+    #[Test]
+    public function fresh_read_applies_raw_filter(): void
     {
         $this->buildTree();
 
@@ -95,7 +99,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(50, (int) $root->active_tickets_total);
     }
 
-    public function test_updating_watch_column_propagates_to_raw_filter(): void
+    #[Test]
+    public function updating_watch_column_propagates_to_raw_filter(): void
     {
         $this->buildTree();
 
@@ -120,7 +125,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(30, (int) $root->active_tickets_total);
     }
 
-    public function test_updating_source_column_propagates_to_raw_filter(): void
+    #[Test]
+    public function updating_source_column_propagates_to_raw_filter(): void
     {
         $this->buildTree();
 
@@ -134,7 +140,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(110, (int) $root->active_tickets_total);
     }
 
-    public function test_deleting_active_row_propagates_to_raw_filter(): void
+    #[Test]
+    public function deleting_active_row_propagates_to_raw_filter(): void
     {
         $this->buildTree();
 
@@ -146,7 +153,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(10, (int) $root->active_tickets_total);
     }
 
-    public function test_unrelated_save_does_not_recompute_raw_filter(): void
+    #[Test]
+    public function unrelated_save_does_not_recompute_raw_filter(): void
     {
         $this->buildTree();
 
@@ -184,7 +192,8 @@ final class RawFilterAggregateTest extends TestCase
     // Active tickets in the subtree = {10, 40} (Root + B).
     // ----------------------------------------------------------------
 
-    public function test_raw_filter_count_aggregate_counts_only_matching_rows(): void
+    #[Test]
+    public function raw_filter_count_aggregate_counts_only_matching_rows(): void
     {
         $this->buildTree();
 
@@ -197,7 +206,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(2, (int) $root->active_count);
     }
 
-    public function test_raw_filter_min_aggregate_picks_smallest_matching_value(): void
+    #[Test]
+    public function raw_filter_min_aggregate_picks_smallest_matching_value(): void
     {
         $this->buildTree();
 
@@ -210,7 +220,8 @@ final class RawFilterAggregateTest extends TestCase
         $this->assertSame(10, (int) $root->active_min_tickets);
     }
 
-    public function test_raw_filter_max_aggregate_picks_largest_matching_value(): void
+    #[Test]
+    public function raw_filter_max_aggregate_picks_largest_matching_value(): void
     {
         $this->buildTree();
 

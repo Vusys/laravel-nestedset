@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Performance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Performance\Fixtures\TreeShapes;
 use Vusys\NestedSet\TreeFixResult;
@@ -21,7 +22,8 @@ use Vusys\NestedSet\TreeFixResult;
  */
 final class FixTreeBenchmarkTest extends PerformanceTestCase
 {
-    public function test_fix_tree_on_balanced_fanout(): void
+    #[Test]
+    public function fix_tree_on_balanced_fanout(): void
     {
         foreach ($this->scales() as $scale) {
             DB::table('areas')->delete();
@@ -40,7 +42,8 @@ final class FixTreeBenchmarkTest extends PerformanceTestCase
         $this->assertBenchmarksRan();
     }
 
-    public function test_fix_tree_on_deep_chain(): void
+    #[Test]
+    public function fix_tree_on_deep_chain(): void
     {
         // Cap at N=1000 by default — N=10K is in the pathological
         // suite, opt-in via PATHOLOGICAL=1. Per-row mode used to take

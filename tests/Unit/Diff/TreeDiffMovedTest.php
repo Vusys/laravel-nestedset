@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeChange\Moved;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffMovedTest extends TestCase
 {
-    public function test_reparent_records_from_and_to(): void
+    #[Test]
+    public function reparent_records_from_and_to(): void
     {
         $before = [
             ['id' => 1, 'name' => 'A', 'parent_id' => null],
@@ -33,7 +35,8 @@ final class TreeDiffMovedTest extends TestCase
         $this->assertSame(2, $m->toParent);
     }
 
-    public function test_sibling_reorder_is_a_moved_with_same_parent(): void
+    #[Test]
+    public function sibling_reorder_is_a_moved_with_same_parent(): void
     {
         $before = [
             ['id' => 1, 'name' => 'Root', 'parent_id' => null],

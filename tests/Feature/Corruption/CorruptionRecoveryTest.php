@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Corruption;
 
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -62,7 +63,8 @@ final class CorruptionRecoveryTest extends TestCase
     // §3.1  invalid_bounds — lft >= rgt
     // ----------------------------------------------------------------
 
-    public function test_invalid_bounds_are_detected_and_repaired(): void
+    #[Test]
+    public function invalid_bounds_are_detected_and_repaired(): void
     {
         $this->seedValidCategoryTree();
 
@@ -88,7 +90,8 @@ final class CorruptionRecoveryTest extends TestCase
     // §3.2  duplicate_lft / duplicate_rgt
     // ----------------------------------------------------------------
 
-    public function test_duplicate_lft_is_detected_and_repaired(): void
+    #[Test]
+    public function duplicate_lft_is_detected_and_repaired(): void
     {
         $this->seedValidCategoryTree();
 
@@ -106,7 +109,8 @@ final class CorruptionRecoveryTest extends TestCase
         $this->assertSame(0, $afterErrors['invalid_bounds']);
     }
 
-    public function test_duplicate_rgt_is_detected_and_repaired(): void
+    #[Test]
+    public function duplicate_rgt_is_detected_and_repaired(): void
     {
         $this->seedValidCategoryTree();
 
@@ -124,7 +128,8 @@ final class CorruptionRecoveryTest extends TestCase
     // §3.3  orphans — fixTree does NOT auto-recover
     // ----------------------------------------------------------------
 
-    public function test_orphan_is_detected_but_not_auto_repaired_by_fix_tree(): void
+    #[Test]
+    public function orphan_is_detected_but_not_auto_repaired_by_fix_tree(): void
     {
         $this->seedValidCategoryTree();
 
@@ -147,7 +152,8 @@ final class CorruptionRecoveryTest extends TestCase
         );
     }
 
-    public function test_orphan_recoverable_by_promoting_to_root_then_fix_tree(): void
+    #[Test]
+    public function orphan_recoverable_by_promoting_to_root_then_fix_tree(): void
     {
         $this->seedValidCategoryTree();
 
@@ -176,7 +182,8 @@ final class CorruptionRecoveryTest extends TestCase
     // §3.4  parent_id cycles — fixTree CANNOT auto-recover
     // ----------------------------------------------------------------
 
-    public function test_parent_id_cycle_is_not_auto_recovered_by_fix_tree(): void
+    #[Test]
+    public function parent_id_cycle_is_not_auto_recovered_by_fix_tree(): void
     {
         $this->seedValidCategoryTree();
 
@@ -265,7 +272,8 @@ final class CorruptionRecoveryTest extends TestCase
     // §3.5  aggregate drift — repaired by fixAggregates
     // ----------------------------------------------------------------
 
-    public function test_aggregate_drift_from_direct_db_update_is_detected_and_repaired(): void
+    #[Test]
+    public function aggregate_drift_from_direct_db_update_is_detected_and_repaired(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -294,7 +302,8 @@ final class CorruptionRecoveryTest extends TestCase
         $this->assertSame(999, (int) $root->tickets_total, 'aggregate now reflects raw-updated source');
     }
 
-    public function test_aggregate_drift_from_raw_insert_is_repaired(): void
+    #[Test]
+    public function aggregate_drift_from_raw_insert_is_repaired(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -337,7 +346,8 @@ final class CorruptionRecoveryTest extends TestCase
     // rejects the call up front.
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_rejects_cross_class_anchor(): void
+    #[Test]
+    public function fix_tree_rejects_cross_class_anchor(): void
     {
         $category = new Category(['name' => 'root']);
         $category->saveAsRoot();
@@ -348,7 +358,8 @@ final class CorruptionRecoveryTest extends TestCase
         Area::fixTree(anchor: $category);
     }
 
-    public function test_count_errors_rejects_cross_class_anchor(): void
+    #[Test]
+    public function count_errors_rejects_cross_class_anchor(): void
     {
         $category = new Category(['name' => 'root']);
         $category->saveAsRoot();
@@ -359,7 +370,8 @@ final class CorruptionRecoveryTest extends TestCase
         Area::countErrors(anchor: $category);
     }
 
-    public function test_is_broken_rejects_cross_class_anchor(): void
+    #[Test]
+    public function is_broken_rejects_cross_class_anchor(): void
     {
         $category = new Category(['name' => 'root']);
         $category->saveAsRoot();
@@ -370,7 +382,8 @@ final class CorruptionRecoveryTest extends TestCase
         Area::isBroken(anchor: $category);
     }
 
-    public function test_structural_repair_then_aggregate_repair_handles_combined_drift(): void
+    #[Test]
+    public function structural_repair_then_aggregate_repair_handles_combined_drift(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -426,7 +439,8 @@ final class CorruptionRecoveryTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_fix_tree_full_table_handles_deeply_nested_chain_without_blowing_the_stack(): void
+    #[Test]
+    public function fix_tree_full_table_handles_deeply_nested_chain_without_blowing_the_stack(): void
     {
         // Mirror of BulkInsertTest's deep-chain coverage: a 2,000-level
         // parent_id chain. The previous recursive walker in
@@ -460,7 +474,8 @@ final class CorruptionRecoveryTest extends TestCase
         $this->assertSame($depth - 1, (int) $leaf->depth);
     }
 
-    public function test_fix_tree_anchored_handles_deeply_nested_chain_without_blowing_the_stack(): void
+    #[Test]
+    public function fix_tree_anchored_handles_deeply_nested_chain_without_blowing_the_stack(): void
     {
         // Same shape as the full-table case, but invoked with an
         // explicit anchor so the repair routes through
@@ -496,7 +511,8 @@ final class CorruptionRecoveryTest extends TestCase
     // Edge: the detector must be graceful on an empty tree (no rows).
     // ----------------------------------------------------------------
 
-    public function test_count_errors_on_empty_table_returns_zero(): void
+    #[Test]
+    public function count_errors_on_empty_table_returns_zero(): void
     {
         $errors = Category::countErrors();
 

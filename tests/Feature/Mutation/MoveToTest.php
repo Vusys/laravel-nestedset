@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use LogicException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -69,7 +70,8 @@ final class MoveToTest extends TestCase
 
     // ----- position resolution: string positions ------------------------
 
-    public function test_move_to_last_appends_to_parent(): void
+    #[Test]
+    public function move_to_last_appends_to_parent(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveTo($this->spare, 'last')->save();
@@ -77,7 +79,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->spare, ['New']);
     }
 
-    public function test_move_to_first_prepends_to_parent(): void
+    #[Test]
+    public function move_to_first_prepends_to_parent(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveTo($this->root, 'first')->save();
@@ -85,7 +88,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root, ['New', 'A', 'B', 'C', 'D']);
     }
 
-    public function test_move_to_default_position_is_last(): void
+    #[Test]
+    public function move_to_default_position_is_last(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveTo($this->root)->save();
@@ -95,7 +99,8 @@ final class MoveToTest extends TestCase
 
     // ----- position resolution: int positions ---------------------------
 
-    public function test_move_to_zero_prepends(): void
+    #[Test]
+    public function move_to_zero_prepends(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveTo($this->root, 0)->save();
@@ -103,7 +108,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root, ['New', 'A', 'B', 'C', 'D']);
     }
 
-    public function test_move_to_middle_position_inserts_before_target(): void
+    #[Test]
+    public function move_to_middle_position_inserts_before_target(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveTo($this->root, 2)->save();
@@ -112,7 +118,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root, ['A', 'B', 'New', 'C', 'D']);
     }
 
-    public function test_move_to_position_at_count_appends(): void
+    #[Test]
+    public function move_to_position_at_count_appends(): void
     {
         $node = new Category(['name' => 'New']);
         // 4 existing children, position 4 == count → append.
@@ -121,7 +128,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root, ['A', 'B', 'C', 'D', 'New']);
     }
 
-    public function test_move_to_position_past_count_appends(): void
+    #[Test]
+    public function move_to_position_past_count_appends(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveTo($this->root, 99)->save();
@@ -129,7 +137,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root, ['A', 'B', 'C', 'D', 'New']);
     }
 
-    public function test_move_to_int_position_on_empty_parent_appends(): void
+    #[Test]
+    public function move_to_int_position_on_empty_parent_appends(): void
     {
         $node = new Category(['name' => 'New']);
         // Spare has no children — any int position resolves to append.
@@ -140,7 +149,8 @@ final class MoveToTest extends TestCase
 
     // ----- same-parent reorder (self-exclusion) -------------------------
 
-    public function test_same_parent_reorder_self_excluded_from_index(): void
+    #[Test]
+    public function same_parent_reorder_self_excluded_from_index(): void
     {
         // Move A from index 0 to index 2 within its current parent. With
         // self-exclusion, the remaining siblings are [B, C, D]; position 2
@@ -151,7 +161,8 @@ final class MoveToTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_same_parent_reorder_to_first(): void
+    #[Test]
+    public function same_parent_reorder_to_first(): void
     {
         $this->d->moveTo($this->root, 'first')->save();
 
@@ -159,7 +170,8 @@ final class MoveToTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_same_parent_reorder_to_last(): void
+    #[Test]
+    public function same_parent_reorder_to_last(): void
     {
         $this->a->moveTo($this->root, 'last')->save();
 
@@ -167,7 +179,8 @@ final class MoveToTest extends TestCase
         $this->assertFalse(Category::isBroken());
     }
 
-    public function test_same_parent_reorder_at_count_minus_one_is_last(): void
+    #[Test]
+    public function same_parent_reorder_at_count_minus_one_is_last(): void
     {
         // Self-excluded count is 3, position 3 == count → append.
         $this->b->moveTo($this->root, 3)->save();
@@ -177,7 +190,8 @@ final class MoveToTest extends TestCase
 
     // ----- cross-parent move --------------------------------------------
 
-    public function test_cross_parent_move_to_specific_position(): void
+    #[Test]
+    public function cross_parent_move_to_specific_position(): void
     {
         $d = Category::query()->findOrFail(5);
 
@@ -195,7 +209,8 @@ final class MoveToTest extends TestCase
 
     // ----- moveBefore / moveAfter ---------------------------------------
 
-    public function test_move_before_places_node_immediately_left_of_sibling(): void
+    #[Test]
+    public function move_before_places_node_immediately_left_of_sibling(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveBefore($this->c)->save();
@@ -203,7 +218,8 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root->refresh(), ['A', 'B', 'New', 'C', 'D']);
     }
 
-    public function test_move_after_places_node_immediately_right_of_sibling(): void
+    #[Test]
+    public function move_after_places_node_immediately_right_of_sibling(): void
     {
         $node = new Category(['name' => 'New']);
         $node->moveAfter($this->b)->save();
@@ -211,14 +227,16 @@ final class MoveToTest extends TestCase
         $this->assertChildOrderUnder($this->root->refresh(), ['A', 'B', 'New', 'C', 'D']);
     }
 
-    public function test_move_before_existing_node_in_same_parent(): void
+    #[Test]
+    public function move_before_existing_node_in_same_parent(): void
     {
         $this->d->moveBefore($this->a)->save();
 
         $this->assertChildOrderUnder($this->root->refresh(), ['D', 'A', 'B', 'C']);
     }
 
-    public function test_move_after_existing_node_in_same_parent(): void
+    #[Test]
+    public function move_after_existing_node_in_same_parent(): void
     {
         $this->a->moveAfter($this->c)->save();
 
@@ -227,7 +245,8 @@ final class MoveToTest extends TestCase
 
     // ----- validation ---------------------------------------------------
 
-    public function test_negative_int_position_throws(): void
+    #[Test]
+    public function negative_int_position_throws(): void
     {
         $node = new Category(['name' => 'New']);
 
@@ -237,7 +256,8 @@ final class MoveToTest extends TestCase
         $node->moveTo($this->root, -1);
     }
 
-    public function test_unrecognized_string_position_throws(): void
+    #[Test]
+    public function unrecognized_string_position_throws(): void
     {
         $node = new Category(['name' => 'New']);
 
@@ -247,7 +267,8 @@ final class MoveToTest extends TestCase
         $node->moveTo($this->root, 'middle');
     }
 
-    public function test_unsaved_parent_throws(): void
+    #[Test]
+    public function unsaved_parent_throws(): void
     {
         $node = new Category(['name' => 'New']);
         $parent = new Category(['name' => 'Unsaved']);
@@ -260,7 +281,8 @@ final class MoveToTest extends TestCase
         $node->moveTo($parent, 1);
     }
 
-    public function test_cross_scope_throws(): void
+    #[Test]
+    public function cross_scope_throws(): void
     {
         $menu1 = Menu::create(['name' => 'Menu 1']);
         $menu2 = Menu::create(['name' => 'Menu 2']);
@@ -275,7 +297,8 @@ final class MoveToTest extends TestCase
         $root1->moveTo($root2, 'last')->save();
     }
 
-    public function test_cross_scope_throws_eagerly_for_int_position(): void
+    #[Test]
+    public function cross_scope_throws_eagerly_for_int_position(): void
     {
         $menu1 = Menu::create(['name' => 'Menu 1']);
         $menu2 = Menu::create(['name' => 'Menu 2']);
@@ -296,7 +319,8 @@ final class MoveToTest extends TestCase
 
     // ----- zero-delta NodeMoved (documented surface) --------------------
 
-    public function test_zero_delta_move_to_same_position_still_emits_event(): void
+    #[Test]
+    public function zero_delta_move_to_same_position_still_emits_event(): void
     {
         Event::fake([NodeMoved::class]);
 
@@ -311,7 +335,8 @@ final class MoveToTest extends TestCase
 
     // ----- parity with existing primitives ------------------------------
 
-    public function test_move_to_last_is_equivalent_to_append_to_node(): void
+    #[Test]
+    public function move_to_last_is_equivalent_to_append_to_node(): void
     {
         $viaMoveTo = new Category(['name' => 'Via moveTo']);
         $viaMoveTo->moveTo($this->root, 'last')->save();
@@ -326,7 +351,8 @@ final class MoveToTest extends TestCase
         $this->assertSame($viaMoveTo->parent_id, $viaAppend->parent_id);
     }
 
-    public function test_move_to_first_is_equivalent_to_prepend_to_node(): void
+    #[Test]
+    public function move_to_first_is_equivalent_to_prepend_to_node(): void
     {
         $viaMoveTo = new Category(['name' => 'Via moveTo']);
         $viaMoveTo->moveTo($this->spare, 'first')->save();

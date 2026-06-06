@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use Throwable;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
@@ -52,7 +53,8 @@ final class UnsupportedListenerOperationTest extends TestCase
      * @param  class-string<Throwable>  $exceptionClass
      */
     #[DataProvider('unsupportedOpColumns')]
-    public function test_fresh_read_of_unsupported_listener_op_throws(
+    #[Test]
+    public function fresh_read_of_unsupported_listener_op_throws(
         string $column,
         string $exceptionClass,
         string $messagePattern,
@@ -70,7 +72,8 @@ final class UnsupportedListenerOperationTest extends TestCase
      * the column-based attribute. Pins the additional Concat mutants
      * on the multi-part message line.
      */
-    public function test_collection_arm_message_points_at_nested_set_aggregate(): void
+    #[Test]
+    public function collection_arm_message_points_at_nested_set_aggregate(): void
     {
         $node = UnsupportedOpMonster::query()->findOrFail($this->seedMonsterRoot());
 

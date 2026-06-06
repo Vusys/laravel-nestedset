@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Strategy\RecomputeMaintenance;
 use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
 use Vusys\NestedSet\Tests\TestCase;
@@ -28,7 +29,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class SoftBranchAggregateTest extends TestCase
 {
-    public function test_with_fresh_aggregates_includes_trashed_when_outer_uses_with_trashed(): void
+    #[Test]
+    public function with_fresh_aggregates_includes_trashed_when_outer_uses_with_trashed(): void
     {
         // Default: fresh recompute filters trashed descendants — same
         // as the stored value tracks the live set.
@@ -63,7 +65,8 @@ final class SoftBranchAggregateTest extends TestCase
         $this->assertSame(60, (int) $trashedRoot->tickets_total, 'withTrashed: includes C (A + B + C)');
     }
 
-    public function test_fresh_aggregate_scalar_honours_with_trashed_flag(): void
+    #[Test]
+    public function fresh_aggregate_scalar_honours_with_trashed_flag(): void
     {
         // Single-node freshAggregate('col') defaults to live-only.
         // freshAggregate('col', withTrashed: true) includes trashed
@@ -92,7 +95,8 @@ final class SoftBranchAggregateTest extends TestCase
         $this->assertSame(40, (int) $withTrashed);
     }
 
-    public function test_exclusive_aggregates_ignore_trashed_descendants(): void
+    #[Test]
+    public function exclusive_aggregates_ignore_trashed_descendants(): void
     {
         // Root > [A(10, active), B(20, active), C(30, inactive)]
         // descendants_total on root should equal sum over live subtree's
@@ -135,7 +139,8 @@ final class SoftBranchAggregateTest extends TestCase
         $this->assertFalse(SoftBranch::aggregatesAreBroken());
     }
 
-    public function test_trashed_ancestor_stored_values_stay_frozen_during_descendant_mutations(): void
+    #[Test]
+    public function trashed_ancestor_stored_values_stay_frozen_during_descendant_mutations(): void
     {
         // Set up: Root > A > B. Trash A (cascade trashes B). Then
         // modify the tree elsewhere — e.g., add a sibling to root.
@@ -182,7 +187,8 @@ final class SoftBranchAggregateTest extends TestCase
         $this->assertSame(1, $root->descendants_count);
     }
 
-    public function test_restore_resyncs_subtree_aggregates_against_current_live_set(): void
+    #[Test]
+    public function restore_resyncs_subtree_aggregates_against_current_live_set(): void
     {
         // Set up: Root > A > [B(5), C(10)]. Trash A (cascade B and C).
         // Force-delete C while it's trashed. Restore A — A's stored
@@ -229,7 +235,8 @@ final class SoftBranchAggregateTest extends TestCase
         $this->assertFalse(SoftBranch::aggregatesAreBroken());
     }
 
-    public function test_raw_filter_aggregate_settles_after_restore(): void
+    #[Test]
+    public function raw_filter_aggregate_settles_after_restore(): void
     {
         // active_tickets_total uses a raw SQL filter (`active = 1`).
         // It's maintained via RecomputeMaintenance — the snapshot-

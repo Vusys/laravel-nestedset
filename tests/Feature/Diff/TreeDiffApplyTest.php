@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -17,7 +18,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class TreeDiffApplyTest extends TestCase
 {
-    public function test_apply_inserts_added_rows_under_existing_parents(): void
+    #[Test]
+    public function apply_inserts_added_rows_under_existing_parents(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -40,7 +42,8 @@ final class TreeDiffApplyTest extends TestCase
         $this->assertSame($root->refresh()->id, $child->parent_id);
     }
 
-    public function test_apply_removes_rows(): void
+    #[Test]
+    public function apply_removes_rows(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -62,7 +65,8 @@ final class TreeDiffApplyTest extends TestCase
         $this->assertNotNull(Category::query()->find($root->id));
     }
 
-    public function test_apply_modifies_columns_on_existing_rows(): void
+    #[Test]
+    public function apply_modifies_columns_on_existing_rows(): void
     {
         $root = new Category(['name' => 'Original']);
         $root->makeRoot()->save();
@@ -75,7 +79,8 @@ final class TreeDiffApplyTest extends TestCase
         $this->assertSame('Updated', $root->refresh()->name);
     }
 
-    public function test_apply_moves_existing_row(): void
+    #[Test]
+    public function apply_moves_existing_row(): void
     {
         $a = new Category(['name' => 'A']);
         $a->makeRoot()->save();
@@ -100,7 +105,8 @@ final class TreeDiffApplyTest extends TestCase
         $this->assertSame($b->id, $x->refresh()->parent_id);
     }
 
-    public function test_dry_run_does_not_mutate(): void
+    #[Test]
+    public function dry_run_does_not_mutate(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();

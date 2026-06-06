@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Filters;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 
 final class FilterPredicateEvaluateTest extends TestCase
 {
-    public function test_equality_returns_true_when_all_conditions_match(): void
+    #[Test]
+    public function equality_returns_true_when_all_conditions_match(): void
     {
         $predicate = FilterPredicate::equality(['type' => 'fire', 'active' => true]);
 
@@ -18,7 +20,8 @@ final class FilterPredicateEvaluateTest extends TestCase
         $this->assertTrue($result);
     }
 
-    public function test_equality_returns_false_when_one_condition_does_not_match(): void
+    #[Test]
+    public function equality_returns_false_when_one_condition_does_not_match(): void
     {
         $predicate = FilterPredicate::equality(['type' => 'fire', 'active' => true]);
 
@@ -27,7 +30,8 @@ final class FilterPredicateEvaluateTest extends TestCase
         $this->assertFalse($result);
     }
 
-    public function test_equality_uses_strict_comparison(): void
+    #[Test]
+    public function equality_uses_strict_comparison(): void
     {
         // Strict comparison so the PHP-side evaluation agrees with the
         // SQL side's `= NULL → unknown → false` semantic. Loose
@@ -41,7 +45,8 @@ final class FilterPredicateEvaluateTest extends TestCase
         );
     }
 
-    public function test_equality_with_zero_value_does_not_match_null_attribute(): void
+    #[Test]
+    public function equality_with_zero_value_does_not_match_null_attribute(): void
     {
         // The drift case the strict-comparison fix targets: a filter
         // value of int 0 against a NULL attribute. PHP loose `0 == null`
@@ -54,7 +59,8 @@ final class FilterPredicateEvaluateTest extends TestCase
         $this->assertTrue($predicate->evaluateFor(['status' => 0]));
     }
 
-    public function test_not_null_returns_true_when_column_is_set(): void
+    #[Test]
+    public function not_null_returns_true_when_column_is_set(): void
     {
         $predicate = FilterPredicate::notNull('tickets');
 
@@ -63,7 +69,8 @@ final class FilterPredicateEvaluateTest extends TestCase
         $this->assertTrue($result);
     }
 
-    public function test_not_null_returns_false_when_column_is_null_or_missing(): void
+    #[Test]
+    public function not_null_returns_false_when_column_is_null_or_missing(): void
     {
         $predicate = FilterPredicate::notNull('tickets');
 
@@ -71,7 +78,8 @@ final class FilterPredicateEvaluateTest extends TestCase
         $this->assertFalse($predicate->evaluateFor([]));
     }
 
-    public function test_raw_always_returns_null(): void
+    #[Test]
+    public function raw_always_returns_null(): void
     {
         $predicate = FilterPredicate::raw('status = 1', ['status']);
 

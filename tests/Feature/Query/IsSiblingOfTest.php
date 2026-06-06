@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Concerns\HasNodeInspection;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeBounds;
@@ -25,7 +26,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class IsSiblingOfTest extends TestCase
 {
-    public function test_same_parent_children_are_siblings(): void
+    #[Test]
+    public function same_parent_children_are_siblings(): void
     {
         DB::table('categories')->insert([
             ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 6, 'depth' => 0, 'parent_id' => null],
@@ -41,7 +43,8 @@ final class IsSiblingOfTest extends TestCase
         $this->assertTrue($b->isSiblingOf($a), 'sibling relation is symmetric');
     }
 
-    public function test_different_parent_children_are_not_siblings(): void
+    #[Test]
+    public function different_parent_children_are_not_siblings(): void
     {
         DB::table('categories')->insert([
             ['id' => 1, 'name' => 'R1', 'lft' => 1,  'rgt' => 4,  'depth' => 0, 'parent_id' => null],
@@ -58,7 +61,8 @@ final class IsSiblingOfTest extends TestCase
         $this->assertFalse($c2->isSiblingOf($c1));
     }
 
-    public function test_self_is_not_its_own_sibling(): void
+    #[Test]
+    public function self_is_not_its_own_sibling(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -72,7 +76,8 @@ final class IsSiblingOfTest extends TestCase
         $this->assertFalse($root->isSiblingOf($root), 'a root is not its own sibling either');
     }
 
-    public function test_two_unscoped_roots_are_siblings(): void
+    #[Test]
+    public function two_unscoped_roots_are_siblings(): void
     {
         // Unscoped (no #[NestedSetScope]) forest: two roots in the same
         // table share parent_id = null and live in the same partition,
@@ -89,7 +94,8 @@ final class IsSiblingOfTest extends TestCase
         $this->assertTrue($r1->isSiblingOf($r2));
     }
 
-    public function test_two_roots_in_different_scopes_are_not_siblings(): void
+    #[Test]
+    public function two_roots_in_different_scopes_are_not_siblings(): void
     {
         // MenuItem is scoped by menu_id. Two roots in different menus
         // both have parent_id = null, but they're in entirely separate
@@ -114,7 +120,8 @@ final class IsSiblingOfTest extends TestCase
         $this->assertFalse($b->isSiblingOf($a), 'sibling relation stays symmetric across the scope guard');
     }
 
-    public function test_two_children_in_the_same_scope_with_the_same_parent_are_siblings(): void
+    #[Test]
+    public function two_children_in_the_same_scope_with_the_same_parent_are_siblings(): void
     {
         // Same-scope companion to the cross-scope negative case above:
         // when both nodes share menu_id AND parent_id, they're siblings.
@@ -136,7 +143,8 @@ final class IsSiblingOfTest extends TestCase
         $this->assertTrue($a->isSiblingOf($b));
     }
 
-    public function test_roots_are_not_siblings_of_their_own_children(): void
+    #[Test]
+    public function roots_are_not_siblings_of_their_own_children(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -170,7 +178,8 @@ final class IsSiblingOfTest extends TestCase
      * interface intentionally widens `$other` to `HasNestedSet`, so
      * the safety net belongs in the test suite.
      */
-    public function test_non_model_other_falls_through_to_parent_id_equality(): void
+    #[Test]
+    public function non_model_other_falls_through_to_parent_id_equality(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();

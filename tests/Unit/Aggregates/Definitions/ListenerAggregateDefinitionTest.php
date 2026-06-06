@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Definitions;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\ListenerAggregateDefinition;
@@ -14,7 +15,8 @@ use Vusys\NestedSet\Tests\Fixtures\Aggregates\WeightedPowerListener;
 
 final class ListenerAggregateDefinitionTest extends TestCase
 {
-    public function test_implements_aggregate_definition_contract(): void
+    #[Test]
+    public function implements_aggregate_definition_contract(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -25,7 +27,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $this->assertInstanceOf(AggregateDefinitionContract::class, $definition);
     }
 
-    public function test_get_column_returns_constructor_column(): void
+    #[Test]
+    public function get_column_returns_constructor_column(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -36,7 +39,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $this->assertSame('weighted_power', $definition->getColumn());
     }
 
-    public function test_is_inclusive_returns_true_by_default(): void
+    #[Test]
+    public function is_inclusive_returns_true_by_default(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -47,7 +51,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $this->assertTrue($definition->isInclusive());
     }
 
-    public function test_is_inclusive_returns_false_when_constructed_exclusive(): void
+    #[Test]
+    public function is_inclusive_returns_false_when_constructed_exclusive(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -59,7 +64,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $this->assertFalse($definition->isInclusive());
     }
 
-    public function test_is_internal_always_returns_false(): void
+    #[Test]
+    public function is_internal_always_returns_false(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -70,7 +76,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $this->assertFalse($definition->isInternal());
     }
 
-    public function test_make_listener_returns_correct_listener_instance(): void
+    #[Test]
+    public function make_listener_returns_correct_listener_instance(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -84,7 +91,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $this->assertInstanceOf(TreeAggregateListener::class, $listener);
     }
 
-    public function test_make_listener_throws_for_nonexistent_class(): void
+    #[Test]
+    public function make_listener_throws_for_nonexistent_class(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -98,7 +106,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $definition->makeListener();
     }
 
-    public function test_make_listener_throws_when_class_does_not_implement_interface(): void
+    #[Test]
+    public function make_listener_throws_when_class_does_not_implement_interface(): void
     {
         $definition = new ListenerAggregateDefinition(
             column: 'weighted_power',
@@ -112,7 +121,8 @@ final class ListenerAggregateDefinitionTest extends TestCase
         $definition->makeListener();
     }
 
-    public function test_rejects_bitwise_operations(): void
+    #[Test]
+    public function rejects_bitwise_operations(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('cannot use a bitwise operation');

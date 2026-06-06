@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\NodeBounds;
 
 final class NodeBoundsTest extends TestCase
 {
     #[DataProvider('heightCases')]
-    public function test_height_is_rgt_minus_lft_plus_one(NodeBounds $node, int $expected): void
+    #[Test]
+    public function height_is_rgt_minus_lft_plus_one(NodeBounds $node, int $expected): void
     {
         $this->assertSame($expected, $node->height());
     }
@@ -26,7 +28,8 @@ final class NodeBoundsTest extends TestCase
     }
 
     #[DataProvider('containmentCases')]
-    public function test_contains_uses_strict_bounds_containment(NodeBounds $outer, NodeBounds $inner, bool $expected): void
+    #[Test]
+    public function contains_uses_strict_bounds_containment(NodeBounds $outer, NodeBounds $inner, bool $expected): void
     {
         $this->assertSame($expected, $outer->contains($inner));
     }
@@ -57,7 +60,8 @@ final class NodeBoundsTest extends TestCase
     }
 
     #[DataProvider('depthDeltaCases')]
-    public function test_depth_delta_is_the_signed_depth_difference(NodeBounds $node, NodeBounds $other, int $expected): void
+    #[Test]
+    public function depth_delta_is_the_signed_depth_difference(NodeBounds $node, NodeBounds $other, int $expected): void
     {
         $this->assertSame($expected, $node->depthDelta($other));
     }

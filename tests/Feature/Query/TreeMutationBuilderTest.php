@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Columns;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\TreeMutationBuilder;
@@ -55,7 +56,8 @@ final class TreeMutationBuilderTest extends TestCase
     // makeGap / closeGap
     // ----------------------------------------------------------------
 
-    public function test_make_gap_shifts_nodes_at_and_after_position(): void
+    #[Test]
+    public function make_gap_shifts_nodes_at_and_after_position(): void
     {
         // Open a 2-wide gap at position 8 (before Child B).
         $this->mutator->makeGap(at: 8, size: 2);
@@ -71,7 +73,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(7, (int) $childA->rgt);  // unchanged
     }
 
-    public function test_make_gap_does_not_shift_nodes_before_position(): void
+    #[Test]
+    public function make_gap_does_not_shift_nodes_before_position(): void
     {
         $this->mutator->makeGap(at: 6, size: 2);
 
@@ -81,7 +84,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(4, (int) $aa->rgt); // unchanged (rgt=4 < 6)
     }
 
-    public function test_close_gap_shifts_nodes_after_position(): void
+    #[Test]
+    public function close_gap_shifts_nodes_after_position(): void
     {
         // Remove Child B's space by closing a 2-wide gap after position 7.
         $this->mutator->closeGap(at: 7, size: 2);
@@ -98,7 +102,8 @@ final class TreeMutationBuilderTest extends TestCase
     // insertNode
     // ----------------------------------------------------------------
 
-    public function test_insert_node_returns_correct_position_data(): void
+    #[Test]
+    public function insert_node_returns_correct_position_data(): void
     {
         $data = $this->mutator->insertNode(insertAt: 8, newDepth: 1, newParentId: 1);
 
@@ -108,7 +113,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(1, $data['parent_id']);
     }
 
-    public function test_insert_node_returns_null_parent_for_root(): void
+    #[Test]
+    public function insert_node_returns_null_parent_for_root(): void
     {
         $data = $this->mutator->insertNode(insertAt: 1, newDepth: 0, newParentId: null);
 
@@ -119,7 +125,8 @@ final class TreeMutationBuilderTest extends TestCase
     // moveNode
     // ----------------------------------------------------------------
 
-    public function test_move_node_forward_single_leaf(): void
+    #[Test]
+    public function move_node_forward_single_leaf(): void
     {
         // Move AA (lft=3, rgt=4) to after AB (lft=5, rgt=6).
         // After move: AB should be at 3-4, AA at 5-6.
@@ -138,7 +145,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(4, (int) $ab->rgt);
     }
 
-    public function test_move_node_backward_single_leaf(): void
+    #[Test]
+    public function move_node_backward_single_leaf(): void
     {
         // Move AB (lft=5, rgt=6) to before AA (lft=3, rgt=4).
         // After move: AB should be at 3-4, AA at 5-6.
@@ -157,7 +165,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(4, (int) $ab->rgt);
     }
 
-    public function test_move_node_updates_depth_delta(): void
+    #[Test]
+    public function move_node_updates_depth_delta(): void
     {
         // Move Child B (lft=8, rgt=9, depth=1) to appended-to Child A.
         // position = Child A.rgt = 7 in original coordinates.
@@ -171,7 +180,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(2, (int) $childB->depth); // 1 + 1
     }
 
-    public function test_move_node_no_op_when_same_position(): void
+    #[Test]
+    public function move_node_no_op_when_same_position(): void
     {
         $from = new NodeBounds(lft: 3, rgt: 4, depth: 2);
 
@@ -187,7 +197,8 @@ final class TreeMutationBuilderTest extends TestCase
     // getPlainNodeData / getNodeData
     // ----------------------------------------------------------------
 
-    public function test_get_plain_node_data_returns_correct_values(): void
+    #[Test]
+    public function get_plain_node_data_returns_correct_values(): void
     {
         $data = $this->mutator->getPlainNodeData(id: 2);
 
@@ -197,14 +208,16 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(1, $data['parent_id']);
     }
 
-    public function test_get_plain_node_data_returns_null_parent_for_root(): void
+    #[Test]
+    public function get_plain_node_data_returns_null_parent_for_root(): void
     {
         $data = $this->mutator->getPlainNodeData(id: 1);
 
         $this->assertNull($data['parent_id']);
     }
 
-    public function test_get_node_data_returns_node_bounds(): void
+    #[Test]
+    public function get_node_data_returns_node_bounds(): void
     {
         $bounds = $this->mutator->getNodeData(id: 2);
 
@@ -213,7 +226,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(1, $bounds->depth);
     }
 
-    public function test_get_plain_node_data_throws_for_missing_node(): void
+    #[Test]
+    public function get_plain_node_data_throws_for_missing_node(): void
     {
         $this->expectException(\RuntimeException::class);
 
@@ -224,7 +238,8 @@ final class TreeMutationBuilderTest extends TestCase
     // Query count assertions
     // ----------------------------------------------------------------
 
-    public function test_make_gap_issues_one_query(): void
+    #[Test]
+    public function make_gap_issues_one_query(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -236,7 +251,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(1, $count);
     }
 
-    public function test_move_node_issues_one_query_when_moving(): void
+    #[Test]
+    public function move_node_issues_one_query_when_moving(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -256,7 +272,8 @@ final class TreeMutationBuilderTest extends TestCase
     // reorderSiblings — defensive guards
     // ----------------------------------------------------------------
 
-    public function test_reorder_siblings_empty_shifts_returns_zero_with_no_update(): void
+    #[Test]
+    public function reorder_siblings_empty_shifts_returns_zero_with_no_update(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {
@@ -269,7 +286,8 @@ final class TreeMutationBuilderTest extends TestCase
         $this->assertSame(0, $count);
     }
 
-    public function test_reorder_siblings_all_zero_delta_returns_zero_with_no_update(): void
+    #[Test]
+    public function reorder_siblings_all_zero_delta_returns_zero_with_no_update(): void
     {
         $count = 0;
         DB::listen(static function () use (&$count): void {

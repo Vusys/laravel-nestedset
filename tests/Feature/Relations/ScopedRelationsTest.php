@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Relations;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
@@ -63,7 +64,8 @@ final class ScopedRelationsTest extends TestCase
     // ancestors() — single load
     // ----------------------------------------------------------------
 
-    public function test_ancestors_does_not_return_rows_from_a_different_scope(): void
+    #[Test]
+    public function ancestors_does_not_return_rows_from_a_different_scope(): void
     {
         // 1C's ancestors: 1A, 1B (menu 1 only).
         // Without scope filter, would also pull 2A, 2B because both
@@ -73,7 +75,8 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(['1A', '1B'], $names);
     }
 
-    public function test_descendants_does_not_return_rows_from_a_different_scope(): void
+    #[Test]
+    public function descendants_does_not_return_rows_from_a_different_scope(): void
     {
         $names = $this->find(11)->descendants()->orderBy('lft')->pluck('name')->all();
 
@@ -84,7 +87,8 @@ final class ScopedRelationsTest extends TestCase
     // ancestors() / descendants() — eager load
     // ----------------------------------------------------------------
 
-    public function test_eager_load_ancestors_keeps_each_models_ancestors_in_its_own_scope(): void
+    #[Test]
+    public function eager_load_ancestors_keeps_each_models_ancestors_in_its_own_scope(): void
     {
         $rows = MenuItem::query()->with('ancestors')->orderBy('id')->get()->keyBy('id');
 
@@ -98,7 +102,8 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(['2A', '2B'], $cMenu2->ancestors->sortBy('lft')->pluck('name')->all());
     }
 
-    public function test_eager_load_descendants_keeps_each_models_descendants_in_its_own_scope(): void
+    #[Test]
+    public function eager_load_descendants_keeps_each_models_descendants_in_its_own_scope(): void
     {
         $rows = MenuItem::query()->with('descendants')->orderBy('id')->get()->keyBy('id');
 
@@ -116,7 +121,8 @@ final class ScopedRelationsTest extends TestCase
     // whereHas / withCount — subquery uses scope-joined existence check
     // ----------------------------------------------------------------
 
-    public function test_where_has_descendants_does_not_count_cross_scope_overlaps(): void
+    #[Test]
+    public function where_has_descendants_does_not_count_cross_scope_overlaps(): void
     {
         // Every leaf has rgt = lft + 1; only non-leaves should match.
         $names = MenuItem::query()
@@ -131,7 +137,8 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(['1A', '1B', '2A', '2B'], $names);
     }
 
-    public function test_with_count_descendants_counts_only_in_scope_rows(): void
+    #[Test]
+    public function with_count_descendants_counts_only_in_scope_rows(): void
     {
         // 1A has 2 descendants in its own scope (1B, 1C); without the
         // scope join it would have 5 (would also count 2A, 2B, 2C).
@@ -146,7 +153,8 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(1, (int) $oneB->descendants_count);
     }
 
-    public function test_with_count_ancestors_counts_only_in_scope_rows(): void
+    #[Test]
+    public function with_count_ancestors_counts_only_in_scope_rows(): void
     {
         $rows = MenuItem::query()->withCount('ancestors')->get()->keyBy('id');
 
@@ -159,7 +167,8 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(2, (int) $twoC->ancestors_count);
     }
 
-    public function test_depth_bounded_descendants_eager_load_respects_scope(): void
+    #[Test]
+    public function depth_bounded_descendants_eager_load_respects_scope(): void
     {
         // Production use case from docs/querying/relations.md:
         //

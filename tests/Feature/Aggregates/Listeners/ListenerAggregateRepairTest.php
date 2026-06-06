@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -64,7 +65,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 1. fixAggregates repairs drifted listener SUM (weighted_power)
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_repairs_drifted_listener_sum_column(): void
+    #[Test]
+    public function fix_aggregates_repairs_drifted_listener_sum_column(): void
     {
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(2);
 
@@ -86,7 +88,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 2. fixAggregates repairs drifted listener SUM (fire_count)
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_repairs_drifted_listener_count_column(): void
+    #[Test]
+    public function fix_aggregates_repairs_drifted_listener_count_column(): void
     {
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(2);
 
@@ -108,7 +111,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 3. fixAggregates returns correct perColumn counts
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_returns_correct_per_column_counts(): void
+    #[Test]
+    public function fix_aggregates_returns_correct_per_column_counts(): void
     {
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(3);
 
@@ -132,7 +136,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 4. aggregateErrors counts listener column disagreements
     // ----------------------------------------------------------------
 
-    public function test_aggregate_errors_counts_listener_column_disagreements(): void
+    #[Test]
+    public function aggregate_errors_counts_listener_column_disagreements(): void
     {
         ['root' => $root, 'children' => $children] = $this->buildTreeWithChildren(2);
 
@@ -150,7 +155,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 5. aggregateErrors returns zero for correct tree
     // ----------------------------------------------------------------
 
-    public function test_aggregate_errors_returns_zero_for_correct_tree(): void
+    #[Test]
+    public function aggregate_errors_returns_zero_for_correct_tree(): void
     {
         $this->buildTreeWithChildren(3);
 
@@ -164,7 +170,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 6. freshAggregate returns correct value for listener column
     // ----------------------------------------------------------------
 
-    public function test_fresh_aggregate_returns_correct_value_for_listener_column(): void
+    #[Test]
+    public function fresh_aggregate_returns_correct_value_for_listener_column(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 4, 'level' => 5]);
         $root->saveAsRoot();
@@ -188,7 +195,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 7. replicate resets listener aggregate columns to zero
     // ----------------------------------------------------------------
 
-    public function test_replicate_resets_listener_aggregate_columns(): void
+    #[Test]
+    public function replicate_resets_listener_aggregate_columns(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 5, 'level' => 3]);
         $root->saveAsRoot();
@@ -214,7 +222,8 @@ final class ListenerAggregateRepairTest extends TestCase
     // 8. fixAggregates is a no-op when values are correct
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_no_op_when_values_correct(): void
+    #[Test]
+    public function fix_aggregates_no_op_when_values_correct(): void
     {
         $this->buildTreeWithChildren(3);
 

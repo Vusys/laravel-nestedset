@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeDiff;
 
@@ -14,7 +15,8 @@ use Vusys\NestedSet\Diff\TreeDiff;
  */
 final class TreeDiffApiSurfaceTest extends TestCase
 {
-    public function test_to_array_returns_serialised_changes_and_summary(): void
+    #[Test]
+    public function to_array_returns_serialised_changes_and_summary(): void
     {
         $before = [['id' => 1, 'name' => 'Old', 'parent_id' => null]];
         $after = [
@@ -40,7 +42,8 @@ final class TreeDiffApiSurfaceTest extends TestCase
         $this->assertSame('modified', $firstModified['type']);
     }
 
-    public function test_json_encode_uses_to_array_shape(): void
+    #[Test]
+    public function json_encode_uses_to_array_shape(): void
     {
         $diff = TreeDiff::between(
             [['id' => 1, 'name' => 'A', 'parent_id' => null]],
@@ -52,7 +55,8 @@ final class TreeDiffApiSurfaceTest extends TestCase
         $this->assertSame(['added' => 0, 'removed' => 0, 'moved' => 0, 'modified' => 1], $decoded['summary']);
     }
 
-    public function test_is_empty_is_false_when_any_category_has_entries(): void
+    #[Test]
+    public function is_empty_is_false_when_any_category_has_entries(): void
     {
         $diff = TreeDiff::between(
             [],
@@ -62,7 +66,8 @@ final class TreeDiffApiSurfaceTest extends TestCase
         $this->assertFalse($diff->isEmpty());
     }
 
-    public function test_ignored_columns_apply_to_removed_attribute_capture(): void
+    #[Test]
+    public function ignored_columns_apply_to_removed_attribute_capture(): void
     {
         $before = [
             ['id' => 1, 'name' => 'R', 'parent_id' => null, 'updated_at' => '2026-01-01'],

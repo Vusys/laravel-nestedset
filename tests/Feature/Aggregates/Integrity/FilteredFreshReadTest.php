@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\TypedArea;
 use Vusys\NestedSet\Tests\TestCase;
@@ -48,49 +49,56 @@ final class FilteredFreshReadTest extends TestCase
         return (int) $value;
     }
 
-    public function test_filtered_sum_counts_only_matching_type(): void
+    #[Test]
+    public function filtered_sum_counts_only_matching_type(): void
     {
         $root = TypedArea::query()->withFreshAggregates()->where('id', 1)->firstOrFail();
 
         $this->assertSame(50, $this->asInt($root->fire_tickets));
     }
 
-    public function test_filtered_count_counts_only_matching_rows(): void
+    #[Test]
+    public function filtered_count_counts_only_matching_rows(): void
     {
         $root = TypedArea::query()->withFreshAggregates()->where('id', 1)->firstOrFail();
 
         $this->assertSame(2, $this->asInt($root->fire_count));
     }
 
-    public function test_filtered_max_returns_max_for_matching_type(): void
+    #[Test]
+    public function filtered_max_returns_max_for_matching_type(): void
     {
         $root = TypedArea::query()->withFreshAggregates()->where('id', 1)->firstOrFail();
 
         $this->assertSame(40, $this->asInt($root->water_max));
     }
 
-    public function test_filter_not_null_counts_non_null_source(): void
+    #[Test]
+    public function filter_not_null_counts_non_null_source(): void
     {
         $root = TypedArea::query()->withFreshAggregates()->where('id', 1)->firstOrFail();
 
         $this->assertSame(5, $this->asInt($root->has_tickets));
     }
 
-    public function test_leaf_node_filtered_sum(): void
+    #[Test]
+    public function leaf_node_filtered_sum(): void
     {
         $fire1 = TypedArea::query()->withFreshAggregates()->where('id', 2)->firstOrFail();
 
         $this->assertSame(20, $this->asInt($fire1->fire_tickets));
     }
 
-    public function test_leaf_node_non_matching_type_filtered_sum(): void
+    #[Test]
+    public function leaf_node_non_matching_type_filtered_sum(): void
     {
         $water1 = TypedArea::query()->withFreshAggregates()->where('id', 5)->firstOrFail();
 
         $this->assertSame(0, $this->asInt($water1->fire_tickets));
     }
 
-    public function test_fresh_aggregate_scalar_with_filter(): void
+    #[Test]
+    public function fresh_aggregate_scalar_with_filter(): void
     {
         $fire2 = TypedArea::query()->where('id', 3)->firstOrFail();
 

@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Diff;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Diff\TreeChange\Removed;
 use Vusys\NestedSet\Diff\TreeDiff;
 
 final class TreeDiffRemovedTest extends TestCase
 {
-    public function test_removed_leaf(): void
+    #[Test]
+    public function removed_leaf(): void
     {
         $before = [
             ['id' => 1, 'name' => 'Root', 'parent_id' => null],
@@ -28,7 +30,8 @@ final class TreeDiffRemovedTest extends TestCase
         $this->assertSame(2, $r->key);
     }
 
-    public function test_removed_interior_flags_each_descendant_separately(): void
+    #[Test]
+    public function removed_interior_flags_each_descendant_separately(): void
     {
         $before = [
             ['id' => 1, 'name' => 'Root', 'parent_id' => null],

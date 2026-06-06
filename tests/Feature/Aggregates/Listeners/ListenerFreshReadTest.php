@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Listeners;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -34,7 +35,8 @@ final class ListenerFreshReadTest extends TestCase
         return $root->refresh();
     }
 
-    public function test_fresh_read_returns_listener_min_and_max(): void
+    #[Test]
+    public function fresh_read_returns_listener_min_and_max(): void
     {
         $root = $this->buildTree();
 
@@ -43,7 +45,8 @@ final class ListenerFreshReadTest extends TestCase
         $this->assertSame(8, $root->freshAggregate('strongest_level'));
     }
 
-    public function test_fresh_read_with_trashed_includes_soft_deleted_descendants(): void
+    #[Test]
+    public function fresh_read_with_trashed_includes_soft_deleted_descendants(): void
     {
         $root = $this->buildTree();
 

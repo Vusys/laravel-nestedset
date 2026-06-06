@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -19,7 +20,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class DeferredAggregateMaintenanceTest extends TestCase
 {
-    public function test_aggregates_repaired_at_end_of_closure(): void
+    #[Test]
+    public function aggregates_repaired_at_end_of_closure(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -38,7 +40,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_eloquent_events_still_fire_per_row(): void
+    #[Test]
+    public function eloquent_events_still_fire_per_row(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -59,7 +62,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         $this->assertSame(['a', 'b', 'c'], $created, 'created event fired for every save inside the closure');
     }
 
-    public function test_inside_closure_no_per_row_aggregate_updates_happen(): void
+    #[Test]
+    public function inside_closure_no_per_row_aggregate_updates_happen(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -88,7 +92,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
             'post-closure fix totals 10+20 onto root');
     }
 
-    public function test_nested_calls_only_repair_at_outermost_exit(): void
+    #[Test]
+    public function nested_calls_only_repair_at_outermost_exit(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -116,7 +121,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         $this->assertSame(3, (int) $root->refresh()->tickets_total, 'outer exit repaired everything (1+2=3)');
     }
 
-    public function test_exception_inside_closure_still_runs_repair_and_propagates(): void
+    #[Test]
+    public function exception_inside_closure_still_runs_repair_and_propagates(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);
         $root->saveAsRoot();
@@ -142,14 +148,16 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken(), 'repair ran on exception path');
     }
 
-    public function test_closure_return_value_is_returned(): void
+    #[Test]
+    public function closure_return_value_is_returned(): void
     {
         $value = Area::withDeferredAggregateMaintenance(fn (): string => 'hello');
 
         $this->assertSame('hello', $value);
     }
 
-    public function test_anchor_scopes_the_repair(): void
+    #[Test]
+    public function anchor_scopes_the_repair(): void
     {
         $a = new Area(['name' => 'tree-a', 'tickets' => 0]);
         $a->saveAsRoot();
@@ -172,7 +180,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
             'tree-b unchanged — anchor scoped the post-closure fixAggregates');
     }
 
-    public function test_rollback_of_outer_transaction_also_rolls_back_closing_fix(): void
+    #[Test]
+    public function rollback_of_outer_transaction_also_rolls_back_closing_fix(): void
     {
         // Both the per-row saves and the closing fixAggregates run
         // inside the outer DB::transaction. A throw past the deferred
@@ -215,7 +224,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         );
     }
 
-    public function test_fix_aggregates_is_idempotent_after_partial_commit_then_rollback(): void
+    #[Test]
+    public function fix_aggregates_is_idempotent_after_partial_commit_then_rollback(): void
     {
         // Variant: the deferred closure commits some saves to the
         // DB conceptually, but the outer rollback unwinds both the
@@ -251,7 +261,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_static_counter_is_not_leaked_after_closure(): void
+    #[Test]
+    public function static_counter_is_not_leaked_after_closure(): void
     {
         // Run two unrelated closures in sequence; the second must see
         // a fresh non-deferred state (per-row maintenance fires).
@@ -272,7 +283,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         );
     }
 
-    public function test_deferred_block_inside_db_transaction_recovers_after_outer_rollback(): void
+    #[Test]
+    public function deferred_block_inside_db_transaction_recovers_after_outer_rollback(): void
     {
         // The wrapping fixAggregates fires at the end of the deferred
         // closure but is *still inside* the surrounding DB::transaction.
@@ -320,7 +332,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         );
     }
 
-    public function test_bulk_insert_tree_inside_outer_deferred_defers_to_outer_frame(): void
+    #[Test]
+    public function bulk_insert_tree_inside_outer_deferred_defers_to_outer_frame(): void
     {
         // bulkInsertTree wraps its own work in withDeferredAggregateMaintenance
         // internally. When the user nests it inside their own outer
@@ -371,7 +384,8 @@ final class DeferredAggregateMaintenanceTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken(), 'final state is clean');
     }
 
-    public function test_bulk_insert_tree_outside_outer_deferred_repairs_eagerly(): void
+    #[Test]
+    public function bulk_insert_tree_outside_outer_deferred_repairs_eagerly(): void
     {
         // Inverse of the test above — when bulkInsertTree is called
         // OUTSIDE any outer defer, its own internal defer is the

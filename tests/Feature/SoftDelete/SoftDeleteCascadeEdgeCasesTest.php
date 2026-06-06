@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -51,7 +52,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
     // Three-level nested timestamp scenario
     // ================================================================
 
-    public function test_three_levels_of_nested_timestamps_preserve_individual_marks(): void
+    #[Test]
+    public function three_levels_of_nested_timestamps_preserve_individual_marks(): void
     {
         $this->seedThreeLevelChain();
 
@@ -81,7 +83,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
         $this->assertNotSame((string) $aaTs, (string) $aTs);
     }
 
-    public function test_restore_on_outer_only_restores_rows_with_matching_timestamp(): void
+    #[Test]
+    public function restore_on_outer_only_restores_rows_with_matching_timestamp(): void
     {
         $this->seedThreeLevelChain();
 
@@ -111,7 +114,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
         $this->assertNotSame((string) $aTs, (string) $aaAfter->deleted_at);
     }
 
-    public function test_inner_restore_unwinds_only_its_own_level(): void
+    #[Test]
+    public function inner_restore_unwinds_only_its_own_level(): void
     {
         // Mirrors the README claim: "only descendants trashed in the
         // same operation are restored". Trash three levels in three
@@ -164,7 +168,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
     // forceDelete on already-soft-deleted rows
     // ================================================================
 
-    public function test_force_delete_of_soft_deleted_row_does_not_double_decrement_aggregates(): void
+    #[Test]
+    public function force_delete_of_soft_deleted_row_does_not_double_decrement_aggregates(): void
     {
         // Tree: Root > A > B (leaf). Soft-delete B, then forceDelete B.
         // B's contribution to the root's stored aggregates should only
@@ -220,7 +225,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
     // Cascade soft-delete inside deferred maintenance
     // ================================================================
 
-    public function test_cascade_soft_delete_inside_deferred_maintenance_settles_aggregates(): void
+    #[Test]
+    public function cascade_soft_delete_inside_deferred_maintenance_settles_aggregates(): void
     {
         // Build: Root > A > [A1, A2]; Root > B.
         // Then inside withDeferredAggregateMaintenance, soft-delete A
@@ -262,7 +268,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
         );
     }
 
-    public function test_soft_then_force_delete_inside_same_deferred_window_does_not_double_decrement(): void
+    #[Test]
+    public function soft_then_force_delete_inside_same_deferred_window_does_not_double_decrement(): void
     {
         // Root > A > B. Inside one deferral, soft-delete B then load it
         // via withTrashed and forceDelete it. The $alreadyTrashed guard
@@ -315,7 +322,8 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
     // Restore of soft-deleted subtree puts contribution back
     // ================================================================
 
-    public function test_restore_of_cascade_soft_deleted_subtree_restores_aggregates(): void
+    #[Test]
+    public function restore_of_cascade_soft_deleted_subtree_restores_aggregates(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'fire', 'base_power' => 10, 'level' => 2]);
         $root->saveAsRoot();

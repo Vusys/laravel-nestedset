@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -49,14 +50,16 @@ final class NodeInspectionTest extends TestCase
         return $row;
     }
 
-    public function test_is_root_returns_true_only_for_nodes_with_null_parent(): void
+    #[Test]
+    public function is_root_returns_true_only_for_nodes_with_null_parent(): void
     {
         $this->assertTrue($this->find(1)->isRoot());      // Root
         $this->assertFalse($this->find(2)->isRoot());     // Child A
         $this->assertFalse($this->find(3)->isRoot());     // AA
     }
 
-    public function test_is_leaf_returns_true_only_for_nodes_with_no_descendants(): void
+    #[Test]
+    public function is_leaf_returns_true_only_for_nodes_with_no_descendants(): void
     {
         $this->assertFalse($this->find(1)->isLeaf());     // Root
         $this->assertFalse($this->find(2)->isLeaf());     // Child A (has AA, AB)
@@ -64,14 +67,16 @@ final class NodeInspectionTest extends TestCase
         $this->assertTrue($this->find(5)->isLeaf());      // Child B
     }
 
-    public function test_is_child_is_the_inverse_of_is_root(): void
+    #[Test]
+    public function is_child_is_the_inverse_of_is_root(): void
     {
         $this->assertFalse($this->find(1)->isChild());    // Root is not a child
         $this->assertTrue($this->find(2)->isChild());     // Child A is
         $this->assertTrue($this->find(3)->isChild());     // AA is
     }
 
-    public function test_is_descendant_of_uses_strict_bounds_containment(): void
+    #[Test]
+    public function is_descendant_of_uses_strict_bounds_containment(): void
     {
         $root = $this->find(1);
         $childA = $this->find(2);
@@ -95,7 +100,8 @@ final class NodeInspectionTest extends TestCase
         $this->assertFalse($aa->isDescendantOf($aa));
     }
 
-    public function test_is_ancestor_of_is_the_inverse_of_is_descendant_of(): void
+    #[Test]
+    public function is_ancestor_of_is_the_inverse_of_is_descendant_of(): void
     {
         $root = $this->find(1);
         $childA = $this->find(2);
@@ -112,7 +118,8 @@ final class NodeInspectionTest extends TestCase
         $this->assertFalse($aa->isAncestorOf($aa));
     }
 
-    public function test_get_subtree_size_returns_rgt_minus_lft_plus_one(): void
+    #[Test]
+    public function get_subtree_size_returns_rgt_minus_lft_plus_one(): void
     {
         $this->assertSame(10, $this->find(1)->getSubtreeSize());   // Root: 10-1+1
         $this->assertSame(6, $this->find(2)->getSubtreeSize());    // Child A: 7-2+1
@@ -120,7 +127,8 @@ final class NodeInspectionTest extends TestCase
         $this->assertSame(2, $this->find(5)->getSubtreeSize());    // Child B leaf: 9-8+1
     }
 
-    public function test_get_descendant_count_derives_count_from_bounds(): void
+    #[Test]
+    public function get_descendant_count_derives_count_from_bounds(): void
     {
         // (rgt - lft - 1) / 2
         $this->assertSame(4, $this->find(1)->getDescendantCount()); // Root: (10-1-1)/2=4
@@ -129,7 +137,8 @@ final class NodeInspectionTest extends TestCase
         $this->assertSame(0, $this->find(5)->getDescendantCount()); // leaf Child B
     }
 
-    public function test_has_moved_flips_after_a_structural_mutation(): void
+    #[Test]
+    public function has_moved_flips_after_a_structural_mutation(): void
     {
         $childA = $this->find(2);
         $this->assertFalse($childA->hasMoved());
@@ -140,7 +149,8 @@ final class NodeInspectionTest extends TestCase
         $this->assertTrue($childA->hasMoved());
     }
 
-    public function test_subtree_size_and_descendant_count_are_bounds_consistent(): void
+    #[Test]
+    public function subtree_size_and_descendant_count_are_bounds_consistent(): void
     {
         // Invariant tying the two derivations together: every descendant
         // contributes one lft and one rgt, and the node itself adds the +2,

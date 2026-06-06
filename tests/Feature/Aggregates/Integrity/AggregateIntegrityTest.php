@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -59,7 +60,8 @@ final class AggregateIntegrityTest extends TestCase
     // aggregateErrors() / aggregatesAreBroken()
     // ----------------------------------------------------------------
 
-    public function test_intact_tree_has_no_aggregate_errors(): void
+    #[Test]
+    public function intact_tree_has_no_aggregate_errors(): void
     {
         $this->seedMotivatingTree();
 
@@ -70,7 +72,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_aggregate_errors_detect_a_single_stored_column_drift(): void
+    #[Test]
+    public function aggregate_errors_detect_a_single_stored_column_drift(): void
     {
         $this->seedMotivatingTree();
 
@@ -84,7 +87,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertTrue(Area::aggregatesAreBroken());
     }
 
-    public function test_aggregate_errors_detect_drift_in_multiple_columns(): void
+    #[Test]
+    public function aggregate_errors_detect_drift_in_multiple_columns(): void
     {
         $this->seedMotivatingTree();
 
@@ -103,7 +107,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertSame(0, $errors['tickets_count_all']);
     }
 
-    public function test_aggregate_errors_excludes_internal_companions(): void
+    #[Test]
+    public function aggregate_errors_excludes_internal_companions(): void
     {
         $this->seedMotivatingTree();
 
@@ -123,7 +128,8 @@ final class AggregateIntegrityTest extends TestCase
     // fixAggregates()
     // ----------------------------------------------------------------
 
-    public function test_fix_aggregates_on_intact_tree_is_a_noop(): void
+    #[Test]
+    public function fix_aggregates_on_intact_tree_is_a_noop(): void
     {
         $this->seedMotivatingTree();
 
@@ -134,7 +140,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse($result->hasDrift());
     }
 
-    public function test_fix_aggregates_repairs_single_column_drift(): void
+    #[Test]
+    public function fix_aggregates_repairs_single_column_drift(): void
     {
         $this->seedMotivatingTree();
 
@@ -152,7 +159,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertSame(225, $this->asInt($root->tickets_total));
     }
 
-    public function test_fix_aggregates_repairs_drift_in_all_supported_functions(): void
+    #[Test]
+    public function fix_aggregates_repairs_drift_in_all_supported_functions(): void
     {
         $this->seedMotivatingTree();
 
@@ -175,7 +183,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertSame(100, $this->asInt($root->tickets_max));
     }
 
-    public function test_fix_aggregates_also_repairs_internal_companions(): void
+    #[Test]
+    public function fix_aggregates_also_repairs_internal_companions(): void
     {
         $this->seedMotivatingTree();
 
@@ -196,7 +205,8 @@ final class AggregateIntegrityTest extends TestCase
     // fixTree() composition
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_runs_fix_aggregates_as_final_step(): void
+    #[Test]
+    public function fix_tree_runs_fix_aggregates_as_final_step(): void
     {
         $this->seedMotivatingTree();
 
@@ -219,7 +229,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_fix_tree_returns_aggregates_fixed_with_per_column_counts(): void
+    #[Test]
+    public function fix_tree_returns_aggregates_fixed_with_per_column_counts(): void
     {
         $this->seedMotivatingTree();
 
@@ -238,7 +249,8 @@ final class AggregateIntegrityTest extends TestCase
     // Model without aggregates
     // ----------------------------------------------------------------
 
-    public function test_fix_tree_on_model_without_aggregates_leaves_field_null(): void
+    #[Test]
+    public function fix_tree_on_model_without_aggregates_leaves_field_null(): void
     {
         // Categories declare no aggregate columns — fixTree's aggregate
         // pass should silently skip and leave aggregatesFixed unset.
@@ -276,7 +288,8 @@ final class AggregateIntegrityTest extends TestCase
         }
     }
 
-    public function test_chain_fast_path_intact_tree_has_no_aggregate_errors(): void
+    #[Test]
+    public function chain_fast_path_intact_tree_has_no_aggregate_errors(): void
     {
         $this->seedChain();
 
@@ -289,7 +302,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_chain_fast_path_detects_drift_in_every_function(): void
+    #[Test]
+    public function chain_fast_path_detects_drift_in_every_function(): void
     {
         $this->seedChain();
 
@@ -313,7 +327,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertSame(1, $errors['tickets_max']);
     }
 
-    public function test_chain_fast_path_repairs_all_function_drift(): void
+    #[Test]
+    public function chain_fast_path_repairs_all_function_drift(): void
     {
         $this->seedChain();
 
@@ -340,7 +355,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertSame(50.0, (float) $d->tickets_avg);
     }
 
-    public function test_chain_fast_path_repairs_along_the_whole_chain(): void
+    #[Test]
+    public function chain_fast_path_repairs_along_the_whole_chain(): void
     {
         $this->seedChain();
 
@@ -376,7 +392,8 @@ final class AggregateIntegrityTest extends TestCase
         }
     }
 
-    public function test_fix_aggregates_rejects_cross_class_anchor(): void
+    #[Test]
+    public function fix_aggregates_rejects_cross_class_anchor(): void
     {
         // Persist a Category so it has a numeric id — the unguarded
         // path would emit `WHERE id = <category-id>` against the
@@ -391,7 +408,8 @@ final class AggregateIntegrityTest extends TestCase
         Area::fixAggregates(anchor: $category);
     }
 
-    public function test_aggregate_errors_rejects_cross_class_anchor(): void
+    #[Test]
+    public function aggregate_errors_rejects_cross_class_anchor(): void
     {
         $category = new Category(['name' => 'root']);
         $category->saveAsRoot();
@@ -402,7 +420,8 @@ final class AggregateIntegrityTest extends TestCase
         Area::aggregateErrors(anchor: $category);
     }
 
-    public function test_chain_fast_path_bails_when_a_branch_point_appears(): void
+    #[Test]
+    public function chain_fast_path_bails_when_a_branch_point_appears(): void
     {
         // R(10) -> a(20), with a *second* child of R — not a chain.
         // The detector must observe `parent_id=R, COUNT=2` and route
@@ -425,7 +444,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken());
     }
 
-    public function test_chain_detector_treats_disjoint_chains_as_a_forest(): void
+    #[Test]
+    public function chain_detector_treats_disjoint_chains_as_a_forest(): void
     {
         // Two unrelated roots in the same (unscoped) table — both
         // parent_id IS NULL. The detector groups by parent_id and
@@ -461,7 +481,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken(), 'no cross-chain contamination');
     }
 
-    public function test_chain_detector_handles_empty_scope_cleanly(): void
+    #[Test]
+    public function chain_detector_handles_empty_scope_cleanly(): void
     {
         // No rows at all — the detector's GROUP BY returns zero rows
         // ("no parent has more than one child" is vacuously true),
@@ -475,7 +496,8 @@ final class AggregateIntegrityTest extends TestCase
         $this->assertFalse(Area::aggregatesAreBroken(), 'empty table has no drift');
     }
 
-    public function test_chain_detector_handles_single_node_tree(): void
+    #[Test]
+    public function chain_detector_handles_single_node_tree(): void
     {
         // Single row, parent_id IS NULL, COUNT(NULL group) = 1 →
         // detector returns true (a "chain of one"). The fold runs

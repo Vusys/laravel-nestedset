@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Export\JsonOptions;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class JsonImportRoundTripTest extends TestCase
 {
-    public function test_export_then_import_produces_same_structure(): void
+    #[Test]
+    public function export_then_import_produces_same_structure(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->makeRoot()->save();

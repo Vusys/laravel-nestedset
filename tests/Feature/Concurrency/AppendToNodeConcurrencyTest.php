@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Concurrency;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -28,7 +29,8 @@ final class AppendToNodeConcurrencyTest extends TestCase
 {
     use ConcurrencyHarness;
 
-    public function test_parallel_append_to_node_on_same_parent_produces_no_duplicate_bounds(): void
+    #[Test]
+    public function parallel_append_to_node_on_same_parent_produces_no_duplicate_bounds(): void
     {
         $this->requireForkableMultiWriterBackend();
 

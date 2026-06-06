@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Diff;
 
 use Illuminate\Database\Eloquent\Collection;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Diff\TreeDiff;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -16,7 +17,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class TreeDiffEloquentInputTest extends TestCase
 {
-    public function test_collection_of_eloquent_models_is_diffed(): void
+    #[Test]
+    public function collection_of_eloquent_models_is_diffed(): void
     {
         $root = new Category(['name' => 'r']);
         $root->makeRoot()->save();

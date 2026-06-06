@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Fuzzers;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -58,7 +59,8 @@ final class AggregateFuzzerTest extends TestCase
     // ================================================================
 
     #[DataProvider('seedProvider')]
-    public function test_area_random_walk(int $seed, int $steps): void
+    #[Test]
+    public function area_random_walk(int $seed, int $steps): void
     {
         mt_srand($seed);
 
@@ -186,7 +188,8 @@ final class AggregateFuzzerTest extends TestCase
     // ================================================================
 
     #[DataProvider('seedProvider')]
-    public function test_branch_random_walk(int $seed, int $steps): void
+    #[Test]
+    public function branch_random_walk(int $seed, int $steps): void
     {
         mt_srand($seed);
 
@@ -319,7 +322,8 @@ final class AggregateFuzzerTest extends TestCase
     // ================================================================
 
     #[DataProvider('seedProvider')]
-    public function test_typed_area_random_walk(int $seed, int $steps): void
+    #[Test]
+    public function typed_area_random_walk(int $seed, int $steps): void
     {
         mt_srand($seed);
 
@@ -452,7 +456,8 @@ final class AggregateFuzzerTest extends TestCase
     // ================================================================
 
     #[DataProvider('seedProvider')]
-    public function test_custom_columns_branch_random_walk(int $seed, int $steps): void
+    #[Test]
+    public function custom_columns_branch_random_walk(int $seed, int $steps): void
     {
         mt_srand($seed);
 

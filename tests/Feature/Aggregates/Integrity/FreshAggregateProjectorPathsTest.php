@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
@@ -74,7 +75,8 @@ final class FreshAggregateProjectorPathsTest extends TestCase
         return ['t1root' => $t1root->refresh(), 't2root' => $t2root->refresh()];
     }
 
-    public function test_scalar_fresh_aggregate_is_confined_to_the_nodes_scope(): void
+    #[Test]
+    public function scalar_fresh_aggregate_is_confined_to_the_nodes_scope(): void
     {
         ['t1root' => $t1root, 't2root' => $t2root] = $this->buildTwoOverlappingTenants();
 
@@ -88,7 +90,8 @@ final class FreshAggregateProjectorPathsTest extends TestCase
         $this->assertSame(40, $this->asInt($t2root->freshAggregate('amount_min')));
     }
 
-    public function test_with_fresh_aggregates_correlated_subquery_is_scope_confined(): void
+    #[Test]
+    public function with_fresh_aggregates_correlated_subquery_is_scope_confined(): void
     {
         $this->buildTwoOverlappingTenants();
 
@@ -106,7 +109,8 @@ final class FreshAggregateProjectorPathsTest extends TestCase
         $this->assertSame(70, $byName['t2-a']);
     }
 
-    public function test_quantile_fresh_read_is_scope_confined(): void
+    #[Test]
+    public function quantile_fresh_read_is_scope_confined(): void
     {
         $this->buildTwoOverlappingTenants();
 
@@ -123,7 +127,8 @@ final class FreshAggregateProjectorPathsTest extends TestCase
         $this->assertEqualsWithDelta(70.0, $this->asFloat($byName['t2-root']), 0.0001);
     }
 
-    public function test_quantile_fresh_read_excludes_trashed_descendants(): void
+    #[Test]
+    public function quantile_fresh_read_excludes_trashed_descendants(): void
     {
         $root = new SoftBranch(['name' => 'root', 'tickets' => 10, 'active' => 1]);
         $root->saveAsRoot();
@@ -145,7 +150,8 @@ final class FreshAggregateProjectorPathsTest extends TestCase
         $this->assertEqualsWithDelta(20.0, $this->asFloat($fresh->getAttribute('m')), 0.0001);
     }
 
-    public function test_quantile_fresh_read_applies_a_filter_predicate(): void
+    #[Test]
+    public function quantile_fresh_read_applies_a_filter_predicate(): void
     {
         TypedArea::query()->getConnection()->table('typed_areas')->insert([
             ['id' => 1, 'name' => 'Root',   'tickets' => 10, 'type' => 'fire',  'lft' => 1, 'rgt' => 8, 'depth' => 0, 'parent_id' => null],
@@ -165,7 +171,8 @@ final class FreshAggregateProjectorPathsTest extends TestCase
         $this->assertEqualsWithDelta(20.0, $this->asFloat($root->getAttribute('m')), 0.0001);
     }
 
-    public function test_with_fresh_aggregates_is_a_noop_for_a_listener_only_model(): void
+    #[Test]
+    public function with_fresh_aggregates_is_a_noop_for_a_listener_only_model(): void
     {
         $root = new Monster(['name' => 'Root', 'type' => 'water', 'base_power' => 2, 'level' => 5]);
         $root->saveAsRoot();

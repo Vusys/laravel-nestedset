@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
@@ -36,12 +37,14 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::flush();
     }
 
-    public function test_returns_empty_list_for_a_model_with_no_declarations(): void
+    #[Test]
+    public function returns_empty_list_for_a_model_with_no_declarations(): void
     {
         $this->assertSame([], AggregateRegistry::for(NoAggregateArea::class));
     }
 
-    public function test_resolves_attribute_declarations(): void
+    #[Test]
+    public function resolves_attribute_declarations(): void
     {
         $definitions = AggregateRegistry::for(AttributeOnlyArea::class);
 
@@ -56,7 +59,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertSame(AggregateFunction::Count, $def1->function);
     }
 
-    public function test_resolves_method_override_declarations(): void
+    #[Test]
+    public function resolves_method_override_declarations(): void
     {
         $definitions = AggregateRegistry::for(MethodOnlyArea::class);
 
@@ -71,7 +75,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertSame(AggregateFunction::Max, $def1->function);
     }
 
-    public function test_attribute_declarations_precede_method_override_declarations(): void
+    #[Test]
+    public function attribute_declarations_precede_method_override_declarations(): void
     {
         $definitions = AggregateRegistry::for(HybridArea::class);
 
@@ -86,7 +91,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertSame(AggregateFunction::Max, $def1->function);
     }
 
-    public function test_avg_without_companions_auto_promotes_internal_sum_and_count(): void
+    #[Test]
+    public function avg_without_companions_auto_promotes_internal_sum_and_count(): void
     {
         $definitions = AggregateRegistry::for(AvgOnlyArea::class);
 
@@ -119,7 +125,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertContains(AggregateFunction::Count, $internalFunctions);
     }
 
-    public function test_avg_companion_columns_use_predictable_suffixes(): void
+    #[Test]
+    public function avg_companion_columns_use_predictable_suffixes(): void
     {
         $definitions = AggregateRegistry::for(AvgOnlyArea::class);
 
@@ -132,7 +139,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertContains('tickets_avg'.AggregateRegistry::AVG_COUNT_SUFFIX, $columns);
     }
 
-    public function test_avg_does_not_auto_promote_when_user_already_declared_companions(): void
+    #[Test]
+    public function avg_does_not_auto_promote_when_user_already_declared_companions(): void
     {
         $definitions = AggregateRegistry::for(AvgWithCompanionsArea::class);
 
@@ -147,7 +155,8 @@ final class AggregateRegistryTest extends TestCase
         }
     }
 
-    public function test_rejects_duplicate_target_columns(): void
+    #[Test]
+    public function rejects_duplicate_target_columns(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('declared more than once');
@@ -155,7 +164,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(DuplicateColumnArea::class);
     }
 
-    public function test_caches_resolved_definitions_across_calls(): void
+    #[Test]
+    public function caches_resolved_definitions_across_calls(): void
     {
         $first = AggregateRegistry::for(AttributeOnlyArea::class);
         $second = AggregateRegistry::for(AttributeOnlyArea::class);
@@ -164,7 +174,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertSame($first, $second);
     }
 
-    public function test_flush_clears_the_cache(): void
+    #[Test]
+    public function flush_clears_the_cache(): void
     {
         $first = AggregateRegistry::for(AttributeOnlyArea::class);
         AggregateRegistry::flush();
@@ -176,7 +187,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertEquals($first[0]->getColumn(), $second[0]->getColumn());
     }
 
-    public function test_avg_filtered_companions_inherit_the_filter(): void
+    #[Test]
+    public function avg_filtered_companions_inherit_the_filter(): void
     {
         $definitions = AggregateRegistry::for(FilteredAvgArea::class);
 
@@ -197,7 +209,8 @@ final class AggregateRegistryTest extends TestCase
         }
     }
 
-    public function test_method_override_must_return_array(): void
+    #[Test]
+    public function method_override_must_return_array(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('nestedSetAggregates() must return an array');
@@ -205,7 +218,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(BadMethodReturnArea::class);
     }
 
-    public function test_method_override_entry_must_be_aggregate_definition(): void
+    #[Test]
+    public function method_override_entry_must_be_aggregate_definition(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('entry at index 0 is not an AggregateDefinition');
@@ -213,7 +227,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(BadMethodEntryArea::class);
     }
 
-    public function test_listener_method_override_must_return_array(): void
+    #[Test]
+    public function listener_method_override_must_return_array(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('nestedSetListenerAggregates() must return an array');
@@ -221,7 +236,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(BadListenerMethodReturnArea::class);
     }
 
-    public function test_listener_method_override_entry_must_be_listener_aggregate_definition(): void
+    #[Test]
+    public function listener_method_override_entry_must_be_listener_aggregate_definition(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('entry at index 0 is not a ListenerAggregateDefinition');
@@ -229,7 +245,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(BadListenerMethodEntryArea::class);
     }
 
-    public function test_aggregate_column_in_fillable_throws(): void
+    #[Test]
+    public function aggregate_column_in_fillable_throws(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('aggregate column(s) [tickets_total] appear in $fillable');
@@ -237,7 +254,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(AggregateInFillableArea::class);
     }
 
-    public function test_unguarded_model_with_aggregate_column_throws(): void
+    #[Test]
+    public function unguarded_model_with_aggregate_column_throws(): void
     {
         // `protected $guarded = []` (modern Laravel idiom) makes every
         // column mass-assignable. Combined with an aggregate
@@ -249,7 +267,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(UnguardedArea::class);
     }
 
-    public function test_partially_guarded_model_omitting_aggregate_column_throws(): void
+    #[Test]
+    public function partially_guarded_model_omitting_aggregate_column_throws(): void
     {
         // `$guarded` is set but doesn't include the aggregate column.
         // Same risk as the unguarded case.
@@ -259,7 +278,8 @@ final class AggregateRegistryTest extends TestCase
         AggregateRegistry::for(PartiallyGuardedArea::class);
     }
 
-    public function test_aggregate_column_listed_in_guarded_is_accepted(): void
+    #[Test]
+    public function aggregate_column_listed_in_guarded_is_accepted(): void
     {
         // Recommended escape hatch when a project generally avoids
         // `$fillable`: list the aggregate columns in `$guarded`.
@@ -268,7 +288,8 @@ final class AggregateRegistryTest extends TestCase
         $this->assertNotSame([], $defs);
     }
 
-    public function test_default_guard_star_is_accepted(): void
+    #[Test]
+    public function default_guard_star_is_accepted(): void
     {
         // Eloquent's out-of-the-box `protected $guarded = ['*']`
         // guards everything — no aggregate column can be

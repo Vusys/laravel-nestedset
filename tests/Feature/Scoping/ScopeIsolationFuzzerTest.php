@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Scoping;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
@@ -50,7 +51,8 @@ final class ScopeIsolationFuzzerTest extends TestCase
     }
 
     #[DataProvider('seedProvider')]
-    public function test_mutations_in_one_scope_dont_touch_others(
+    #[Test]
+    public function mutations_in_one_scope_dont_touch_others(
         int $seed,
         int $menuCount,
         int $steps,

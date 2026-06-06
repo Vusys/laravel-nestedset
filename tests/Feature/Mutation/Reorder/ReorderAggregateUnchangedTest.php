@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
@@ -24,7 +25,8 @@ final class ReorderAggregateUnchangedTest extends TestCase
 {
     use InteractsWithTrees;
 
-    public function test_reorder_does_not_change_ancestor_aggregates_or_fire_maintenance(): void
+    #[Test]
+    public function reorder_does_not_change_ancestor_aggregates_or_fire_maintenance(): void
     {
         $root = new Area(['name' => 'root', 'tickets' => 10]);
         $root->saveAsRoot();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Maintenance;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Concerns\HasTreeMutation;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
@@ -81,7 +82,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // Move between siblings of the same parent
     // ----------------------------------------------------------------
 
-    public function test_move_within_parent_via_insert_after_keeps_aggregates_intact(): void
+    #[Test]
+    public function move_within_parent_via_insert_after_keeps_aggregates_intact(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -106,7 +108,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // Cross-parent move
     // ----------------------------------------------------------------
 
-    public function test_cross_parent_move_subtracts_from_old_and_adds_to_new(): void
+    #[Test]
+    public function cross_parent_move_subtracts_from_old_and_adds_to_new(): void
     {
         // Two-branch tree:
         //   Root(100)
@@ -150,7 +153,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
         $this->assertAggregatesIntact();
     }
 
-    public function test_cross_parent_move_recomputes_max_when_holder_leaves(): void
+    #[Test]
+    public function cross_parent_move_recomputes_max_when_holder_leaves(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -192,7 +196,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // makeRoot — old chain loses, no new chain to add to
     // ----------------------------------------------------------------
 
-    public function test_make_root_subtracts_from_old_ancestor_chain(): void
+    #[Test]
+    public function make_root_subtracts_from_old_ancestor_chain(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -227,7 +232,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // Move into descendant: existing logic rejects; aggregates untouched
     // ----------------------------------------------------------------
 
-    public function test_move_into_own_descendant_does_not_corrupt_aggregates(): void
+    #[Test]
+    public function move_into_own_descendant_does_not_corrupt_aggregates(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -262,7 +268,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // Soft-delete + restore
     // ----------------------------------------------------------------
 
-    public function test_aggregate_on_delete_and_on_restore_handlers_are_inverses_when_called_directly(): void
+    #[Test]
+    public function aggregate_on_delete_and_on_restore_handlers_are_inverses_when_called_directly(): void
     {
         // Handler-level test: invoke applyAggregateOnDelete() /
         // applyAggregateOnRestore() directly on Area (which does NOT
@@ -298,7 +305,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
         );
     }
 
-    public function test_eloquent_soft_delete_then_restore_keeps_ancestor_aggregates_consistent(): void
+    #[Test]
+    public function eloquent_soft_delete_then_restore_keeps_ancestor_aggregates_consistent(): void
     {
         // Full lifecycle through Eloquent's soft-delete events on a
         // model that actually uses SoftDeletes (SoftBranch). This
@@ -341,7 +349,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // replicate(): clone produces empty aggregates that backfill on save
     // ----------------------------------------------------------------
 
-    public function test_replicate_clones_with_empty_aggregates(): void
+    #[Test]
+    public function replicate_clones_with_empty_aggregates(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -366,7 +375,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
         $this->assertNull($clone->tickets_avg);
     }
 
-    public function test_replicated_clone_backfills_aggregates_when_placed(): void
+    #[Test]
+    public function replicated_clone_backfills_aggregates_when_placed(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -395,7 +405,8 @@ final class StructuralMutationMaintenanceTest extends TestCase
     // Transaction safety: rollback during move leaves aggregates intact
     // ----------------------------------------------------------------
 
-    public function test_transaction_rollback_during_save_leaves_aggregates_intact(): void
+    #[Test]
+    public function transaction_rollback_during_save_leaves_aggregates_intact(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Aggregates;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Aggregates\Numeric;
 
@@ -27,7 +28,8 @@ use Vusys\NestedSet\Aggregates\Numeric;
 final class NumericTest extends TestCase
 {
     #[DataProvider('asIntOrZeroCases')]
-    public function test_as_int_or_zero(mixed $input, int $expected): void
+    #[Test]
+    public function as_int_or_zero(mixed $input, int $expected): void
     {
         $this->assertSame($expected, Numeric::asIntOrZero($input));
     }
@@ -45,7 +47,8 @@ final class NumericTest extends TestCase
     }
 
     #[DataProvider('asNumericOrNullCases')]
-    public function test_as_numeric_or_null(mixed $input, int|float|null $expected): void
+    #[Test]
+    public function as_numeric_or_null(mixed $input, int|float|null $expected): void
     {
         $this->assertSame($expected, Numeric::asNumericOrNull($input));
     }
@@ -65,7 +68,8 @@ final class NumericTest extends TestCase
     }
 
     #[DataProvider('asNumericOrZeroCases')]
-    public function test_as_numeric_or_zero(mixed $input, int|float $expected): void
+    #[Test]
+    public function as_numeric_or_zero(mixed $input, int|float $expected): void
     {
         $this->assertSame($expected, Numeric::asNumericOrZero($input));
     }
@@ -85,7 +89,8 @@ final class NumericTest extends TestCase
     }
 
     #[DataProvider('contributionOrZeroCases')]
-    public function test_contribution_or_zero(int|float|null $input, int|float $expected): void
+    #[Test]
+    public function contribution_or_zero(int|float|null $input, int|float $expected): void
     {
         $this->assertSame($expected, Numeric::contributionOrZero($input));
     }

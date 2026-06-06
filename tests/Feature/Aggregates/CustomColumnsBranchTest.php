@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\CustomColumnsBranch;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -59,7 +60,8 @@ final class CustomColumnsBranchTest extends TestCase
         ];
     }
 
-    public function test_initial_seed_aggregates_populate_correctly_on_renamed_columns(): void
+    #[Test]
+    public function initial_seed_aggregates_populate_correctly_on_renamed_columns(): void
     {
         $tree = $this->seedTree();
         $root = $tree['root'];
@@ -81,7 +83,8 @@ final class CustomColumnsBranchTest extends TestCase
         $this->assertSame((int) $root->id, $a->tree_parent_id);
     }
 
-    public function test_source_update_propagates_through_delta_path_on_renamed_columns(): void
+    #[Test]
+    public function source_update_propagates_through_delta_path_on_renamed_columns(): void
     {
         $tree = $this->seedTree();
         $root = $tree['root'];
@@ -96,7 +99,8 @@ final class CustomColumnsBranchTest extends TestCase
         $this->assertSame(115, $root->active_tickets_total, '10 + 100 + 5');
     }
 
-    public function test_intra_tree_move_relocates_subtree_aggregates_on_renamed_columns(): void
+    #[Test]
+    public function intra_tree_move_relocates_subtree_aggregates_on_renamed_columns(): void
     {
         $tree = $this->seedTree();
         $root = $tree['root'];
@@ -115,7 +119,8 @@ final class CustomColumnsBranchTest extends TestCase
         $this->assertSame(35, $c->tickets_total, 'C now contains A1 (30 + 5)');
     }
 
-    public function test_force_delete_at_leaf_settles_ancestor_chain_on_renamed_columns(): void
+    #[Test]
+    public function force_delete_at_leaf_settles_ancestor_chain_on_renamed_columns(): void
     {
         $tree = $this->seedTree();
         $root = $tree['root'];
@@ -134,7 +139,8 @@ final class CustomColumnsBranchTest extends TestCase
         $this->assertFalse(CustomColumnsBranch::isBroken());
     }
 
-    public function test_fix_aggregates_repairs_drift_on_renamed_columns(): void
+    #[Test]
+    public function fix_aggregates_repairs_drift_on_renamed_columns(): void
     {
         // Seed a small tree.
         $root = new CustomColumnsBranch(['name' => 'root', 'tickets' => 0, 'active' => 1]);

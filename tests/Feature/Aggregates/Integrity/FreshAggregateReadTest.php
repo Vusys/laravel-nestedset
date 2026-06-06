@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Integrity;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
@@ -76,28 +77,32 @@ final class FreshAggregateReadTest extends TestCase
     // freshAggregate() — single-node scalar
     // ----------------------------------------------------------------
 
-    public function test_fresh_aggregate_sum_at_root_matches_motivating_example(): void
+    #[Test]
+    public function fresh_aggregate_sum_at_root_matches_motivating_example(): void
     {
         $root = Area::query()->where('id', 1)->firstOrFail();
 
         $this->assertSame(225, $this->asInt($root->freshAggregate('tickets_total')));
     }
 
-    public function test_fresh_aggregate_sum_at_intermediate_node(): void
+    #[Test]
+    public function fresh_aggregate_sum_at_intermediate_node(): void
     {
         $a = Area::query()->where('id', 2)->firstOrFail();
 
         $this->assertSame(100, $this->asInt($a->freshAggregate('tickets_total')));
     }
 
-    public function test_fresh_aggregate_sum_at_leaf_equals_own_tickets(): void
+    #[Test]
+    public function fresh_aggregate_sum_at_leaf_equals_own_tickets(): void
     {
         $b = Area::query()->where('id', 4)->firstOrFail();
 
         $this->assertSame(25, $this->asInt($b->freshAggregate('tickets_total')));
     }
 
-    public function test_fresh_aggregate_count_includes_self(): void
+    #[Test]
+    public function fresh_aggregate_count_includes_self(): void
     {
         $this->assertSame(4, $this->asInt(Area::query()->findOrFail(1)->freshAggregate('tickets_count_all')));
         $this->assertSame(2, $this->asInt(Area::query()->findOrFail(2)->freshAggregate('tickets_count_all')));
@@ -105,28 +110,32 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(1, $this->asInt(Area::query()->findOrFail(4)->freshAggregate('tickets_count_all')));
     }
 
-    public function test_fresh_aggregate_avg_at_root(): void
+    #[Test]
+    public function fresh_aggregate_avg_at_root(): void
     {
         $root = Area::query()->where('id', 1)->firstOrFail();
 
         $this->assertEqualsWithDelta(56.25, $this->asFloat($root->freshAggregate('tickets_avg')), 0.0001);
     }
 
-    public function test_fresh_aggregate_min_at_root(): void
+    #[Test]
+    public function fresh_aggregate_min_at_root(): void
     {
         $root = Area::query()->where('id', 1)->firstOrFail();
 
         $this->assertSame(25, $this->asInt($root->freshAggregate('tickets_min')));
     }
 
-    public function test_fresh_aggregate_max_at_root(): void
+    #[Test]
+    public function fresh_aggregate_max_at_root(): void
     {
         $root = Area::query()->where('id', 1)->firstOrFail();
 
         $this->assertSame(100, $this->asInt($root->freshAggregate('tickets_max')));
     }
 
-    public function test_fresh_aggregate_on_undeclared_column_throws(): void
+    #[Test]
+    public function fresh_aggregate_on_undeclared_column_throws(): void
     {
         $root = Area::query()->where('id', 1)->firstOrFail();
 
@@ -136,7 +145,8 @@ final class FreshAggregateReadTest extends TestCase
         $root->freshAggregate('nonexistent');
     }
 
-    public function test_fresh_aggregate_resolves_internal_avg_companion_columns(): void
+    #[Test]
+    public function fresh_aggregate_resolves_internal_avg_companion_columns(): void
     {
         // Area declares `tickets_avg` (AVG over tickets) alongside an
         // explicit `tickets_total` SUM over the same source — so the
@@ -177,7 +187,8 @@ final class FreshAggregateReadTest extends TestCase
     // withFreshAggregates() — query-level
     // ----------------------------------------------------------------
 
-    public function test_with_fresh_aggregates_no_args_selects_every_user_facing_aggregate(): void
+    #[Test]
+    public function with_fresh_aggregates_no_args_selects_every_user_facing_aggregate(): void
     {
         $root = Area::query()->withFreshAggregates()->where('id', 1)->firstOrFail();
 
@@ -188,7 +199,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(100, $this->asInt($root->tickets_max));
     }
 
-    public function test_with_fresh_aggregates_with_explicit_column_list(): void
+    #[Test]
+    public function with_fresh_aggregates_with_explicit_column_list(): void
     {
         $root = Area::query()
             ->withFreshAggregates(['tickets_total'])
@@ -198,7 +210,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(225, $this->asInt($root->tickets_total));
     }
 
-    public function test_with_fresh_aggregates_yields_correct_values_for_each_node(): void
+    #[Test]
+    public function with_fresh_aggregates_yields_correct_values_for_each_node(): void
     {
         /** @var array<int, int> $totals */
         $totals = Area::query()
@@ -220,7 +233,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame([1 => 100, 2 => 50, 3 => 50, 4 => 25], $maxes);
     }
 
-    public function test_with_fresh_aggregates_overlays_stored_value_when_aliases_match(): void
+    #[Test]
+    public function with_fresh_aggregates_overlays_stored_value_when_aliases_match(): void
     {
         // Hand-corrupt the stored value to differ from the source-of-truth.
         DB::table('areas')->where('id', 1)->update(['tickets_total' => 999]);
@@ -236,7 +250,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(225, $this->asInt($rootFresh->tickets_total), 'fresh overlays stored');
     }
 
-    public function test_save_after_with_fresh_aggregates_does_not_write_fresh_back_to_stored_column(): void
+    #[Test]
+    public function save_after_with_fresh_aggregates_does_not_write_fresh_back_to_stored_column(): void
     {
         // Hand-corrupt the stored value: 999 is the drifted value the DB
         // holds, 225 is the source-of-truth that withFreshAggregates
@@ -277,7 +292,8 @@ final class FreshAggregateReadTest extends TestCase
     // Ad-hoc aggregates (Aggregate value object as query argument)
     // ----------------------------------------------------------------
 
-    public function test_with_fresh_aggregates_accepts_ad_hoc_declarations(): void
+    #[Test]
+    public function with_fresh_aggregates_accepts_ad_hoc_declarations(): void
     {
         $root = Area::query()
             ->withFreshAggregates([
@@ -291,7 +307,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(4, $this->asInt($root->getAttribute('subtree_count')));
     }
 
-    public function test_ad_hoc_alias_is_in_memory_only_and_dropped_on_refresh(): void
+    #[Test]
+    public function ad_hoc_alias_is_in_memory_only_and_dropped_on_refresh(): void
     {
         // Aliases that don't match a declared aggregate column live
         // only on the in-memory model — they are not persisted via
@@ -322,7 +339,8 @@ final class FreshAggregateReadTest extends TestCase
         );
     }
 
-    public function test_with_fresh_aggregates_supports_mixed_declared_and_ad_hoc(): void
+    #[Test]
+    public function with_fresh_aggregates_supports_mixed_declared_and_ad_hoc(): void
     {
         $root = Area::query()
             ->withFreshAggregates([
@@ -338,7 +356,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(125, $this->asInt($root->getAttribute('descendants_total'))); // 50+50+25
     }
 
-    public function test_with_fresh_aggregates_rejects_unkeyed_aggregate_instance(): void
+    #[Test]
+    public function with_fresh_aggregates_rejects_unkeyed_aggregate_instance(): void
     {
         $this->expectException(AggregateConfigurationException::class);
         $this->expectExceptionMessage('must be keyed by a string column alias');
@@ -348,7 +367,8 @@ final class FreshAggregateReadTest extends TestCase
             ->get();
     }
 
-    public function test_with_fresh_aggregates_rejects_undeclared_column_name(): void
+    #[Test]
+    public function with_fresh_aggregates_rejects_undeclared_column_name(): void
     {
         $this->expectException(AggregateConfigurationException::class);
 
@@ -361,7 +381,8 @@ final class FreshAggregateReadTest extends TestCase
     // Exclusive aggregation
     // ----------------------------------------------------------------
 
-    public function test_exclusive_sum_is_descendants_only(): void
+    #[Test]
+    public function exclusive_sum_is_descendants_only(): void
     {
         $root = Area::query()
             ->withFreshAggregates([
@@ -373,7 +394,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(125, $this->asInt($root->getAttribute('descendants_total')));
     }
 
-    public function test_exclusive_sum_on_a_leaf_is_zero(): void
+    #[Test]
+    public function exclusive_sum_on_a_leaf_is_zero(): void
     {
         $b = Area::query()
             ->withFreshAggregates([
@@ -385,7 +407,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(0, $this->asInt($b->getAttribute('descendants_total')));
     }
 
-    public function test_exclusive_min_on_a_leaf_is_null(): void
+    #[Test]
+    public function exclusive_min_on_a_leaf_is_null(): void
     {
         $b = Area::query()
             ->withFreshAggregates([
@@ -405,7 +428,8 @@ final class FreshAggregateReadTest extends TestCase
     // have computed for the same row.
     // ----------------------------------------------------------------
 
-    public function test_leaf_fast_path_inclusive_count_returns_one(): void
+    #[Test]
+    public function leaf_fast_path_inclusive_count_returns_one(): void
     {
         // Leaf B (id=4) inclusive COUNT(*) = 1 (the leaf is its own subtree).
         $b = Area::query()
@@ -416,7 +440,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(1, $this->asInt($b->tickets_count_all));
     }
 
-    public function test_leaf_fast_path_inclusive_avg_returns_source_value(): void
+    #[Test]
+    public function leaf_fast_path_inclusive_avg_returns_source_value(): void
     {
         // Leaf B (id=4) inclusive AVG(tickets) = 25 / 1 = 25.
         $b = Area::query()
@@ -427,7 +452,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(25.0, $this->asFloat($b->tickets_avg));
     }
 
-    public function test_leaf_fast_path_inclusive_min_max_returns_source_value(): void
+    #[Test]
+    public function leaf_fast_path_inclusive_min_max_returns_source_value(): void
     {
         $b = Area::query()
             ->withFreshAggregates(['tickets_min', 'tickets_max'])
@@ -438,7 +464,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(25, $this->asInt($b->tickets_max));
     }
 
-    public function test_mixed_result_set_leaves_and_internals_each_get_correct_value(): void
+    #[Test]
+    public function mixed_result_set_leaves_and_internals_each_get_correct_value(): void
     {
         // One query returning the whole tree — internal nodes go through
         // the join, leaves through the inline branch. The hydrated
@@ -466,7 +493,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(['total' => 25, 'count' => 1, 'min' => 25, 'max' => 25], $byId[4]);
     }
 
-    public function test_leaf_fast_path_with_zero_tickets(): void
+    #[Test]
+    public function leaf_fast_path_with_zero_tickets(): void
     {
         // Edge case: a leaf with tickets = 0 should still report
         // SUM = 0, COUNT = 1 (not 0), AVG = 0, MIN = MAX = 0.
@@ -486,7 +514,8 @@ final class FreshAggregateReadTest extends TestCase
         $this->assertSame(0, $this->asInt($b->tickets_max));
     }
 
-    public function test_leaf_fast_path_ad_hoc_count_with_source_returns_one(): void
+    #[Test]
+    public function leaf_fast_path_ad_hoc_count_with_source_returns_one(): void
     {
         // Counting a specific column (not COUNT(*)) at the leaf:
         // `1` when the source is non-null, `0` when null. Tests the
@@ -505,7 +534,8 @@ final class FreshAggregateReadTest extends TestCase
     // getAggregateDefinitions()
     // ----------------------------------------------------------------
 
-    public function test_get_aggregate_definitions_returns_only_user_facing_declarations(): void
+    #[Test]
+    public function get_aggregate_definitions_returns_only_user_facing_declarations(): void
     {
         $area = new Area;
         $definitions = $area->getAggregateDefinitions();

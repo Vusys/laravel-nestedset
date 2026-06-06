@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Aggregates\Functions;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
@@ -48,7 +49,8 @@ final class AvgMaintenanceTest extends TestCase
     // AVG on insert
     // ----------------------------------------------------------------
 
-    public function test_avg_on_root_after_insertion_equals_self_value(): void
+    #[Test]
+    public function avg_on_root_after_insertion_equals_self_value(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -57,7 +59,8 @@ final class AvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(100.0, $this->asFloat($root->tickets_avg), 0.0001);
     }
 
-    public function test_avg_for_motivating_example_tree(): void
+    #[Test]
+    public function avg_for_motivating_example_tree(): void
     {
         // Root(100) > A(50) > A1(50); Root > B(25). AGGREGATES.md §1.
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
@@ -84,7 +87,8 @@ final class AvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(25, $this->asFloat($b->tickets_avg), 0.0001);
     }
 
-    public function test_avg_companions_are_maintained_alongside_user_declarations(): void
+    #[Test]
+    public function avg_companions_are_maintained_alongside_user_declarations(): void
     {
         // Area's user-declared `tickets_total` (SUM(tickets)) already
         // satisfies the AVG's sum-companion requirement, so the registry
@@ -118,7 +122,8 @@ final class AvgMaintenanceTest extends TestCase
     // AVG on source-column update
     // ----------------------------------------------------------------
 
-    public function test_avg_recomputes_on_source_update(): void
+    #[Test]
+    public function avg_recomputes_on_source_update(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -138,7 +143,8 @@ final class AvgMaintenanceTest extends TestCase
         $this->assertEqualsWithDelta(100.0, $this->asFloat($a->refresh()->tickets_avg), 0.0001);
     }
 
-    public function test_avg_recomputes_when_source_goes_to_zero(): void
+    #[Test]
+    public function avg_recomputes_when_source_goes_to_zero(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -159,7 +165,8 @@ final class AvgMaintenanceTest extends TestCase
     // AVG on delete
     // ----------------------------------------------------------------
 
-    public function test_avg_recomputes_on_delete(): void
+    #[Test]
+    public function avg_recomputes_on_delete(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -184,7 +191,8 @@ final class AvgMaintenanceTest extends TestCase
     // Stored vs fresh AVG: drift check across mixed batch
     // ----------------------------------------------------------------
 
-    public function test_stored_avg_matches_fresh_after_mixed_batch(): void
+    #[Test]
+    public function stored_avg_matches_fresh_after_mixed_batch(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();
@@ -222,7 +230,8 @@ final class AvgMaintenanceTest extends TestCase
     // Single-UPDATE invariant (Phase D promise still holds)
     // ----------------------------------------------------------------
 
-    public function test_appending_a_leaf_still_fires_exactly_one_extra_aggregate_update(): void
+    #[Test]
+    public function appending_a_leaf_still_fires_exactly_one_extra_aggregate_update(): void
     {
         $root = new Area(['name' => 'Root', 'tickets' => 100]);
         $root->saveAsRoot();

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Unit\Walker;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Walker\SubtreeWalker;
@@ -44,7 +45,8 @@ final class SubtreeWalkerTest extends TestCase
         return ['root' => $root, 'nodes' => $collection];
     }
 
-    public function test_dfs_pre_order_visits_root_then_children_left_to_right(): void
+    #[Test]
+    public function dfs_pre_order_visits_root_then_children_left_to_right(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 
@@ -55,7 +57,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'A', 'X', 'Y', 'B', 'Z'], $names);
     }
 
-    public function test_dfs_post_order_yields_children_before_their_parent_and_root_last(): void
+    #[Test]
+    public function dfs_post_order_yields_children_before_their_parent_and_root_last(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 
@@ -66,7 +69,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['X', 'Y', 'A', 'Z', 'B', 'root'], $names);
     }
 
-    public function test_bfs_visits_depth_zero_then_depth_one_then_depth_two(): void
+    #[Test]
+    public function bfs_visits_depth_zero_then_depth_one_then_depth_two(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 
@@ -78,7 +82,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'A', 'B', 'X', 'Y', 'Z'], $names);
     }
 
-    public function test_root_only_subtree_yields_one_node_with_zero_depth(): void
+    #[Test]
+    public function root_only_subtree_yields_one_node_with_zero_depth(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 2, depth: 0, parentId: null);
 
@@ -89,7 +94,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(1, $walker->leafCount());
     }
 
-    public function test_descendants_only_collection_still_includes_root_anchor(): void
+    #[Test]
+    public function descendants_only_collection_still_includes_root_anchor(): void
     {
         // Mirrors the HasTreeWalk fallback path: caller passes the
         // `descendants` relation, which never contains $this itself.
@@ -104,7 +110,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'A', 'B'], $this->collectNames($walker->dfs()));
     }
 
-    public function test_walker_resorts_children_by_lft_when_input_is_shuffled(): void
+    #[Test]
+    public function walker_resorts_children_by_lft_when_input_is_shuffled(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 8, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -119,7 +126,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'A', 'B', 'C'], $this->collectNames($walker->dfs()));
     }
 
-    public function test_orphans_with_parent_outside_collection_never_get_visited(): void
+    #[Test]
+    public function orphans_with_parent_outside_collection_never_get_visited(): void
     {
         $root = $this->node(1, name: 'root', lft: 1, rgt: 4, depth: 0, parentId: null);
         $a = $this->node(2, name: 'A', lft: 2, rgt: 3, depth: 1, parentId: 1);
@@ -132,7 +140,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'A'], $names);
     }
 
-    public function test_node_with_missing_children_in_input_is_treated_as_a_leaf(): void
+    #[Test]
+    public function node_with_missing_children_in_input_is_treated_as_a_leaf(): void
     {
         // Caller eager-loaded only depth 0 + 1; A is in the collection but
         // its child X is not. The walker treats A as a leaf and continues
@@ -146,7 +155,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'A', 'B'], $this->collectNames($walker->dfs()));
     }
 
-    public function test_countable_returns_reachable_node_count_not_loaded_row_count(): void
+    #[Test]
+    public function countable_returns_reachable_node_count_not_loaded_row_count(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
         // Add an unreachable orphan to inflate the loaded count.
@@ -158,7 +168,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(7, $nodes->count());       // includes the orphan
     }
 
-    public function test_max_depth_is_relative_to_walk_root(): void
+    #[Test]
+    public function max_depth_is_relative_to_walk_root(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 
@@ -168,7 +179,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(2, $walker->maxDepth());
     }
 
-    public function test_leaf_count_only_counts_reachable_leaves(): void
+    #[Test]
+    public function leaf_count_only_counts_reachable_leaves(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 
@@ -178,7 +190,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(3, $walker->leafCount());
     }
 
-    public function test_count_methods_memoise_so_repeated_calls_share_one_pass(): void
+    #[Test]
+    public function count_methods_memoise_so_repeated_calls_share_one_pass(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 
@@ -190,7 +203,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame($first, $second);
     }
 
-    public function test_filter_prunes_post_order_walk_at_entry_phase(): void
+    #[Test]
+    public function filter_prunes_post_order_walk_at_entry_phase(): void
     {
         // Post-order skips the subtree at the *enter* phase — by the
         // time the parent would otherwise fire on exit, the rejected
@@ -208,7 +222,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['Z', 'B', 'root'], $names);
     }
 
-    public function test_filter_prunes_bfs_walk_skipping_descent_into_rejected_node(): void
+    #[Test]
+    public function filter_prunes_bfs_walk_skipping_descent_into_rejected_node(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
         $walker = new SubtreeWalker($nodes, $root);
@@ -225,7 +240,8 @@ final class SubtreeWalkerTest extends TestCase
         $this->assertSame(['root', 'B', 'Z'], $names);
     }
 
-    public function test_assert_strategy_throws_invalid_argument_for_unknown_label(): void
+    #[Test]
+    public function assert_strategy_throws_invalid_argument_for_unknown_label(): void
     {
         // The phpdoc union prevents bad strategies at static-analysis
         // time; reflection lets the test exercise the runtime guard
@@ -241,7 +257,8 @@ final class SubtreeWalkerTest extends TestCase
         $ref->invoke($walker, 'level');
     }
 
-    public function test_flatten_returns_collection_in_chosen_strategys_order(): void
+    #[Test]
+    public function flatten_returns_collection_in_chosen_strategys_order(): void
     {
         ['root' => $root, 'nodes' => $nodes] = $this->fivePlusOneFixture();
 

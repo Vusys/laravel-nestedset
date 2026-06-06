@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Import\Json;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\InvalidJsonTreeException;
 use Vusys\NestedSet\Import\JsonImportOptions;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
@@ -11,7 +12,8 @@ use Vusys\NestedSet\Tests\TestCase;
 
 final class JsonImportStrictAndTransformTest extends TestCase
 {
-    public function test_strict_mode_rejects_unknown_columns(): void
+    #[Test]
+    public function strict_mode_rejects_unknown_columns(): void
     {
         $this->expectException(InvalidJsonTreeException::class);
         Category::fromJsonTree([
@@ -19,7 +21,8 @@ final class JsonImportStrictAndTransformTest extends TestCase
         ]);
     }
 
-    public function test_lax_mode_drops_unknown_columns(): void
+    #[Test]
+    public function lax_mode_drops_unknown_columns(): void
     {
         Category::fromJsonTree(
             [['name' => 'r', 'children' => [], 'wat' => 'huh']],
@@ -30,7 +33,8 @@ final class JsonImportStrictAndTransformTest extends TestCase
         $this->assertSame(1, Category::query()->count());
     }
 
-    public function test_transform_runs_before_validation(): void
+    #[Test]
+    public function transform_runs_before_validation(): void
     {
         $transform = static function (array $row, int $depth): array {
             unset($row['wat']);

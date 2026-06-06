@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -31,7 +32,8 @@ final class QueryCountTest extends TestCase
         return $count;
     }
 
-    public function test_save_as_root_runs_three_queries(): void
+    #[Test]
+    public function save_as_root_runs_three_queries(): void
     {
         $node = new Category(['name' => 'Root']);
 
@@ -45,7 +47,8 @@ final class QueryCountTest extends TestCase
         $this->assertSame(3, $queries);
     }
 
-    public function test_append_to_node_new_runs_three_queries(): void
+    #[Test]
+    public function append_to_node_new_runs_three_queries(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -63,7 +66,8 @@ final class QueryCountTest extends TestCase
         $this->assertSame(3, $queries);
     }
 
-    public function test_append_existing_node_runs_six_queries(): void
+    #[Test]
+    public function append_existing_node_runs_six_queries(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -87,7 +91,8 @@ final class QueryCountTest extends TestCase
         $this->assertSame(6, $queries);
     }
 
-    public function test_count_errors_runs_four_queries(): void
+    #[Test]
+    public function count_errors_runs_four_queries(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();

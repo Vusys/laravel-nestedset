@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -40,7 +41,8 @@ final class RelationAggregateMethodsTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_with_sum_descendants_sums_a_descendant_column(): void
+    #[Test]
+    public function with_sum_descendants_sums_a_descendant_column(): void
     {
         $rows = Category::query()->withSum('descendants', 'lft')->orderBy('id')->get()->keyBy('id');
 
@@ -53,7 +55,8 @@ final class RelationAggregateMethodsTest extends TestCase
         $this->assertSame(18, (int) $sum);
     }
 
-    public function test_with_max_descendants_returns_max_descendant_column(): void
+    #[Test]
+    public function with_max_descendants_returns_max_descendant_column(): void
     {
         $rows = Category::query()->withMax('descendants', 'lft')->orderBy('id')->get()->keyBy('id');
 
@@ -66,7 +69,8 @@ final class RelationAggregateMethodsTest extends TestCase
         $this->assertSame(8, (int) $max);
     }
 
-    public function test_with_min_descendants_returns_min_descendant_column(): void
+    #[Test]
+    public function with_min_descendants_returns_min_descendant_column(): void
     {
         $rows = Category::query()->withMin('descendants', 'lft')->orderBy('id')->get()->keyBy('id');
 
@@ -79,7 +83,8 @@ final class RelationAggregateMethodsTest extends TestCase
         $this->assertSame(2, (int) $min);
     }
 
-    public function test_with_avg_ancestors_averages_ancestor_column(): void
+    #[Test]
+    public function with_avg_ancestors_averages_ancestor_column(): void
     {
         $rows = Category::query()->withAvg('ancestors', 'depth')->orderBy('id')->get()->keyBy('id');
 

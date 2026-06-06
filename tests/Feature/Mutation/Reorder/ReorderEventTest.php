@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation\Reorder;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Events\Mutation\SiblingsReordered;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
@@ -38,7 +39,8 @@ final class ReorderEventTest extends TestCase
         $this->syncSequence('categories');
     }
 
-    public function test_event_fires_once_with_expected_payload(): void
+    #[Test]
+    public function event_fires_once_with_expected_payload(): void
     {
         Event::fake([SiblingsReordered::class]);
 
@@ -53,7 +55,8 @@ final class ReorderEventTest extends TestCase
             && $e->durationMs >= 0.0);
     }
 
-    public function test_identity_reorder_emits_no_event(): void
+    #[Test]
+    public function identity_reorder_emits_no_event(): void
     {
         Event::fake([SiblingsReordered::class]);
 
@@ -62,7 +65,8 @@ final class ReorderEventTest extends TestCase
         Event::assertNotDispatched(SiblingsReordered::class);
     }
 
-    public function test_empty_parent_emits_no_event(): void
+    #[Test]
+    public function empty_parent_emits_no_event(): void
     {
         Event::fake([SiblingsReordered::class]);
 

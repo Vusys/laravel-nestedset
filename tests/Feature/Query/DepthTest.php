@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Query;
 
+use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -13,7 +14,8 @@ use Vusys\NestedSet\Tests\TestCase;
  */
 final class DepthTest extends TestCase
 {
-    public function test_depth_is_zero_for_root(): void
+    #[Test]
+    public function depth_is_zero_for_root(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -21,7 +23,8 @@ final class DepthTest extends TestCase
         $this->assertSame(0, $root->refresh()->depth);
     }
 
-    public function test_depth_increments_with_append(): void
+    #[Test]
+    public function depth_increments_with_append(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -41,7 +44,8 @@ final class DepthTest extends TestCase
         $this->assertSame(3, $aaa->refresh()->depth);
     }
 
-    public function test_depth_shifts_when_subtree_moves_under_different_parent(): void
+    #[Test]
+    public function depth_shifts_when_subtree_moves_under_different_parent(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -63,7 +67,8 @@ final class DepthTest extends TestCase
         $this->assertSame(3, $aa->refresh()->depth);
     }
 
-    public function test_depth_drops_to_zero_when_subtree_becomes_root(): void
+    #[Test]
+    public function depth_drops_to_zero_when_subtree_becomes_root(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
