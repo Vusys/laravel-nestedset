@@ -54,9 +54,23 @@ final class AggregateSqlFragmentsTest extends TestCase
      * assertions that pre-date the bindings refactor. Reproduces the
      * previous inline-literal shape so existing test datasets keep
      * their pre-bindings expected strings.
+     *
+     * Asserts the `?` count matches the bindings count so a silently
+     * dropped binding (or a stray `?` left after the loop) can't slip
+     * past the snapshot comparison.
      */
     private function inline(BoundFragment $fragment): string
     {
+        $placeholderCount = substr_count($fragment->sql, '?');
+        $bindingCount = count($fragment->bindings);
+        if ($placeholderCount !== $bindingCount) {
+            throw new \InvalidArgumentException(sprintf(
+                'inline(): fragment has %d `?` placeholder(s) but %d binding(s) — these must match.',
+                $placeholderCount,
+                $bindingCount,
+            ));
+        }
+
         $sql = $fragment->sql;
         foreach ($fragment->bindings as $value) {
             $pos = strpos($sql, '?');

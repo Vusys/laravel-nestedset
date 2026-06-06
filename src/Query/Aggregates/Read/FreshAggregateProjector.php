@@ -588,7 +588,10 @@ final class FreshAggregateProjector
             $innerFromClause = "FROM {$table} WHERE {$boundsClause}{$scopeClause}{$softClause}";
             $fragment = AggregateSqlEmitter::emitQuantileWindowSubquery($definition, $innerFromClause, '', $filterFragment);
 
-            return $connection->scalar($fragment->sql, [...$fragment->bindings, ...$bindings]);
+            // bounds/scope `?` appear inside $innerFromClause; filter `?`
+            // appears in the trailing $filterClause — bindings array must
+            // mirror that textual order.
+            return $connection->scalar($fragment->sql, [...$bindings, ...$fragment->bindings]);
         }
 
         // TopK needs an ORDER BY + LIMIT subquery shape that doesn't fit
@@ -627,7 +630,9 @@ final class FreshAggregateProjector
 
             $sql = 'SELECT '.$topKFragment->sql.' AS aggregate';
 
-            return $connection->scalar($sql, [...$topKFragment->bindings, ...$innerBindings]);
+            // bounds/scope `?` were spliced via $boundsAndScope first;
+            // filter `?` is appended onto $innerWhere afterward.
+            return $connection->scalar($sql, [...$innerBindings, ...$topKFragment->bindings]);
         }
 
         $aggregateExpr = AggregateSqlFragments::aggregateExpression($definition, qualifier: '', connection: $connection);
