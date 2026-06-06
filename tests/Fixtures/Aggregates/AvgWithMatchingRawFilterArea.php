@@ -13,7 +13,7 @@ use Vusys\NestedSet\NodeTrait;
 /**
  * AVG + Sum + Count over the same source, all sharing the same
  * `filterRaw` predicate. Pins the `FilterPredicateKind::Raw` arm of
- * `AggregateRegistry::filtersMatch()`.
+ * `AggregateDefinitionValidator::filtersMatch()`.
  */
 final class AvgWithMatchingRawFilterArea extends Model implements MaintainsTreeAggregates
 {

@@ -17,7 +17,7 @@ use Vusys\NestedSet\NodeTrait;
  * agree, so the values are semantically compatible.
  *
  * Pins the `FilterPredicateKind::Equality` arm of
- * `AggregateRegistry::filtersMatch()`.
+ * `AggregateDefinitionValidator::filtersMatch()`.
  */
 final class AvgWithMatchingEqualityFilterArea extends Model implements MaintainsTreeAggregates
 {

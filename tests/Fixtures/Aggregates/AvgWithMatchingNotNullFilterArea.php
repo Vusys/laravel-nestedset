@@ -14,7 +14,7 @@ use Vusys\NestedSet\NodeTrait;
  * AVG + Sum + Count over the same source, all sharing the same
  * `filterNotNull` predicate. Pins the
  * `FilterPredicateKind::NotNull` arm of
- * `AggregateRegistry::filtersMatch()`.
+ * `AggregateDefinitionValidator::filtersMatch()`.
  */
 final class AvgWithMatchingNotNullFilterArea extends Model implements MaintainsTreeAggregates
 {
