@@ -79,10 +79,13 @@ final class RecomputeBindingOrderTest extends TestCase
         $recomputeEntry = null;
         foreach (DB::getQueryLog() as $entry) {
             $sql = $entry['query'];
-            if (! str_starts_with(strtolower($sql), 'select')) {
+            if (! str_starts_with(strtolower((string) $sql), 'select')) {
                 continue;
             }
-            if (! str_contains($sql, 'outer_a') || ! str_contains($sql, 'inner_a')) {
+            if (! str_contains((string) $sql, 'outer_a')) {
+                continue;
+            }
+            if (! str_contains((string) $sql, 'inner_a')) {
                 continue;
             }
             $recomputeEntry = $entry;
@@ -97,7 +100,7 @@ final class RecomputeBindingOrderTest extends TestCase
 
         // Sanity: SQL has one `?` per binding.
         $this->assertSame(
-            substr_count($sql, '?'),
+            substr_count((string) $sql, '?'),
             count($bindings),
             'SQL placeholder count must equal bindings count',
         );
