@@ -18,6 +18,7 @@ Key non-obvious properties:
 ## Commands
 
 ```bash
+composer check           # Pint --test → Rector --dry-run → PHPStan, halt on first failure. Run before pushing.
 composer test            # PHPUnit, default suite (Package) — excludes Performance + fuzzer group
 composer analyse         # PHPStan / Larastan level 9, NO baseline allowed
 composer pint:check      # Laravel Pint, --test mode (style check)
@@ -25,6 +26,8 @@ composer rector:check    # Rector --dry-run
 composer fuzz            # opt-in seeded fuzzers (PHPUnit --group fuzzer)
 composer test:coverage   # XDEBUG_MODE=coverage phpunit --coverage-text
 ```
+
+`composer check` is the all-in-one gate — it does **not** run tests, only the static-analysis lane. Run it before every push; pair with `composer test` for full local validation.
 
 Run a single test:
 
