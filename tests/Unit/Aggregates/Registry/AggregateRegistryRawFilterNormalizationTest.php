@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Unit\Aggregates\Registry;
 
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
-use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
+use Vusys\NestedSet\Aggregates\Registry\AggregateDefinitionValidator;
 
 /**
  * Raw-SQL filter predicates are compared by string equality when the
@@ -20,18 +19,9 @@ use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
  */
 final class AggregateRegistryRawFilterNormalizationTest extends TestCase
 {
-    /**
-     * Invoke the private normaliser via reflection. Keeping it
-     * private on the registry is intentional — this test pins the
-     * tolerance shape, not the API surface.
-     */
     private function normalize(?string $sql): ?string
     {
-        $reflection = new ReflectionClass(AggregateRegistry::class);
-        $method = $reflection->getMethod('normalizeRawSql');
-
-        /** @var ?string */
-        return $method->invoke(null, $sql);
+        return AggregateDefinitionValidator::normalizeRawSql($sql);
     }
 
     public function test_null_normalises_to_null(): void

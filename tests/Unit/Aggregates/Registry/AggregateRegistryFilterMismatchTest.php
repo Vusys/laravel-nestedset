@@ -70,7 +70,7 @@ final class AggregateRegistryFilterMismatchTest extends TestCase
     // Positive-match cases: when filters DO agree, the registry must
     // adopt the user's Sum / Count as the AVG companions (no auto-
     // promoted internals). Each case below pins one branch of
-    // `AggregateRegistry::filtersMatch()`:
+    // `AggregateDefinitionValidator::filtersMatch()`:
     //
     //   - both filters null  → `! a instanceof FP && ! b instanceof FP`
     //   - both Equality      → match arm `FilterPredicateKind::Equality`
