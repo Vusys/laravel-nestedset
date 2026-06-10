@@ -42,6 +42,13 @@ trait HasTreeMutation
     protected ?PendingOperation $pending = null;
 
     /**
+     * The mover's fresh pre-move bounds, read once at the top of
+     * {@see callPendingAction()} and reused by {@see positionAt()} so an
+     * existing-node move issues a single SELECT for its own bounds.
+     */
+    private ?NodeBounds $pendingMoveFromBounds = null;
+
+    /**
      * Queue this node to become the last child of $parent on the next save().
      *
      * @throws ScopeViolationException
@@ -772,7 +779,16 @@ trait HasTreeMutation
         // are still the migration default 0); the `created` Eloquent
         // event handles their aggregate maintenance.
         $wasExisting = $this->exists;
-        $from = $wasExisting ? $this->getBounds() : null;
+        // Read the mover's bounds from the DB, not the in-memory model:
+        // a sibling insert (or any prior mutation) since this instance
+        // was loaded may have shifted its lft/rgt, and the before-move
+        // aggregate hook + the move events all key off these bounds.
+        // Stash it so positionAt() reuses the same read instead of
+        // issuing a second identical SELECT — the before-move hook only
+        // touches ancestor aggregate columns, never the mover's bounds,
+        // so the value is still current when positionAt runs.
+        $from = $wasExisting ? $this->freshBoundsOf($this) : null;
+        $this->pendingMoveFromBounds = $from;
 
         $previousParentId = $wasExisting ? $this->getParentId() : null;
         $previousDepth = $wasExisting ? $this->getDepth() : 0;
@@ -970,10 +986,15 @@ trait HasTreeMutation
             throw new LogicException('Cannot position node as a sibling of itself.');
         }
 
-        $bounds = $this->freshBoundsOf($sibling, lockForUpdate: true);
-        $insertAt = $position === Position::Before ? $bounds->lft : $bounds->rgt + 1;
-        $newDepth = $bounds->depth;
-        $newParentId = $sibling->getParentId();
+        // Read bounds AND parent_id from the same fresh row. Using the
+        // sibling's in-memory parent_id while taking fresh bounds would
+        // nest the new node under the sibling's current parent but stamp
+        // parent_id with the stale one — and parent_id is the source of
+        // truth, so a later fixTree() would silently relocate the node.
+        $fresh = $this->newTreeMutator()->getPlainNodeData($this->keyOf($sibling), lockForUpdate: true);
+        $insertAt = $position === Position::Before ? $fresh['lft'] : $fresh['rgt'] + 1;
+        $newDepth = $fresh['depth'];
+        $newParentId = $fresh['parent_id'];
 
         $this->positionAt($insertAt, $newDepth, $newParentId);
     }
@@ -1184,7 +1205,10 @@ trait HasTreeMutation
         // Read $from from the DB rather than $this — the in-memory model may
         // be stale (e.g. saved before later sibling inserts shifted its rgt),
         // and feeding moveNode an out-of-date bound corrupts the tree.
-        $from = $mutator->getNodeData($this->keyOf($this));
+        // callPendingAction already read it for the before-move hook /
+        // events; reuse that read instead of issuing a second SELECT.
+        $from = $this->pendingMoveFromBounds ?? $mutator->getNodeData($this->keyOf($this));
+        $this->pendingMoveFromBounds = null;
         $depthDelta = $newDepth - $from->depth;
 
         $mutator->moveNode($from, $position, $depthDelta);
