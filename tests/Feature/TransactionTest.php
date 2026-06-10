@@ -138,6 +138,45 @@ final class TransactionTest extends TestCase
     }
 
     #[Test]
+    public function failure_inside_deleted_listener_rolls_back_the_delete(): void
+    {
+        // delete() is multi-statement too: the row delete, the descendant
+        // cascade, the aggregate decrement, and the closeGap compaction
+        // run across the deleted listeners. A throw mid-pipeline must roll
+        // the whole thing back — row included — not leave a hole.
+        $this->assertTrue(Config::get('nestedset.auto_transaction'));
+
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+        $a = new Category(['name' => 'A']);
+        $a->appendToNode($root->refresh())->save();
+        $b = new Category(['name' => 'B']);
+        $b->appendToNode($root->refresh())->save();
+
+        $snapshot = DB::table('categories')->orderBy('id')->get()->toArray();
+
+        Category::deleted(static function (): never {
+            throw new RuntimeException('listener throw during delete');
+        });
+
+        try {
+            try {
+                $a->refresh()->delete();
+                $this->fail('expected deleted listener to throw');
+            } catch (RuntimeException $e) {
+                $this->assertSame('listener throw during delete', $e->getMessage());
+            }
+
+            $after = DB::table('categories')->orderBy('id')->get()->toArray();
+            $this->assertEquals($snapshot, $after, 'deleted-listener throw must roll back the entire delete');
+            $this->assertNotNull(Category::query()->find($a->getKey()), 'the row must survive the rollback');
+            $this->assertFalse(Category::isBroken());
+        } finally {
+            Category::flushEventListeners();
+        }
+    }
+
+    #[Test]
     public function auto_transaction_wraps_call_pending_action(): void
     {
         // The auto-transaction boundary wraps `callPendingAction`'s

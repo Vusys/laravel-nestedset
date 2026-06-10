@@ -656,6 +656,32 @@ trait HasTreeMutation
     }
 
     /**
+     * Wraps Eloquent's delete() in a transaction when
+     * `config('nestedset.auto_transaction')` is on, for the same reason
+     * save() is wrapped: the delete pipeline is multi-statement — the
+     * row's own DELETE/soft-delete, the descendant cascade, the aggregate
+     * decrement, and the closeGap compaction all run across the
+     * `deleting`/`deleted` listeners. On MySQL/MariaDB/PG the row delete
+     * autocommits without this wrap, so a throw mid-pipeline leaves a
+     * permanent hole in the lft/rgt sequence. Both `Model::forceDelete()`
+     * and `SoftDeletes::forceDelete()` delegate to `delete()`, so this
+     * single override covers force deletes too.
+     *
+     * Laravel handles nested calls via savepoints, so wrapping inside an
+     * outer `DB::transaction()` is safe.
+     */
+    public function delete(): ?bool
+    {
+        if (! config('nestedset.auto_transaction', true)) {
+            return parent::delete();
+        }
+
+        $result = $this->getConnection()->transaction(fn (): ?bool => parent::delete());
+
+        return is_bool($result) ? $result : null;
+    }
+
+    /**
      * Move this node one position up among its siblings (toward smaller lft).
      *
      * Fires {@see NodeMoved} for **both** participants — the moved
