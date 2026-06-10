@@ -18,7 +18,7 @@ use Vusys\NestedSet\Exceptions\MissingParentException;
 /**
  * Applies a {@see TreeDiff} to a live model class.
  *
- * Ordering: remove → add → move → modify, all under one transaction
+ * Ordering: add → move → remove → modify, all under one transaction
  * with aggregate maintenance deferred to a single trailing pass. The
  * applier is stateless; every operation hangs off the diff + model
  * class passed in.
@@ -558,15 +558,16 @@ final class TreeDiffApplier
         $moved = array_map(static fn (Moved $m): mixed => $m->key, $diff->moved);
         $modified = array_map(static fn (Modified $m): mixed => $m->key, $diff->modified);
 
+        // Mirror the real execution order: add → move → remove → modify.
         $planned = [];
-        if ($diff->removed !== []) {
-            $planned[] = ['statement' => 'delete', 'rows' => count($diff->removed)];
-        }
         foreach ($diff->added as $_) {
             $planned[] = ['statement' => 'insert+gap', 'rows' => 1];
         }
         foreach ($diff->moved as $_) {
             $planned[] = ['statement' => 'move', 'rows' => 1];
+        }
+        if ($diff->removed !== []) {
+            $planned[] = ['statement' => 'delete', 'rows' => count($diff->removed)];
         }
         if ($diff->modified !== []) {
             $planned[] = ['statement' => 'update', 'rows' => count($diff->modified)];

@@ -122,9 +122,12 @@ $diff->apply(Category::class, resolver: fn (mixed $identity) => $lookup[$identit
 ## Inverting a diff
 
 ```php
-$undo = $diff->apply(Category::class)
-    ? $original->invert()
-    : null;
+// Capture the undo before applying, so you can roll the change back later.
+$undo = $diff->invert();
+
+$diff->apply(Category::class);
+// … later …
+$undo->apply(Category::class);
 ```
 
 `invert()` swaps the diff to its undo direction — `added` ↔ `removed`,

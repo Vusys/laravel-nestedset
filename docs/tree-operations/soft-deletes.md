@@ -110,9 +110,9 @@ Scoped models work the same way — every cascade query is constrained by the sa
 
 The package reads the column name via reflection on `getDeletedAtColumn()`, so overriding `const DELETED_AT` or the method works without configuration.
 
-### Microsecond precision depends on the column type
+### Same-second cascades share a marker
 
-See the note above on `DATETIME(6)` vs `DATETIME(0)`.
+The cascade marker is at seconds precision (see [Soft-delete cascade](#soft-delete-cascade) above), so two independent or nested cascades that land in the same wall-clock second can't be told apart on restore. Disjoint subtrees are still isolated by the bounds scope; only overlapping cascades in the same second are affected.
 
 ### `withTrashed()` outer queries see soft-deleted descendants
 
