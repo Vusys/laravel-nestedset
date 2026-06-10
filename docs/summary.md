@@ -32,6 +32,7 @@ Format:
 - [In-memory Tree Shaping](querying/tree-shaping.md)
 - [Walking Subtrees](querying/walking.md)
 - [Tree Exporters](querying/exporters.md)
+- [Tree Diff](querying/tree-diff.md)
 - [Inspection](querying/inspection.md)
 - [Scoped Trees](querying/scoped-trees.md)
 
