@@ -34,6 +34,9 @@ final class AncestorsRelation extends BaseRelation
         foreach (NestedSetScopeResolver::valuesFor($this->parent) as $col => $value) {
             $query->where($query->qualifyColumn($col), '=', $value);
         }
+
+        // Root-to-parent order (the documented contract) is lft ascending.
+        $query->orderBy($query->qualifyColumn($query->lftColumn()));
     }
 
     protected function matches(HasNestedSet $model, HasNestedSet $related): bool
@@ -42,13 +45,12 @@ final class AncestorsRelation extends BaseRelation
         // filters them out, but `match()` runs against the returned
         // collection without knowing about scope. Guard here too so
         // that even hand-fed result sets don't attach to the wrong
-        // declaring model.
-        if ($model instanceof Model && $related instanceof Model) {
-            foreach (NestedSetScopeResolver::columns($model::class) as $col) {
-                if ($model->getAttribute($col) !== $related->getAttribute($col)) {
-                    return false;
-                }
-            }
+        // declaring model. Use the resolver's permissive comparison
+        // (int 5 == "5") so a driver-typed scope value doesn't drop a
+        // legitimate match.
+        if ($model instanceof Model && $related instanceof Model
+            && ! NestedSetScopeResolver::sameScope($model, $related)) {
+            return false;
         }
 
         return $related->getBounds()->contains($model->getBounds());
