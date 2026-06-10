@@ -49,8 +49,6 @@ final class CreateHookApplier
 
         $deltas = [];
         $extremes = [];
-        /** @var array<string, array{function: AggregateFunction, value: int}> $bitwise */
-        $bitwise = [];
         /** @var array<string, AggregateDefinition> $chainRecomputes */
         $chainRecomputes = [];
 
@@ -147,28 +145,10 @@ final class CreateHookApplier
                 continue;
             }
 
-            if (($definition->function === AggregateFunction::BitOr
-                || $definition->function === AggregateFunction::BitXor)
-                && $definition->source !== null
-            ) {
-                if ($definition->filter instanceof FilterPredicate
-                    && $definition->filter->evaluateFor($node->getAttributes()) !== true) {
-                    continue;
-                }
-                $value = Numeric::asIntOrZero($node->getAttribute($definition->source));
-                $bitwise[$definition->column] = [
-                    'function' => $definition->function,
-                    'value' => $value,
-                ];
-
-                continue;
-            }
-
-            if ($definition->function === AggregateFunction::BitAnd && $definition->source !== null) {
-                // BitAnd: inserting a row with any bit cleared narrows
-                // the AND fold; can't be expressed as a single delta.
-                $chainRecomputes[$definition->column] = $definition;
-            }
+            // BitOr / BitAnd / BitXor are all handled by the
+            // requiresChainRecompute() branch above — bitwise rollups
+            // recompute the affected subtree rather than apply a per-bit
+            // delta.
         }
 
         /** @var array<string, ListenerAggregateDefinition> $exclusiveListenerDefs */
@@ -235,7 +215,7 @@ final class CreateHookApplier
 
         $lazyColumns = LazyAggregateAccess::allLazyColumns($modelClass);
 
-        if ($deltas === [] && $extremes === [] && $bitwise === [] && $chainRecomputes === [] && $exclusiveListenerDefs === [] && $lazyColumns === []) {
+        if ($deltas === [] && $extremes === [] && $chainRecomputes === [] && $exclusiveListenerDefs === [] && $lazyColumns === []) {
             return;
         }
 
@@ -251,7 +231,7 @@ final class CreateHookApplier
 
         $scope = NestedSetScopeResolver::valuesFor($node);
 
-        if ($deltas !== [] || $extremes !== [] || $bitwise !== []) {
+        if ($deltas !== [] || $extremes !== []) {
             DeltaMaintenance::apply(
                 connection: $node->getConnection(),
                 table: $node->getTable(),
@@ -263,7 +243,6 @@ final class CreateHookApplier
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor($modelClass),
                 extremes: $extremes,
-                bitwise: $bitwise,
                 softDeletedColumn: $softDeletedColumn,
                 variances: AggregateRegistry::varianceCompanionsFor($modelClass),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor($modelClass),

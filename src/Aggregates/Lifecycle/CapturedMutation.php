@@ -60,15 +60,6 @@ final class CapturedMutation
     public array $listenerRecomputes = [];
 
     /**
-     * Bitwise BitOr / BitXor deltas captured in `saving` / `created` /
-     * `deleted`. BitAnd never appears here; it always routes through
-     * chain recompute.
-     *
-     * @var array<string, array{function: AggregateFunction, value: int|float}>
-     */
-    public array $bitwise = [];
-
-    /**
      * Aggregate definitions that need an ancestor-chain recompute on
      * the next apply pass.
      *
@@ -98,7 +89,6 @@ final class CapturedMutation
         $this->recomputes = [];
         $this->listenerRecomputes = [];
         $this->chainRecomputes = [];
-        $this->bitwise = [];
         $this->lazyInvalidations = [];
     }
 }

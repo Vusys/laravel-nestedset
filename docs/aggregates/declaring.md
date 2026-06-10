@@ -33,7 +33,7 @@ The auto-promoted companions follow the `{avg_column}__sum` / `{avg_column}__cou
 
 ## Bitwise rollups
 
-For integer source columns packing independent yes/no bits — feature flags, capability masks — declare via `bitOr` / `bitAnd` / `bitXor` named args or the `Aggregate::bitOr/bitAnd/bitXor()` factories. See the dedicated [Bitwise Aggregates](bitwise.html) page for the full rundown of which mutation paths use delta vs chain recompute.
+For integer source columns packing independent yes/no bits — feature flags, capability masks — declare via `bitOr` / `bitAnd` / `bitXor` named args or the `Aggregate::bitOr/bitAnd/bitXor()` factories. All three maintain by chain recompute; see the dedicated [Bitwise Aggregates](bitwise.html) page.
 
 ## Beyond the SQL-standard five
 

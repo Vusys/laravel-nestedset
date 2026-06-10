@@ -170,7 +170,7 @@ A hidden delta-maintainable column that backs a derived aggregate. `AVG` is stor
 
 ### Delta maintenance
 
-The cheap path: each ancestor's stored value is updated by a signed delta in one statement (`col = col ± Δ`). Available for SUM, COUNT, and BitXor (the only delta-maintainable bitwise function — XOR is self-inverse). Constant work per ancestor, regardless of subtree size.
+The cheap path: each ancestor's stored value is updated by a signed delta in one statement (`col = col ± Δ`). Available for SUM and COUNT (and the internal companions of the companion-derived families). Constant work per ancestor, regardless of subtree size. Bitwise aggregates do **not** use this path — they chain-recompute.
 
 ### Drift
 

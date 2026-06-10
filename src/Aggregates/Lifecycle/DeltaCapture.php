@@ -243,36 +243,9 @@ final class DeltaCapture
                 continue;
             }
 
-            if ($definition->function === AggregateFunction::BitXor && $source !== null) {
-                // BitXor is self-inverse — `parent ^= old` undoes the
-                // old contribution; `parent ^= new` adds the new one.
-                $newSource = Numeric::asIntOrZero($node->getAttribute($source));
-                $oldSource = Numeric::asIntOrZero($node->getOriginal($source));
-                $newContrib = $newPred ? $newSource : 0;
-                $oldContrib = $oldPred ? $oldSource : 0;
-                $xorDelta = $oldContrib ^ $newContrib;
-
-                if ($xorDelta !== 0) {
-                    $state->bitwise[$definition->column] = [
-                        'function' => AggregateFunction::BitXor,
-                        'value' => $xorDelta,
-                    ];
-                }
-
-                continue;
-            }
-
-            if (in_array($definition->function, [AggregateFunction::BitOr, AggregateFunction::BitAnd], true)
-                && $source !== null
-            ) {
-                // BitOr: source change can drop a bit no other row holds
-                // (`parent |= new` would not unset it). BitAnd: every
-                // change can promote or demote the AND fold. Route both
-                // through chain recompute on any dirty source.
-                $state->chainRecomputes[$definition->column] = $definition;
-
-                continue;
-            }
+            // BitOr / BitAnd / BitXor all route through the chain-recompute
+            // branch above (requiresChainRecompute() is true for every
+            // bitwise kind), so no per-bit delta is captured here.
         }
 
         foreach (AggregateRegistry::for($modelClass) as $definition) {
@@ -424,12 +397,11 @@ final class DeltaCapture
         $recomputes = $state->recomputes;
         $listenerRecomputes = $state->listenerRecomputes;
         $chainRecomputes = $state->chainRecomputes;
-        $bitwise = $state->bitwise;
         $lazyInvalidations = $state->lazyInvalidations;
 
         $state->clearCapture();
 
-        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $bitwise === [] && $lazyInvalidations === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $lazyInvalidations === []) {
             return;
         }
 
@@ -463,7 +435,6 @@ final class DeltaCapture
             scope: $scope,
             avgs: AggregateRegistry::avgCompanionsFor($modelClass),
             extremes: $extremes,
-            bitwise: $bitwise,
             softDeletedColumn: $softDeletedColumn,
             variances: AggregateRegistry::varianceCompanionsFor($modelClass),
             weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor($modelClass),
