@@ -90,15 +90,21 @@ final class DeferredMaintenanceRunner
             // Repair only at the outermost exit — nested calls share
             // the same counter and rely on the outer wrapper to fix.
             if ($modelClass::aggregateDeferredDepth() === 0) {
-                // If $work threw, this fires before the exception
-                // propagates. Swallow any secondary error so the
-                // original throwable wins — losing the original would
-                // hide the actual bug.
                 try {
                     $repairStartNs = hrtime(true);
                     $repairResult = $modelClass::fixAggregates($anchor);
                     $repairMs = (hrtime(true) - $repairStartNs) / 1_000_000;
                 } catch (\Throwable $secondary) {
+                    // If $work itself threw, the repair fires before that
+                    // exception propagates — swallow any secondary error
+                    // so the original throwable (the actual bug) wins.
+                    // But on the SUCCESS path there is no primary
+                    // exception: a swallowed repair failure would leave
+                    // the batch's drift permanently unrepaired while the
+                    // caller returns normally. Rethrow so it surfaces.
+                    if (! $closureFailed) {
+                        throw $secondary;
+                    }
                     error_log(sprintf(
                         'withDeferredAggregateMaintenance: secondary error in fixAggregates after closure failure — %s: %s',
                         $secondary::class,
