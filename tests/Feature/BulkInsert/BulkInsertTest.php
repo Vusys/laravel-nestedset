@@ -391,19 +391,13 @@ final class BulkInsertTest extends TestCase
     }
 
     #[Test]
-    public function bulk_insert_with_stale_anchor_uses_in_memory_bounds(): void
+    public function bulk_insert_with_stale_anchor_reads_fresh_bounds(): void
     {
-        // Footgun: bulkInsertTree reads $appendTo->getRgt() from the
-        // in-memory model and trusts it. When the caller's reference
-        // to the anchor predates a separate save() that shifted the
-        // anchor's bounds, the bulk insert anchors at the stale slot.
-        // Tree integrity is preserved by makeGap + relative bounds
-        // arithmetic, but new children land in pre-existing-children
-        // sibling order rather than after them.
-        //
-        // Pins the current behaviour so the contract change (always
-        // refresh before bulkInsertTree, or have the package do it
-        // internally) is made deliberately.
+        // bulkInsertTree reads + locks the anchor row inside its
+        // transaction, so a stale in-memory anchor no longer matters: the
+        // bulk children append after the anchor's real (post-shift)
+        // children, exactly as a refreshed anchor would. No $root->refresh()
+        // workaround required.
         $root = new Area(['name' => 'root', 'tickets' => 0]);
         $root->saveAsRoot();
         $root->refresh();
@@ -430,13 +424,12 @@ final class BulkInsertTest extends TestCase
             ->pluck('name')
             ->all();
 
-        // Current behaviour: bulk children land BEFORE 'existing' in
-        // lft order because the stale rgt was used as the gap position.
-        $this->assertSame(['bulk1', 'bulk2', 'existing'], $children,
-            'stale anchor places bulk inserts at the stashed lft/rgt slot — workaround is $root->refresh() before bulkInsertTree',
+        // Fresh-read behaviour: bulk children land AFTER 'existing'.
+        $this->assertSame(['existing', 'bulk1', 'bulk2'], $children,
+            'fresh anchor read appends bulk children after the existing ones, regardless of the stale handle',
         );
 
-        $this->assertFalse(Area::isBroken(), 'tree remains integral despite the stale anchor');
+        $this->assertFalse(Area::isBroken(), 'tree remains integral');
     }
 
     #[Test]

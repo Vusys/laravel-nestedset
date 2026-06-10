@@ -157,8 +157,10 @@ trait HasBulkInsert
         $totalNodes = count($plan);
         $gapSize = 2 * $totalNodes;
 
-        $anchorRgt = $appendTo instanceof HasNestedSet ? $appendTo->getRgt() : null;
-        $anchorDepth = $appendTo instanceof HasNestedSet ? $appendTo->getDepth() : -1;
+        // The anchor's bounds/depth are read fresh inside the transaction
+        // below — never from this possibly-stale in-memory instance. Only
+        // its (immutable) key is captured here.
+        $hasAnchor = $appendTo instanceof HasNestedSet;
         $anchorParentId = null;
         if ($appendTo instanceof Model) {
             $anchorKey = $appendTo->getKey();
@@ -179,8 +181,7 @@ trait HasBulkInsert
         $saved = self::withDeferredAggregateMaintenance(
             fn (): array => $connection->transaction(static function () use (
                 $plan,
-                $anchorRgt,
-                $anchorDepth,
+                $hasAnchor,
                 $anchorParentId,
                 $gapSize,
                 $instance,
@@ -192,9 +193,18 @@ trait HasBulkInsert
                 $mutator,
                 $appendTo,
             ): array {
-                if ($anchorRgt !== null) {
-                    $mutator->makeGap($anchorRgt, $gapSize);
-                    $boundsOffset = $anchorRgt - 1;
+                // Read + lock the anchor row inside the transaction — same
+                // discipline as actAppendTo. The in-memory $appendTo may be
+                // stale (a sibling deleted before it shifted its bounds
+                // left), and the FOR UPDATE lock serialises concurrent
+                // appenders against the same parent, which a bulk insert
+                // otherwise never took.
+                $anchorDepth = -1;
+                if ($hasAnchor && $anchorParentId !== null) {
+                    $anchorData = $mutator->getNodeData($anchorParentId, lockForUpdate: true);
+                    $anchorDepth = $anchorData->depth;
+                    $mutator->makeGap($anchorData->rgt, $gapSize);
+                    $boundsOffset = $anchorData->rgt - 1;
                 } else {
                     // No anchor — seeding new roots. The new lft values
                     // start one past the current MAX(rgt) so we don't
