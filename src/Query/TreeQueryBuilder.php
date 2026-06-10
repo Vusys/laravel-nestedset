@@ -112,8 +112,9 @@ class TreeQueryBuilder extends Builder
 
     public function whereIsLeaf(): static
     {
-        $lft = $this->qualifyColumn($this->lftColumn());
-        $rgt = $this->qualifyColumn($this->rgtColumn());
+        $grammar = $this->getQuery()->getGrammar();
+        $lft = $grammar->wrap($this->qualifyColumn($this->lftColumn()));
+        $rgt = $grammar->wrap($this->qualifyColumn($this->rgtColumn()));
 
         $this->whereRaw(new TreeExpression("{$rgt} = {$lft} + 1"));
 
@@ -144,9 +145,11 @@ class TreeQueryBuilder extends Builder
 
     public function withDepth(string $as = 'depth'): static
     {
-        $col = $this->qualifyColumn($this->depthColumn());
+        $grammar = $this->getQuery()->getGrammar();
+        $col = $grammar->wrap($this->qualifyColumn($this->depthColumn()));
+        $alias = $grammar->wrap($as);
 
-        $this->addSelect(['*', new TreeExpression("{$col} as {$as}")]);
+        $this->addSelect(['*', new TreeExpression("{$col} as {$alias}")]);
 
         return $this;
     }

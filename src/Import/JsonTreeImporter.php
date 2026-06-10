@@ -221,12 +221,28 @@ final class JsonTreeImporter
     }
 
     /**
-     * Best-effort extraction of the colliding primary-key value from
-     * the underlying driver's unique-constraint error message.
+     * Best-effort extraction of the colliding primary-key value from the
+     * underlying driver's unique-constraint error message. Handles string
+     * / UUID keys, not just integers — the value is quoted on MySQL /
+     * MariaDB / SQLite and parenthesised on PostgreSQL.
      */
-    private static function extractCollisionKey(QueryException $e): int
+    private static function extractCollisionKey(QueryException $e): int|string
     {
-        if (preg_match('/\b(\d+)\b/', $e->getMessage(), $m) === 1) {
+        $message = $e->getMessage();
+
+        // PostgreSQL: "... Key (id)=(0190f-…-abc) already exists."
+        if (preg_match('/=\(([^)]+)\)/', $message, $m) === 1) {
+            return is_numeric($m[1]) ? (int) $m[1] : $m[1];
+        }
+
+        // MySQL / MariaDB / SQLite quote the offending value:
+        // "Duplicate entry 'abc-123' for key …".
+        if (preg_match("/'([^']+)'/", $message, $m) === 1) {
+            return is_numeric($m[1]) ? (int) $m[1] : $m[1];
+        }
+
+        // Last resort: a bare integer somewhere in the message.
+        if (preg_match('/\b(\d+)\b/', $message, $m) === 1) {
             return (int) $m[1];
         }
 
