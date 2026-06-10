@@ -656,6 +656,39 @@ trait HasTreeMutation
     }
 
     /**
+     * Placement is core write logic, not observability — it runs in the
+     * `saving` listener (queued-operation dispatch plus the unplaced-node
+     * guard), which `saveQuietly()` suppresses via `withoutEvents()`.
+     * Persisting quietly would therefore silently drop a queued
+     * appendToNode/makeRoot/… and write `lft = rgt = 0`. Refuse instead:
+     * a node with a pending placement, or a new node not yet placed, must
+     * go through `save()`.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function saveQuietly(array $options = []): bool
+    {
+        if ($this->pending !== null) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::saveQuietly() cannot dispatch the queued tree operation "%s" — placement '
+                .'runs in the `saving` event that saveQuietly() suppresses. Use save().',
+                static::class,
+                $this->pending->action,
+            ));
+        }
+
+        if (! $this->exists && ! $this->isPlacedInTree()) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::saveQuietly() would persist an unplaced node (lft = rgt = 0). Place it first '
+                .'via appendToNode($parent) / makeRoot() / … and use save().',
+                static::class,
+            ));
+        }
+
+        return parent::saveQuietly($options);
+    }
+
+    /**
      * Wraps Eloquent's delete() in a transaction when
      * `config('nestedset.auto_transaction')` is on, for the same reason
      * save() is wrapped: the delete pipeline is multi-statement — the

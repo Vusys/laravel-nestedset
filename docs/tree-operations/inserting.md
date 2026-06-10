@@ -164,6 +164,22 @@ Phones
 
 Phones is now a sibling root of Electronics — same forest, but its `parent_id` is null and `depth` is 0. Its `lft` / `rgt` start fresh after Electronics' subtree ends (it's appended at the end of the forest, not inserted between existing roots). The Electronics subtree shrank by Phones' two slots; everything to the right (which was just Tablets) shifted left.
 
+## `saveQuietly()` and placement
+
+Placement is core write logic, not observability: dispatching a queued `appendToNode()` / `makeRoot()` / … and the unplaced-node guard both run inside the model's `saving` event. `saveQuietly()` suppresses every model event (`withoutEvents()`), so it cannot carry out a placement.
+
+Rather than silently drop the placement and persist a corrupt `lft = rgt = 0` row, `saveQuietly()` throws `UnplacedNodeException` when:
+
+- a tree operation is queued on the node (`appendToNode($parent)->saveQuietly()`), or
+- the node is new and not yet placed in a tree.
+
+```php
+$child->appendToNode($parent)->saveQuietly();  // throws UnplacedNodeException — use save()
+$child->appendToNode($parent)->save();          // OK
+```
+
+`saveQuietly()` is still fine for a quiet attribute-only update on an already-placed node — only placement is refused.
+
 ## Sibling lookups (read-only)
 
 ```php
