@@ -18,6 +18,7 @@ use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleting;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoving;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
+use Vusys\NestedSet\Exceptions\SaveCancelledException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\NodeBounds;
@@ -632,7 +633,26 @@ trait HasTreeMutation
             return parent::save($options);
         }
 
-        return (bool) $this->getConnection()->transaction(fn (): bool => parent::save($options));
+        try {
+            return (bool) $this->getConnection()->transaction(function () use ($options): bool {
+                $saved = parent::save($options);
+
+                // A saving/creating/updating listener cancelled the save by
+                // returning false — but the trait's own `saving` listener
+                // has already run the structural SQL (makeGap / moveNode).
+                // transaction() commits unless an exception is thrown, so a
+                // bare `return false` would leave that gap/move committed
+                // with no row write. Throw to force the rollback; the catch
+                // below restores the cancelled-save contract for the caller.
+                if ($saved === false) {
+                    throw new SaveCancelledException;
+                }
+
+                return $saved;
+            });
+        } catch (SaveCancelledException) {
+            return false;
+        }
     }
 
     /**
