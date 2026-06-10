@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 use Vusys\NestedSet\TreeFixResult;
 
@@ -98,10 +99,15 @@ final readonly class TreeRepairBuilder
      * model-facing API (Phase 8) is what refuses a no-root call on a
      * scoped class — at this layer the scope is already explicit.
      */
-    public function rebuildTree(): void
+    public function rebuildTree(): int
     {
         $rows = $this->scoped()
             ->select([$this->idCol, $this->parentId])
+            // Order by id so sibling order is the documented primary-key
+            // order on every backend — without it PG returns heap order,
+            // which changes after non-HOT updates (a second fixTree can
+            // then scramble siblings non-reproducibly).
+            ->orderBy($this->idCol)
             ->get()
             ->keyBy($this->idCol);
 
@@ -124,6 +130,8 @@ final readonly class TreeRepairBuilder
         $this->connection->transaction(function () use ($positions): void {
             $this->bulkWritePositions($positions);
         });
+
+        return count($positions);
     }
 
     /**
@@ -137,10 +145,12 @@ final readonly class TreeRepairBuilder
      * before the new positions are written. Without the shift the rebuilt
      * subtree's tail would overlap whichever sibling sits at rgt + 1.
      */
-    public function rebuildSubtree(int|string $rootId): void
+    public function rebuildSubtree(int|string $rootId): int
     {
         $all = $this->scoped()
             ->select([$this->idCol, $this->parentId])
+            // id order → deterministic sibling order across backends.
+            ->orderBy($this->idCol)
             ->get()
             ->keyBy($this->idCol);
 
@@ -175,10 +185,30 @@ final readonly class TreeRepairBuilder
 
         $newSize = count($inSubtree) * 2;
         $reservedSize = $reservedRgt - $startLft + 1;
+
+        // An unplaced anchor (lft = 0, or any non-positive lft) has no
+        // valid startLft to rebuild from — using its lft would write
+        // bounds starting at 0 that collide with the real root. A
+        // placed-but-corrupt anchor (lft >= 1, bad rgt) is still a valid
+        // repair target: the rebuild writes from its real lft. An absent
+        // anchor row ($rootRow === null) falls through to the startLft=1
+        // default below.
+        if ($rootRow !== null && $startLft < 1) {
+            throw new UnplacedNodeException(sprintf(
+                'Cannot fixTree() anchored at an unplaced node (id=%s, lft=%d, rgt=%d). '
+                .'Place it in a tree first, or run an unanchored fixTree() to rebuild from the roots.',
+                (string) $rootId,
+                $startLft,
+                $reservedRgt,
+            ));
+        }
+
         // Only shift surroundings when the root has a real position
-        // (band >= 2). An unplaced root (lft=0,rgt=0) falls through to
-        // walkAssignPositions's startLft=1 default, where there's no
-        // meaningful "rest of the table" boundary to shift around.
+        // (band >= 2). A corrupt-but-placed anchor (band < 2) skips the
+        // shift and just rewrites its own subtree from startLft. An
+        // absent anchor row falls through to walkAssignPositions's
+        // startLft=1 default, where there's no meaningful "rest of the
+        // table" boundary to shift around.
         $delta = ($rootRow !== null && $reservedSize >= 2) ? $newSize - $reservedSize : 0;
 
         $positions = $this->walkAssignPositions([$rootId], $children, $startLft, $startDepth);
@@ -205,6 +235,8 @@ final readonly class TreeRepairBuilder
 
             $this->bulkWritePositions($positions);
         });
+
+        return count($positions);
     }
 
     /**
@@ -353,13 +385,10 @@ final readonly class TreeRepairBuilder
      */
     public function fixTree(int|string|null $rootId = null): TreeFixResult
     {
-        if ($rootId !== null) {
-            $this->rebuildSubtree($rootId);
-        } else {
-            $this->rebuildTree();
-        }
+        $nodesUpdated = $rootId !== null
+            ? $this->rebuildSubtree($rootId)
+            : $this->rebuildTree();
 
-        $nodesUpdated = (int) $this->scoped()->count();
         $errorsAfter = $this->countErrors();
 
         return new TreeFixResult(

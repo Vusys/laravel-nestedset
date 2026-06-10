@@ -82,3 +82,7 @@ The package's `fixTree()` runs `fixAggregates()` internally **after** structural
 When you pass an anchor to `fixTree()`, the rebuild walks down from that anchor using `parent_id` and reassigns `lft`/`rgt`/`depth` for every reachable descendant. Rows **outside** the anchor's subtree are untouched.
 
 If the anchor's subtree was corrupted in a way that changed its total size (e.g. orphans were force-deleted leaving phantom gaps, or descendants were added without `rgt`-shifting the ancestors), the rebuilt subtree may overlap surrounding rows in the same scope. In that case, fall back to the unanchored `fixTree()` which rebuilds every row in scope from `parent_id`.
+
+The anchor itself must be **placed** — it needs a real `lft` to rebuild from. `fixTree($anchor)` on an unplaced node (`lft = 0`) throws `UnplacedNodeException` rather than write a subtree starting at `0` that collides with the real root; place the node first, or run the unanchored `fixTree()`.
+
+`TreeFixResult::nodesUpdated` reports the number of rows the rebuild actually walked — the anchor's subtree for `fixTree($anchor)`, the whole scope for the unanchored form.
