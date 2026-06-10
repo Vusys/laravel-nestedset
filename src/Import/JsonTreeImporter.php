@@ -97,11 +97,13 @@ final class JsonTreeImporter
             throw $e;
         }
 
-        $topLevelCount = count($normalised);
-        $topLevel = array_slice($saved, 0, $topLevelCount);
-
+        // bulkInsertTree() already returns every inserted row in DFS
+        // pre-order — which is exactly the documented contract. The old
+        // array_slice(0, topLevelCount) assumed top-level rows came first,
+        // but pre-order interleaves a parent's descendants before its next
+        // sibling ([A, A1, A2, B]), so it returned the wrong nodes.
         /** @var NodeCollection<int, Model&HasNestedSet> $collection */
-        $collection = new NodeCollection($topLevel);
+        $collection = new NodeCollection($saved);
 
         return $collection;
     }
