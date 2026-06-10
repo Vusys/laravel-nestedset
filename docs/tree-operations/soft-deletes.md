@@ -47,7 +47,7 @@ Electronics
 Books
 ```
 
-This is **one** cascade `UPDATE`: every row in the `Computers` subtree where `deleted_at IS NULL` gets the same microsecond-precision stamp. No per-row Eloquent `deleted` event fires for `Laptops` or `Desktops` — only for `Computers` itself. The package's [`SubtreeSoftDeleted`](../reference/events.html#cascade-events-soft-delete--restore--force-delete) event carries the full descendant id list so listeners (search index pruning, cache invalidation) can react in one round.
+This is **one** cascade `UPDATE`: every row in the `Computers` subtree where `deleted_at IS NULL` gets the same `deleted_at` stamp. No per-row Eloquent `deleted` event fires for `Laptops` or `Desktops` — only for `Computers` itself. The package's [`SubtreeSoftDeleted`](../reference/events.html#cascade-events-soft-delete--restore--force-delete) event carries the full descendant id list so listeners (search index pruning, cache invalidation) can react in one round.
 
 The structural columns (`lft` / `rgt` / `depth`) are **untouched** by the soft-delete — the trashed rows still occupy their slots in the index, they just disappear from default queries. A subsequent `restore()` simply nulls `deleted_at` back out and the subtree pops back in place.
 
@@ -55,10 +55,10 @@ The structural columns (`lft` / `rgt` / `depth`) are **untouched** by the soft-d
 
 Calling `delete()` on a node with descendants stamps the same `deleted_at` value across the whole subtree in a single UPDATE — no per-row `delete()` calls, no recursion. A descendant that was independently trashed before the parent gets a different `deleted_at` value and is left alone; the cascade's `WHERE deleted_at IS NULL` makes this safe by design.
 
-The microsecond precision matters. The package formats the stamp with `Y-m-d H:i:s.u` (six fractional digits) and the cascade's WHERE clause matches against that exact string — so two cascades initiated within the same second still produce distinct `deleted_at` values, and `restore()` can tell them apart.
+The stamp is at **seconds** precision — exactly the form Eloquent's `fromDateTime()` writes to the deleted node's own row at the default model date format. The cascade writes that same string to the descendants, so the anchor and its whole subtree carry a byte-identical value, and `restore()`'s match works the same on every backend (SQLite text column or a real timestamp column).
 
 > [!NOTE]
-> On a `DATETIME(0)` column the database truncates to seconds. Same-second cascades collide there because the column simply can't represent the microsecond difference. This is a schema limitation, not a package one — declare your `deleted_at` column as `DATETIME(6)` (Laravel's `$table->softDeletes(precision: 6)`) if you need to distinguish back-to-back cascades. Most workloads don't.
+> Two **independent** cascades (or a nested delete-inner-then-outer) that land in the same wall-clock second share a marker, so restoring one also restores the other's same-second rows that fall inside its bounds. The cascade is bounds-scoped, so **disjoint** subtrees are always isolated regardless of timing. If you need same-second independence between overlapping cascades, that's a deliberate limitation of using a seconds-precision marker — the package keeps it at seconds because a finer marker rounds on a `DATETIME(0)`/`timestamp(0)` column while the in-memory cast truncates, which would diverge across backends.
 
 ## Restore cascade
 

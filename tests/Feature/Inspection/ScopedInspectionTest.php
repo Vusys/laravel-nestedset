@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\Inspection;
 
 use PHPUnit\Framework\Attributes\Test;
+use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -19,14 +20,19 @@ final class ScopedInspectionTest extends TestCase
     #[Test]
     public function descendant_and_ancestor_checks_respect_scope(): void
     {
-        $r1 = new MenuItem(['name' => 'R1', 'menu_id' => 1]);
+        // menu_items.menu_id is a real FK → seed the menus first
+        // (enforced on pgsql/mysql/mariadb, ignored on sqlite).
+        $menu1 = Menu::create(['name' => 'Menu 1']);
+        $menu2 = Menu::create(['name' => 'Menu 2']);
+
+        $r1 = new MenuItem(['name' => 'R1', 'menu_id' => $menu1->getKey()]);
         $r1->saveAsRoot();
-        $c1 = new MenuItem(['name' => 'C1', 'menu_id' => 1]);
+        $c1 = new MenuItem(['name' => 'C1', 'menu_id' => $menu1->getKey()]);
         $c1->appendToNode($r1->refresh())->save();
 
-        $r2 = new MenuItem(['name' => 'R2', 'menu_id' => 2]);
+        $r2 = new MenuItem(['name' => 'R2', 'menu_id' => $menu2->getKey()]);
         $r2->saveAsRoot();
-        $c2 = new MenuItem(['name' => 'C2', 'menu_id' => 2]);
+        $c2 = new MenuItem(['name' => 'C2', 'menu_id' => $menu2->getKey()]);
         $c2->appendToNode($r2->refresh())->save();
 
         $r1->refresh();

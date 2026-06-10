@@ -11,10 +11,11 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ### Fixed
 
-- **Soft-delete cascade marker lost sub-second precision**, so restoring an
-  outer ancestor could over-restore an inner subtree's descendants (or
-  diverge across backends). The cascade now re-stamps anchor and
-  descendants with one microsecond-precision marker.
+- **Soft-delete cascade marker format diverged from the anchor row**
+  (anchor `…12:00:00` vs descendants `…12:00:00.000000`), so restoring an
+  outer ancestor could restore part of an interleaved cascade and strand a
+  trashed node under a live parent (diverging across backends). The cascade
+  now stamps descendants with the anchor's exact seconds-precision value.
 - **Anchored `fixTree()` hung / OOM'd on `parent_id` cycles** — the
   documented cycle-recovery tool now terminates (visited-set guards in the
   subtree walk).

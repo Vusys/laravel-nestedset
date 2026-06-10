@@ -69,22 +69,21 @@ trait HasSoftDeleteTree
             return;
         }
 
-        if ($node->getAttribute($deletedAtColumn) === null) {
+        // Format the cascade marker exactly as Eloquent's runSoftDelete()
+        // stamped the anchor row — `fromDateTime()` at the model's date
+        // format (default 'Y-m-d H:i:s', no sub-second). Using that same
+        // seconds-precision string for the descendants makes the anchor
+        // and its cascade byte-identical on a text column (SQLite) and
+        // instant-identical on a real timestamp column, so the restore
+        // match behaves the same on every backend. (A microsecond marker
+        // does NOT help: the default deleted_at column is second-precision,
+        // where one side rounds and the other truncates — see the docs
+        // note on same-second cascades.)
+        $deletedAt = self::stringifyTimestamp($node->getAttribute($deletedAtColumn));
+
+        if ($deletedAt === null) {
             return;
         }
-
-        // Eloquent's runSoftDelete() already stamped the anchor row, but
-        // fromDateTime() truncated it to the model's date format (default
-        // 'Y-m-d H:i:s', no microseconds) and reading it back through the
-        // datetime cast strips any sub-second part. Build one
-        // microsecond-precision marker and re-stamp BOTH the anchor and
-        // the cascade with it, so (a) the anchor row and its descendants
-        // always carry an identical string — the restore match depends on
-        // it — and (b) two cascades in the same wall-clock second stay
-        // distinct on a sub-second-capable column. The single shared
-        // string makes behaviour identical across backends: the DB
-        // truncates each side of the later restore comparison the same way.
-        $deletedAt = self::cascadeMarker($node);
 
         $bounds = $node->getBounds();
         $scope = NestedSetScopeResolver::valuesFor($node);
@@ -104,8 +103,6 @@ trait HasSoftDeleteTree
         self::descendantQuery($node, $bounds->lft, $bounds->rgt)
             ->whereNull($deletedAtColumn)
             ->update([$deletedAtColumn => $deletedAt]);
-
-        self::restampAnchor($node, $deletedAtColumn, $deletedAt);
 
         EventDispatcher::dispatch(new SubtreeSoftDeleted(
             modelClass: $node::class,
@@ -261,61 +258,27 @@ trait HasSoftDeleteTree
     }
 
     /**
-     * Builds the microsecond-precision cascade marker for a soft-delete.
+     * Stringifies a stored soft-delete timestamp for both writing the
+     * cascade marker onto descendants and matching it back on restore.
      *
-     * Eloquent's runSoftDelete() stamps the anchor with a freshTimestamp()
-     * truncated to the model's date format, so by the time this cascade
-     * runs the in-memory `deleted_at` has already lost its sub-second
-     * component. Re-derive a full-precision marker from a fresh timestamp
-     * (the same clock runSoftDelete used, including any test-now override)
-     * and re-stamp the anchor row with it via {@see restampAnchor()} so the
-     * anchor and every cascade descendant carry an identical string.
-     */
-    private static function cascadeMarker(Model&HasNestedSet $node): string
-    {
-        return $node->freshTimestamp()->format('Y-m-d H:i:s.u');
-    }
-
-    /**
-     * Overwrites the anchor's own `deleted_at` with the full-precision
-     * cascade marker (runSoftDelete wrote the date-format-truncated form)
-     * and syncs the in-memory attribute so an immediate restore on the
-     * same instance reads the matching value.
-     */
-    private static function restampAnchor(Model&HasNestedSet $node, string $deletedAtColumn, string $marker): void
-    {
-        $key = $node->getKey();
-        if ($key === null) {
-            return;
-        }
-
-        $node->newQuery()
-            ->getQuery()
-            ->from($node->getTable())
-            ->where($node->getKeyName(), '=', $key)
-            ->update([$deletedAtColumn => $marker]);
-
-        $node->setRawAttributes(
-            array_merge($node->getAttributes(), [$deletedAtColumn => $marker]),
-            sync: true,
-        );
-    }
-
-    /**
-     * Stringifies a stored soft-delete timestamp when matching it back on
-     * restore. The cascade re-stamps the anchor and descendants with one
-     * microsecond-precision marker (see {@see cascadeMarker()}), so reading
-     * it back with `Y-m-d H:i:s.u` reproduces the exact stored string on a
-     * sub-second column (SQLite text, `DATETIME(6)`, PostgreSQL `TIMESTAMP`).
+     * Uses **seconds** precision (`Y-m-d H:i:s`) — the same shape Eloquent's
+     * `fromDateTime()` writes to the anchor row at the default model date
+     * format. That keeps the anchor and its descendants carrying an
+     * identical value on every backend: byte-identical on a text column
+     * (SQLite) and the same instant on a real timestamp column.
      *
-     * On a `DATETIME(0)` column the DB truncates to seconds on both write
-     * and read, so the WHERE still matches — same-second cascades can
-     * collide there, but that's a schema limitation, not a package one.
+     * A finer (microsecond) marker is deliberately avoided: the default
+     * `deleted_at` column is second-precision, where a sub-second write
+     * rounds on the column while the in-memory cast truncates — so the two
+     * sides disagree across backends. Independent or nested cascades that
+     * land in the same wall-clock second therefore share a marker; the
+     * cascade is bounds-scoped, so disjoint subtrees are always isolated
+     * regardless. See `docs/tree-operations/soft-deletes.md`.
      */
     private static function stringifyTimestamp(mixed $value): ?string
     {
         if ($value instanceof Carbon) {
-            return $value->format('Y-m-d H:i:s.u');
+            return $value->format('Y-m-d H:i:s');
         }
 
         return is_string($value) ? $value : null;
