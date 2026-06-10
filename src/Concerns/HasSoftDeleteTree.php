@@ -69,11 +69,22 @@ trait HasSoftDeleteTree
             return;
         }
 
-        $deletedAt = self::stringifyTimestamp($node->getAttribute($deletedAtColumn));
-
-        if ($deletedAt === null) {
+        if ($node->getAttribute($deletedAtColumn) === null) {
             return;
         }
+
+        // Eloquent's runSoftDelete() already stamped the anchor row, but
+        // fromDateTime() truncated it to the model's date format (default
+        // 'Y-m-d H:i:s', no microseconds) and reading it back through the
+        // datetime cast strips any sub-second part. Build one
+        // microsecond-precision marker and re-stamp BOTH the anchor and
+        // the cascade with it, so (a) the anchor row and its descendants
+        // always carry an identical string — the restore match depends on
+        // it — and (b) two cascades in the same wall-clock second stay
+        // distinct on a sub-second-capable column. The single shared
+        // string makes behaviour identical across backends: the DB
+        // truncates each side of the later restore comparison the same way.
+        $deletedAt = self::cascadeMarker($node);
 
         $bounds = $node->getBounds();
         $scope = NestedSetScopeResolver::valuesFor($node);
@@ -93,6 +104,8 @@ trait HasSoftDeleteTree
         self::descendantQuery($node, $bounds->lft, $bounds->rgt)
             ->whereNull($deletedAtColumn)
             ->update([$deletedAtColumn => $deletedAt]);
+
+        self::restampAnchor($node, $deletedAtColumn, $deletedAt);
 
         EventDispatcher::dispatch(new SubtreeSoftDeleted(
             modelClass: $node::class,
@@ -248,22 +261,56 @@ trait HasSoftDeleteTree
     }
 
     /**
-     * Stringifies the soft-delete timestamp for both writing the cascade
-     * marker onto descendants and matching it back on restore.
+     * Builds the microsecond-precision cascade marker for a soft-delete.
      *
-     * Uses microsecond precision (`Y-m-d H:i:s.u`) when the value is a
-     * Carbon — preserves whatever sub-second resolution the model had
-     * in memory, so two cascades that happen in the same second still
-     * produce distinct markers when the deleted_at column supports
-     * microseconds (e.g. `DATETIME(6)` on MySQL / MariaDB, default
-     * `TIMESTAMP` on PostgreSQL, any string column on SQLite).
+     * Eloquent's runSoftDelete() stamps the anchor with a freshTimestamp()
+     * truncated to the model's date format, so by the time this cascade
+     * runs the in-memory `deleted_at` has already lost its sub-second
+     * component. Re-derive a full-precision marker from a fresh timestamp
+     * (the same clock runSoftDelete used, including any test-now override)
+     * and re-stamp the anchor row with it via {@see restampAnchor()} so the
+     * anchor and every cascade descendant carry an identical string.
+     */
+    private static function cascadeMarker(Model&HasNestedSet $node): string
+    {
+        return $node->freshTimestamp()->format('Y-m-d H:i:s.u');
+    }
+
+    /**
+     * Overwrites the anchor's own `deleted_at` with the full-precision
+     * cascade marker (runSoftDelete wrote the date-format-truncated form)
+     * and syncs the in-memory attribute so an immediate restore on the
+     * same instance reads the matching value.
+     */
+    private static function restampAnchor(Model&HasNestedSet $node, string $deletedAtColumn, string $marker): void
+    {
+        $key = $node->getKey();
+        if ($key === null) {
+            return;
+        }
+
+        $node->newQuery()
+            ->getQuery()
+            ->from($node->getTable())
+            ->where($node->getKeyName(), '=', $key)
+            ->update([$deletedAtColumn => $marker]);
+
+        $node->setRawAttributes(
+            array_merge($node->getAttributes(), [$deletedAtColumn => $marker]),
+            sync: true,
+        );
+    }
+
+    /**
+     * Stringifies a stored soft-delete timestamp when matching it back on
+     * restore. The cascade re-stamps the anchor and descendants with one
+     * microsecond-precision marker (see {@see cascadeMarker()}), so reading
+     * it back with `Y-m-d H:i:s.u` reproduces the exact stored string on a
+     * sub-second column (SQLite text, `DATETIME(6)`, PostgreSQL `TIMESTAMP`).
      *
-     * On a `DATETIME(0)` column the DB truncates to seconds, so
-     * same-second cascades can still collide — that's a schema
-     * limitation, not a package one. The microsecond round-trip works
-     * because both the SET clause and the matching WHERE use the
-     * same precision; the DB does the truncation consistently for
-     * each side of the comparison.
+     * On a `DATETIME(0)` column the DB truncates to seconds on both write
+     * and read, so the WHERE still matches — same-second cascades can
+     * collide there, but that's a schema limitation, not a package one.
      */
     private static function stringifyTimestamp(mixed $value): ?string
     {

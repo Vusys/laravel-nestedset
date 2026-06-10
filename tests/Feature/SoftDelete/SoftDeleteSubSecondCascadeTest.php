@@ -83,4 +83,60 @@ final class SoftDeleteSubSecondCascadeTest extends TestCase
             'B2 must stay trashed — its cascade marker differs from A1 by microseconds within the same second',
         );
     }
+
+    #[Test]
+    public function nested_same_second_deletes_restore_only_their_own_cascade(): void
+    {
+        // A single chain: A → B → C. Soft-delete the inner subtree B
+        // first, then the outer ancestor A, both in the SAME second.
+        // Restoring A must bring back ONLY A — B and C belong to B's
+        // earlier (distinct-microsecond) cascade and must stay trashed.
+        //
+        // Pre-fix the anchor's own deleted_at was second-truncated by
+        // fromDateTime() while cascade descendants carried a `.000000`
+        // suffix, so A's restore marker ('…12:00:00') matched B's anchor
+        // row ('…12:00:00') and over-restored B while leaving C trashed —
+        // a trashed node beneath a live parent on SQLite.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'A', 'lft' => 1, 'rgt' => 8, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'B', 'lft' => 2, 'rgt' => 7, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'C', 'lft' => 3, 'rgt' => 6, 'depth' => 2, 'parent_id' => 2],
+            ['id' => 4, 'name' => 'D', 'lft' => 4, 'rgt' => 5, 'depth' => 3, 'parent_id' => 3],
+        ]);
+        $this->syncSequence('categories');
+
+        $second = '2025-04-30 12:00:00';
+
+        Date::setTestNow(Date::parse($second.'.100000'));
+        Category::query()->findOrFail(2)->delete();   // delete B (cascades C, D)
+
+        Date::setTestNow(Date::parse($second.'.900000'));
+        Category::query()->findOrFail(1)->delete();   // delete A (B/C/D already trashed)
+
+        Date::setTestNow();
+
+        // Restore A: only A comes back; B/C/D keep B's earlier marker.
+        Category::withTrashed()->findOrFail(1)->restore();
+
+        $this->assertNull(Category::query()->findOrFail(1)->deleted_at, 'A restored');
+        $this->assertNotNull(
+            Category::withTrashed()->findOrFail(2)->deleted_at,
+            'B must stay trashed — it belongs to B\'s own earlier cascade, not A\'s',
+        );
+        $this->assertNotNull(
+            Category::withTrashed()->findOrFail(3)->deleted_at,
+            'C must stay trashed alongside B',
+        );
+        $this->assertNotNull(
+            Category::withTrashed()->findOrFail(4)->deleted_at,
+            'D must stay trashed alongside B',
+        );
+
+        // Restoring B now brings back its whole cascade.
+        Category::withTrashed()->findOrFail(2)->restore();
+
+        $this->assertNull(Category::query()->findOrFail(2)->deleted_at, 'B restored');
+        $this->assertNull(Category::query()->findOrFail(3)->deleted_at, 'C restored with B');
+        $this->assertNull(Category::query()->findOrFail(4)->deleted_at, 'D restored with B');
+    }
 }
