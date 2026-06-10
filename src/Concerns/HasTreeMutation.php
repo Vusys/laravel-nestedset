@@ -1077,6 +1077,14 @@ trait HasTreeMutation
         $lft = (int) $rawLft;
         $rgt = (int) $rawRgt;
 
+        // An unplaced row (lft = rgt = 0) never reserved a slot, so there
+        // is no gap to close. closeGap(0, 1) would instead shift every
+        // placed row in the scope down by one — driving root bounds toward
+        // zero and eventually negative on repeats.
+        if ($lft < 1 || $rgt <= $lft) {
+            return;
+        }
+
         $this->newTreeMutator()->closeGap($lft, $rgt - $lft + 1);
     }
 
