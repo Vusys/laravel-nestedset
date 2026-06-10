@@ -43,7 +43,9 @@ Dashboard {menu_id=2}
   Profile {menu_id=2}
 ```
 
-The `lft` / `rgt` badges on each row show that both trees number their slots from 1 — that's the whole point of the scope: every tree gets its own slot space within the shared table. A `whereDescendantOf($home)` query is bounded by `home.lft <= lft AND home.rgt >= rgt AND menu_id = 1`, so it can never pick up a Menu 2 row even though `Home.lft = 1 = Dashboard.lft`.
+The `lft` / `rgt` badges on each row show that both trees number their slots from 1 — that's the whole point of the scope: every tree gets its own slot space within the shared table.
+
+Because both trees restart at 1, their bounds **overlap** (`Home.lft = 1 = Dashboard.lft`). `whereDescendantOf($home)` adds only the bounds predicates (`home.lft < lft AND rgt < home.rgt`) — it does **not** add the scope column on its own. Add the scope predicate yourself (`whereBelongsTo($menu)` or `where('menu_id', 1)`) so the query stays inside one tree; every read below does. (The model-instance predicates `isDescendantOf()` / `isAncestorOf()` *do* compare scope, so those are safe without the extra clause.)
 
 ## Reading
 
