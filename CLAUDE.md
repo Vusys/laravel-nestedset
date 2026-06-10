@@ -37,14 +37,14 @@ vendor/bin/phpunit tests/Feature/InsertionTest.php
 vendor/bin/phpunit testsuite Performance      # benchmarks (opt-in)
 ```
 
-Backend matrix — set `DB_CONNECTION` to one of `sqlite` (default), `mysql`, `mariadb`, `pgsql`. CI runs every PHP × Laravel × DB cell (24 total).
+Backend matrix — set `DB_CONNECTION` to one of `sqlite` (default), `mysql`, `mariadb`, `pgsql`. CI runs every PHP × Laravel × DB cell (PHP 8.3/8.4/8.5 × Laravel 11/12/13 × 4 backends = 36 total).
 
 Fuzzer knobs (`composer fuzz`): `FUZZER_SEEDS`, `FUZZER_STEPS`, `FUZZER_RUNS`, `FUZZER_SEED_COUNT`. Default seeds are pinned to catch known regressions — set `FUZZER_SEEDS=random` for exploration. See `tests/Support/FuzzerConfig.php`.
 
 ## Architecture
 
 ### The hot path: `NodeTrait`
-`src/NodeTrait.php` is the user-facing API entry point. It's a composition of eight concerns, each owning one slice of behaviour:
+`src/NodeTrait.php` is the user-facing API entry point. It's a composition of eleven concerns, each owning one slice of behaviour:
 
 | Concern | Responsibility |
 |---|---|
@@ -56,7 +56,9 @@ Fuzzer knobs (`composer fuzz`): `FUZZER_SEEDS`, `FUZZER_STEPS`, `FUZZER_RUNS`, `
 | `HasTreeWalk` | `walk()` / `dfs()` / `dfsPostOrder()` / `bfs()` / `flattenedSubtree()` — in-memory visitor + generators over `relationLoaded('descendants')` or an explicit subtree. Throws `UnloadedSubtreeException` when nothing is loaded; never queries. |
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` |
 | `HasNestedSetAggregates` | precalculated aggregate columns (SUM/COUNT/AVG/MIN/MAX, filtered, listener-based) |
-| `HasTreeExport` | `toAsciiTree` / `toMermaid` / `toDot` / `toJsonTree` serialisers, plus `*Forest` / `*Scope` static variants |
+| `HasTreeExport` | `toAsciiTree` / `toMermaid` / `toDot` / `toJsonTree` serialisers, plus `*Forest` / `*Scope` static variants, and `fromJsonTree` import |
+| `HasSubtreeClone` | `cloneSubtreeTo` / `cloneSubtreeAsRoot` — deep-copy a subtree (refresh + delegate to `bulkInsertTree`) |
+| `HasMaterialisedPath` | maintained materialised-path columns (slug/id paths) alongside lft/rgt |
 
 Models **must** `implements HasNestedSet` (the contract in `src/Contracts/`). The trait provides default implementations of every interface method.
 
@@ -80,6 +82,12 @@ Maintenance uses two strategies (`Strategy/DeltaMaintenance` vs `Strategy/Recomp
 
 ### Scoping (multi-tree)
 `#[NestedSetScope('menu_id')]` or `getScopeAttributes()` declares the partition column(s). `NestedSetScopeResolver` derives the scope; `HasTreeMutation` rejects cross-scope writes with `ScopeViolationException`. Scoped repair methods (`fixTree`, `fixAggregates`, `aggregateErrors`) **require an anchor node** so the repair stays inside one tree.
+
+### Tree diff / JSON import (`src/Diff/`, `src/Import/`)
+`TreeDiff::between($a, $b)` diffs two tree snapshots into add/remove/move/modify changes; `->apply($modelClass)` replays them (add → move → remove → modify, one transaction, deferred aggregate pass). `JsonTreeImporter` (behind `Model::fromJsonTree()`) inserts the `toJsonTree()` shape via `bulkInsertTree`. See `docs/querying/tree-diff.md` and `docs/querying/exporters.md`.
+
+### Materialised paths (`src/MaterialisedPath/`)
+`HasMaterialisedPath` maintains optional slug/id path columns alongside lft/rgt, rebuilt on the same mutations. See `docs/tree-operations/materialised-paths.md`.
 
 ### Service provider
 `NestedSetServiceProvider` registers four Blueprint macros: `nestedSet(scope, cover)`, `dropNestedSet`, `nestedSetAggregate(column, type)`, `dropNestedSetAggregate`. Index column order is `scope, lft, rgt, parent_id, ...cover` — scope first so each tree gets its own index slice.

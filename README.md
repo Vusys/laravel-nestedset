@@ -38,7 +38,12 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'avg_cost',        avg:   'cost')]
 #[NestedSetAggregate(column: 'biggest_item',    max:   'cost')]
 #[NestedSetAggregate(column: 'recurring_total', sum:   'cost', filter: ['recurring' => true])]
-class BudgetItem extends Model implements MaintainsTreeAggregates { use NodeTrait; }
+class BudgetItem extends Model implements MaintainsTreeAggregates
+{
+    use NodeTrait;
+
+    protected $fillable = ['name', 'cost', 'recurring'];   // so the mass-assignment below runs
+}
 
 // Render the forest with each node's own cost + rolled-up subtree total:
 $render = fn () => BudgetItem::toAsciiTreeForest(new AsciiOptions(
