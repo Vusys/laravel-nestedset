@@ -243,6 +243,15 @@ final readonly class TreeRepairBuilder
                 continue;
             }
 
+            // Skip a node already entered on this walk. The children map is
+            // built from parent_id, which can contain a cycle (A⇄B) even
+            // after collectSubtree's visited guard de-dupes membership — the
+            // back-edge survives as a child entry and would otherwise spin
+            // here forever. Dropping the re-entry yields a valid nesting.
+            if (isset($positions[$task['id']])) {
+                continue;
+            }
+
             $positions[$task['id']] = ['lft' => $counter++, 'rgt' => 0, 'depth' => $task['depth']];
 
             // Queue exit before children so it pops after every descendant.
@@ -426,13 +435,28 @@ final readonly class TreeRepairBuilder
             }
         }
 
-        $result = [$rootId];
+        $result = [];
         $queue = [$rootId];
+        /** @var array<int|string, true> $visited */
+        $visited = [];
 
         while ($queue !== []) {
             $id = array_pop($queue);
-            foreach ($childrenByParent[$id] ?? [] as $childId) {
-                $result[] = $childId;
+            // A parent_id cycle (e.g. A⇄B) would otherwise re-enqueue the
+            // same ids forever and OOM. fixTree is the documented recovery
+            // for cycles and scoped models can only call it anchored, so it
+            // must survive exactly this corruption. The visited guard turns
+            // the walk into a spanning tree — back-edges are dropped.
+            if (isset($visited[$id])) {
+                continue;
+            }
+            $visited[$id] = true;
+            $result[] = $id;
+
+            // Push reversed so the LIFO pops children in their natural
+            // (id) order — keeps sibling ordering identical to the prior
+            // implementation, which the rebuilt lft/rgt depend on.
+            foreach (array_reverse($childrenByParent[$id] ?? []) as $childId) {
                 $queue[] = $childId;
             }
         }

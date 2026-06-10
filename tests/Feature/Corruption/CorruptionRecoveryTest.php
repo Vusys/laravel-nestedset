@@ -268,6 +268,40 @@ final class CorruptionRecoveryTest extends TestCase
         );
     }
 
+    #[Test]
+    public function anchored_fix_tree_terminates_on_a_parent_id_cycle(): void
+    {
+        // A 2-cycle: A(1) ⇄ B(2). Anchored fixTree() is the ONLY repair
+        // entry point scoped models have, and walking a cycle without a
+        // visited set re-enqueues forever → OOM. The rebuild must
+        // terminate and leave a valid (non-overlapping) bound permutation
+        // for the reachable rows, breaking the back-edge.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'A', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => 2],
+            ['id' => 2, 'name' => 'B', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
+        ]);
+        $this->syncSequence('categories');
+
+        $anchor = Category::query()->findOrFail(1);
+        $result = Category::fixTree($anchor);
+
+        $bounds = $this->snapshotBounds();
+
+        // A contains B — the BFS spanning tree keeps the first edge it
+        // reaches (A → B) and drops the back-edge (B → A).
+        $this->assertSame(1, $bounds[1]['lft']);
+        $this->assertSame(4, $bounds[1]['rgt']);
+        $this->assertSame(0, $bounds[1]['depth']);
+        $this->assertSame(2, $bounds[2]['lft']);
+        $this->assertSame(3, $bounds[2]['rgt']);
+        $this->assertSame(1, $bounds[2]['depth']);
+
+        // Bounds form a clean 1..2N permutation now, so the structural
+        // checks read clean even though parent_id is still cyclic.
+        $this->assertSame(0, Category::countErrors()['invalid_bounds']);
+        $this->assertGreaterThanOrEqual(0, $result->nodesUpdated);
+    }
+
     // ----------------------------------------------------------------
     // §3.5  aggregate drift — repaired by fixAggregates
     // ----------------------------------------------------------------
