@@ -126,6 +126,11 @@ composer test          # unit + feature
 
 All four must pass on CI before merge.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the release history and the pre-1.0
+backwards-compatibility breaks called out per version.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
