@@ -62,6 +62,9 @@ The `lft` / `rgt` pill badges on each row show the dense slot ranges the rebuild
 | `invalid_bounds` (`lft >= rgt`) | ✅ | ✅ | Raw `UPDATE` on `lft`/`rgt`; crashed transaction. |
 | `duplicate_lft` / `duplicate_rgt` | ✅ | ✅ | Concurrent gap-shifts without locking; partial migration. |
 | `orphans` (`parent_id` → missing row) | ✅ | ❌ — detected but not auto-repaired | Hard `DELETE` of a parent without cascading. |
+| `parent_bounds_mismatch` (child bounds not inside parent's) | ✅ | ✅ | Raw `UPDATE` on `parent_id` without rebuilding bounds. |
+| `depth_mismatch` (`depth` ≠ `parent.depth + 1`) | ✅ | ✅ | Raw edit that didn't also fix `depth`. |
+| `bounds_out_of_range` (below-1 bound / cross-column collision) | ✅ | ✅ | Raw `lft`/`rgt` literal outside the reserved range. |
 | `parent_id` cycles | ❌ — not surfaced by `countErrors()` | ❌ — cycle members are silently skipped | Raw `UPDATE` on `parent_id` that bypassed Eloquent guards. |
 | Aggregate drift (stored `articles_total` ≠ computed) | ✅ via `aggregateErrors()` | ✅ via `fixAggregates()` | Raw `UPDATE` on the source column. |
 

@@ -45,7 +45,7 @@ final readonly class TreeRepairBuilder
     /**
      * Returns counts of known tree invariant violations.
      *
-     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int}
+     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int}
      */
     public function countErrors(): array
     {
@@ -69,12 +69,152 @@ final readonly class TreeRepairBuilder
         // (within the same scope).
         $orphans = (int) $this->orphanQuery()->count();
 
+        // The bounds disagree with parent_id (the source of truth): a
+        // child whose bounds are not strictly inside its (existing)
+        // parent's bounds. This is the exact raw-edit corruption that
+        // leaves lft/rgt internally consistent but contradicting the
+        // parent walk — invisible to the bounds-only checks above.
+        $parentBoundsMismatch = (int) $this->parentBoundsMismatchQuery()->count();
+
+        // depth drift: a child whose stored depth isn't parent.depth + 1,
+        // or a root whose depth isn't 0. Orphans are excluded (their
+        // parent is missing — counted above).
+        $depthMismatch = (int) $this->depthMismatchQuery()->count();
+
+        // Broken 1..2N permutation: a placed row whose lft/rgt falls
+        // outside the valid range for the scope's placed-row count. Catches
+        // cross-column collisions and partially-placed rows (e.g. X(0,1))
+        // that slip past `lft >= rgt` and the per-column duplicate checks.
+        $boundsOutOfRange = $this->countBoundsOutOfRange();
+
         return [
             'invalid_bounds' => $invalidBounds,
             'duplicate_lft' => $duplicateLft,
             'duplicate_rgt' => $duplicateRgt,
             'orphans' => $orphans,
+            'parent_bounds_mismatch' => $parentBoundsMismatch,
+            'depth_mismatch' => $depthMismatch,
+            'bounds_out_of_range' => $boundsOutOfRange,
         ];
+    }
+
+    /**
+     * Child rows whose bounds are not strictly inside their (existing)
+     * parent's bounds. Inner join on parent_id + scope, so orphans (no
+     * matching parent) are excluded — they're reported separately.
+     */
+    private function parentBoundsMismatchQuery(): Builder
+    {
+        $scopeColumns = array_keys($this->scope);
+
+        $query = $this->connection->table("{$this->table} as child")
+            ->join("{$this->table} as parent", function ($join) use ($scopeColumns): void {
+                $join->on("parent.{$this->idCol}", '=', "child.{$this->parentId}");
+                foreach ($scopeColumns as $column) {
+                    $join->on("parent.{$column}", '=', "child.{$column}");
+                }
+            })
+            ->whereNotNull("child.{$this->parentId}")
+            ->where(function ($q): void {
+                $q->whereColumn("child.{$this->lft}", '<=', "parent.{$this->lft}")
+                    ->orWhereColumn("child.{$this->rgt}", '>=', "parent.{$this->rgt}");
+            });
+
+        foreach ($this->scope as $column => $value) {
+            $query->where("child.{$column}", '=', $value);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Rows whose stored depth disagrees with the structure: a root
+     * (parent_id IS NULL) not at depth 0, or a child not at
+     * parent.depth + 1. Orphans fall through the left join (parent id is
+     * null but parent_id is not) and are excluded.
+     */
+    private function depthMismatchQuery(): Builder
+    {
+        $scopeColumns = array_keys($this->scope);
+
+        $query = $this->connection->table("{$this->table} as child")
+            ->leftJoin("{$this->table} as parent", function ($join) use ($scopeColumns): void {
+                $join->on("parent.{$this->idCol}", '=', "child.{$this->parentId}");
+                foreach ($scopeColumns as $column) {
+                    $join->on("parent.{$column}", '=', "child.{$column}");
+                }
+            })
+            ->where(function ($q): void {
+                $q->where(function ($r): void {
+                    $r->whereNull("child.{$this->parentId}")
+                        ->where("child.{$this->depth}", '!=', 0);
+                })->orWhere(function ($r): void {
+                    $r->whereNotNull("parent.{$this->idCol}")
+                        ->whereRaw("child.{$this->depth} <> parent.{$this->depth} + 1");
+                });
+            });
+
+        foreach ($this->scope as $column => $value) {
+            $query->where("child.{$column}", '=', $value);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Counts rows whose bounds break the `1..2N` permutation in a
+     * gap-tolerant way:
+     *
+     *  - a placed row with a bound below 1 (e.g. a stray `0`), and
+     *  - cross-column collisions: a value that is simultaneously some
+     *    row's lft and another row's rgt.
+     *
+     * In a valid nested set every lft/rgt value is distinct and >= 1, so
+     * the lft and rgt value sets are disjoint — even for a sparse (gapped
+     * but otherwise valid) tree, which a strict `max(rgt) == 2N` density
+     * check would wrongly flag. Fully-unplaced rows (lft = rgt = 0) are a
+     * legitimate transient state and are excluded.
+     */
+    private function countBoundsOutOfRange(): int
+    {
+        $belowRange = (int) $this->scoped()
+            ->where(function ($q): void {
+                // Exclude fully-unplaced rows (lft = rgt = 0).
+                $q->where($this->lft, '!=', 0)->orWhere($this->rgt, '!=', 0);
+            })
+            ->where(function ($q): void {
+                $q->where($this->lft, '<', 1)->orWhere($this->rgt, '<', 1);
+            })
+            ->count();
+
+        return $belowRange + (int) $this->crossColumnCollisionQuery()->count();
+    }
+
+    /**
+     * Pairs of distinct rows in the same scope where one row's lft equals
+     * another's rgt — impossible in a valid nested set, where the two
+     * value sets are disjoint. Restricted to lft >= 1 so unplaced rows
+     * (lft = 0) don't self-collide.
+     */
+    private function crossColumnCollisionQuery(): Builder
+    {
+        $scopeColumns = array_keys($this->scope);
+
+        $query = $this->connection->table("{$this->table} as a")
+            ->join("{$this->table} as b", function ($join) use ($scopeColumns): void {
+                $join->on("a.{$this->lft}", '=', "b.{$this->rgt}");
+                $join->on("a.{$this->idCol}", '!=', "b.{$this->idCol}");
+                foreach ($scopeColumns as $column) {
+                    $join->on("a.{$column}", '=', "b.{$column}");
+                }
+            })
+            ->where("a.{$this->lft}", '>=', 1);
+
+        foreach ($this->scope as $column => $value) {
+            $query->where("a.{$column}", '=', $value);
+        }
+
+        return $query;
     }
 
     public function getTotalErrors(): int

@@ -56,7 +56,7 @@ trait HasTreeRepair
      * Pass an $anchor for scoped models (required when the class declares
      * #[NestedSetScope] or getScopeAttributes()).
      *
-     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int}
+     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int}
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */

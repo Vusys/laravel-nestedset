@@ -23,7 +23,7 @@ use Vusys\NestedSet\Events\Aggregates\AggregateDriftDetected;
 final readonly class TreeIntegrityChecked
 {
     /**
-     * @param  array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int}  $errors
+     * @param  array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int}  $errors
      */
     public function __construct(
         public string $modelClass,
