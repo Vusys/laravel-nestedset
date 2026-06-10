@@ -47,11 +47,10 @@ return [
     |                        on all supported backends. This is the right
     |                        setting for nearly every application.
     |
-    |   'always' — locks the ancestor chain before every aggregate
-    |              maintenance UPDATE, including deltas. Choose this if
-    |              you run with non-default isolation levels (e.g.
-    |              REPEATABLE READ on PostgreSQL) or have seen drift
-    |              under concurrent load.
+    |   'always' — forward-compatible alias; today behaves identically
+    |              to 'auto' (the recompute path locks, the pure-delta
+    |              path does not). Separate per-delta locking is not yet
+    |              implemented.
     |
     |   'never'  — issues no explicit locks. Marginally faster on the
     |              recompute path; relies entirely on the engine's

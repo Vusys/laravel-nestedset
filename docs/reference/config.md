@@ -75,10 +75,12 @@ application is `'auto'`.
   (SUM, COUNT, AVG) rely on the engine's single-statement row locks,
   which are sufficient under default isolation on all supported
   backends.
-- **`'always'`** — lock the ancestor chain before every aggregate
-  maintenance UPDATE, including deltas. Choose this if you run with
-  non-default isolation levels (e.g. PostgreSQL `REPEATABLE READ`) or
-  have seen drift under concurrent load.
+- **`'always'`** — accepted as a forward-compatible alias for the
+  recompute-path locking. **Today it behaves identically to `'auto'`**:
+  the recompute path (MIN, MAX, raw-filter, `fixAggregates`) locks, and
+  the pure-delta path (SUM/COUNT/AVG) does not. Separate per-delta
+  locking is not yet implemented, so choosing `'always'` does not (yet)
+  add locks beyond `'auto'`.
 - **`'never'`** — issue no explicit locks. Marginally faster on the
   recompute path; can produce drift on PostgreSQL `READ COMMITTED`
   with concurrent recomputes against overlapping subtrees.
