@@ -132,6 +132,6 @@ Concrete fixture types in test helpers are intentional — they exist so PHPStan
 
 ## Reference docs
 
-- `README.md` — extensive usage docs; treat as the spec for the public API.
+- `docs/` — the public-API spec; treat these as authoritative for behaviour and signatures. `README.md` is a landing page/overview, not the full reference.
 - `docs/maintenance/corruption.md` — corruption taxonomy + recovery recipes.
 - `config/nestedset.php` — column names, `auto_transaction`, `aggregate_locking` (`auto`/`always`/`never`), queue routing for `queueFixAggregates`.

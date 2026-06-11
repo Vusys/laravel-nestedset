@@ -1,0 +1,23 @@
+# Keep dist archives (composer install --prefer-dist) lean: ship only the
+# library, its config, and the licence/readme — not tests, docs, CI, or
+# tooling. Each entry is excluded from `git archive` output.
+/.github               export-ignore
+/build                 export-ignore
+/docs                  export-ignore
+/docs-site             export-ignore
+/site                  export-ignore
+/tests                 export-ignore
+/tooling               export-ignore
+/.gitattributes        export-ignore
+/.gitignore            export-ignore
+/CLAUDE.md             export-ignore
+/CONTRIBUTING.md       export-ignore
+/REVIEW.MD             export-ignore
+/infection.json5       export-ignore
+/phpstan.neon          export-ignore
+/phpunit.xml           export-ignore
+/rector.php            export-ignore
+/.coderabbit.yaml      export-ignore
+
+# Normalise line endings so the archive is byte-stable across platforms.
+* text=auto eol=lf
