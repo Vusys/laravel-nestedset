@@ -163,6 +163,17 @@ final class NestedSetScopeResolver
         }
 
         if (is_numeric($a) && is_numeric($b)) {
+            // Integer-like values (snowflake IDs, BIGINT keys) must compare
+            // as canonical strings. Casting to float collapses distinct
+            // 64-bit values above 2^53 to the same double, which would let
+            // two different trees pass the same-scope check and corrupt both
+            // on a cross-tree append. Genuine floats/decimals fall through.
+            $aInt = self::canonicalIntegerString($a);
+            $bInt = self::canonicalIntegerString($b);
+            if ($aInt !== null && $bInt !== null) {
+                return $aInt === $bInt;
+            }
+
             return (float) $a === (float) $b;
         }
 
@@ -174,6 +185,32 @@ final class NestedSetScopeResolver
         // Fall back to loose equality. Catches Stringable vs string
         // and the long tail of value-objects that implement __toString.
         return $a == $b;
+    }
+
+    /**
+     * Returns the canonical integer string for an int or integer-valued
+     * string (leading zeros and a redundant sign stripped), or null when
+     * the value is not integer-like (genuine float, decimal string,
+     * exponential notation). Never casts through float/int, so 64-bit
+     * values beyond 2^53 stay exact.
+     */
+    private static function canonicalIntegerString(mixed $v): ?string
+    {
+        if (is_int($v)) {
+            return (string) $v;
+        }
+
+        if (is_string($v) && preg_match('/^-?\d+$/', $v) === 1) {
+            $negative = $v[0] === '-';
+            $digits = ltrim($negative ? substr($v, 1) : $v, '0');
+            if ($digits === '') {
+                return '0';
+            }
+
+            return $negative ? '-'.$digits : $digits;
+        }
+
+        return null;
     }
 
     private static function format(mixed $v): string

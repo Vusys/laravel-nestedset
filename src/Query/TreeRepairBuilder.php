@@ -319,9 +319,23 @@ final readonly class TreeRepairBuilder
             ->where($this->idCol, $rootId)
             ->first();
 
-        $startLft = $rootRow !== null ? (int) $rootRow->{$this->lft} : 1;
-        $startDepth = $rootRow !== null ? (int) $rootRow->{$this->depth} : 0;
-        $reservedRgt = $rootRow !== null ? (int) $rootRow->{$this->rgt} : 0;
+        // Missing-anchor guard: an anchored fixTree() whose anchor row is
+        // gone (hard delete, scope move) must not fall through to a
+        // startLft=1 rebuild — that writes the orphaned subtree over lft 1,
+        // colliding with the live root and *creating* corruption. Mirrors
+        // AggregateRepair::fixAggregatesChunk, which refuses the same case.
+        if ($rootRow === null) {
+            throw new \RuntimeException(sprintf(
+                'fixTree: anchor id %s not found — was the row deleted? '
+                .'Refusing to rebuild its subtree over lft 1 and corrupt the live tree. '
+                .'Run an unanchored fixTree() to rebuild from the roots.',
+                (string) $rootId,
+            ));
+        }
+
+        $startLft = (int) $rootRow->{$this->lft};
+        $startDepth = (int) $rootRow->{$this->depth};
+        $reservedRgt = (int) $rootRow->{$this->rgt};
 
         $newSize = count($inSubtree) * 2;
         $reservedSize = $reservedRgt - $startLft + 1;
@@ -330,10 +344,8 @@ final readonly class TreeRepairBuilder
         // valid startLft to rebuild from — using its lft would write
         // bounds starting at 0 that collide with the real root. A
         // placed-but-corrupt anchor (lft >= 1, bad rgt) is still a valid
-        // repair target: the rebuild writes from its real lft. An absent
-        // anchor row ($rootRow === null) falls through to the startLft=1
-        // default below.
-        if ($rootRow !== null && $startLft < 1) {
+        // repair target: the rebuild writes from its real lft.
+        if ($startLft < 1) {
             throw new UnplacedNodeException(sprintf(
                 'Cannot fixTree() anchored at an unplaced node (id=%s, lft=%d, rgt=%d). '
                 .'Place it in a tree first, or run an unanchored fixTree() to rebuild from the roots.',
@@ -345,11 +357,8 @@ final readonly class TreeRepairBuilder
 
         // Only shift surroundings when the root has a real position
         // (band >= 2). A corrupt-but-placed anchor (band < 2) skips the
-        // shift and just rewrites its own subtree from startLft. An
-        // absent anchor row falls through to walkAssignPositions's
-        // startLft=1 default, where there's no meaningful "rest of the
-        // table" boundary to shift around.
-        $delta = ($rootRow !== null && $reservedSize >= 2) ? $newSize - $reservedSize : 0;
+        // shift and just rewrites its own subtree from startLft.
+        $delta = $reservedSize >= 2 ? $newSize - $reservedSize : 0;
 
         $positions = $this->walkAssignPositions([$rootId], $children, $startLft, $startDepth);
 
