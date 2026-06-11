@@ -15,6 +15,7 @@ use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
+use Vusys\NestedSet\Support\Runtime;
 
 final class NestedSetServiceProvider extends ServiceProvider
 {
@@ -119,7 +120,7 @@ final class NestedSetServiceProvider extends ServiceProvider
         // Laravel rebinds macro closure scope to Blueprint, so self:: would resolve
         // to Blueprint. Capture the resolver as a static closure to preserve config access.
         $col = static function (string $key, string $default): string {
-            $value = config("nestedset.columns.{$key}");
+            $value = Runtime::config("nestedset.columns.{$key}");
 
             return is_string($value) ? $value : $default;
         };

@@ -29,6 +29,7 @@ use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * Adds the full nested-set API to an Eloquent model.
@@ -361,28 +362,28 @@ trait NodeTrait
 
     public function getLftName(): string
     {
-        $v = config('nestedset.columns.lft');
+        $v = Runtime::config('nestedset.columns.lft');
 
         return is_string($v) ? $v : Columns::LFT;
     }
 
     public function getRgtName(): string
     {
-        $v = config('nestedset.columns.rgt');
+        $v = Runtime::config('nestedset.columns.rgt');
 
         return is_string($v) ? $v : Columns::RGT;
     }
 
     public function getParentIdName(): string
     {
-        $v = config('nestedset.columns.parent_id');
+        $v = Runtime::config('nestedset.columns.parent_id');
 
         return is_string($v) ? $v : Columns::PARENT_ID;
     }
 
     public function getDepthName(): string
     {
-        $v = config('nestedset.columns.depth');
+        $v = Runtime::config('nestedset.columns.depth');
 
         return is_string($v) ? $v : Columns::DEPTH;
     }

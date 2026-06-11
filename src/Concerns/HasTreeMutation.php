@@ -27,6 +27,7 @@ use Vusys\NestedSet\PendingOperation;
 use Vusys\NestedSet\Position;
 use Vusys\NestedSet\Query\TreeMutationBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * Mutating tree API on the model: appendToNode/prependToNode/
@@ -630,7 +631,7 @@ trait HasTreeMutation
      */
     public function save(array $options = []): bool
     {
-        if (! config('nestedset.auto_transaction', true)) {
+        if (! Runtime::config('nestedset.auto_transaction', true)) {
             return parent::save($options);
         }
 
@@ -781,7 +782,7 @@ trait HasTreeMutation
         // corrupt the tree.
         $this->pending = null;
 
-        if (! config('nestedset.auto_transaction', true)) {
+        if (! Runtime::config('nestedset.auto_transaction', true)) {
             return parent::delete();
         }
 

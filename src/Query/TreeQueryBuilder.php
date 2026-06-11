@@ -12,6 +12,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * @template TModel of Model
@@ -26,28 +27,28 @@ class TreeQueryBuilder extends Builder
 
     public function lftColumn(): string
     {
-        $v = config('nestedset.columns.lft');
+        $v = Runtime::config('nestedset.columns.lft');
 
         return is_string($v) ? $v : Columns::LFT;
     }
 
     public function rgtColumn(): string
     {
-        $v = config('nestedset.columns.rgt');
+        $v = Runtime::config('nestedset.columns.rgt');
 
         return is_string($v) ? $v : Columns::RGT;
     }
 
     public function parentIdColumn(): string
     {
-        $v = config('nestedset.columns.parent_id');
+        $v = Runtime::config('nestedset.columns.parent_id');
 
         return is_string($v) ? $v : Columns::PARENT_ID;
     }
 
     public function depthColumn(): string
     {
-        $v = config('nestedset.columns.depth');
+        $v = Runtime::config('nestedset.columns.depth');
 
         return is_string($v) ? $v : Columns::DEPTH;
     }

@@ -12,6 +12,7 @@ use Vusys\NestedSet\Attributes\NestedSetMaterialisedPath;
 use Vusys\NestedSet\Attributes\NestedSetMaterialisedPathDefaults;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\MaterialisedPathConfigurationException;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * Resolves the merged set of materialised-path declarations for a model
@@ -212,7 +213,7 @@ final class MaterialisedPathRegistry
      */
     private static function globalDefaults(): array
     {
-        $raw = config('nestedset.materialised_path.defaults', []);
+        $raw = Runtime::config('nestedset.materialised_path.defaults', []);
 
         return is_array($raw) ? self::sanitiseDefaults($raw) : [];
     }
@@ -222,7 +223,7 @@ final class MaterialisedPathRegistry
      */
     private static function classConfigDefaults(string $class): array
     {
-        $raw = config('nestedset.materialised_path.class_defaults.'.$class);
+        $raw = Runtime::config('nestedset.materialised_path.class_defaults.'.$class);
 
         if (! is_array($raw)) {
             return [];

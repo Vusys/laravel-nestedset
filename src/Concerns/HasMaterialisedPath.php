@@ -20,6 +20,7 @@ use Vusys\NestedSet\Exceptions\PathTooLong;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * Materialised-path lifecycle: keeps every declared path column coherent
@@ -565,6 +566,6 @@ trait HasMaterialisedPath
      */
     private function isPathDeterminismGuarded(): bool
     {
-        return (bool) config('app.debug', false);
+        return (bool) Runtime::config('app.debug', false);
     }
 }

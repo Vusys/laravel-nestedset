@@ -16,6 +16,7 @@ use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Aggregates\Sql\VarianceSqlFragments;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
 use Vusys\NestedSet\NodeBounds;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * Phase F: recomputes MIN / MAX for each ancestor whose stored
@@ -51,7 +52,7 @@ final class RecomputeMaintenance
      */
     public static function lockingFromConfig(): string
     {
-        $value = config('nestedset.aggregate_locking', 'auto');
+        $value = Runtime::config('nestedset.aggregate_locking', 'auto');
 
         return $value === 'never' ? 'never' : 'auto';
     }

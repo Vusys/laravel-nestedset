@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Events;
 
-use Illuminate\Contracts\Events\Dispatcher;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * Single funnel for every package-emitted event. Gates on the
@@ -37,7 +37,7 @@ final class EventDispatcher
             return;
         }
 
-        event($event);
+        Runtime::events()?->dispatch($event);
     }
 
     /**
@@ -47,7 +47,7 @@ final class EventDispatcher
      */
     public static function enabled(): bool
     {
-        $value = config('nestedset.events_enabled', true);
+        $value = Runtime::config('nestedset.events_enabled', true);
 
         return $value !== false;
     }
@@ -71,6 +71,6 @@ final class EventDispatcher
             return false;
         }
 
-        return resolve(Dispatcher::class)->hasListeners($event);
+        return Runtime::events()?->hasListeners($event) ?? false;
     }
 }

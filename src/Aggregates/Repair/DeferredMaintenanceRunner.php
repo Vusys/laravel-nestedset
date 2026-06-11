@@ -16,6 +16,7 @@ use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
+use Vusys\NestedSet\Support\Runtime;
 
 /**
  * The deferred / async corner of the repair surface:
@@ -169,13 +170,13 @@ final class DeferredMaintenanceRunner
             chunkSize: $chunkSize !== null && $chunkSize > 0 ? $chunkSize : null,
         );
 
-        $configConnection = config('nestedset.queue.connection');
+        $configConnection = Runtime::config('nestedset.queue.connection');
         $connection = $onConnection ?? (is_string($configConnection) ? $configConnection : null);
         if ($connection !== null) {
             $job->onConnection($connection);
         }
 
-        $configQueue = config('nestedset.queue.queue');
+        $configQueue = Runtime::config('nestedset.queue.queue');
         $queue = $onQueue ?? (is_string($configQueue) ? $configQueue : null);
         if ($queue !== null) {
             $job->onQueue($queue);

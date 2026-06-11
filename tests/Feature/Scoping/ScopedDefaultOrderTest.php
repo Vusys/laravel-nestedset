@@ -22,15 +22,13 @@ final class ScopedDefaultOrderTest extends TestCase
         $this->seedMenu(1, ['A1', 'A2']);
         $this->seedMenu(2, ['B1', 'B2']);
 
-        $names = MenuItem::query()->defaultOrder()->pluck('name')->all();
-
-        // Each menu's nodes form one contiguous run (root then children),
-        // not an arbitrary cross-tree interleave.
-        $menuByName = [];
-        foreach (MenuItem::query()->get(['name', 'menu_id']) as $row) {
-            $menuByName[(string) $row->name] = (int) $row->menu_id;
+        // Read the menu_id in defaultOrder() row order. Each menu's nodes
+        // must form one contiguous run, not an arbitrary cross-tree
+        // interleave.
+        $scopeSequence = [];
+        foreach (MenuItem::query()->defaultOrder()->get(['menu_id']) as $row) {
+            $scopeSequence[] = (int) $row->menu_id;
         }
-        $scopeSequence = array_map(static fn ($n): int => $menuByName[(string) $n], $names);
 
         // The scope sequence must be non-decreasing (all of menu 1, then 2).
         $sorted = $scopeSequence;
