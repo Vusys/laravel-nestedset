@@ -702,6 +702,15 @@ trait HasTreeMutation
      */
     private function restoreFromSaveSnapshot(array $snapshot): void
     {
+        // Preserve the primary key assigned during the rolled-back save: a
+        // new node's autoincrement id / generated UUID is set inside
+        // parent::save(), and both a retry (which reuses it) and code that
+        // inspects getKey() after a failed save expect it to persist. The
+        // key is irrelevant to the tree corruption this restore prevents —
+        // only `exists`, `pending`, and the structural bounds matter.
+        $keyName = $this->getKeyName();
+        $assignedKey = $this->attributes[$keyName] ?? null;
+
         $this->attributes = $snapshot['attributes'];
         $this->original = $snapshot['original'];
         $this->changes = $snapshot['changes'];
@@ -709,6 +718,10 @@ trait HasTreeMutation
         $this->wasRecentlyCreated = $snapshot['recentlyCreated'];
         $this->pending = $snapshot['pending'];
         $this->pendingMoveFromBounds = $snapshot['moveFrom'];
+
+        if ($assignedKey !== null) {
+            $this->attributes[$keyName] = $assignedKey;
+        }
     }
 
     /**
