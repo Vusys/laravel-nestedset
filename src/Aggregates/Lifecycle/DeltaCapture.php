@@ -139,13 +139,28 @@ final class DeltaCapture
                 continue;
             }
 
-            // Evaluate filter against new and old attribute sets.
-            $newPred = $definition->filter instanceof FilterPredicate
-                ? ($definition->filter->evaluateFor($node->getAttributes()) ?? true)
-                : true;
-            $oldPred = $definition->filter instanceof FilterPredicate
-                ? ($definition->filter->evaluateFor($node->getOriginal()) ?? true)
-                : true;
+            // Evaluate the filter predicate against CAST attribute values
+            // on BOTH sides. getAttributes() returns RAW (uncast) values
+            // while getOriginal() casts, so a boolean cast over a TINYINT
+            // column made the new side see `1` and the old side see
+            // `true` — disagreeing under evaluateFor's strict comparison
+            // and capturing a phantom enter/leave-filter delta (permanent
+            // drift) while the SQL side kept the row in-filter. Reading
+            // each watch column through the model's cast keeps both sides
+            // consistent with each other and with the filter value's
+            // declared type.
+            $newPred = true;
+            $oldPred = true;
+            if ($definition->filter instanceof FilterPredicate) {
+                $castNew = [];
+                $castOld = [];
+                foreach ($definition->filter->watchColumns() as $filterCol) {
+                    $castNew[$filterCol] = $node->getAttribute($filterCol);
+                    $castOld[$filterCol] = $node->getOriginal($filterCol);
+                }
+                $newPred = $definition->filter->evaluateFor($castNew) ?? true;
+                $oldPred = $definition->filter->evaluateFor($castOld) ?? true;
+            }
 
             $source = $definition->source;
 
@@ -302,8 +317,14 @@ final class DeltaCapture
                 continue;
             }
 
+            // getRawOriginal(), not getOriginal(): setRawAttributes()
+            // expects RAW (un-cast) attribute values. getOriginal()
+            // returns CAST values, which round-trip back through the
+            // cast wrong for array/json/encrypted columns (an array cast
+            // would re-encode an already-decoded array, etc.). The
+            // listener then reads a corrupted old snapshot.
             $oldSnapshot = new $modelClass;
-            $oldSnapshot->setRawAttributes($node->getOriginal(), true);
+            $oldSnapshot->setRawAttributes($node->getRawOriginal(), true);
             $oldContrib = ListenerMaintenance::resolveContribution(
                 $definition,
                 $listener->contribution($oldSnapshot),
