@@ -412,6 +412,18 @@ final class DeltaCapture
         }
 
         $modelClass = $node::class;
+        // Re-read the band from the DB rather than trusting the in-memory
+        // bounds. The delete/move/restore paths were all hardened to do
+        // this (the deleting hook re-reads structural columns; moves use
+        // freshBoundsOf); the plain source-column update was the one path
+        // left reading the possibly-stale in-memory snapshot. If another
+        // mutation shifted this row since it was loaded, the ancestor-band
+        // UPDATE (and the MIN/MAX recompute below, which reads bounds off
+        // the node) would otherwise hit the wrong rows and drift
+        // permanently. One extra SELECT, only on saves that captured
+        // aggregate work; written back onto the node so every downstream
+        // read sees current bounds.
+        self::refreshBounds($node);
         $bounds = $node->getBounds();
         $softDeletedColumn = AggregateAnchor::softDeleteColumn($node);
 
@@ -472,6 +484,37 @@ final class DeltaCapture
 
         ChangeFeedRecorder::dispatch($node, $state->changeFeedPreSnapshot);
         $state->changeFeedPreSnapshot = null;
+    }
+
+    /**
+     * Re-reads the node's lft/rgt/depth from the database and writes them
+     * back onto the in-memory instance, so the delta UPDATE and the MIN/MAX
+     * recompute both band against current bounds rather than a stale
+     * snapshot. No-op if the row can't be read (e.g. just-deleted within
+     * the same transaction).
+     */
+    private static function refreshBounds(Model&MaintainsTreeAggregates $node): void
+    {
+        $key = $node->getKey();
+        if ($key === null) {
+            return;
+        }
+
+        $columns = [$node->getLftName(), $node->getRgtName(), $node->getDepthName()];
+
+        $row = $node->getConnection()
+            ->table($node->getTable())
+            ->where($node->getKeyName(), $key)
+            ->first($columns);
+
+        if ($row === null) {
+            return;
+        }
+
+        foreach ($columns as $column) {
+            $node->setAttribute($column, $row->{$column});
+            $node->syncOriginalAttribute($column);
+        }
     }
 
     /**
