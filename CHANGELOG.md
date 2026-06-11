@@ -9,6 +9,93 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-06-11
+
+A correctness, concurrency and pre-1.0 hardening pass. Several
+backwards-compatibility breaks are called out under **Changed** /
+**Removed** — pre-1.0, these are allowed. Validated across SQLite and
+MySQL (full suite + every seeded fuzzer).
+
+### Added
+
+- `NestedSetException` marker interface, implemented by every exception
+  the package throws — `catch (NestedSetException $e)` now catches any
+  package-originated failure regardless of its SPL base class.
+- `countErrors()` detects two more invariant violations: `overlapping_bounds`
+  (sibling intervals that partially overlap without nesting) and
+  `even_bounds_width` (a structurally impossible even-width span).
+- Scoped **root seeding**: `bulkInsertTree($tree, null, $scope)` and
+  `fromJsonTree()` (which reads the scope from the root rows) can now
+  seed new trees on a `#[NestedSetScope]` model without an anchor.
+- `includeKeys` is now functional in `bulkInsertTree()` / `fromJsonTree()`
+  — rows may carry their own primary keys; a duplicate surfaces as
+  `JsonImportKeyCollisionException` (previously unreachable).
+- PostgreSQL advisory lock serialising concurrent first-root `makeRoot()`
+  calls within an empty scope (MySQL/MariaDB already serialise via
+  next-key gap locks; SQLite is single-writer).
+- Fork-based concurrency tests for moves, reorders and empty-scope
+  first-root creation.
+
+### Changed
+
+- **`moveToSiblingPosition()` is now 0-based** (was 1-based), matching
+  `moveTo()`, `TreeDiff` sibling positions and the factory.
+- **`toTree()` / `toFlatTree()` return a forest** on a partial/filtered
+  fetch: a node whose parent isn't in the collection becomes a top-level
+  node instead of being silently dropped. An explicit `$root` still
+  narrows to that subtree.
+- **Chaining two placement calls before `save()` now throws** (e.g.
+  `appendToNode($a)->insertAfterNode($b)`) instead of silently dropping
+  the first.
+- **Changing a scope column on an existing node now throws**
+  `ScopeViolationException` on save (the scoped mutation would otherwise
+  shift the wrong partition).
+- **`children()` no longer applies a scope predicate** — it keys purely
+  on `parent_id` (a globally-unique reference), which fixes eager-load /
+  `withCount` / `whereHas` on scoped models.
+- **Inspection predicates** (`isLeaf`, `isDescendantOf`, `isAncestorOf`)
+  return `false` on a never-placed node instead of throwing.
+- **`freshAggregate()` casts its result** through the model's column
+  cast, so it is type/precision-stable across drivers and directly
+  comparable to the stored attribute.
+- **Cloning a node whose materialised path would collide** now throws
+  `DuplicatePathSegmentException` (was a silent duplicate); the path
+  rebuild runs inside the clone transaction.
+- The mutation cycle-guard and the `*Scope` exporters now throw
+  `CyclicMoveException` / `ScopeViolationException` (both extend
+  `LogicException`) instead of bare `LogicException`.
+
+### Removed
+
+- **Renamed the path exceptions** to the `Exception` suffix used by every
+  other exception: `DuplicatePathSegment`, `EmptyPathSegment`,
+  `InvalidPathSegment`, `NonDeterministicPathSegment`, `PathTooLong` →
+  `*Exception`.
+
+### Fixed
+
+- **Per-model column-name overrides** (`getLftName()` etc.) are now
+  honoured across the whole read layer — `TreeQueryBuilder` delegated to
+  global config only, breaking renamed-column models.
+- **Stale in-memory aggregate state** caused silent drift: moving or
+  deleting a held instance transferred/subtracted stale totals, and the
+  restore cascade banded on stale bounds. Move, delete and restore now
+  re-read fresh values/bounds.
+- **`withDeferredAggregateMaintenance()` with a mid-tree anchor** left
+  ancestors above the anchor drifted — the closing repair now runs from
+  the tree root.
+- **Anchored `fixTree()`** rebuilt materialised paths against the
+  anchor's stale pre-repair bounds; it now re-reads them.
+- **Filter-predicate cast asymmetry** (a boolean cast over a TINYINT
+  filter column) and the listener old-snapshot path drifted; both sides
+  now use cast-consistent / raw-original values.
+- **Concurrent moves** read the mover's own bounds without a lock — now
+  `FOR UPDATE`. `reorderChildren()` runs its reads inside the locked
+  transaction, and a move into the node's own descendant is rejected
+  before the before-move aggregate hook.
+- **`JsonAgg` / `JsonObjectAgg` drift detection** is now order-insensitive
+  (MySQL's `JSON_ARRAYAGG` can't honour `ORDER BY`).
+
 ## [0.22.0] - 2026-06-11
 
 ### Fixed
@@ -87,7 +174,8 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 - Subtree cloning (`cloneSubtreeTo`, `cloneSubtreeAsRoot`).
 - Sibling reorder primitive (one `CASE WHEN` UPDATE per reorder).
 
-[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/vusys/laravel-nestedset/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/vusys/laravel-nestedset/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/vusys/laravel-nestedset/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/vusys/laravel-nestedset/compare/v0.19.0...v0.20.0
