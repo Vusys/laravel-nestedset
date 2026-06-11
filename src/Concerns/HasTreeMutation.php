@@ -7,7 +7,9 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Events\Mutation\NodePromotedToRoot;
@@ -17,6 +19,7 @@ use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleted;
 use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleting;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoving;
+use Vusys\NestedSet\Exceptions\CyclicMoveException;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
 use Vusys\NestedSet\Exceptions\SaveCancelledException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
@@ -59,7 +62,29 @@ trait HasTreeMutation
      */
     public function appendToNode(HasNestedSet $parent): static
     {
-        $this->pending = new PendingOperation('appendTo', $parent);
+        return $this->queuePending(new PendingOperation('appendTo', $parent));
+    }
+
+    /**
+     * Records a pending tree operation to be flushed on the next save().
+     * Throws if one is already queued and undispatched — chaining two
+     * placement calls (e.g. `appendToNode($a)->insertAfterNode($b)`)
+     * used to silently drop the first, a near-certain bug. The pending
+     * slot is cleared on dispatch, so re-queuing after a save is fine.
+     */
+    private function queuePending(PendingOperation $op): static
+    {
+        if ($this->pending !== null) {
+            throw new LogicException(sprintf(
+                '%s already has an undispatched "%s" operation queued; call save() before queuing "%s". '
+                .'Chaining two placement calls would silently drop the first.',
+                static::class,
+                $this->pending->action,
+                $op->action,
+            ));
+        }
+
+        $this->pending = $op;
 
         return $this;
     }
@@ -72,9 +97,7 @@ trait HasTreeMutation
      */
     public function prependToNode(HasNestedSet $parent): static
     {
-        $this->pending = new PendingOperation('prependTo', $parent);
-
-        return $this;
+        return $this->queuePending(new PendingOperation('prependTo', $parent));
     }
 
     /**
@@ -85,9 +108,7 @@ trait HasTreeMutation
      */
     public function insertBeforeNode(HasNestedSet $sibling): static
     {
-        $this->pending = new PendingOperation('sibling', $sibling, Position::Before);
-
-        return $this;
+        return $this->queuePending(new PendingOperation('sibling', $sibling, Position::Before));
     }
 
     /**
@@ -98,9 +119,7 @@ trait HasTreeMutation
      */
     public function insertAfterNode(HasNestedSet $sibling): static
     {
-        $this->pending = new PendingOperation('sibling', $sibling, Position::After);
-
-        return $this;
+        return $this->queuePending(new PendingOperation('sibling', $sibling, Position::After));
     }
 
     /**
@@ -109,9 +128,7 @@ trait HasTreeMutation
      */
     public function makeRoot(): static
     {
-        $this->pending = new PendingOperation('root');
-
-        return $this;
+        return $this->queuePending(new PendingOperation('root'));
     }
 
     /**
@@ -249,95 +266,113 @@ trait HasTreeMutation
             ));
         }
 
-        // Resolve the parent's own bounds from the database — the
-        // in-memory copy may be stale (e.g. siblings have been added
-        // since this instance was loaded) and the UPDATE predicate
-        // hinges on those bounds being current.
         $mutator = $this->newTreeMutator();
-        $parentBounds = $mutator->getNodeData($this->keyOf($this));
-
-        // The parent's subtree is empty — nothing to reorder.
-        if ($parentBounds->rgt - $parentBounds->lft === 1) {
-            if ($idsInOrder !== []) {
-                throw InvalidSiblingOrderException::unknownChildren(
-                    $this->normaliseSiblingKeys($idsInOrder),
-                );
-            }
-
-            return $this;
-        }
-
-        $requestedKeys = $this->normaliseSiblingKeys($idsInOrder);
-        $duplicates = $this->duplicateKeys($requestedKeys);
-        if ($duplicates !== []) {
-            throw InvalidSiblingOrderException::duplicateChildren($duplicates);
-        }
-
-        // The leaf-check above (rgt - lft === 1) guarantees the parent
-        // has at least one descendant, which in turn means at least one
-        // direct child — so this list is never empty here.
-        /** @var list<array{key: int|string, lft: int, rgt: int}> $current */
-        $current = $this->loadDirectChildBounds();
-
-        $currentKeys = array_map(static fn (array $row): int|string => $row['key'], $current);
-
-        $unknown = array_values(array_diff($requestedKeys, $currentKeys));
-        if ($unknown !== []) {
-            throw InvalidSiblingOrderException::unknownChildren($unknown);
-        }
-
-        $missing = array_values(array_diff($currentKeys, $requestedKeys));
-        if ($missing !== []) {
-            throw InvalidSiblingOrderException::missingChildren($missing);
-        }
-
-        // Identity reorder: every position matches → no UPDATE.
-        $isIdentity = true;
-        foreach ($currentKeys as $i => $key) {
-            if (! $this->keysEqual($key, $requestedKeys[$i])) {
-                $isIdentity = false;
-                break;
-            }
-        }
-        if ($isIdentity) {
-            return $this;
-        }
-
-        // Index current rows by key for O(1) lookup as we walk the
-        // requested order computing new starting lft for each sibling.
-        $byKey = [];
-        foreach ($current as $row) {
-            $byKey[(string) $row['key']] = $row;
-        }
-
-        /** @var list<array{int, int, int}> $shifts */
-        $shifts = [];
-        $cursor = $parentBounds->lft + 1;
-        foreach ($requestedKeys as $key) {
-            $row = $byKey[(string) $key];
-            $height = $row['rgt'] - $row['lft'] + 1;
-            $delta = $cursor - $row['lft'];
-            $shifts[] = [$row['lft'], $row['rgt'], $delta];
-            $cursor += $height;
-        }
-
         $startNs = hrtime(true);
 
-        $rowsAffected = $this->getConnection()->transaction(
-            fn (): int => $mutator->reorderSiblings(
+        // Wrap the parent-bounds read, the child-bounds read, and the
+        // reorder UPDATE in ONE transaction with the parent row locked
+        // FOR UPDATE. Previously the reads ran outside the transaction,
+        // so a concurrent append to the same parent between the reads
+        // and the UPDATE could shift the child windows and corrupt the
+        // computed shifts. Validation exceptions thrown inside roll back
+        // the (still write-free) transaction harmlessly.
+        //
+        // Returns null for the no-op cases (empty parent, identity
+        // reorder) so the caller returns $this without an event; on a
+        // real reorder it returns the affected-row count and the
+        // requested key order for the post-commit event.
+        /** @var array{rowsAffected: int, requestedKeys: list<int|string>}|null $outcome */
+        $outcome = $this->getConnection()->transaction(function () use ($mutator, $idsInOrder): ?array {
+            // Resolve the parent's own bounds under a row lock — the
+            // in-memory copy may be stale and the UPDATE predicate hinges
+            // on these being current and held until commit.
+            $parentBounds = $this->freshBoundsOf($this, lockForUpdate: true);
+
+            // The parent's subtree is empty — nothing to reorder.
+            if ($parentBounds->rgt - $parentBounds->lft === 1) {
+                if ($idsInOrder !== []) {
+                    throw InvalidSiblingOrderException::unknownChildren(
+                        $this->normaliseSiblingKeys($idsInOrder),
+                    );
+                }
+
+                return null;
+            }
+
+            $requestedKeys = $this->normaliseSiblingKeys($idsInOrder);
+            $duplicates = $this->duplicateKeys($requestedKeys);
+            if ($duplicates !== []) {
+                throw InvalidSiblingOrderException::duplicateChildren($duplicates);
+            }
+
+            // The leaf-check above (rgt - lft === 1) guarantees the parent
+            // has at least one descendant, which in turn means at least one
+            // direct child — so this list is never empty here.
+            /** @var list<array{key: int|string, lft: int, rgt: int}> $current */
+            $current = $this->loadDirectChildBounds();
+
+            $currentKeys = array_map(static fn (array $row): int|string => $row['key'], $current);
+
+            $unknown = array_values(array_diff($requestedKeys, $currentKeys));
+            if ($unknown !== []) {
+                throw InvalidSiblingOrderException::unknownChildren($unknown);
+            }
+
+            $missing = array_values(array_diff($currentKeys, $requestedKeys));
+            if ($missing !== []) {
+                throw InvalidSiblingOrderException::missingChildren($missing);
+            }
+
+            // Identity reorder: every position matches → no UPDATE.
+            $isIdentity = true;
+            foreach ($currentKeys as $i => $key) {
+                if (! $this->keysEqual($key, $requestedKeys[$i])) {
+                    $isIdentity = false;
+                    break;
+                }
+            }
+            if ($isIdentity) {
+                return null;
+            }
+
+            // Index current rows by key for O(1) lookup as we walk the
+            // requested order computing new starting lft for each sibling.
+            $byKey = [];
+            foreach ($current as $row) {
+                $byKey[(string) $row['key']] = $row;
+            }
+
+            /** @var list<array{int, int, int}> $shifts */
+            $shifts = [];
+            $cursor = $parentBounds->lft + 1;
+            foreach ($requestedKeys as $key) {
+                $row = $byKey[(string) $key];
+                $height = $row['rgt'] - $row['lft'] + 1;
+                $delta = $cursor - $row['lft'];
+                $shifts[] = [$row['lft'], $row['rgt'], $delta];
+                $cursor += $height;
+            }
+
+            $rowsAffected = $mutator->reorderSiblings(
                 parentLft: $parentBounds->lft,
                 parentRgt: $parentBounds->rgt,
                 shifts: $shifts,
-            ),
-        );
+            );
+
+            return ['rowsAffected' => $rowsAffected, 'requestedKeys' => $requestedKeys];
+        });
+
+        if ($outcome === null) {
+            return $this;
+        }
 
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
         EventDispatcher::dispatch(new SiblingsReordered(
             modelClass: static::class,
             parent: $this,
-            idsInOrder: $requestedKeys,
-            rowsAffected: $rowsAffected,
+            idsInOrder: $outcome['requestedKeys'],
+            rowsAffected: $outcome['rowsAffected'],
             durationMs: $durationMs,
         ));
 
@@ -385,16 +420,17 @@ trait HasTreeMutation
     }
 
     /**
-     * Move this node to position `$position` (1-indexed) within its
+     * Move this node to position `$position` (0-indexed) within its
      * current sibling group. A thin wrapper over its parent's
      * {@see reorderChildren()} that preserves everyone else's relative
      * order.
      *
-     * Position semantics match `up()` / `down()`: position 1 is the
-     * first sibling, position `count(siblings)` is the last.
+     * Position is 0-based to match `moveTo()`, `TreeDiff`'s sibling
+     * positions, and the factory: position 0 is the first sibling,
+     * position `count(siblings) - 1` is the last.
      *
      * @throws LogicException
-     *                        When `$position` is outside `[1, count(siblings)]`.
+     *                        When `$position` is outside `[0, count(siblings) - 1]`.
      * @throws UnplacedNodeException
      *                               When this node has no parent (a root has no sibling group to reorder within).
      */
@@ -423,26 +459,26 @@ trait HasTreeMutation
         $siblings = $parent->loadDirectChildBounds();
         $count = count($siblings);
 
-        if ($position < 1 || $position > $count) {
+        if ($position < 0 || $position >= $count) {
             throw new LogicException(sprintf(
-                '%s::moveToSiblingPosition(%d): position must be in [1, %d].',
+                '%s::moveToSiblingPosition(%d): position must be in [0, %d].',
                 static::class,
                 $position,
-                $count,
+                $count - 1,
             ));
         }
 
         $selfKey = $this->keyOf($this);
 
         // Pull self out of the sibling list, then insert at the
-        // requested (1-indexed) slot.
+        // requested (0-indexed) slot.
         $others = array_values(array_filter(
             array_map(static fn (array $row): int|string => $row['key'], $siblings),
             fn ($key): bool => ! $this->keysEqual($key, $selfKey),
         ));
 
         $newOrder = $others;
-        array_splice($newOrder, $position - 1, 0, [$selfKey]);
+        array_splice($newOrder, $position, 0, [$selfKey]);
 
         $parent->reorderChildren($newOrder);
 
@@ -862,12 +898,51 @@ trait HasTreeMutation
         // a sibling insert (or any prior mutation) since this instance
         // was loaded may have shifted its lft/rgt, and the before-move
         // aggregate hook + the move events all key off these bounds.
-        // Stash it so positionAt() reuses the same read instead of
-        // issuing a second identical SELECT — the before-move hook only
-        // touches ancestor aggregate columns, never the mover's bounds,
-        // so the value is still current when positionAt runs.
-        $from = $wasExisting ? $this->freshBoundsOf($this) : null;
+        // Lock the mover's row FOR UPDATE: between this read and the
+        // target lock sit the SubtreeMoving dispatch and the before-move
+        // aggregate hook — a wide window in which a concurrent committed
+        // insert/move could shift the mover's bounds and make the
+        // moveNode() CASE band match the wrong rows. Stash it so
+        // positionAt() reuses the same read instead of issuing a second
+        // identical SELECT — the before-move hook only touches ancestor
+        // aggregate columns, never the mover's bounds, so the value is
+        // still current when positionAt runs.
+        $from = $wasExisting ? $this->freshBoundsOf($this, lockForUpdate: true) : null;
         $this->pendingMoveFromBounds = $from;
+
+        // Re-read the mover's stored aggregate columns before the
+        // before-move hook subtracts them from the old ancestor chain.
+        // Delta maintenance writes these via raw SQL without syncing the
+        // model, so a held instance (source updated, child appended, or
+        // freshly created then moved in the same instance) carries stale
+        // totals the move would otherwise transfer verbatim.
+        if ($wasExisting && $this instanceof MaintainsTreeAggregates) {
+            $this->refreshMaintainedAggregateColumns();
+        }
+
+        // Reject moving a node into one of its own descendants BEFORE
+        // the before-move aggregate hook and SubtreeMoving dispatch run.
+        // The structural backstop in moveNode() throws too, but it fires
+        // after the hook has already subtracted the subtree's
+        // contribution from the old ancestor chain. When the package
+        // opens its own transaction (the default) that rolls back
+        // cleanly, so the early check is only needed — and the extra
+        // bounds read only paid — when auto_transaction is off and the
+        // caller may not have wrapped the work; there the dangling
+        // subtraction would otherwise permanently drift aggregates on a
+        // move that never structurally happened. The pure-self cases are
+        // left to moveNode()/actSibling() so their existing messages
+        // stand; strict containment matches proper descendants only.
+        if ($wasExisting
+            && $from !== null
+            && $op->node instanceof Model
+            && ! config('nestedset.auto_transaction', true)
+        ) {
+            $targetBounds = $this->freshBoundsOf($op->node);
+            if ($targetBounds->lft > $from->lft && $targetBounds->rgt < $from->rgt) {
+                throw new CyclicMoveException('Cannot move node into itself or its own subtree.');
+            }
+        }
 
         $previousParentId = $wasExisting ? $this->getParentId() : null;
         $previousDepth = $wasExisting ? $this->getDepth() : 0;
@@ -1228,13 +1303,30 @@ trait HasTreeMutation
     private function actMakeRoot(): void
     {
         $driver = $this->getConnection()->getDriverName();
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        // PostgreSQL has no gap locks, so `FOR UPDATE` on the max-rgt
+        // read locks nothing when the scope is empty (or when the
+        // highest-rgt row was just inserted by a still-uncommitted
+        // peer): two callers both read no/zero max and both insert at
+        // (1,2) — duplicate_lft / duplicate_rgt corruption. MySQL /
+        // MariaDB serialise this with next-key gap locks on the same
+        // read, and SQLite is single-writer, so the hole is PG-only.
+        // A transaction-level advisory lock keyed on table + scope
+        // serialises all makeRoot() callers in the same scope on PG;
+        // it auto-releases at commit (and is a harmless immediate
+        // release if the caller runs with auto_transaction off and no
+        // surrounding transaction).
+        if ($driver === 'pgsql') {
+            $this->acquireMakeRootAdvisoryLock($scope);
+        }
 
         // Scope the max-rgt lookup to this node's scope. Without the
         // scope filter, the second scope's first root would land past
         // the first scope's rgt and silently break per-scope lft/rgt
         // independence. Caught by the scope-isolation fuzzer.
         $query = $this->newQuery()->getQuery();
-        foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+        foreach ($scope as $col => $value) {
             $query->where($col, $value);
         }
 
@@ -1249,7 +1341,9 @@ trait HasTreeMutation
         // directly. Locking the single row with the highest rgt via
         // ORDER BY ... LIMIT 1 FOR UPDATE returns the same value and
         // works on every backend that supports row locking.
-        // SQLite is single-writer; skip the lock there.
+        // SQLite is single-writer; skip the lock there. PG callers are
+        // already serialised by the advisory lock above, so the
+        // FOR UPDATE there only guards the non-empty case redundantly.
         if ($driver === 'sqlite') {
             $rawMax = $query->max($this->getRgtName());
         } else {
@@ -1265,6 +1359,26 @@ trait HasTreeMutation
         // Position at maxRgt + 1 places this node at the end of the table;
         // moveNode handles the gap-fill behind it.
         $this->positionAt($maxRgt + 1, 0, null);
+    }
+
+    /**
+     * Takes a PostgreSQL transaction-level advisory lock keyed on the
+     * table name and this node's scope values, serialising concurrent
+     * makeRoot() callers in the same scope. crc32 gives a stable 32-bit
+     * key per (table, scope); pg_advisory_xact_lock releases it
+     * automatically when the surrounding transaction commits or rolls
+     * back.
+     *
+     * @param  array<string, mixed>  $scope
+     */
+    private function acquireMakeRootAdvisoryLock(array $scope): void
+    {
+        $key = sprintf('%s|%s', $this->getTable(), json_encode($scope));
+
+        $this->getConnection()->statement(
+            'select pg_advisory_xact_lock(?)',
+            [crc32($key)],
+        );
     }
 
     /**
@@ -1327,6 +1441,36 @@ trait HasTreeMutation
         $mutator = $this->newTreeMutator();
 
         return $mutator->getNodeData($this->keyOf($other), $lockForUpdate);
+    }
+
+    /**
+     * Re-reads this node's maintained aggregate columns from the DB into
+     * the in-memory model. Delta maintenance writes these columns via
+     * raw SQL and never syncs the model, so without this a held instance
+     * carries stale totals that the before-move hook would transfer to
+     * the new ancestor chain. Syncs originals so the columns stay clean
+     * for dirty tracking.
+     */
+    private function refreshMaintainedAggregateColumns(): void
+    {
+        $columns = AggregateRegistry::maintainedColumnsFor(static::class);
+        if ($columns === []) {
+            return;
+        }
+
+        $row = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getKeyName(), $this->getKey())
+            ->first($columns);
+
+        if ($row === null) {
+            return;
+        }
+
+        foreach ($columns as $column) {
+            $this->setAttribute($column, $row->{$column});
+            $this->syncOriginalAttribute($column);
+        }
     }
 
     /**

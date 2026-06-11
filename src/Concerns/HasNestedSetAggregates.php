@@ -166,18 +166,29 @@ trait HasNestedSetAggregates
         $definition = $this->resolveAggregateDefinitionByColumn($column);
 
         if ($definition instanceof AggregateDefinition) {
-            return FreshAggregateProjector::scalar($this, $definition, $withTrashed);
+            $value = FreshAggregateProjector::scalar($this, $definition, $withTrashed);
+        } elseif ($definition instanceof ListenerAggregateDefinition) {
+            $value = ListenerCalculator::freshAggregate($this, $definition, $withTrashed);
+        } else {
+            throw new AggregateConfigurationException(sprintf(
+                'Unsupported aggregate definition type %s for column "%s".',
+                $definition::class,
+                $column,
+            ));
         }
 
-        if ($definition instanceof ListenerAggregateDefinition) {
-            return ListenerCalculator::freshAggregate($this, $definition, $withTrashed);
+        // Route the raw scalar through the model's cast for the column so
+        // the result is type- and precision-stable across backends and
+        // directly comparable to the stored attribute (the method's main
+        // use is drift detection: `$stored !== $node->freshAggregate(...)`).
+        // Without this, MySQL/PG return numerics as strings and a
+        // decimal:N column would truncate the stored value while the fresh
+        // recompute stays full-precision. NULL (empty subtree) stays NULL.
+        if ($value !== null && $this->hasCast($column)) {
+            return $this->castAttribute($column, $value);
         }
 
-        throw new AggregateConfigurationException(sprintf(
-            'Unsupported aggregate definition type %s for column "%s".',
-            $definition::class,
-            $column,
-        ));
+        return $value;
     }
 
     /**

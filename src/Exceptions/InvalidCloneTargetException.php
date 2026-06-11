@@ -20,4 +20,4 @@ use LogicException;
  * Extends LogicException because cloning a subtree into itself is a
  * programmer error.
  */
-final class InvalidCloneTargetException extends LogicException {}
+final class InvalidCloneTargetException extends LogicException implements NestedSetException {}

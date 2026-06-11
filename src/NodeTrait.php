@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Concerns\HasBulkInsert;
 use Vusys\NestedSet\Concerns\HasMaterialisedPath;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
@@ -23,6 +24,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
@@ -77,6 +79,28 @@ trait NodeTrait
         static::saving(static function (Model $node): void {
             if (! $node instanceof MaintainsTreeAggregates) {
                 return;
+            }
+            // Guard against silent cross-scope corruption: changing a
+            // scope column on an existing node makes the scoped mutation
+            // SQL target the WRONG partition (the in-memory scope) while
+            // the disk row still lives in the old one — shifting
+            // bystanders in both trees with no error. The delete path was
+            // already hardened against this; the save/move path was not.
+            // Cross-tree moves are not supported via a column edit; the
+            // documented recipe is delete + re-insert under the new tree.
+            if ($node->exists) {
+                foreach (NestedSetScopeResolver::columns($node::class) as $scopeColumn) {
+                    if ($node->isDirty($scopeColumn)) {
+                        throw new ScopeViolationException(sprintf(
+                            '%s: scope column "%s" was changed on an existing node. '
+                            .'Moving a node between trees by editing its scope column corrupts both trees '
+                            .'(the scoped mutation runs against the in-memory scope while the row is still '
+                            .'in the old one). Delete the node and re-insert it under the new tree instead.',
+                            $node::class,
+                            $scopeColumn,
+                        ));
+                    }
+                }
             }
             if (method_exists($node, 'callPendingAction')) {
                 $node->callPendingAction();
@@ -142,7 +166,17 @@ trait NodeTrait
                 $node->getParentIdName(),
             ];
             $scopeColumns = NestedSetScopeResolver::columns($node::class);
-            $columnsToRead = array_unique(array_merge($structuralColumns, $scopeColumns));
+            // Aggregate display/companion columns too: the deleted hook
+            // subtracts this node's stored aggregate values from its
+            // ancestors, but delta maintenance updates those columns via
+            // raw SQL without syncing the model — a held-then-deleted
+            // instance would otherwise subtract a stale total.
+            $aggregateColumns = AggregateRegistry::maintainedColumnsFor($node::class);
+            $columnsToRead = array_values(array_unique(array_merge(
+                $structuralColumns,
+                $scopeColumns,
+                $aggregateColumns,
+            )));
             $row = $node->getConnection()
                 ->table($node->getTable())
                 ->where($node->getKeyName(), $key)

@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Aggregates\Repair;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\DeferredAggregateMaintenanceCompleted;
@@ -55,8 +56,13 @@ final class DeferredMaintenanceRunner
         // Validate the anchor upfront — scoped models need one for the
         // final fixAggregates call, and a synchronous failure here is
         // friendlier than running the entire closure and only failing
-        // at the repair pass.
-        AggregateAnchor::writeAnchorOrFail($modelClass, $anchor);
+        // at the repair pass. Skipped when the model declares no
+        // aggregate columns: there's nothing to repair, so demanding a
+        // scope anchor would block no-aggregate flows that defer (e.g.
+        // bulkInsertTree seeding scoped roots).
+        if (AggregateRegistry::for($modelClass) !== []) {
+            AggregateAnchor::writeAnchorOrFail($modelClass, $anchor);
+        }
 
         $modelClass::incrementAggregateDeferredDepth();
         $isOutermost = $modelClass::aggregateDeferredDepth() === 1;
@@ -92,7 +98,16 @@ final class DeferredMaintenanceRunner
             if ($modelClass::aggregateDeferredDepth() === 0) {
                 try {
                     $repairStartNs = hrtime(true);
-                    $repairResult = $modelClass::fixAggregates($anchor);
+                    // Repair from the anchor's TREE ROOT, not the anchor's
+                    // own subtree. A mutation inside the closure changes
+                    // the rollups of every ancestor up to the root, but
+                    // fixAggregates($anchor) only bands the anchor's
+                    // subtree — so a mid-tree anchor left every ancestor
+                    // above it drifted. Resolving to the root repairs the
+                    // whole tree the anchor belongs to. (Unscoped forests
+                    // that mutate sibling trees inside the closure should
+                    // pass a null anchor for a whole-table repair.)
+                    $repairResult = $modelClass::fixAggregates(self::resolveTreeRoot($anchor));
                     $repairMs = (hrtime(true) - $repairStartNs) / 1_000_000;
                 } catch (\Throwable $secondary) {
                     // If $work itself threw, the repair fires before that
@@ -125,6 +140,71 @@ final class DeferredMaintenanceRunner
                 ));
             }
         }
+    }
+
+    /**
+     * Resolves $anchor to the root of the tree it belongs to, so the
+     * deferred repair covers every ancestor whose rollup the closure's
+     * mutations may have changed — not just the anchor's own subtree.
+     *
+     * Structural maintenance is NOT deferred (only aggregates are), so
+     * the anchor's lft/rgt are accurate here; the root is the
+     * ancestor-or-self with a NULL parent_id in the same scope. Returns
+     * the original anchor unchanged when it is already a root, has been
+     * deleted, or the root can't be resolved — every fallback preserves
+     * the prior (subtree-only) behaviour rather than risking a wrong
+     * band.
+     */
+    private static function resolveTreeRoot(?HasNestedSet $anchor): ?HasNestedSet
+    {
+        if (! $anchor instanceof Model) {
+            return $anchor;
+        }
+
+        $key = $anchor->getKey();
+        if ($key === null) {
+            return $anchor;
+        }
+
+        $lftCol = $anchor->getLftName();
+        $rgtCol = $anchor->getRgtName();
+        $parentCol = $anchor->getParentIdName();
+        $keyName = $anchor->getKeyName();
+
+        $fresh = $anchor->getConnection()
+            ->table($anchor->getTable())
+            ->where($keyName, $key)
+            ->first([$lftCol, $rgtCol, $parentCol]);
+
+        if ($fresh === null || $fresh->{$parentCol} === null) {
+            return $anchor;
+        }
+
+        $scope = NestedSetScopeResolver::valuesFor($anchor);
+
+        $query = $anchor->getConnection()
+            ->table($anchor->getTable())
+            ->where($lftCol, '<=', $fresh->{$lftCol})
+            ->where($rgtCol, '>=', $fresh->{$rgtCol})
+            ->whereNull($parentCol);
+        foreach ($scope as $column => $value) {
+            $query->where($column, '=', $value);
+        }
+
+        $rootRow = $query->first([$keyName]);
+        if ($rootRow === null) {
+            return $anchor;
+        }
+
+        $modelClass = $anchor::class;
+        $rootAnchor = new $modelClass;
+        $rootAnchor->setAttribute($keyName, $rootRow->{$keyName});
+        foreach ($scope as $column => $value) {
+            $rootAnchor->setAttribute($column, $value);
+        }
+        $rootAnchor->exists = true;
+
+        return $rootAnchor;
     }
 
     /**

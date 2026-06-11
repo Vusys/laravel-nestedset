@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\Support\FuzzerConfig;
 use Vusys\NestedSet\Tests\TestCase;
@@ -291,9 +291,16 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
             foreach ($columns as $col) {
                 $stored = $m->getAttribute($col);
                 $fresh = $m->freshAggregate($col);
-                $this->assertSame(
-                    $this->normalise($fresh),
-                    $this->normalise($stored),
+                // Use the library's own tolerant numeric comparator: a
+                // weighted_avg stored in a DECIMAL column is only as
+                // precise as the column's scale, so a full-precision
+                // fresh recompute differs in the trailing digits on
+                // MySQL / PostgreSQL. Exact-string equality would
+                // false-fail on those backends; the comparator absorbs
+                // sub-tolerance storage noise exactly as drift detection
+                // does in production.
+                $this->assertTrue(
+                    AggregateValueComparator::aggregatesEqual($stored, $fresh),
                     "{$stage} #{$m->id} ({$m->name}): {$col} mismatch — stored=".json_encode($stored).' fresh='.json_encode($fresh),
                 );
             }
@@ -305,24 +312,5 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         );
 
         $this->assertFalse(Monster::isBroken(), "{$stage} tree is broken");
-
-        DB::table('monsters');
-    }
-
-    /**
-     * Decimal columns come back as scale-fixed strings on MySQL /
-     * PostgreSQL but as floats on SQLite. Normalise both sides to
-     * (string)(float) so the comparison is driver-agnostic.
-     */
-    private function normalise(mixed $value): string
-    {
-        if ($value === null) {
-            return 'null';
-        }
-        if (is_numeric($value)) {
-            return (string) (float) $value;
-        }
-
-        $this->fail('unexpected aggregate value type: '.get_debug_type($value));
     }
 }

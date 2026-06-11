@@ -105,6 +105,74 @@ final class MakeRootConcurrencyTest extends TestCase
     }
 
     #[Test]
+    public function parallel_make_root_into_an_empty_table_does_not_collide(): void
+    {
+        // The existing tests seed a root first, so workers always race
+        // against an existing max-rgt row. This one seeds NOTHING:
+        // every worker races to create the very first root in an empty
+        // table. On PostgreSQL FOR UPDATE takes no gap locks, so the
+        // empty-range max read locks nothing and two callers both insert
+        // at (1,2) unless the makeRoot advisory lock serialises them.
+        // MySQL / MariaDB serialise this via next-key gap locks on the
+        // same read.
+        $this->requireForkableMultiWriterBackend();
+
+        $workers = 8;
+
+        $exits = $this->runConcurrentWorkers($workers, function (int $worker): void {
+            $this->withDeadlockRetry(function () use ($worker): void {
+                $node = new Category(['name' => sprintf('w%d', $worker)]);
+                $node->saveAsRoot();
+            }, maxAttempts: 16);
+        });
+
+        $this->assertSame(array_fill(0, $workers, 0), $exits, 'every worker must complete without error');
+        $this->assertSame($workers, Category::query()->count());
+
+        $rows = Category::query()->orderBy('lft')->get(['lft', 'rgt'])->all();
+        $lfts = array_map(static fn (Category $r): int => $r->lft, $rows);
+        $rgts = array_map(static fn (Category $r): int => $r->rgt, $rows);
+
+        $this->assertSame(count($lfts), count(array_unique($lfts)), 'duplicate lft across first-roots — empty-scope makeRoot race');
+        $this->assertSame(count($rgts), count(array_unique($rgts)), 'duplicate rgt across first-roots — empty-scope makeRoot race');
+        $this->assertFalse(Category::isBroken(), 'tree must be intact after concurrent first-root creation');
+    }
+
+    #[Test]
+    public function parallel_make_root_into_an_empty_scope_does_not_collide(): void
+    {
+        // Scoped variant: the scope row exists but the scope has no
+        // tree members yet, so all workers race to seat the first root
+        // of one menu. Same empty-range hazard, scope-filtered.
+        $this->requireForkableMultiWriterBackend();
+
+        $menu = Menu::create(['name' => 'M']);
+        $workers = 8;
+
+        $exits = $this->runConcurrentWorkers($workers, function (int $worker) use ($menu): void {
+            $this->withDeadlockRetry(function () use ($worker, $menu): void {
+                $node = new MenuItem(['name' => sprintf('w%d', $worker), 'menu_id' => $menu->id]);
+                $node->saveAsRoot();
+            }, maxAttempts: 16);
+        });
+
+        $this->assertSame(array_fill(0, $workers, 0), $exits);
+
+        $anchor = MenuItem::query()->where('menu_id', $menu->id)->first();
+        $this->assertNotNull($anchor);
+        $this->assertFalse(MenuItem::isBroken($anchor), 'scoped tree intact after concurrent first-root creation');
+
+        /** @var list<int> $lfts */
+        $lfts = MenuItem::query()
+            ->where('menu_id', $menu->id)
+            ->get(['lft'])
+            ->map(static fn (MenuItem $m): int => $m->lft)
+            ->all();
+
+        $this->assertSame(count($lfts), count(array_unique($lfts, SORT_NUMERIC)), 'duplicate lft within the empty scope');
+    }
+
+    #[Test]
     public function parallel_make_root_in_a_scope_does_not_leak_into_sibling_scope(): void
     {
         // Scope-isolation cousin of the test above. Two scopes' roots

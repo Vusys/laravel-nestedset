@@ -8,3 +8,6 @@
 # DIY docs site
 /site
 /docs-site/vendor
+
+# Claude Code local agent dir
+/.claude

@@ -66,6 +66,56 @@ final class CountErrorsBlindSpotsTest extends TestCase
     }
 
     #[Test]
+    public function partially_overlapping_siblings_are_detected(): void
+    {
+        // A(2,6) and B(4,9): the intervals overlap without one nesting
+        // inside the other. Every per-row and per-column check reads
+        // clean, yet whereDescendantOf(A) wrongly returns B.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 10, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'A', 'lft' => 2, 'rgt' => 6, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'B', 'lft' => 4, 'rgt' => 9, 'depth' => 1, 'parent_id' => 1],
+        ]);
+        $this->syncSequence('categories');
+
+        $errors = Category::countErrors();
+        $this->assertGreaterThan(0, $errors['overlapping_bounds']);
+        // Every prior check reads clean on this shape.
+        $this->assertSame(0, $errors['invalid_bounds']);
+        $this->assertSame(0, $errors['duplicate_lft']);
+        $this->assertSame(0, $errors['duplicate_rgt']);
+        $this->assertSame(0, $errors['bounds_out_of_range']);
+
+        // The documented recovery (isBroken → fixTree) now actually fires.
+        $this->assertTrue(Category::isBroken());
+        Category::fixTree();
+        $this->assertSame(0, array_sum(Category::countErrors()));
+    }
+
+    #[Test]
+    public function even_bounds_width_is_detected(): void
+    {
+        // In a valid nested set every span rgt - lft is odd (a leaf spans
+        // 1, each descendant adds 2). B(4,8) has width 8 - 4 = 4 — even,
+        // hence structurally impossible — while the tree is otherwise
+        // gap-tolerant-valid (no duplicates, no collisions, B nests in
+        // Root, A and B disjoint), so the prior checks read clean.
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 10, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'A', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'B', 'lft' => 4, 'rgt' => 8, 'depth' => 1, 'parent_id' => 1],
+        ]);
+        $this->syncSequence('categories');
+
+        $errors = Category::countErrors();
+        $this->assertGreaterThan(0, $errors['even_bounds_width']);
+        $this->assertSame(0, $errors['invalid_bounds']);
+        $this->assertSame(0, $errors['duplicate_lft']);
+        $this->assertSame(0, $errors['duplicate_rgt']);
+        $this->assertSame(0, $errors['bounds_out_of_range']);
+    }
+
+    #[Test]
     public function cross_column_collision_is_detected(): void
     {
         // X(0,1) overlapping Root(1,4): value 1 is both X.rgt and Root.lft,

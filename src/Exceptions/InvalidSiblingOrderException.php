@@ -25,7 +25,7 @@ use Vusys\NestedSet\Concerns\HasTreeMutation;
  * Extends LogicException because a reorder call with the wrong
  * membership is a programmer error, not a runtime/data problem.
  */
-final class InvalidSiblingOrderException extends LogicException
+final class InvalidSiblingOrderException extends LogicException implements NestedSetException
 {
     /**
      * @param  list<int|string>  $keys

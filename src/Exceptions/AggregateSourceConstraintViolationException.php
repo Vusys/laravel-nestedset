@@ -22,4 +22,4 @@ use RuntimeException;
  * declaration in the method-override form, or pass
  * `allowNonPositive: true` in the `#[NestedSetAggregate]` attribute.
  */
-final class AggregateSourceConstraintViolationException extends RuntimeException {}
+final class AggregateSourceConstraintViolationException extends RuntimeException implements NestedSetException {}

@@ -9,7 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
-use Vusys\NestedSet\Exceptions\EmptyPathSegment;
+use Vusys\NestedSet\Exceptions\EmptyPathSegmentException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
@@ -79,7 +79,7 @@ final class MaterialisedPathSeparatorStripTest extends TestCase
     #[Test]
     public function segment_made_empty_by_strip_still_throws(): void
     {
-        $this->expectException(EmptyPathSegment::class);
+        $this->expectException(EmptyPathSegmentException::class);
         $this->expectExceptionMessageMatches('/empty after stripping the separator/');
 
         $node = new StripSepNode(['name' => '---']);

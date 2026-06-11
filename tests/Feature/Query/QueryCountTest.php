@@ -44,7 +44,14 @@ final class QueryCountTest extends TestCase
         // 1: select max(rgt)
         // 2: makeGap update
         // 3: insert
-        $this->assertSame(3, $queries);
+        //
+        // PostgreSQL adds one more: makeRoot takes a transaction-level
+        // pg_advisory_xact_lock before the max-rgt read to serialise
+        // concurrent root creation (PG has no gap locks, so the
+        // FOR UPDATE on an empty range locks nothing). Other backends
+        // don't need it.
+        $expected = DB::connection()->getDriverName() === 'pgsql' ? 4 : 3;
+        $this->assertSame($expected, $queries);
     }
 
     #[Test]
@@ -109,6 +116,8 @@ final class QueryCountTest extends TestCase
         // 6: depth_mismatch
         // 7: bounds_out_of_range — below-1 scan
         // 8: bounds_out_of_range — cross-column collision join
-        $this->assertSame(8, $queries);
+        // 9: overlapping_bounds
+        // 10: even_bounds_width
+        $this->assertSame(10, $queries);
     }
 }

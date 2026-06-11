@@ -19,4 +19,4 @@ use RuntimeException;
  *
  * @internal
  */
-final class SaveCancelledException extends RuntimeException {}
+final class SaveCancelledException extends RuntimeException implements NestedSetException {}

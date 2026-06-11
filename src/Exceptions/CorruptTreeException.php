@@ -18,4 +18,4 @@ use RuntimeException;
  * Extends RuntimeException because it reflects bad data, not a
  * programmer mistake at the call site.
  */
-final class CorruptTreeException extends RuntimeException {}
+final class CorruptTreeException extends RuntimeException implements NestedSetException {}

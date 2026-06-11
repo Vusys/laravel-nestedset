@@ -5,7 +5,11 @@ Production tables get corrupted — failed migrations, manual SQL surgery, bugs 
 ```php
 Category::isBroken();                       // bool
 Category::countErrors();
-// ['invalid_bounds' => 0, 'duplicate_lft' => 2, 'duplicate_rgt' => 0, 'orphans' => 1]
+// [
+//   'invalid_bounds' => 0, 'duplicate_lft' => 2, 'duplicate_rgt' => 0,
+//   'orphans' => 1, 'parent_bounds_mismatch' => 0, 'depth_mismatch' => 0,
+//   'bounds_out_of_range' => 0, 'overlapping_bounds' => 0, 'even_bounds_width' => 0,
+// ]
 
 Category::fixTree();                        // rebuilds lft/rgt/depth from parent_id
 // → TreeFixResult { nodesUpdated: 15, errors: [...counts after repair...] }
@@ -65,6 +69,8 @@ The `lft` / `rgt` pill badges on each row show the dense slot ranges the rebuild
 | `parent_bounds_mismatch` (child bounds not inside parent's) | ✅ | ✅ | Raw `UPDATE` on `parent_id` without rebuilding bounds. |
 | `depth_mismatch` (`depth` ≠ `parent.depth + 1`) | ✅ | ✅ | Raw edit that didn't also fix `depth`. |
 | `bounds_out_of_range` (below-1 bound / cross-column collision) | ✅ | ✅ | Raw `lft`/`rgt` literal outside the reserved range. |
+| `overlapping_bounds` (sibling intervals partially overlap without nesting) | ✅ | ✅ | Raw `lft`/`rgt` edit that left intervals intersecting. |
+| `even_bounds_width` (`rgt - lft` even — impossible in a valid set) | ✅ | ✅ | Raw `lft`/`rgt` edit producing an even-width span. |
 | `parent_id` cycles | ❌ — not surfaced by `countErrors()` | ❌ — cycle members are silently skipped | Raw `UPDATE` on `parent_id` that bypassed Eloquent guards. |
 | Aggregate drift (stored `articles_total` ≠ computed) | ✅ via `aggregateErrors()` | ✅ via `fixAggregates()` | Raw `UPDATE` on the source column. |
 

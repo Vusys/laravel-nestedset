@@ -11,7 +11,6 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Relations\AncestorsRelation;
 use Vusys\NestedSet\Relations\DescendantsRelation;
-use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * Eloquent relations between a nested-set node and its tree neighbours.
@@ -30,21 +29,21 @@ trait HasTreeRelations
     }
 
     /**
-     * Direct children. Scope columns are applied so a multi-tree table
-     * doesn't return rows from another tree that happen to share a
-     * parent_id value.
+     * Direct children.
+     *
+     * No scope predicate is applied: `parent_id` references the
+     * globally-unique primary key, so a child in another tree cannot
+     * point at this node's id unless the data is already corrupt. The
+     * old per-instance `where(scope, value)` predicate also broke
+     * eager-load / withCount / whereHas, which build the relation on an
+     * attribute-less prototype (scope resolved to NULL → matched
+     * nothing). Mirrors the plain `parent()` BelongsTo.
      *
      * @return HasMany<static, $this>
      */
     public function children(): HasMany
     {
-        $relation = $this->hasMany(static::class, $this->getParentIdName());
-
-        foreach (NestedSetScopeResolver::valuesFor($this) as $column => $value) {
-            $relation->where($column, '=', $value);
-        }
-
-        return $relation;
+        return $this->hasMany(static::class, $this->getParentIdName());
     }
 
     /**

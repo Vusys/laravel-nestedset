@@ -11,4 +11,4 @@ namespace Vusys\NestedSet\Exceptions;
  * masking the underlying bug; rejection forces the source attribute or
  * builder to be fixed before the row is written.
  */
-final class EmptyPathSegment extends InvalidPathSegment {}
+final class EmptyPathSegmentException extends InvalidPathSegmentException {}

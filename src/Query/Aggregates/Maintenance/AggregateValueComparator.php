@@ -87,8 +87,15 @@ final class AggregateValueComparator
     public static function aggregateValuesEqual(AggregateDefinition $def, mixed $stored, mixed $computed): bool
     {
         return match ($def->function) {
+            // JsonAgg / JsonObjectAgg element order is NOT guaranteed
+            // across backends — MySQL's JSON_ARRAYAGG ignores ORDER BY
+            // entirely, so a freshly-recomputed array can hold the same
+            // members in a different order from the incrementally-
+            // maintained stored value. Compare them as multisets so a
+            // pure ordering difference isn't reported as drift. TopK is
+            // genuinely ordered (it's a ranking) and stays order-sensitive.
             AggregateFunction::JsonAgg,
-            AggregateFunction::JsonObjectAgg,
+            AggregateFunction::JsonObjectAgg => self::jsonValuesEqual($stored, $computed, orderInsensitive: true),
             AggregateFunction::TopK => self::jsonValuesEqual($stored, $computed),
             AggregateFunction::StringAgg => $def->distinct
                 ? self::distinctStringAggEqual($def, $stored, $computed)
@@ -131,7 +138,7 @@ final class AggregateValueComparator
         return null;
     }
 
-    private static function jsonValuesEqual(mixed $a, mixed $b): bool
+    private static function jsonValuesEqual(mixed $a, mixed $b, bool $orderInsensitive = false): bool
     {
         if ($a === null && $b === null) {
             return true;
@@ -146,24 +153,36 @@ final class AggregateValueComparator
         // Both decode to identical PHP structures regardless of which
         // backend wrote them — but assoc arrays are order-sensitive
         // under `===` in PHP, so normalise key order recursively before
-        // comparing.
-        return self::normaliseJsonStructure($decodedA) === self::normaliseJsonStructure($decodedB);
+        // comparing. When $orderInsensitive, list element order is also
+        // normalised (sorted by canonical encoding) so two arrays with
+        // the same members in a different order compare equal.
+        return self::normaliseJsonStructure($decodedA, $orderInsensitive)
+            === self::normaliseJsonStructure($decodedB, $orderInsensitive);
     }
 
-    private static function normaliseJsonStructure(mixed $value): mixed
+    private static function normaliseJsonStructure(mixed $value, bool $orderInsensitive = false): mixed
     {
         if (! is_array($value)) {
             return $value;
         }
 
         if (array_is_list($value)) {
-            return array_map(self::normaliseJsonStructure(...), $value);
+            $items = array_map(
+                static fn (mixed $item): mixed => self::normaliseJsonStructure($item, $orderInsensitive),
+                $value,
+            );
+
+            if ($orderInsensitive) {
+                usort($items, static fn (mixed $x, mixed $y): int => (string) json_encode($x) <=> (string) json_encode($y));
+            }
+
+            return $items;
         }
 
         ksort($value);
         $result = [];
         foreach ($value as $k => $v) {
-            $result[$k] = self::normaliseJsonStructure($v);
+            $result[$k] = self::normaliseJsonStructure($v, $orderInsensitive);
         }
 
         return $result;
