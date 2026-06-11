@@ -191,7 +191,6 @@ final class DeferredMaintenanceRunner
         }
 
         $modelClass = $anchor::class;
-        /** @var Model&HasNestedSet $rootAnchor */
         $rootAnchor = new $modelClass;
         $rootAnchor->setAttribute($keyName, $rootRow->{$keyName});
         foreach ($scope as $column => $value) {

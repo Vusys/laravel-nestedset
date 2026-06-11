@@ -375,6 +375,51 @@ final class ScopingTest extends TestCase
         $this->assertNotNull(MenuItem::query()->find(5), 'X (menu2) survives');
     }
 
+    #[Test]
+    public function changing_the_scope_column_on_a_plain_save_is_rejected(): void
+    {
+        // Bare scope edit with no pending operation: the scoped mutation
+        // path has no cross-scope check of its own, so this must be
+        // caught in the saving listener or it silently shifts the wrong
+        // tree on the next structural mutation.
+        $a = MenuItem::query()->findOrFail(2);
+        $a->menu_id = $this->menu2->id;
+
+        $this->expectException(ScopeViolationException::class);
+        $a->save();
+    }
+
+    #[Test]
+    public function moving_between_trees_by_editing_scope_then_appending_is_rejected(): void
+    {
+        // The subtle case: setting menu_id to menu2 then appendToNode a
+        // menu2 parent passes assertSameScope (both in-memory scopes are
+        // menu2) but the row on disk is still in menu1 — the scoped
+        // UPDATE would shift menu2 bystanders. Must be rejected.
+        $a = MenuItem::query()->findOrFail(2);
+        $root2 = MenuItem::query()->findOrFail(4);
+        $a->menu_id = $this->menu2->id;
+
+        $this->expectException(ScopeViolationException::class);
+        $a->appendToNode($root2)->save();
+    }
+
+    #[Test]
+    public function both_trees_stay_intact_after_a_rejected_cross_scope_save(): void
+    {
+        $a = MenuItem::query()->findOrFail(2);
+        $a->menu_id = $this->menu2->id;
+
+        try {
+            $a->save();
+        } catch (ScopeViolationException) {
+            // expected
+        }
+
+        $this->assertSame(0, array_sum(MenuItem::countErrors(MenuItem::query()->findOrFail(1))));
+        $this->assertSame(0, array_sum(MenuItem::countErrors(MenuItem::query()->findOrFail(4))));
+    }
+
     // ----------------------------------------------------------------
     // prevSibling / nextSibling / up / down — root nodes are linked
     // only by `parent_id IS NULL`, so the lookup must also be
