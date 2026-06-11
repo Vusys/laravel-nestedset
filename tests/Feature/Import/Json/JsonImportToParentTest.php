@@ -29,12 +29,17 @@ final class JsonImportToParentTest extends TestCase
 
         $inserted = Category::fromJsonTree($payload, $root);
 
-        $this->assertCount(2, $inserted);
-
         $a = Category::query()->where('name', 'A')->firstOrFail();
         $a1 = Category::query()->where('name', 'A1')->firstOrFail();
         $a2 = Category::query()->where('name', 'A2')->firstOrFail();
         $b = Category::query()->where('name', 'B')->firstOrFail();
+
+        // Documented contract: every inserted node, in DFS pre-order —
+        // a parent's whole subtree precedes its next sibling.
+        $this->assertSame(
+            [$a->getKey(), $a1->getKey(), $a2->getKey(), $b->getKey()],
+            $inserted->map->getKey()->all(),
+        );
 
         $this->assertIsChildOf($a, $root);
         $this->assertIsChildOf($b, $root);

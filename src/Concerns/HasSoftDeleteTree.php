@@ -69,6 +69,16 @@ trait HasSoftDeleteTree
             return;
         }
 
+        // Format the cascade marker exactly as Eloquent's runSoftDelete()
+        // stamped the anchor row — `fromDateTime()` at the model's date
+        // format (default 'Y-m-d H:i:s', no sub-second). Using that same
+        // seconds-precision string for the descendants makes the anchor
+        // and its cascade byte-identical on a text column (SQLite) and
+        // instant-identical on a real timestamp column, so the restore
+        // match behaves the same on every backend. (A microsecond marker
+        // does NOT help: the default deleted_at column is second-precision,
+        // where one side rounds and the other truncates — see the docs
+        // note on same-second cascades.)
         $deletedAt = self::stringifyTimestamp($node->getAttribute($deletedAtColumn));
 
         if ($deletedAt === null) {
@@ -248,27 +258,27 @@ trait HasSoftDeleteTree
     }
 
     /**
-     * Stringifies the soft-delete timestamp for both writing the cascade
-     * marker onto descendants and matching it back on restore.
+     * Stringifies a stored soft-delete timestamp for both writing the
+     * cascade marker onto descendants and matching it back on restore.
      *
-     * Uses microsecond precision (`Y-m-d H:i:s.u`) when the value is a
-     * Carbon — preserves whatever sub-second resolution the model had
-     * in memory, so two cascades that happen in the same second still
-     * produce distinct markers when the deleted_at column supports
-     * microseconds (e.g. `DATETIME(6)` on MySQL / MariaDB, default
-     * `TIMESTAMP` on PostgreSQL, any string column on SQLite).
+     * Uses **seconds** precision (`Y-m-d H:i:s`) — the same shape Eloquent's
+     * `fromDateTime()` writes to the anchor row at the default model date
+     * format. That keeps the anchor and its descendants carrying an
+     * identical value on every backend: byte-identical on a text column
+     * (SQLite) and the same instant on a real timestamp column.
      *
-     * On a `DATETIME(0)` column the DB truncates to seconds, so
-     * same-second cascades can still collide — that's a schema
-     * limitation, not a package one. The microsecond round-trip works
-     * because both the SET clause and the matching WHERE use the
-     * same precision; the DB does the truncation consistently for
-     * each side of the comparison.
+     * A finer (microsecond) marker is deliberately avoided: the default
+     * `deleted_at` column is second-precision, where a sub-second write
+     * rounds on the column while the in-memory cast truncates — so the two
+     * sides disagree across backends. Independent or nested cascades that
+     * land in the same wall-clock second therefore share a marker; the
+     * cascade is bounds-scoped, so disjoint subtrees are always isolated
+     * regardless. See `docs/tree-operations/soft-deletes.md`.
      */
     private static function stringifyTimestamp(mixed $value): ?string
     {
         if ($value instanceof Carbon) {
-            return $value->format('Y-m-d H:i:s.u');
+            return $value->format('Y-m-d H:i:s');
         }
 
         return is_string($value) ? $value : null;

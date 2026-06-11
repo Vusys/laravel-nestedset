@@ -53,12 +53,31 @@ trait HasNodeInspection
 
     public function isDescendantOf(HasNestedSet $other): bool
     {
-        return $other->getBounds()->contains($this->getBounds());
+        return $this->inSameScopeAs($other)
+            && $other->getBounds()->contains($this->getBounds());
     }
 
     public function isAncestorOf(HasNestedSet $other): bool
     {
-        return $this->getBounds()->contains($other->getBounds());
+        return $this->inSameScopeAs($other)
+            && $this->getBounds()->contains($other->getBounds());
+    }
+
+    /**
+     * Bounds comparisons are only meaningful within a single tree: every
+     * scope restarts lft at 1, so two nodes in different trees can have
+     * overlapping (even identical) bounds. Guard the bounds-only
+     * predicates the same way {@see isSiblingOf()} guards parent_id.
+     * Non-Model stubs (contract-only test doubles) have no scope to
+     * resolve, so they fall through as same-scope.
+     */
+    private function inSameScopeAs(HasNestedSet $other): bool
+    {
+        if ($this instanceof Model && $other instanceof Model) {
+            return NestedSetScopeResolver::sameScope($this, $other);
+        }
+
+        return true;
     }
 
     /**

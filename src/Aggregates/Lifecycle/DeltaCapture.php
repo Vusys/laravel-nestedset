@@ -200,108 +200,52 @@ final class DeltaCapture
                 continue;
             }
 
-            if ($definition->function === AggregateFunction::Max && $source !== null) {
-                $newSource = Numeric::asNumericOrZero($node->getAttribute($source));
-                $oldSource = Numeric::asNumericOrZero($node->getOriginal($source));
-
-                if ($newPred && ! $oldPred) {
-                    $state->extremes[$definition->column] = [
-                        'function' => AggregateFunction::Max,
-                        'value' => $newSource,
-                    ];
-                } elseif (! $newPred && $oldPred) {
-                    $state->recomputes[$definition->column] = [
-                        'function' => AggregateFunction::Max,
-                        'source' => $source,
-                        'filterValue' => $oldSource,
-                        'filter' => $definition->filter,
-                    ];
-                } elseif ($newPred && $oldPred) {
-                    $delta = $newSource - $oldSource;
-                    if ($delta > 0) {
-                        $state->extremes[$definition->column] = [
-                            'function' => AggregateFunction::Max,
-                            'value' => $newSource,
-                        ];
-                    } elseif ($delta < 0) {
-                        $state->recomputes[$definition->column] = [
-                            'function' => AggregateFunction::Max,
-                            'source' => $source,
-                            'filterValue' => $oldSource,
-                            'filter' => $definition->filter,
-                        ];
-                    }
-                }
-
-                continue;
-            }
-
-            if ($definition->function === AggregateFunction::Min && $source !== null) {
-                $newSource = Numeric::asNumericOrZero($node->getAttribute($source));
-                $oldSource = Numeric::asNumericOrZero($node->getOriginal($source));
-
-                if ($newPred && ! $oldPred) {
-                    $state->extremes[$definition->column] = [
-                        'function' => AggregateFunction::Min,
-                        'value' => $newSource,
-                    ];
-                } elseif (! $newPred && $oldPred) {
-                    $state->recomputes[$definition->column] = [
-                        'function' => AggregateFunction::Min,
-                        'source' => $source,
-                        'filterValue' => $oldSource,
-                        'filter' => $definition->filter,
-                    ];
-                } elseif ($newPred && $oldPred) {
-                    $delta = $newSource - $oldSource;
-                    if ($delta < 0) {
-                        $state->extremes[$definition->column] = [
-                            'function' => AggregateFunction::Min,
-                            'value' => $newSource,
-                        ];
-                    } elseif ($delta > 0) {
-                        $state->recomputes[$definition->column] = [
-                            'function' => AggregateFunction::Min,
-                            'source' => $source,
-                            'filterValue' => $oldSource,
-                            'filter' => $definition->filter,
-                        ];
-                    }
-                }
-
-                continue;
-            }
-
-            if ($definition->function === AggregateFunction::BitXor && $source !== null) {
-                // BitXor is self-inverse — `parent ^= old` undoes the
-                // old contribution; `parent ^= new` adds the new one.
-                $newSource = Numeric::asIntOrZero($node->getAttribute($source));
-                $oldSource = Numeric::asIntOrZero($node->getOriginal($source));
-                $newContrib = $newPred ? $newSource : 0;
-                $oldContrib = $oldPred ? $oldSource : 0;
-                $xorDelta = $oldContrib ^ $newContrib;
-
-                if ($xorDelta !== 0) {
-                    $state->bitwise[$definition->column] = [
-                        'function' => AggregateFunction::BitXor,
-                        'value' => $xorDelta,
-                    ];
-                }
-
-                continue;
-            }
-
-            if (in_array($definition->function, [AggregateFunction::BitOr, AggregateFunction::BitAnd], true)
+            if (($definition->function === AggregateFunction::Max
+                || $definition->function === AggregateFunction::Min)
                 && $source !== null
             ) {
-                // BitOr: source change can drop a bit no other row holds
-                // (`parent |= new` would not unset it). BitAnd: every
-                // change can promote or demote the AND fold. Route both
-                // through chain recompute on any dirty source.
-                $state->chainRecomputes[$definition->column] = $definition;
+                // A row contributes a MIN/MAX candidate only when it passes
+                // the filter AND its source is non-NULL — SQL MIN/MAX ignore
+                // NULL. Coercing NULL to 0 here (the pre-#178 footgun) routes
+                // null↔value transitions to the wrong branch: a freshly-set
+                // value is missed and a dropped holder leaves stale data.
+                $rawNew = $node->getAttribute($source);
+                $rawOld = $node->getOriginal($source);
+                $newHas = $newPred && $rawNew !== null;
+                $oldHas = $oldPred && $rawOld !== null;
+
+                $extreme = static fn (int|float $value): array => [
+                    'function' => $definition->function,
+                    'value' => $value,
+                ];
+                $recompute = static fn (int|float $filterValue): array => [
+                    'function' => $definition->function,
+                    'source' => $source,
+                    'filterValue' => $filterValue,
+                    'filter' => $definition->filter,
+                ];
+
+                if ($newHas && ! $oldHas) {
+                    $state->extremes[$definition->column] = $extreme(Numeric::asNumericOrZero($rawNew));
+                } elseif (! $newHas && $oldHas) {
+                    $state->recomputes[$definition->column] = $recompute(Numeric::asNumericOrZero($rawOld));
+                } elseif ($newHas && $oldHas) {
+                    $delta = Numeric::asNumericOrZero($rawNew) - Numeric::asNumericOrZero($rawOld);
+                    $extends = $definition->function === AggregateFunction::Max ? $delta > 0 : $delta < 0;
+                    $loses = $definition->function === AggregateFunction::Max ? $delta < 0 : $delta > 0;
+                    if ($extends) {
+                        $state->extremes[$definition->column] = $extreme(Numeric::asNumericOrZero($rawNew));
+                    } elseif ($loses) {
+                        $state->recomputes[$definition->column] = $recompute(Numeric::asNumericOrZero($rawOld));
+                    }
+                }
 
                 continue;
             }
+
+            // BitOr / BitAnd / BitXor all route through the chain-recompute
+            // branch above (requiresChainRecompute() is true for every
+            // bitwise kind), so no per-bit delta is captured here.
         }
 
         foreach (AggregateRegistry::for($modelClass) as $definition) {
@@ -394,21 +338,43 @@ final class DeltaCapture
                 continue;
             }
 
+            // A null contribution means the row does not participate
+            // (listener returned null, or the filter rejected the row),
+            // mirroring a NULL SQL source. contributionOrZero collapses
+            // both old and new to 0, so the value↔null transitions must
+            // be decided on the raw contribution, not the coerced value —
+            // otherwise a dropped holder pushes a fabricated 0 candidate
+            // and a freshly-appearing candidate is missed.
+            $newHas = $newContrib !== null;
+            $oldHas = $oldContrib !== null;
+
             if ($op === AggregateFunction::Max) {
-                if ($newVal > $oldVal) {
+                if ($newHas && ! $oldHas) {
                     $state->extremes[$definition->column] = ['function' => AggregateFunction::Max, 'value' => $newVal];
-                } elseif ($newVal < $oldVal) {
+                } elseif (! $newHas && $oldHas) {
                     $state->listenerRecomputes[$definition->column] = $definition;
+                } elseif ($newHas && $oldHas) {
+                    if ($newVal > $oldVal) {
+                        $state->extremes[$definition->column] = ['function' => AggregateFunction::Max, 'value' => $newVal];
+                    } elseif ($newVal < $oldVal) {
+                        $state->listenerRecomputes[$definition->column] = $definition;
+                    }
                 }
 
                 continue;
             }
 
             // Min: only remaining op after Sum/Count/Avg/Max continues above.
-            if ($newVal < $oldVal) {
+            if ($newHas && ! $oldHas) {
                 $state->extremes[$definition->column] = ['function' => AggregateFunction::Min, 'value' => $newVal];
-            } elseif ($newVal > $oldVal) {
+            } elseif (! $newHas && $oldHas) {
                 $state->listenerRecomputes[$definition->column] = $definition;
+            } elseif ($newHas && $oldHas) {
+                if ($newVal < $oldVal) {
+                    $state->extremes[$definition->column] = ['function' => AggregateFunction::Min, 'value' => $newVal];
+                } elseif ($newVal > $oldVal) {
+                    $state->listenerRecomputes[$definition->column] = $definition;
+                }
             }
         }
     }
@@ -431,12 +397,11 @@ final class DeltaCapture
         $recomputes = $state->recomputes;
         $listenerRecomputes = $state->listenerRecomputes;
         $chainRecomputes = $state->chainRecomputes;
-        $bitwise = $state->bitwise;
         $lazyInvalidations = $state->lazyInvalidations;
 
         $state->clearCapture();
 
-        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $bitwise === [] && $lazyInvalidations === []) {
+        if ($deltas === [] && $extremes === [] && $recomputes === [] && $listenerRecomputes === [] && $chainRecomputes === [] && $lazyInvalidations === []) {
             return;
         }
 
@@ -470,7 +435,6 @@ final class DeltaCapture
             scope: $scope,
             avgs: AggregateRegistry::avgCompanionsFor($modelClass),
             extremes: $extremes,
-            bitwise: $bitwise,
             softDeletedColumn: $softDeletedColumn,
             variances: AggregateRegistry::varianceCompanionsFor($modelClass),
             weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor($modelClass),

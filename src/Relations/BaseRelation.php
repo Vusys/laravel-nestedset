@@ -95,6 +95,12 @@ abstract class BaseRelation extends Relation
                 $this->addEagerConstraint($inner, $model, $lft, $rgt, $scope);
             }
         });
+
+        // Order by lft so the documented order holds: ancestors
+        // root-to-parent, descendants DFS pre-order. match() distributes
+        // results by scope/bounds and preserves this relative order
+        // within each parent's collection.
+        $tree->orderBy($lft);
     }
 
     /**

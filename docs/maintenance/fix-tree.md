@@ -62,6 +62,9 @@ The `lft` / `rgt` pill badges on each row show the dense slot ranges the rebuild
 | `invalid_bounds` (`lft >= rgt`) | ✅ | ✅ | Raw `UPDATE` on `lft`/`rgt`; crashed transaction. |
 | `duplicate_lft` / `duplicate_rgt` | ✅ | ✅ | Concurrent gap-shifts without locking; partial migration. |
 | `orphans` (`parent_id` → missing row) | ✅ | ❌ — detected but not auto-repaired | Hard `DELETE` of a parent without cascading. |
+| `parent_bounds_mismatch` (child bounds not inside parent's) | ✅ | ✅ | Raw `UPDATE` on `parent_id` without rebuilding bounds. |
+| `depth_mismatch` (`depth` ≠ `parent.depth + 1`) | ✅ | ✅ | Raw edit that didn't also fix `depth`. |
+| `bounds_out_of_range` (below-1 bound / cross-column collision) | ✅ | ✅ | Raw `lft`/`rgt` literal outside the reserved range. |
 | `parent_id` cycles | ❌ — not surfaced by `countErrors()` | ❌ — cycle members are silently skipped | Raw `UPDATE` on `parent_id` that bypassed Eloquent guards. |
 | Aggregate drift (stored `articles_total` ≠ computed) | ✅ via `aggregateErrors()` | ✅ via `fixAggregates()` | Raw `UPDATE` on the source column. |
 
@@ -82,3 +85,7 @@ The package's `fixTree()` runs `fixAggregates()` internally **after** structural
 When you pass an anchor to `fixTree()`, the rebuild walks down from that anchor using `parent_id` and reassigns `lft`/`rgt`/`depth` for every reachable descendant. Rows **outside** the anchor's subtree are untouched.
 
 If the anchor's subtree was corrupted in a way that changed its total size (e.g. orphans were force-deleted leaving phantom gaps, or descendants were added without `rgt`-shifting the ancestors), the rebuilt subtree may overlap surrounding rows in the same scope. In that case, fall back to the unanchored `fixTree()` which rebuilds every row in scope from `parent_id`.
+
+The anchor itself must be **placed** — it needs a real `lft` to rebuild from. `fixTree($anchor)` on an unplaced node (`lft = 0`) throws `UnplacedNodeException` rather than write a subtree starting at `0` that collides with the real root; place the node first, or run the unanchored `fixTree()`.
+
+`TreeFixResult::nodesUpdated` reports the number of rows the rebuild actually walked — the anchor's subtree for `fixTree($anchor)`, the whole scope for the unanchored form.

@@ -57,8 +57,6 @@ final class DeleteHookApplier
 
         $deltas = [];
         $minMaxRecomputes = [];
-        /** @var array<string, array{function: AggregateFunction, value: int}> $bitwise */
-        $bitwise = [];
         /** @var array<string, AggregateDefinition> $chainRecomputes */
         $chainRecomputes = [];
 
@@ -119,30 +117,10 @@ final class DeleteHookApplier
                 continue;
             }
 
-            if ($definition->function === AggregateFunction::BitXor && $definition->source !== null) {
-                // BitXor self-inverse: XOR-ing the deleted subtree's
-                // rolled-up value out of each ancestor undoes its
-                // contribution exactly.
-                $stored = $node->getAttribute($definition->column);
-                if ($stored !== null) {
-                    $value = Numeric::asIntOrZero($stored);
-                    if ($value !== 0) {
-                        $bitwise[$definition->column] = [
-                            'function' => AggregateFunction::BitXor,
-                            'value' => $value,
-                        ];
-                    }
-                }
-
-                continue;
-            }
-
-            if (($definition->function === AggregateFunction::BitOr
-                || $definition->function === AggregateFunction::BitAnd)
-                && $definition->source !== null
-            ) {
-                $chainRecomputes[$definition->column] = $definition;
-            }
+            // BitOr / BitAnd / BitXor are all handled by the
+            // requiresChainRecompute() branch above — the deleted
+            // subtree's contribution is removed by recomputing the
+            // affected ancestors, not by a per-bit delta.
         }
 
         /** @var array<string, ListenerAggregateDefinition> $listenerChainDefs */
@@ -186,7 +164,7 @@ final class DeleteHookApplier
 
         $scope = NestedSetScopeResolver::valuesFor($node);
 
-        if ($deltas !== [] || $bitwise !== []) {
+        if ($deltas !== []) {
             DeltaMaintenance::apply(
                 connection: $node->getConnection(),
                 table: $node->getTable(),
@@ -197,7 +175,6 @@ final class DeleteHookApplier
                 includeSelf: false,
                 scope: $scope,
                 avgs: AggregateRegistry::avgCompanionsFor($modelClass),
-                bitwise: $bitwise,
                 softDeletedColumn: $softDeletedColumn,
                 variances: AggregateRegistry::varianceCompanionsFor($modelClass),
                 weightedAvgs: AggregateRegistry::weightedAvgCompanionsFor($modelClass),

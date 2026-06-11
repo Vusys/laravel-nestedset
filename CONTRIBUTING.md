@@ -70,3 +70,9 @@ vendor/bin/phpunit testsuite Performance     # opt-in benchmark suite
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for the project-level architecture notes.
+
+## Changelog
+
+User-facing changes go in [`CHANGELOG.md`](CHANGELOG.md) under
+**Unreleased** (Keep a Changelog format). Call out any pre-1.0
+backwards-compatibility break under **Changed** / **Removed**.

@@ -28,7 +28,8 @@ Two methods detect violations:
 ```php
 // Structural invariants (returns counts; key names listed below).
 $errors = Category::countErrors();
-// → ['invalid_bounds' => 0, 'duplicate_lft' => 0, 'duplicate_rgt' => 0, 'orphans' => 0]
+// → ['invalid_bounds' => 0, 'duplicate_lft' => 0, 'duplicate_rgt' => 0, 'orphans' => 0,
+//    'parent_bounds_mismatch' => 0, 'depth_mismatch' => 0, 'bounds_out_of_range' => 0]
 
 Category::isBroken(); // true if any of the above is > 0
 
@@ -41,7 +42,7 @@ Category::aggregatesAreBroken(); // true if any column has drift
 
 On scoped models pass an anchor: `Category::countErrors($root)`. Without one the call throws `ScopeViolationException` to stop you from accidentally counting errors across every tenant's tree at once.
 
-The structural check is fast — index range scans plus a `GROUP BY` for the duplicate counts. The aggregate-drift check is the same cost as one `withFreshAggregates` pass.
+The structural check is one indexed query per category — range scans, a `GROUP BY` for the duplicate counts, and a handful of self-joins (`parent_bounds_mismatch`, `depth_mismatch`, cross-column collisions). The aggregate-drift check is the same cost as one `withFreshAggregates` pass.
 
 > **Cycles are not currently surfaced by `countErrors()`.** They appear indirectly as "rows you couldn't see in the tree after a repair" — see [`parent_id` cycles](#parentid-cycles). Detection SQL is in [Diagnostic SQL](#diagnostic-sql).
 
@@ -95,6 +96,45 @@ The structural check is fast — index range scans plus a `GROUP BY` for the dup
 3. **Delete** them via `Model::find($orphanId)->delete()`.
 
 The package can't pick the right answer because the right answer is domain-specific.
+
+### `parent_bounds_mismatch`
+
+**Symptom.** A child's bounds are not strictly inside its (existing) parent's bounds — i.e. `lft`/`rgt` disagree with the `parent_id` they claim.
+
+**Meaning.** This is the corruption a direct `parent_id` edit produces: the row points at a new parent but its interval still sits where the old one was (or a raw `lft`/`rgt` edit moved the interval out from under a valid `parent_id`). The bounds are internally consistent — `lft < rgt`, no duplicates — so the bounds-only checks read clean, but the tree the bounds describe contradicts the tree `parent_id` describes.
+
+**Typical causes.**
+
+- A raw `UPDATE … SET parent_id = …` re-parenting a row without re-running `fixTree()`.
+- A partial mutation that wrote `parent_id` but crashed before the gap shift.
+
+**Repair.** Automatic. `fixTree()` rebuilds `lft`/`rgt`/`depth` from `parent_id`, which is authoritative.
+
+### `depth_mismatch`
+
+**Symptom.** A row's stored `depth` isn't `parent.depth + 1` (or isn't `0` for a root).
+
+**Meaning.** `depth` is stored and maintained, not recomputed on read, so a raw edit or a half-applied move can leave it drifting from the structure. Queries that use `depth` (e.g. `withDepth` comparisons, level filters) then return wrong levels.
+
+**Typical causes.**
+
+- A raw `lft`/`rgt`/`parent_id` edit that didn't also fix `depth`.
+- Importing a tree that carried its own `depth` values inconsistent with the package's convention.
+
+**Repair.** Automatic. `fixTree()` reassigns `depth` from the walk.
+
+### `bounds_out_of_range`
+
+**Symptom.** A placed row has a bound below `1` (a stray `0`), or a value that is simultaneously one row's `lft` and another's `rgt` — a cross-column collision, e.g. `X(0, 1)` sitting alongside `Root(1, 4)` (the value `1` is both `X.rgt` and `Root.lft`).
+
+**Meaning.** In a valid nested set every `lft`/`rgt` value is distinct and `>= 1`, so the `lft` and `rgt` value sets are disjoint. A below-`1` bound or a cross-column collision breaks that in a way `lft >= rgt` and the per-column duplicate checks miss. The check is **gap-tolerant**: a sparse but otherwise valid tree (reserved slots not yet filled) is not flagged, and fully-unplaced rows (`lft = rgt = 0`) are a legitimate transient state, not corruption.
+
+**Typical causes.**
+
+- A raw `lft`/`rgt` literal that landed below `1` or overlapped an existing bound.
+- A partially-applied gap shift that left two rows sharing a boundary value.
+
+**Repair.** Automatic. `fixTree()` renumbers the whole scope into a fresh dense permutation.
 
 ### `parent_id` cycles
 

@@ -32,6 +32,7 @@ Format:
 - [In-memory Tree Shaping](querying/tree-shaping.md)
 - [Walking Subtrees](querying/walking.md)
 - [Tree Exporters](querying/exporters.md)
+- [Tree Diff](querying/tree-diff.md)
 - [Inspection](querying/inspection.md)
 - [Scoped Trees](querying/scoped-trees.md)
 
@@ -48,6 +49,7 @@ Format:
 - [Weighted Average & Boolean Rollups](aggregates/weighted-avg-and-booleans.md)
 - [Geometric & Harmonic Mean](aggregates/means.md)
 - [Median, Percentile & Quantiles](aggregates/quantiles.md)
+- [Top-K Aggregate](aggregates/top-k.md)
 - [Bitwise Aggregates](aggregates/bitwise.md)
 - [Lazy Aggregates](aggregates/lazy.md)
 - [Recipes](aggregates/recipes.md)

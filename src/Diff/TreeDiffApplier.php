@@ -18,7 +18,7 @@ use Vusys\NestedSet\Exceptions\MissingParentException;
 /**
  * Applies a {@see TreeDiff} to a live model class.
  *
- * Ordering: remove → add → move → modify, all under one transaction
+ * Ordering: add → move → remove → modify, all under one transaction
  * with aggregate maintenance deferred to a single trailing pass. The
  * applier is stateless; every operation hangs off the diff + model
  * class passed in.
@@ -71,10 +71,15 @@ final class TreeDiffApplier
 
         $accumulator = new TreeDiffApplierAccumulator;
 
+        // Order: add → move → remove → modify. Adds run first so a move
+        // can target a newly-added parent. Moves run before removes so a
+        // child the diff retains is re-parented OUT of a doomed subtree
+        // before the remove's hard-delete cascade would take it with the
+        // parent (otherwise the later move can't resolve the deleted row).
         $work = static function () use ($diff, $modelClass, $resolver, &$resolved, $accumulator): void {
-            self::doRemoves($diff, $modelClass, $resolved, $accumulator);
             self::doAdds($diff, $modelClass, $resolver, $resolved, $accumulator);
             self::doMoves($diff, $modelClass, $resolved, $accumulator);
+            self::doRemoves($diff, $modelClass, $resolved, $accumulator);
             self::doModifies($diff, $modelClass, $resolved, $accumulator);
         };
 
@@ -411,6 +416,7 @@ final class TreeDiffApplier
                 }
                 self::callInstance($model, 'appendToNode', [$parent]);
                 $model->save();
+                self::reorderToSiblingPosition($model, $added->siblingPosition);
             }
 
             $key = $model->getKey();
@@ -476,12 +482,29 @@ final class TreeDiffApplier
 
                 self::callInstance($row, 'appendToNode', [$parent]);
                 $row->save();
+                self::reorderToSiblingPosition($row, $move->toSiblingPosition);
             }
 
             if (is_int($move->key) || is_string($move->key)) {
                 $accumulator->moved[] = $move->key;
             }
         }
+    }
+
+    /**
+     * Places a freshly placed (appended) child at its recorded
+     * sibling slot. The diff records `$zeroBasedPosition` as the row's
+     * 0-indexed rank within its parent's children in the `after` tree;
+     * `moveToSiblingPosition()` is 1-indexed. Skipped for roots, which
+     * have no sibling group to reorder within.
+     *
+     * Processing adds/moves in the diff's DFS order means every sibling
+     * ranked below this one is already present, so the 1-indexed target
+     * never exceeds the current child count.
+     */
+    private static function reorderToSiblingPosition(Model $node, int $zeroBasedPosition): void
+    {
+        self::callInstance($node, 'moveToSiblingPosition', [$zeroBasedPosition + 1]);
     }
 
     /**
@@ -535,15 +558,16 @@ final class TreeDiffApplier
         $moved = array_map(static fn (Moved $m): mixed => $m->key, $diff->moved);
         $modified = array_map(static fn (Modified $m): mixed => $m->key, $diff->modified);
 
+        // Mirror the real execution order: add → move → remove → modify.
         $planned = [];
-        if ($diff->removed !== []) {
-            $planned[] = ['statement' => 'delete', 'rows' => count($diff->removed)];
-        }
         foreach ($diff->added as $_) {
             $planned[] = ['statement' => 'insert+gap', 'rows' => 1];
         }
         foreach ($diff->moved as $_) {
             $planned[] = ['statement' => 'move', 'rows' => 1];
+        }
+        if ($diff->removed !== []) {
+            $planned[] = ['statement' => 'delete', 'rows' => count($diff->removed)];
         }
         if ($diff->modified !== []) {
             $planned[] = ['statement' => 'update', 'rows' => count($diff->modified)];

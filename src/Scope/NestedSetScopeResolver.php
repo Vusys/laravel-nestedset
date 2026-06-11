@@ -30,14 +30,21 @@ final class NestedSetScopeResolver
      */
     public static function columns(string $class): array
     {
-        $attributes = (new ReflectionClass($class))->getAttributes(NestedSetScope::class);
+        // ReflectionClass::getAttributes() does not traverse parents, so a
+        // subclass of a scoped model would otherwise resolve to no scope —
+        // and its mutations would leak across trees with no
+        // ScopeViolationException. Walk the parent chain; first match wins.
+        $reflection = new ReflectionClass($class);
+        do {
+            $attributes = $reflection->getAttributes(NestedSetScope::class);
+            if ($attributes !== []) {
+                $instance = $attributes[0]->newInstance();
+                $columns = $instance->columns;
 
-        if ($attributes !== []) {
-            $instance = $attributes[0]->newInstance();
-            $columns = $instance->columns;
-
-            return is_array($columns) ? $columns : [$columns];
-        }
+                return is_array($columns) ? $columns : [$columns];
+            }
+            $reflection = $reflection->getParentClass();
+        } while ($reflection !== false);
 
         if (method_exists($class, 'getScopeAttributes')) {
             // Cheap instance — Eloquent models are safe to construct without args

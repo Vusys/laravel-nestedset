@@ -105,4 +105,100 @@ final class MinMaxNullSourceTest extends TestCase
         $this->assertSame(100, (int) $root->score_max);
         $this->assertSame(50, (int) $root->score_min);
     }
+
+    #[Test]
+    public function update_min_source_null_to_value_lowers_ancestor_min(): void
+    {
+        // NULL → 3 introduces a new MIN candidate. Pre-fix the update
+        // path read NULL as 0 and routed to a recompute filtered on
+        // stored = 0, matching zero rows — so root's MIN stayed 10.
+        $root = new NullableMetricArea(['name' => 'Root', 'score' => 10]);
+        $root->saveAsRoot();
+
+        $child = new NullableMetricArea(['name' => 'Child', 'score' => null]);
+        $child->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $this->assertSame(10, (int) $root->score_min);
+
+        $child->score = 3;
+        $child->save();
+
+        $root->refresh();
+        $this->assertSame(3, (int) $root->score_min);
+        $this->assertSame(10, (int) $root->score_max);
+        $this->assertAggregateMatchesFresh($root, 'score_min');
+        $this->assertAggregateMatchesFresh($root, 'score_max');
+    }
+
+    #[Test]
+    public function update_max_source_value_to_null_drops_holder(): void
+    {
+        // 0 → NULL where 0 was the MAX holder. Pre-fix delta = 0 - 0 = 0
+        // routed to no action, so root's MAX stayed 0; fresh is -5.
+        $root = new NullableMetricArea(['name' => 'Root', 'score' => -5]);
+        $root->saveAsRoot();
+
+        $child = new NullableMetricArea(['name' => 'Child', 'score' => 0]);
+        $child->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $this->assertSame(0, (int) $root->score_max);
+
+        $child->score = null;
+        $child->save();
+
+        $root->refresh();
+        $this->assertSame(-5, (int) $root->score_max);
+        $this->assertSame(-5, (int) $root->score_min);
+        $this->assertAggregateMatchesFresh($root, 'score_max');
+        $this->assertAggregateMatchesFresh($root, 'score_min');
+    }
+
+    #[Test]
+    public function update_max_source_null_to_negative_value_raises_ancestor_max(): void
+    {
+        // NULL → -3 introduces a new MAX candidate above -10. Pre-fix
+        // delta = -3 - 0 = -3 routed to a recompute filtered on
+        // stored = 0, matching zero rows — so root's MAX stayed -10.
+        $root = new NullableMetricArea(['name' => 'Root', 'score' => -10]);
+        $root->saveAsRoot();
+
+        $child = new NullableMetricArea(['name' => 'Child', 'score' => null]);
+        $child->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $this->assertSame(-10, (int) $root->score_max);
+
+        $child->score = -3;
+        $child->save();
+
+        $root->refresh();
+        $this->assertSame(-3, (int) $root->score_max);
+        $this->assertAggregateMatchesFresh($root, 'score_max');
+        $this->assertAggregateMatchesFresh($root, 'score_min');
+    }
+
+    #[Test]
+    public function update_min_source_value_to_null_drops_holder(): void
+    {
+        // 2 → NULL where 2 was the MIN holder. Pre-fix delta = 0 - 2 = -2
+        // pushed a fabricated 0 candidate, collapsing root's MIN to 0.
+        $root = new NullableMetricArea(['name' => 'Root', 'score' => 5]);
+        $root->saveAsRoot();
+
+        $child = new NullableMetricArea(['name' => 'Child', 'score' => 2]);
+        $child->appendToNode($root->refresh())->save();
+
+        $root->refresh();
+        $this->assertSame(2, (int) $root->score_min);
+
+        $child->score = null;
+        $child->save();
+
+        $root->refresh();
+        $this->assertSame(5, (int) $root->score_min);
+        $this->assertAggregateMatchesFresh($root, 'score_min');
+        $this->assertAggregateMatchesFresh($root, 'score_max');
+    }
 }

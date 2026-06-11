@@ -38,7 +38,12 @@ use Vusys\NestedSet\NodeTrait;
 #[NestedSetAggregate(column: 'avg_cost',        avg:   'cost')]
 #[NestedSetAggregate(column: 'biggest_item',    max:   'cost')]
 #[NestedSetAggregate(column: 'recurring_total', sum:   'cost', filter: ['recurring' => true])]
-class BudgetItem extends Model implements MaintainsTreeAggregates { use NodeTrait; }
+class BudgetItem extends Model implements MaintainsTreeAggregates
+{
+    use NodeTrait;
+
+    protected $fillable = ['name', 'cost', 'recurring'];   // so the mass-assignment below runs
+}
 
 // Render the forest with each node's own cost + rolled-up subtree total:
 $render = fn () => BudgetItem::toAsciiTreeForest(new AsciiOptions(
@@ -105,8 +110,8 @@ Full documentation lives at **<https://vusys.github.io/laravel-nestedset/>**.
 
 - **Getting Started** — [Introduction](https://vusys.github.io/laravel-nestedset/) · [Installation](https://vusys.github.io/laravel-nestedset/getting-started/installation.html) · [Migration](https://vusys.github.io/laravel-nestedset/getting-started/migration.html) · [Primary Keys](https://vusys.github.io/laravel-nestedset/getting-started/primary-keys.html) · [Model Setup](https://vusys.github.io/laravel-nestedset/getting-started/model-setup.html)
 - **Tree Operations** — [Inserting & Moving](https://vusys.github.io/laravel-nestedset/tree-operations/inserting.html) · [Reordering Siblings](https://vusys.github.io/laravel-nestedset/tree-operations/reordering.html) · [Soft Deletes](https://vusys.github.io/laravel-nestedset/tree-operations/soft-deletes.html) · [Bulk Insertion](https://vusys.github.io/laravel-nestedset/tree-operations/bulk-insertion.html) · [Cloning Subtrees](https://vusys.github.io/laravel-nestedset/tree-operations/cloning.html) · [Materialised Paths](https://vusys.github.io/laravel-nestedset/tree-operations/materialised-paths.html)
-- **Querying** — [Tree Queries](https://vusys.github.io/laravel-nestedset/querying/queries.html) · [Eloquent Relations](https://vusys.github.io/laravel-nestedset/querying/relations.html) · [In-memory Tree Shaping](https://vusys.github.io/laravel-nestedset/querying/tree-shaping.html) · [Walking Subtrees](https://vusys.github.io/laravel-nestedset/querying/walking.html) · [Tree Exporters & JSON Import](https://vusys.github.io/laravel-nestedset/querying/exporters.html) · [Inspection](https://vusys.github.io/laravel-nestedset/querying/inspection.html) · [Scoped Trees](https://vusys.github.io/laravel-nestedset/querying/scoped-trees.html)
-- **Aggregates** — [Overview](https://vusys.github.io/laravel-nestedset/aggregates/overview.html) · [Setup](https://vusys.github.io/laravel-nestedset/aggregates/setup.html) · [Reading](https://vusys.github.io/laravel-nestedset/aggregates/reading.html) · [Declaring](https://vusys.github.io/laravel-nestedset/aggregates/declaring.html) · [Filtered](https://vusys.github.io/laravel-nestedset/aggregates/filtered.html) · [Collection](https://vusys.github.io/laravel-nestedset/aggregates/text-and-json.html) · [Listeners](https://vusys.github.io/laravel-nestedset/aggregates/listeners.html) · [Variance & Stddev](https://vusys.github.io/laravel-nestedset/aggregates/maths.html) · [Weighted Avg & Booleans](https://vusys.github.io/laravel-nestedset/aggregates/weighted-avg-and-booleans.html) · [Means](https://vusys.github.io/laravel-nestedset/aggregates/means.html) · [Quantiles](https://vusys.github.io/laravel-nestedset/aggregates/quantiles.html) · [Bitwise](https://vusys.github.io/laravel-nestedset/aggregates/bitwise.html) · [Lazy](https://vusys.github.io/laravel-nestedset/aggregates/lazy.html) · [Recipes](https://vusys.github.io/laravel-nestedset/aggregates/recipes.html) · [Maintenance](https://vusys.github.io/laravel-nestedset/aggregates/maintenance.html) · [Drift & Limitations](https://vusys.github.io/laravel-nestedset/aggregates/drift.html)
+- **Querying** — [Tree Queries](https://vusys.github.io/laravel-nestedset/querying/queries.html) · [Eloquent Relations](https://vusys.github.io/laravel-nestedset/querying/relations.html) · [In-memory Tree Shaping](https://vusys.github.io/laravel-nestedset/querying/tree-shaping.html) · [Walking Subtrees](https://vusys.github.io/laravel-nestedset/querying/walking.html) · [Tree Exporters & JSON Import](https://vusys.github.io/laravel-nestedset/querying/exporters.html) · [Tree Diff](https://vusys.github.io/laravel-nestedset/querying/tree-diff.html) · [Inspection](https://vusys.github.io/laravel-nestedset/querying/inspection.html) · [Scoped Trees](https://vusys.github.io/laravel-nestedset/querying/scoped-trees.html)
+- **Aggregates** — [Overview](https://vusys.github.io/laravel-nestedset/aggregates/overview.html) · [Setup](https://vusys.github.io/laravel-nestedset/aggregates/setup.html) · [Reading](https://vusys.github.io/laravel-nestedset/aggregates/reading.html) · [Declaring](https://vusys.github.io/laravel-nestedset/aggregates/declaring.html) · [Filtered](https://vusys.github.io/laravel-nestedset/aggregates/filtered.html) · [Collection](https://vusys.github.io/laravel-nestedset/aggregates/text-and-json.html) · [Listeners](https://vusys.github.io/laravel-nestedset/aggregates/listeners.html) · [Variance & Stddev](https://vusys.github.io/laravel-nestedset/aggregates/maths.html) · [Weighted Avg & Booleans](https://vusys.github.io/laravel-nestedset/aggregates/weighted-avg-and-booleans.html) · [Means](https://vusys.github.io/laravel-nestedset/aggregates/means.html) · [Quantiles](https://vusys.github.io/laravel-nestedset/aggregates/quantiles.html) · [Top-K](https://vusys.github.io/laravel-nestedset/aggregates/top-k.html) · [Bitwise](https://vusys.github.io/laravel-nestedset/aggregates/bitwise.html) · [Lazy](https://vusys.github.io/laravel-nestedset/aggregates/lazy.html) · [Recipes](https://vusys.github.io/laravel-nestedset/aggregates/recipes.html) · [Maintenance](https://vusys.github.io/laravel-nestedset/aggregates/maintenance.html) · [Drift & Limitations](https://vusys.github.io/laravel-nestedset/aggregates/drift.html)
 - **Maintenance** — [Tree Repair](https://vusys.github.io/laravel-nestedset/maintenance/fix-tree.html) · [Repairing Aggregates](https://vusys.github.io/laravel-nestedset/maintenance/fix-aggregates.html) · [Corruption Reference](https://vusys.github.io/laravel-nestedset/maintenance/corruption.html)
 - **Reference** — [Configuration](https://vusys.github.io/laravel-nestedset/reference/config.html) · [Testing Helpers](https://vusys.github.io/laravel-nestedset/reference/testing.html) · [Factory Tree Builder](https://vusys.github.io/laravel-nestedset/reference/factories.html) · [Transactions](https://vusys.github.io/laravel-nestedset/reference/transactions.html) · [Events](https://vusys.github.io/laravel-nestedset/reference/events.html) · [Production Notes](https://vusys.github.io/laravel-nestedset/reference/production.html) · [Glossary](https://vusys.github.io/laravel-nestedset/reference/glossary.html)
 - **Internals** — [Architecture Overview](https://vusys.github.io/laravel-nestedset/internals/architecture.html)
@@ -125,6 +130,11 @@ composer test          # unit + feature
 ```
 
 All four must pass on CI before merge.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the release history and the pre-1.0
+backwards-compatibility breaks called out per version.
 
 ## License
 

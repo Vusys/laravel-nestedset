@@ -63,23 +63,13 @@ The macro emits a nullable `bigint`. Empty subtrees read as `NULL` — distingui
 
 ## How they stay in sync
 
-Each kind picks the cheapest correct maintenance strategy per mutation:
+All three bitwise kinds (`bitOr`, `bitAnd`, `bitXor`) maintain their rollup by **recomputing the affected subset of the ancestor chain** on every mutation that touches the source column — insert, update, delete, move, and soft-delete cascade. The recompute reads `BIT_OR` / `BIT_AND` / `BIT_XOR` over each affected ancestor's subtree and writes the fresh value.
 
-| Kind     | Insert                              | Source update                              | Delete                              |
-| -------- | ----------------------------------- | ------------------------------------------ | ----------------------------------- |
-| `bitOr`  | Delta: `parent \|= new`             | Chain recompute (lost-bit problem)         | Chain recompute (lost-bit problem)  |
-| `bitAnd` | Chain recompute (insert may narrow) | Chain recompute                            | Chain recompute (may widen)         |
-| `bitXor` | Delta: `parent ^= new`              | Delta: `parent ^= (old ^ new)`             | Delta: `parent ^= old_subtree_xor`  |
-
-**`bitXor` is the headline case** — it's the only non-Sum-family aggregate with a delta path on every mutation. XOR is self-inverse, so adding *and* removing a contribution are the same operation. The "delete" delta uses the deleted node's stored `features_xor` column (its inclusive subtree XOR), not its source value — XOR-ing that out of every ancestor undoes the whole subtree's contribution in one statement.
-
-`bitOr` and `bitAnd` rely on chain recompute for any mutation that could lose a bit (`bitOr` delete, `bitAnd` insert/delete) because the rolled-up value alone can't tell you whether a bit you're about to unset was held by the row you're touching or by some other descendant.
+A per-bit signed delta is not used. For `bitOr` / `bitAnd` no correct delta exists: the rolled-up value alone can't tell you whether a bit you'd unset was held only by the row you're touching or also by some other descendant (the *lost-bit problem*). `bitXor` is self-inverse and *could* ride a delta path in principle, but the package maintains it by recompute too, for one uniform code path across all three kinds.
 
 ## Per-backend SQL
 
 The package emits `BIT_OR(col)` / `BIT_AND(col)` / `BIT_XOR(col)` uniformly. MySQL, MariaDB, and PostgreSQL 14+ have all three natively. SQLite has none, so the package registers user-defined aggregates on the SQLite PDO connection at boot (and defensively before every bitwise read) — same SQL, same semantics across all four backends.
-
-The XOR delta SET clause uses the portable identity `a XOR b = (a | b) - (a & b)` rather than `a ^ b`, because `^` is exponentiation on PostgreSQL and unrecognised on SQLite.
 
 ## Limitations
 
@@ -87,9 +77,9 @@ The XOR delta SET clause uses the portable identity `a XOR b = (a | b) - (a & b)
 
 Bitwise over a PHP-computed contribution is rejected at definition construction. Declare bitwise aggregates over a real source column or roll your own from a Sum + per-bit count.
 
-### `bitOr` and `bitAnd` source updates route through chain recompute
+### Bitwise updates route through chain recompute
 
-For deep trees this is O(depth × subtree-size) per mutation. If your write path is hot and the subtree is large, prefer `bitXor` (full delta path) or defer maintenance via `queueFixAggregates` / `withDeferredAggregateMaintenance`.
+For deep trees this is O(depth × subtree-size) per mutation. If your write path is hot and the subtree is large, defer maintenance via `queueFixAggregates` / `withDeferredAggregateMaintenance` so the per-row recompute is collapsed into one trailing `fixAggregates()` pass.
 
 ### Source values are coerced to integer at SET-clause emission
 

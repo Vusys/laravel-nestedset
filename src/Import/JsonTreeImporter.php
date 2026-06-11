@@ -97,11 +97,13 @@ final class JsonTreeImporter
             throw $e;
         }
 
-        $topLevelCount = count($normalised);
-        $topLevel = array_slice($saved, 0, $topLevelCount);
-
+        // bulkInsertTree() already returns every inserted row in DFS
+        // pre-order — which is exactly the documented contract. The old
+        // array_slice(0, topLevelCount) assumed top-level rows came first,
+        // but pre-order interleaves a parent's descendants before its next
+        // sibling ([A, A1, A2, B]), so it returned the wrong nodes.
         /** @var NodeCollection<int, Model&HasNestedSet> $collection */
-        $collection = new NodeCollection($topLevel);
+        $collection = new NodeCollection($saved);
 
         return $collection;
     }
@@ -219,12 +221,28 @@ final class JsonTreeImporter
     }
 
     /**
-     * Best-effort extraction of the colliding primary-key value from
-     * the underlying driver's unique-constraint error message.
+     * Best-effort extraction of the colliding primary-key value from the
+     * underlying driver's unique-constraint error message. Handles string
+     * / UUID keys, not just integers — the value is quoted on MySQL /
+     * MariaDB / SQLite and parenthesised on PostgreSQL.
      */
-    private static function extractCollisionKey(QueryException $e): int
+    private static function extractCollisionKey(QueryException $e): int|string
     {
-        if (preg_match('/\b(\d+)\b/', $e->getMessage(), $m) === 1) {
+        $message = $e->getMessage();
+
+        // PostgreSQL: "... Key (id)=(0190f-…-abc) already exists."
+        if (preg_match('/=\(([^)]+)\)/', $message, $m) === 1) {
+            return is_numeric($m[1]) ? (int) $m[1] : $m[1];
+        }
+
+        // MySQL / MariaDB / SQLite quote the offending value:
+        // "Duplicate entry 'abc-123' for key …".
+        if (preg_match("/'([^']+)'/", $message, $m) === 1) {
+            return is_numeric($m[1]) ? (int) $m[1] : $m[1];
+        }
+
+        // Last resort: a bare integer somewhere in the message.
+        if (preg_match('/\b(\d+)\b/', $message, $m) === 1) {
             return (int) $m[1];
         }
 

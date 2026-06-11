@@ -18,6 +18,7 @@ use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleting;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoving;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
+use Vusys\NestedSet\Exceptions\SaveCancelledException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\NodeBounds;
@@ -40,6 +41,13 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 trait HasTreeMutation
 {
     protected ?PendingOperation $pending = null;
+
+    /**
+     * The mover's fresh pre-move bounds, read once at the top of
+     * {@see callPendingAction()} and reused by {@see positionAt()} so an
+     * existing-node move issues a single SELECT for its own bounds.
+     */
+    private ?NodeBounds $pendingMoveFromBounds = null;
 
     /**
      * Queue this node to become the last child of $parent on the next save().
@@ -625,7 +633,85 @@ trait HasTreeMutation
             return parent::save($options);
         }
 
-        return (bool) $this->getConnection()->transaction(fn (): bool => parent::save($options));
+        try {
+            return (bool) $this->getConnection()->transaction(function () use ($options): bool {
+                $saved = parent::save($options);
+
+                // A saving/creating/updating listener cancelled the save by
+                // returning false — but the trait's own `saving` listener
+                // has already run the structural SQL (makeGap / moveNode).
+                // transaction() commits unless an exception is thrown, so a
+                // bare `return false` would leave that gap/move committed
+                // with no row write. Throw to force the rollback; the catch
+                // below restores the cancelled-save contract for the caller.
+                if ($saved === false) {
+                    throw new SaveCancelledException;
+                }
+
+                return $saved;
+            });
+        } catch (SaveCancelledException) {
+            return false;
+        }
+    }
+
+    /**
+     * Placement is core write logic, not observability — it runs in the
+     * `saving` listener (queued-operation dispatch plus the unplaced-node
+     * guard), which `saveQuietly()` suppresses via `withoutEvents()`.
+     * Persisting quietly would therefore silently drop a queued
+     * appendToNode/makeRoot/… and write `lft = rgt = 0`. Refuse instead:
+     * a node with a pending placement, or a new node not yet placed, must
+     * go through `save()`.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function saveQuietly(array $options = []): bool
+    {
+        if ($this->pending !== null) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::saveQuietly() cannot dispatch the queued tree operation "%s" — placement '
+                .'runs in the `saving` event that saveQuietly() suppresses. Use save().',
+                static::class,
+                $this->pending->action,
+            ));
+        }
+
+        if (! $this->exists && ! $this->isPlacedInTree()) {
+            throw new UnplacedNodeException(sprintf(
+                '%s::saveQuietly() would persist an unplaced node (lft = rgt = 0). Place it first '
+                .'via appendToNode($parent) / makeRoot() / … and use save().',
+                static::class,
+            ));
+        }
+
+        return parent::saveQuietly($options);
+    }
+
+    /**
+     * Wraps Eloquent's delete() in a transaction when
+     * `config('nestedset.auto_transaction')` is on, for the same reason
+     * save() is wrapped: the delete pipeline is multi-statement — the
+     * row's own DELETE/soft-delete, the descendant cascade, the aggregate
+     * decrement, and the closeGap compaction all run across the
+     * `deleting`/`deleted` listeners. On MySQL/MariaDB/PG the row delete
+     * autocommits without this wrap, so a throw mid-pipeline leaves a
+     * permanent hole in the lft/rgt sequence. Both `Model::forceDelete()`
+     * and `SoftDeletes::forceDelete()` delegate to `delete()`, so this
+     * single override covers force deletes too.
+     *
+     * Laravel handles nested calls via savepoints, so wrapping inside an
+     * outer `DB::transaction()` is safe.
+     */
+    public function delete(): ?bool
+    {
+        if (! config('nestedset.auto_transaction', true)) {
+            return parent::delete();
+        }
+
+        $result = $this->getConnection()->transaction(fn (): ?bool => parent::delete());
+
+        return is_bool($result) ? $result : null;
     }
 
     /**
@@ -772,7 +858,16 @@ trait HasTreeMutation
         // are still the migration default 0); the `created` Eloquent
         // event handles their aggregate maintenance.
         $wasExisting = $this->exists;
-        $from = $wasExisting ? $this->getBounds() : null;
+        // Read the mover's bounds from the DB, not the in-memory model:
+        // a sibling insert (or any prior mutation) since this instance
+        // was loaded may have shifted its lft/rgt, and the before-move
+        // aggregate hook + the move events all key off these bounds.
+        // Stash it so positionAt() reuses the same read instead of
+        // issuing a second identical SELECT — the before-move hook only
+        // touches ancestor aggregate columns, never the mover's bounds,
+        // so the value is still current when positionAt runs.
+        $from = $wasExisting ? $this->freshBoundsOf($this) : null;
+        $this->pendingMoveFromBounds = $from;
 
         $previousParentId = $wasExisting ? $this->getParentId() : null;
         $previousDepth = $wasExisting ? $this->getDepth() : 0;
@@ -970,10 +1065,15 @@ trait HasTreeMutation
             throw new LogicException('Cannot position node as a sibling of itself.');
         }
 
-        $bounds = $this->freshBoundsOf($sibling, lockForUpdate: true);
-        $insertAt = $position === Position::Before ? $bounds->lft : $bounds->rgt + 1;
-        $newDepth = $bounds->depth;
-        $newParentId = $sibling->getParentId();
+        // Read bounds AND parent_id from the same fresh row. Using the
+        // sibling's in-memory parent_id while taking fresh bounds would
+        // nest the new node under the sibling's current parent but stamp
+        // parent_id with the stale one — and parent_id is the source of
+        // truth, so a later fixTree() would silently relocate the node.
+        $fresh = $this->newTreeMutator()->getPlainNodeData($this->keyOf($sibling), lockForUpdate: true);
+        $insertAt = $position === Position::Before ? $fresh['lft'] : $fresh['rgt'] + 1;
+        $newDepth = $fresh['depth'];
+        $newParentId = $fresh['parent_id'];
 
         $this->positionAt($insertAt, $newDepth, $newParentId);
     }
@@ -1009,6 +1109,14 @@ trait HasTreeMutation
         }
         $lft = (int) $rawLft;
         $rgt = (int) $rawRgt;
+
+        // An unplaced row (lft = rgt = 0) never reserved a slot, so there
+        // is no gap to close. closeGap(0, 1) would instead shift every
+        // placed row in the scope down by one — driving root bounds toward
+        // zero and eventually negative on repeats.
+        if ($lft < 1 || $rgt <= $lft) {
+            return;
+        }
 
         $this->newTreeMutator()->closeGap($lft, $rgt - $lft + 1);
     }
@@ -1184,7 +1292,10 @@ trait HasTreeMutation
         // Read $from from the DB rather than $this — the in-memory model may
         // be stale (e.g. saved before later sibling inserts shifted its rgt),
         // and feeding moveNode an out-of-date bound corrupts the tree.
-        $from = $mutator->getNodeData($this->keyOf($this));
+        // callPendingAction already read it for the before-move hook /
+        // events; reuse that read instead of issuing a second SELECT.
+        $from = $this->pendingMoveFromBounds ?? $mutator->getNodeData($this->keyOf($this));
+        $this->pendingMoveFromBounds = null;
         $depthDelta = $newDepth - $from->depth;
 
         $mutator->moveNode($from, $position, $depthDelta);

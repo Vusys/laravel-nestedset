@@ -92,7 +92,7 @@ final class QueryCountTest extends TestCase
     }
 
     #[Test]
-    public function count_errors_runs_four_queries(): void
+    public function count_errors_runs_one_query_per_category(): void
     {
         $root = new Category(['name' => 'Root']);
         $root->saveAsRoot();
@@ -105,6 +105,10 @@ final class QueryCountTest extends TestCase
         // 2: duplicate_lft
         // 3: duplicate_rgt
         // 4: orphans
-        $this->assertSame(4, $queries);
+        // 5: parent_bounds_mismatch
+        // 6: depth_mismatch
+        // 7: bounds_out_of_range — below-1 scan
+        // 8: bounds_out_of_range — cross-column collision join
+        $this->assertSame(8, $queries);
     }
 }
