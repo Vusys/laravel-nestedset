@@ -343,6 +343,11 @@ trait NodeTrait
             lft: $this->getLft(),
             rgt: $this->getRgt(),
             depth: $this->getDepth(),
+            // Carry the node's scope so positional queries handed these
+            // bounds (whereDescendantOf, whereAncestorOf, …) stay inside the
+            // node's own tree — scoped forests all restart lft at 1, so an
+            // unscoped predicate overlaps every other partition.
+            scope: NestedSetScopeResolver::valuesFor($this),
         );
     }
 

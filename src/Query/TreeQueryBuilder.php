@@ -63,6 +63,8 @@ class TreeQueryBuilder extends Builder
         $lft = $this->qualifyColumn($this->lftColumn());
         $rgt = $this->qualifyColumn($this->rgtColumn());
 
+        $this->applyBoundsScope($bounds);
+
         if ($andSelf) {
             $this->whereBetween($lft, [$bounds->lft, $bounds->rgt]);
 
@@ -75,6 +77,19 @@ class TreeQueryBuilder extends Builder
         return $this;
     }
 
+    /**
+     * Applies the scope-column predicates carried on $bounds (populated by
+     * a scoped model's getBounds()). A no-op for unscoped models and for
+     * bounds built without a model, so it never changes behaviour where
+     * there's no scope to enforce.
+     */
+    private function applyBoundsScope(NodeBounds $bounds): void
+    {
+        foreach ($bounds->scope as $column => $value) {
+            $this->where($this->qualifyColumn($column), $value);
+        }
+    }
+
     public function whereDescendantOrSelf(NodeBounds $bounds): static
     {
         return $this->whereDescendantOf($bounds, andSelf: true);
@@ -84,6 +99,8 @@ class TreeQueryBuilder extends Builder
     {
         $lft = $this->qualifyColumn($this->lftColumn());
         $rgt = $this->qualifyColumn($this->rgtColumn());
+
+        $this->applyBoundsScope($bounds);
 
         if ($andSelf) {
             $this->where($lft, '<=', $bounds->lft);
@@ -123,6 +140,7 @@ class TreeQueryBuilder extends Builder
 
     public function whereIsAfter(NodeBounds $bounds): static
     {
+        $this->applyBoundsScope($bounds);
         $this->where(
             $this->qualifyColumn($this->lftColumn()),
             '>',
@@ -134,6 +152,7 @@ class TreeQueryBuilder extends Builder
 
     public function whereIsBefore(NodeBounds $bounds): static
     {
+        $this->applyBoundsScope($bounds);
         $this->where(
             $this->qualifyColumn($this->rgtColumn()),
             '<',

@@ -6,10 +6,23 @@ namespace Vusys\NestedSet;
 
 readonly class NodeBounds
 {
+    /**
+     * @param  array<string, mixed>  $scope  Scope-column values of the node
+     *                                       these bounds came from. Populated
+     *                                       by {@see NodeTrait::getBounds()};
+     *                                       empty for unscoped models and for
+     *                                       bounds built internally without a
+     *                                       model. The positional query
+     *                                       methods (whereDescendantOf, …)
+     *                                       apply these as predicates so a
+     *                                       scoped lookup can't leak across
+     *                                       trees that all restart lft at 1.
+     */
     public function __construct(
         public int $lft,
         public int $rgt,
         public int $depth,
+        public array $scope = [],
     ) {}
 
     public function height(): int
