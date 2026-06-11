@@ -84,6 +84,45 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
     }
 
     #[Test]
+    public function restore_cascade_uses_fresh_bounds_after_a_sibling_was_hard_deleted(): void
+    {
+        // Root
+        //   X   (leaf, sibling positioned BEFORE the trashed subtree)
+        //   P   (trashed)
+        //     C
+        //     D
+        //   Y
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 12, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'X', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'P', 'lft' => 4, 'rgt' => 9, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 4, 'name' => 'C', 'lft' => 5, 'rgt' => 6, 'depth' => 2, 'parent_id' => 3],
+            ['id' => 5, 'name' => 'D', 'lft' => 7, 'rgt' => 8, 'depth' => 2, 'parent_id' => 3],
+            ['id' => 6, 'name' => 'Y', 'lft' => 10, 'rgt' => 11, 'depth' => 1, 'parent_id' => 1],
+        ]);
+        $this->syncSequence('categories');
+
+        // Soft-delete P; the cascade stamps C and D with P's marker.
+        $p = Category::query()->findOrFail(3);
+        $p->delete();
+
+        // Hard-delete X — closeGap shifts P/C/D's bounds down by 2.
+        // P is now (2,7), C (3,4), D (5,6). The held $p still reports
+        // its pre-shift bounds (4,9).
+        Category::query()->findOrFail(2)->forceDelete();
+
+        // Restore the held, now-stale instance. With stale bounds the
+        // cascade band (lft 4..9) would miss C (now at lft 3) and leave
+        // it trashed under a restored parent.
+        $p->restore();
+
+        $this->assertNull(Category::query()->findOrFail(3)->deleted_at, 'P is restored');
+        $this->assertNull(Category::query()->findOrFail(4)->deleted_at, 'C must be restored too');
+        $this->assertNull(Category::query()->findOrFail(5)->deleted_at, 'D must be restored too');
+        $this->assertSame(0, array_sum(Category::countErrors()));
+    }
+
+    #[Test]
     public function restore_on_outer_only_restores_rows_with_matching_timestamp(): void
     {
         $this->seedThreeLevelChain();

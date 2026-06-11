@@ -165,6 +165,14 @@ trait HasSoftDeleteTree
             return;
         }
 
+        // Re-read the anchor's bounds from the DB before banding the
+        // cascade: a sibling's hard delete (or any structural mutation)
+        // since this instance was trashed/loaded may have shifted its
+        // lft/rgt, and the stale in-memory band would miss the shifted
+        // descendants — leaving them trashed under a restored parent.
+        // Asymmetric with the hardened delete path until now; same fix.
+        self::refreshBoundsFromDatabase($node);
+
         $bounds = $node->getBounds();
         $scope = NestedSetScopeResolver::valuesFor($node);
 
@@ -235,6 +243,35 @@ trait HasSoftDeleteTree
         }
 
         return $ids;
+    }
+
+    /**
+     * Re-reads lft/rgt/depth from the DB into $node so the cascade bands
+     * on current bounds, not a stale in-memory snapshot. No-op if the
+     * row can't be found (the restore would itself be a no-op then).
+     */
+    private static function refreshBoundsFromDatabase(Model&HasNestedSet $node): void
+    {
+        $key = $node->getKey();
+        if ($key === null) {
+            return;
+        }
+
+        $columns = [$node->getLftName(), $node->getRgtName(), $node->getDepthName()];
+
+        $row = $node->getConnection()
+            ->table($node->getTable())
+            ->where($node->getKeyName(), $key)
+            ->first($columns);
+
+        if ($row === null) {
+            return;
+        }
+
+        foreach ($columns as $column) {
+            $node->setAttribute($column, $row->{$column});
+            $node->syncOriginalAttribute($column);
+        }
     }
 
     /**
