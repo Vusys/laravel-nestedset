@@ -49,10 +49,16 @@ final class FixTreePreservesOrderTest extends TestCase
      */
     private function childNamesByLft(): array
     {
-        return Category::query()
-            ->whereNotNull('parent_id')
-            ->orderBy('lft')
-            ->pluck('name')
-            ->all();
+        $names = [];
+        foreach (
+            Category::query()
+                ->whereNotNull('parent_id')
+                ->orderBy('lft')
+                ->get(['name']) as $row
+        ) {
+            $names[] = (string) $row->name;
+        }
+
+        return $names;
     }
 }

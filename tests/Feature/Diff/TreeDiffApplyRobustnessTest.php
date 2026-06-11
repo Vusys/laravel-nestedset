@@ -27,11 +27,17 @@ final class TreeDiffApplyRobustnessTest extends TestCase
      */
     private function childNames(Category $parent): array
     {
-        return Category::query()
-            ->where('parent_id', $parent->getKey())
-            ->orderBy('lft')
-            ->pluck('name')
-            ->all();
+        $names = [];
+        foreach (
+            Category::query()
+                ->where('parent_id', $parent->getKey())
+                ->orderBy('lft')
+                ->get(['name']) as $row
+        ) {
+            $names[] = (string) $row->name;
+        }
+
+        return $names;
     }
 
     #[Test]

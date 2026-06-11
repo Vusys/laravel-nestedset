@@ -56,14 +56,18 @@ trait NodeTrait
     use HasTreeWalk;
 
     /**
-     * Set by the `deleting` listener when its structural re-read finds the
-     * row already gone (e.g. a cascade from an ancestor's hard delete in the
-     * same operation removed it first). The `deleted` listener then no-ops
-     * its cascade / aggregate decrement / closeGap, which would otherwise run
-     * against a vanished band and corrupt the tree — the general double-delete
-     * footgun.
+     * Per-instance flag (keyed by the node via a GC-safe WeakMap) set by the
+     * `deleting` listener when its structural re-read finds the row already
+     * gone — e.g. a cascade from an ancestor's hard delete in the same
+     * operation removed it first. The `deleted` listener then no-ops its
+     * cascade / aggregate decrement / closeGap, which would otherwise run
+     * against a vanished band and corrupt the tree (the general double-delete
+     * footgun). Held off-model so it never touches the public
+     * attribute/contract surface.
+     *
+     * @var \WeakMap<object, true>|null
      */
-    protected bool $nestedSetDeleteVanished = false;
+    private static ?\WeakMap $nestedSetDeleteVanished = null;
 
     /**
      * Wires every Eloquent lifecycle event the package consumes.
@@ -141,7 +145,8 @@ trait NodeTrait
             // bounds, or the caller mutated a scope attribute without
             // saving. Aggregate maintenance, the cascade query, and the
             // closeGap step all rely on persisted values.
-            $node->nestedSetDeleteVanished = false;
+            self::$nestedSetDeleteVanished ??= new \WeakMap;
+            unset(self::$nestedSetDeleteVanished[$node]);
             $key = $node->getKey();
             if ($key === null) {
                 return;
@@ -159,7 +164,7 @@ trait NodeTrait
                 ->where($node->getKeyName(), $key)
                 ->first($columnsToRead);
             if ($row === null) {
-                $node->nestedSetDeleteVanished = true;
+                self::$nestedSetDeleteVanished[$node] = true;
 
                 return;
             }
@@ -179,7 +184,9 @@ trait NodeTrait
             // first. Running the cascade / aggregate decrement / closeGap now
             // would act on stale bounds against a vanished band, deleting
             // innocent rows and corrupting bounds. No-op instead.
-            if ($node->nestedSetDeleteVanished) {
+            if (self::$nestedSetDeleteVanished instanceof \WeakMap && isset(self::$nestedSetDeleteVanished[$node])) {
+                unset(self::$nestedSetDeleteVanished[$node]);
+
                 return;
             }
 
@@ -189,7 +196,7 @@ trait NodeTrait
             // aggregates) read a stale "still-live" descendant set and
             // produce values that don't match the post-cascade state.
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
-                $node::applySoftDeleteCascade($node);
+                static::applySoftDeleteCascade($node);
             }
 
             // Hard-delete cascade: clear every descendant from the
@@ -240,7 +247,7 @@ trait NodeTrait
                 return;
             }
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
-                $node::applyRestoreCascade($node);
+                static::applyRestoreCascade($node);
             }
             self::runAggregateHook($node, 'on_restore', static fn () => $node->applyAggregateOnRestore());
         });

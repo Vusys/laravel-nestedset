@@ -734,7 +734,7 @@ final class FreshAggregateProjector
      */
     private static function assertSqlIdentifier(string $identifier): void
     {
-        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier) !== 1) {
+        if (preg_match('/^[A-Za-z_]\w*$/', $identifier) !== 1) {
             throw new AggregateConfigurationException(sprintf(
                 'withFreshAggregates(): alias "%s" is not a valid SQL identifier '
                 .'(letters, digits and underscore only, not starting with a digit). '
