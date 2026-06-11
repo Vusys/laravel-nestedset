@@ -225,12 +225,16 @@ trait HasSubtreeClone
 
             /** @var list<static> $inserted */
             $inserted = static::withoutEvents(static function () use ($payload, $anchor, $asRoot, $useSourceAsAnchor): array {
+                // forceFill: a deep copy must reproduce every column,
+                // including guarded ones — the payload is built from raw DB
+                // rows, not user input, so mass-assignment protection would
+                // silently zero guarded columns instead of copying them.
                 if ($asRoot && ! $useSourceAsAnchor) {
-                    return static::bulkInsertTree($payload);
+                    return static::bulkInsertTree($payload, null, forceFill: true);
                 }
                 \assert($anchor !== null);
 
-                return static::bulkInsertTree($payload, $anchor);
+                return static::bulkInsertTree($payload, $anchor, forceFill: true);
             });
 
             if ($inserted === []) {

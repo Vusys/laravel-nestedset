@@ -68,6 +68,12 @@ trait HasBulkInsert
 {
     /**
      * @param  list<array<string, mixed>>  $tree
+     * @param  bool  $forceFill  Bypass mass-assignment guards when hydrating
+     *                           each row. Off by default so user-supplied
+     *                           payloads still respect `$fillable`/`$guarded`;
+     *                           internal deep-copy callers (cloneSubtreeTo)
+     *                           pass true so guarded columns are copied
+     *                           verbatim rather than silently zeroed.
      * @return list<static>
      *
      * @throws ScopeViolationException When the model is scoped and `$appendTo` is null.
@@ -76,6 +82,7 @@ trait HasBulkInsert
     public static function bulkInsertTree(
         array $tree,
         ?HasNestedSet $appendTo = null,
+        bool $forceFill = false,
     ): array {
         if ($tree === []) {
             return [];
@@ -192,6 +199,7 @@ trait HasBulkInsert
                 $scopeValues,
                 $mutator,
                 $appendTo,
+                $forceFill,
             ): array {
                 // Read + lock the anchor row inside the transaction — same
                 // discipline as actAppendTo. The in-memory $appendTo may be
@@ -218,7 +226,13 @@ trait HasBulkInsert
                 $totalNodes = count($plan);
 
                 foreach ($plan as $planIndex => $node) {
-                    $model = new static($node['attributes']);
+                    // forceFill bypasses $fillable/$guarded so internal
+                    // deep-copy callers preserve guarded columns; the
+                    // default path keeps mass-assignment protection for
+                    // user-supplied payloads.
+                    $model = $forceFill
+                        ? (new static)->forceFill($node['attributes'])
+                        : new static($node['attributes']);
 
                     foreach ($scopeValues as $col => $val) {
                         $model->setAttribute($col, $val);
