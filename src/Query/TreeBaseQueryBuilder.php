@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Query\Builder as BaseBuilder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 
 /**
@@ -51,13 +53,55 @@ class TreeBaseQueryBuilder extends BaseBuilder
             return parent::runSelect();
         }
 
-        $sql = "SET STATEMENT optimizer_switch='split_materialized=off' FOR "
-            .$this->toSql();
-
         return $this->connection->select(
-            $sql,
+            $this->splitMaterializedOffSql(),
             $this->getBindings(),
             ! $this->useWritePdo,
         );
+    }
+
+    /**
+     * `cursor()` (and `lazy()`, which builds on it) bypasses
+     * {@see runSelect()}, so the split_materialized hint would otherwise be
+     * silently dropped on streamed reads. Mirror the base generator but
+     * prepend the same `SET STATEMENT` prefix. fetchUsing is intentionally
+     * not forwarded — it's a newer, optional refinement and omitting it
+     * keeps this override portable across the supported Laravel matrix.
+     *
+     * @return LazyCollection<int, \stdClass>
+     */
+    #[\Override]
+    public function cursor()
+    {
+        if (! $this->mariaDbSplitMaterializedOff) {
+            /** @var LazyCollection<int, \stdClass> */
+            return parent::cursor();
+        }
+
+        if ($this->columns === null) {
+            $this->columns = ['*'];
+        }
+
+        $sql = $this->splitMaterializedOffSql();
+        $bindings = $this->getBindings();
+        $useReadPdo = ! $this->useWritePdo;
+
+        /** @var LazyCollection<int, \stdClass> */
+        return (new LazyCollection(function () use ($sql, $bindings, $useReadPdo): \Generator {
+            yield from $this->connection->cursor($sql, $bindings, $useReadPdo);
+        }))
+            ->map(function (mixed $item): mixed {
+                /** @var Collection<int, mixed> $batch */
+                $batch = $this->applyAfterQueryCallbacks(new Collection([$item]));
+
+                return $batch->first();
+            })
+            ->reject(fn (mixed $item): bool => $item === null);
+    }
+
+    private function splitMaterializedOffSql(): string
+    {
+        return "SET STATEMENT optimizer_switch='split_materialized=off' FOR "
+            .$this->toSql();
     }
 }

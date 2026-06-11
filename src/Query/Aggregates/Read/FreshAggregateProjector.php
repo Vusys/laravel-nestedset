@@ -248,9 +248,14 @@ final class FreshAggregateProjector
 
         // Coax MariaDB's planner away from re-lateralising the derived
         // table we are about to build. See this method's docblock and
-        // {@see TreeBaseQueryBuilder::runSelect()}.
+        // {@see TreeBaseQueryBuilder::runSelect()}. Gated on server version:
+        // the `split_materialized` optimizer flag (and so the
+        // `SET STATEMENT optimizer_switch='split_materialized=off'` prefix)
+        // only exists from MariaDB 10.3 — on older servers it errors hard
+        // and would break every fresh read, so we degrade to the un-hinted
+        // derived query (correct, just not planner-coaxed).
         $queryBuilder = $builder->getQuery();
-        if ($queryBuilder instanceof TreeBaseQueryBuilder) {
+        if ($queryBuilder instanceof TreeBaseQueryBuilder && self::mariaDbSupportsSplitMaterialized($connection)) {
             $queryBuilder->withMariaDbSplitMaterializedOff();
         }
 
@@ -548,6 +553,47 @@ final class FreshAggregateProjector
         $patch = (int) ($m[3] ?? 0);
 
         return ($major > 8) || ($major === 8 && ($minor > 0 || $patch >= 14));
+    }
+
+    /**
+     * Whether this connection's MariaDB server is new enough (>= 10.3) to
+     * understand `optimizer_switch='split_materialized=…'`. Returns false
+     * if the version can't be read.
+     */
+    private static function mariaDbSupportsSplitMaterialized(Connection $connection): bool
+    {
+        try {
+            $version = $connection->getPdo()->getAttribute(\PDO::ATTR_SERVER_VERSION);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return self::mariaDbVersionAtLeast(is_string($version) ? $version : null, 10, 3);
+    }
+
+    /**
+     * Pure version-string comparison for the MariaDB family, split out so it
+     * can be unit-tested with seeded strings (the connection-reading wrapper
+     * needs a live PDO). Strips the fake `5.5.5-` prefix MariaDB advertises
+     * for old-client compatibility before parsing. Returns false for null,
+     * unparseable input, and anything not tagged as MariaDB.
+     */
+    private static function mariaDbVersionAtLeast(?string $version, int $major, int $minor): bool
+    {
+        if ($version === null || stripos($version, 'mariadb') === false) {
+            return false;
+        }
+
+        $version = preg_replace('/^5\.5\.5-/', '', $version) ?? $version;
+
+        if (! preg_match('/(\d+)\.(\d+)/', $version, $m)) {
+            return false;
+        }
+
+        $vMajor = (int) $m[1];
+        $vMinor = (int) $m[2];
+
+        return $vMajor > $major || ($vMajor === $major && $vMinor >= $minor);
     }
 
     /**

@@ -76,4 +76,34 @@ final class FreshAggregateProjectorTest extends TestCase
     {
         $this->assertSame($expected, $this->call($version));
     }
+
+    private function callMariaDb(?string $version): bool
+    {
+        $method = new ReflectionMethod(FreshAggregateProjector::class, 'mariaDbVersionAtLeast');
+
+        return (bool) $method->invoke(null, $version, 10, 3);
+    }
+
+    /**
+     * @return iterable<string, array{0: ?string, 1: bool}>
+     */
+    public static function mariaDbVersions(): iterable
+    {
+        yield 'null' => [null, false];
+        yield 'non-mariadb mysql' => ['8.4.0', false];
+        yield 'mariadb 10.2 (below floor)' => ['10.2.44-MariaDB', false];
+        yield 'mariadb 10.3.0 (floor inclusive)' => ['10.3.0-MariaDB', true];
+        yield 'mariadb 10.5.8' => ['10.5.8-MariaDB-1:10.5.8+maria~focal', true];
+        yield 'mariadb 11.4' => ['11.4.0-MariaDB', true];
+        // The fake "5.5.5-" old-client prefix must be stripped before parsing.
+        yield 'mariadb 5.5.5- prefixed 10.6' => ['5.5.5-10.6.18-MariaDB-log', true];
+        yield 'genuine ancient mariadb 5.5' => ['5.5.68-MariaDB', false];
+    }
+
+    #[DataProvider('mariaDbVersions')]
+    #[Test]
+    public function mariadb_version_floor_for_split_materialized(?string $version, bool $expected): void
+    {
+        $this->assertSame($expected, $this->callMariaDb($version));
+    }
 }
