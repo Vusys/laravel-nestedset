@@ -494,17 +494,17 @@ final class TreeDiffApplier
     /**
      * Places a freshly placed (appended) child at its recorded
      * sibling slot. The diff records `$zeroBasedPosition` as the row's
-     * 0-indexed rank within its parent's children in the `after` tree;
-     * `moveToSiblingPosition()` is 1-indexed. Skipped for roots, which
-     * have no sibling group to reorder within.
+     * 0-indexed rank within its parent's children in the `after` tree,
+     * and `moveToSiblingPosition()` is also 0-indexed. Skipped for
+     * roots, which have no sibling group to reorder within.
      *
      * Processing adds/moves in the diff's DFS order means every sibling
-     * ranked below this one is already present, so the 1-indexed target
-     * never exceeds the current child count.
+     * ranked below this one is already present, so the target never
+     * exceeds the current child count.
      */
     private static function reorderToSiblingPosition(Model $node, int $zeroBasedPosition): void
     {
-        self::callInstance($node, 'moveToSiblingPosition', [$zeroBasedPosition + 1]);
+        self::callInstance($node, 'moveToSiblingPosition', [$zeroBasedPosition]);
     }
 
     /**

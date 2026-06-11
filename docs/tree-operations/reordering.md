@@ -60,14 +60,14 @@ The membership must match exactly: every direct child appears once, no unknown k
 
 ## moveToSiblingPosition — drop a row at slot N
 
-When you already have a child reference and want it at a specific 1-indexed position within its current sibling group:
+When you already have a child reference and want it at a specific 0-indexed position within its current sibling group:
 
 ```php
-$phones->moveToSiblingPosition(1);   // become first sibling
-$phones->moveToSiblingPosition(3);   // become third sibling
+$phones->moveToSiblingPosition(0);   // become first sibling
+$phones->moveToSiblingPosition(2);   // become third sibling
 ```
 
-Position semantics match `up()` / `down()`: position 1 is the first sibling, `count(siblings)` is the last. Out-of-range positions throw `LogicException`. A root (no parent) throws `UnplacedNodeException` — roots have no sibling group to reorder within.
+Position is 0-based, matching `moveTo()`, `TreeDiff`'s sibling positions, and the factory: position 0 is the first sibling, `count(siblings) - 1` is the last. Out-of-range positions throw `LogicException`. A root (no parent) throws `UnplacedNodeException` — roots have no sibling group to reorder within.
 
 Equivalent to calling `$parent->reorderChildren(...)` with everyone else's order preserved.
 

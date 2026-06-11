@@ -405,16 +405,17 @@ trait HasTreeMutation
     }
 
     /**
-     * Move this node to position `$position` (1-indexed) within its
+     * Move this node to position `$position` (0-indexed) within its
      * current sibling group. A thin wrapper over its parent's
      * {@see reorderChildren()} that preserves everyone else's relative
      * order.
      *
-     * Position semantics match `up()` / `down()`: position 1 is the
-     * first sibling, position `count(siblings)` is the last.
+     * Position is 0-based to match `moveTo()`, `TreeDiff`'s sibling
+     * positions, and the factory: position 0 is the first sibling,
+     * position `count(siblings) - 1` is the last.
      *
      * @throws LogicException
-     *                        When `$position` is outside `[1, count(siblings)]`.
+     *                        When `$position` is outside `[0, count(siblings) - 1]`.
      * @throws UnplacedNodeException
      *                               When this node has no parent (a root has no sibling group to reorder within).
      */
@@ -443,26 +444,26 @@ trait HasTreeMutation
         $siblings = $parent->loadDirectChildBounds();
         $count = count($siblings);
 
-        if ($position < 1 || $position > $count) {
+        if ($position < 0 || $position >= $count) {
             throw new LogicException(sprintf(
-                '%s::moveToSiblingPosition(%d): position must be in [1, %d].',
+                '%s::moveToSiblingPosition(%d): position must be in [0, %d].',
                 static::class,
                 $position,
-                $count,
+                $count - 1,
             ));
         }
 
         $selfKey = $this->keyOf($this);
 
         // Pull self out of the sibling list, then insert at the
-        // requested (1-indexed) slot.
+        // requested (0-indexed) slot.
         $others = array_values(array_filter(
             array_map(static fn (array $row): int|string => $row['key'], $siblings),
             fn ($key): bool => ! $this->keysEqual($key, $selfKey),
         ));
 
         $newOrder = $others;
-        array_splice($newOrder, $position - 1, 0, [$selfKey]);
+        array_splice($newOrder, $position, 0, [$selfKey]);
 
         $parent->reorderChildren($newOrder);
 

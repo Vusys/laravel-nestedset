@@ -36,9 +36,9 @@ final class MoveToSiblingPositionTest extends TestCase
     }
 
     #[Test]
-    public function position_one_is_first(): void
+    public function position_zero_is_first(): void
     {
-        Category::query()->findOrFail(5)->moveToSiblingPosition(1);
+        Category::query()->findOrFail(5)->moveToSiblingPosition(0);
 
         $this->assertSame(
             ['D', 'A', 'B', 'C'],
@@ -47,9 +47,10 @@ final class MoveToSiblingPositionTest extends TestCase
     }
 
     #[Test]
-    public function position_last_is_last(): void
+    public function last_index_is_last(): void
     {
-        Category::query()->findOrFail(2)->moveToSiblingPosition(4);
+        // 4 siblings → last 0-based index is 3.
+        Category::query()->findOrFail(2)->moveToSiblingPosition(3);
 
         $this->assertSame(
             ['B', 'C', 'D', 'A'],
@@ -60,10 +61,10 @@ final class MoveToSiblingPositionTest extends TestCase
     #[Test]
     public function position_middle_inserts_correctly(): void
     {
-        Category::query()->findOrFail(2)->moveToSiblingPosition(3);
+        // A moves to 0-based index 2. Remaining siblings [B,C,D]; A
+        // inserted at slot 2 → B,C,A,D.
+        Category::query()->findOrFail(2)->moveToSiblingPosition(2);
 
-        // A goes from index 0 (1-indexed: position 1) to position 3.
-        // Remaining siblings [B,C,D]; A inserted at slot 2 (0-indexed) → B,C,A,D.
         $this->assertSame(
             ['B', 'C', 'A', 'D'],
             Category::query()->where('parent_id', 1)->orderBy('lft')->pluck('name')->all(),
@@ -73,6 +74,7 @@ final class MoveToSiblingPositionTest extends TestCase
     #[Test]
     public function moving_to_current_position_is_silent_no_op(): void
     {
+        // B is already at 0-based index 1.
         $b = Category::query()->findOrFail(3);
 
         $sniffer = new class
@@ -85,7 +87,7 @@ final class MoveToSiblingPositionTest extends TestCase
             }
         });
 
-        $b->moveToSiblingPosition(2);
+        $b->moveToSiblingPosition(1);
 
         $this->assertSame(0, $sniffer->updates);
         $this->assertSame(
@@ -95,19 +97,20 @@ final class MoveToSiblingPositionTest extends TestCase
     }
 
     #[Test]
-    public function position_zero_throws(): void
+    public function position_equal_to_count_throws(): void
     {
+        // 4 siblings → valid range is [0, 3]; index 4 is past the end.
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('position must be in [1, 4]');
+        $this->expectExceptionMessage('position must be in [0, 3]');
 
-        Category::query()->findOrFail(2)->moveToSiblingPosition(0);
+        Category::query()->findOrFail(2)->moveToSiblingPosition(4);
     }
 
     #[Test]
     public function position_past_end_throws(): void
     {
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('position must be in [1, 4]');
+        $this->expectExceptionMessage('position must be in [0, 3]');
 
         Category::query()->findOrFail(2)->moveToSiblingPosition(99);
     }
