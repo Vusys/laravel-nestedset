@@ -11,7 +11,8 @@ use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
- * `aggregate_locking = 'auto'` (and `'always'`) must serialise
+ * `aggregate_locking = 'auto'` (and the removed `'always'` alias, which
+ * normalises to `'auto'`) must serialise
  * concurrent aggregate updates against the same ancestor so the
  * stored MIN / MAX values converge to the freshly computed value.
  * Without the lock, two recompute paths can both SELECT the
@@ -120,9 +121,9 @@ final class AggregateLockingConcurrencyTest extends TestCase
     #[Test]
     public function recompute_under_always_locking_converges_to_fresh_values(): void
     {
-        // `'always'` locks even where `'auto'` would short-circuit.
-        // Same end-state contract as `'auto'`; pinning both prevents
-        // a future change to the auto heuristic from quietly diverging.
+        // `'always'` is a removed config alias that normalises to `'auto'`.
+        // This pins the back-compat path: an old deployment still set to
+        // `'always'` must keep converging exactly like `'auto'`.
         $this->requireForkableMultiWriterBackend();
 
         config(['nestedset.aggregate_locking' => 'always']);

@@ -47,16 +47,14 @@ return [
     |                        on all supported backends. This is the right
     |                        setting for nearly every application.
     |
-    |   'always' — forward-compatible alias; today behaves identically
-    |              to 'auto' (the recompute path locks, the pure-delta
-    |              path does not). Separate per-delta locking is not yet
-    |              implemented.
-    |
     |   'never'  — issues no explicit locks. Marginally faster on the
     |              recompute path; relies entirely on the engine's
     |              UPDATE-time row locks. Can produce drift on
     |              PostgreSQL READ COMMITTED with concurrent recomputes
     |              against overlapping subtrees.
+    |
+    | (A former third value, 'always', was a no-op alias of 'auto' and has
+    | been removed; a config still set to it falls back to 'auto'.)
     */
 
     'aggregate_locking' => 'auto',

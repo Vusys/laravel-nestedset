@@ -42,17 +42,18 @@ final class RecomputeMaintenance
      * `$locking` parameter on {@see self::apply()} and its delta-side
      * sibling on {@see DeltaMaintenance}.
      *
-     * @return 'always'|'auto'|'never'
+     * The former `'always'` value was a documented no-op alias of `'auto'`
+     * (a three-state enum with two identical states); it has been dropped.
+     * A config still set to `'always'` normalises to `'auto'` here, so no
+     * deployment breaks.
+     *
+     * @return 'auto'|'never'
      */
     public static function lockingFromConfig(): string
     {
         $value = config('nestedset.aggregate_locking', 'auto');
 
-        return match ($value) {
-            'always' => 'always',
-            'never' => 'never',
-            default => 'auto',
-        };
+        return $value === 'never' ? 'never' : 'auto';
     }
 
     /**
@@ -61,10 +62,10 @@ final class RecomputeMaintenance
      * @param  array<string, int|float|string>  $filterEquals
      *                                                         column => previous_value pairs ORed into the WHERE.
      *                                                         Empty → no extra filter (every ancestor recomputes).
-     * @param  'always'|'auto'|'never'  $locking
-     *                                            Controls whether the recompute SELECT is issued with
-     *                                            FOR UPDATE. 'always' and 'auto' both lock here; 'never'
-     *                                            skips.
+     * @param  'auto'|'never'  $locking
+     *                                   Controls whether the recompute SELECT is issued with
+     *                                   FOR UPDATE. 'auto' locks here; 'never'
+     *                                   skips.
      * @param  NodeBounds|null  $excludeBounds
      *                                          When set, the inner MIN/MAX subquery excludes rows whose
      *                                          lft/rgt fall inside these bounds. Used by the Path A
@@ -139,7 +140,7 @@ final class RecomputeMaintenance
      * @param  list<ColumnSpec>  $columns
      * @param  array<string, mixed>  $scope
      * @param  array<string, int|float|string>  $filterEquals
-     * @param  'always'|'auto'|'never'  $locking
+     * @param  'auto'|'never'  $locking
      * @return list<array<string, mixed>>
      */
     private static function candidatesForRecompute(

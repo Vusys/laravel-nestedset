@@ -6,15 +6,56 @@ The headline: the core lft/rgt arithmetic, locking discipline, and hook ordering
 
 ---
 
+## Progress ledger — updated 2026-06-12
+
+Work landed on branch `review-audit-fixes-2026-06-11` (20 commits on top of v0.22.0). Every ✅ item ships with a reproduced-then-fixed regression test; the full suite (2207 tests) and `composer check` (Pint + Rector + PHPStan level 9) are green.
+
+Legend: ✅ fixed · 🔶 open · 🧭 needs a decision before implementing.
+
+**§1 Critical** — ✅ 1.1 · ✅ 1.2
+
+**§2 High** — ✅ 2.1 · ✅ 2.2 · ✅ 2.3 · ✅ 2.4 · ✅ 2.5 · ✅ 2.6 · ✅ 2.7 · ✅ 2.8 *(scope now carried on `NodeBounds`)*
+
+**§3 Medium**
+- ✅ create-hook cast-aware filters · ✅ float zero-delta no-op · ✅ scope snowflake collapse · ✅ missing-anchor `fixTree` guard · ✅ `immutable_datetime` cascade · ✅ `withFreshAggregates` alias injection · ✅ `withDepth`/`withFreshAggregates` narrowed-`select()` · ✅ static-trait-call deprecation
+- 🔶 forceDelete-after-restore drift · 🔶 lazy-aggregate read-writes / `aggregateErrors` lazy drift · 🔶 `withDeferredAggregateMaintenance` cross-scope · 🔶 BIGINT/decimal float precision in delta path · 🔶 MariaDB fresh-read `limit`/`orWhere` · 🔶 identifier-quoting consistency across write/repair/read · 🔶 unbounded structural UPDATEs · 🔶 deleting-hook unlocked re-read · 🔶 PG READ COMMITTED recompute window · 🔶 lock-ordering canonicalisation · 🔶 flat-snapshot spurious `Moved` · 🔶 diff hardcodes id/parent_id · 🔶 diff unusable on scoped+aggregates
+- 🧭 soft-delete visibility (reorderChildrenBy / up()/down() / placement onto trashed targets) — pick raw vs live visibility · 🧭 restoring a child under a still-trashed ancestor — allow+document / block / auto-restore · 🧭 `moveTo(int)` resolves target at queue time
+
+**§4 Pre-1.0 decisions** — ✅ #1 (= 2.8). 🧭 #2–#11 (see "Decisions still open" below).
+
+**§5 Test/CI** — ✅ 5.1 (`top_k_areas` truncation) · ✅ 5.9 (deprecation surfacing). 🔶 backend fuzzing, new fuzzers (paths / diff-apply / clone / stale-instance pool), narrow class-level `allowBrokenTreeAtTearDown`, extend tearDown integrity to all fixtures, remaining targeted regressions, duplicate migration prefixes.
+
+**§6 Docs** — ✅ CLAUDE.md "spec lives in docs/". 🔶 corruption.md staleness, tree-diff.md / exporters.md prose, materialised-paths soft-delete note.
+
+**§7 Packaging** — ✅ 7.1 `.gitattributes`. 🔶 LICENSE copyright; REVIEW.MD is untracked so never shipped.
+
+### Decisions still open (your call)
+
+Each is "implement X *or* drop/document it" — I've put my default first.
+
+1. **`aggregate_locking: 'always'`** is a no-op alias of `'auto'`. → *Drop the third state* (simplest), or implement a genuine force-lock mode.
+2. **`defaultOrder()` on scoped models** is non-deterministic (every tree restarts lft at 1). → *Order by scope columns first when the model is scoped.* Low risk, strictly better — but it changes default row order, so flagging rather than just doing it.
+3. **Fresh-select column-reuse footgun** — `withFreshAggregates()` reusing a real aggregate column name corrupts the next `save()`'s delta baseline. → *Throw when an ad-hoc alias collides with a stored aggregate column.*
+4. **Aggregate events / change-feed dispatch pre-commit** — a rollback leaves listeners having observed phantom changes. → *Wrap dispatch in `DB::afterCommit()`* (changes event timing — a real semantic choice), or document loudly.
+5. **Deferred `fixAggregates` after commit** in `bulkInsertTree` / `TreeDiff::apply()` — a crash between commit and repair leaves persistent drift. → *Pull the repair inside the caller transaction*, or accept + document.
+6. **Secondary index on `[scope…, parent_id]`** — the shipped composite can't serve `children()` / `whereIsRoot()` / fixTree's parent walk on PG/sqlite. → *Add the index* (write/storage cost) vs leave to the user.
+7. **Exception marker sweep** — ~20 sites throw bare `InvalidArgumentException`/`LogicException`/`RuntimeException`, so `catch (NestedSetException)` misses them. → *Make them all implement the marker* (mechanical; mild hierarchy change).
+8. **`anchoredCountErrors` semantics** — `countErrors($anchor)` is whole-table on unscoped models while `fixTree($anchor)` bands to the subtree, so `hasErrors()` can stay true after a converged anchored repair. → *Band the post-fix count to the anchor*, or document the asymmetry.
+9. **Helpers assume the full framework** — `config()`/`event()`/`resolve()` come from `laravel/framework`, which `composer.json` doesn't require (only `illuminate/*`). → *Require `laravel/framework` honestly*, or guard the helpers.
+10. **MariaDB `SET STATEMENT` prefix has no version floor** — errors hard on MariaDB < 10.3 and is silently lost by `cursor()`/`lazy()`. → *Gate on the parsed server version + override `cursor()`.*
+11. **Soft-delete visibility model** (the §3 🧭 items) — decide once whether structural-slot operations see trashed rows (raw) or live rows, and the restore-under-trashed-ancestor semantic, then pin with tests.
+
+---
+
 ## 1. Critical
 
-### 1.1 `TreeDiff::apply()` corrupts the tree when removing a subtree on a hard-delete model [reproduced]
+### 1.1 `TreeDiff::apply()` corrupts the tree when removing a subtree on a hard-delete model [reproduced]  — ✅ **FIXED**
 
 `src/Diff/TreeDiffApplier.php:361-370`. A diff removing a subtree carries a `Removed` entry per node. `doRemoves` fetches all rows upfront and deletes each. The first (ancestor) delete cascades a raw hard-delete and closes the gap; the subsequent `delete()` on an already-cascade-deleted child silently proceeds with stale bounds — the `deleting` re-read at `src/NodeTrait.php:146` finds no row and returns without flagging, then the `deleted` hook runs `applyForceDeleteCascade` + `closeGap` against the stale band, deleting innocent rows and corrupting bounds. Reproduced: removing a 3-node subtree on `Branch` left `lft=1 rgt=0` rows, `isBroken() === true`. Masked in the suite because every diff-apply test uses `Category`, which soft-deletes.
 
 **Fix:** in `doRemoves`, delete only top-most removed nodes (skip rows whose ancestor key is also in the removed set), and make the `deleted` hook a no-op when the `deleting` re-read found the row already gone (set a "vanished" flag rather than silently returning). Fixing the latter also fixes the general double-delete footgun outside diff. The same top-most-only fix stops soft-delete diff removes from re-stamping cascaded children (breaking stamp-matched restore).
 
-### 1.2 Retrying a save after a cancelled/failed save silently corrupts the tree [reproduced]
+### 1.2 Retrying a save after a cancelled/failed save silently corrupts the tree [reproduced]  — ✅ **FIXED**
 
 `src/Concerns/HasTreeMutation.php:666-692, 862-863, 1391-1432`. When the auto-transaction rolls back (listener returning `false` → `SaveCancelledException`, or any DB exception during the row write), the DB is restored but the in-memory model is poisoned: `$pending` is already cleared and `lft`/`rgt`/`depth` hold the rolled-back placement. A retry `save()` then passes every guard:
 
@@ -27,38 +68,38 @@ The headline: the core lft/rgt arithmetic, locking discipline, and hook ordering
 
 ## 2. High
 
-### 2.1 Aggregate drift: source-column update applies deltas against stale in-memory bounds [reproduced]
+### 2.1 Aggregate drift: source-column update applies deltas against stale in-memory bounds [reproduced]  — ✅ **FIXED**
 
 `src/Aggregates/Lifecycle/DeltaCapture.php:436` (and `LifecycleSupport.php:131`) use `$node->getBounds()` from the in-memory instance. Delete, move, and restore were all hardened to re-read bounds from the DB; the plain source-update save was missed. Hold an instance, let another mutation shift its bounds, update the source column, `save()` — the ancestor-band UPDATE hits the wrong rows. Reproduced: 4 rows of permanent drift on the `Area` fixture. **Fix:** re-read bounds in `DeltaCapture::apply()` when any state was captured (one extra SELECT, only on saves that captured aggregate work). The fuzzers can't catch this because every op refreshes first — add a "no-refresh stale instance pool" to `AggregateFuzzerTest`.
 
-### 2.2 Multibyte content corrupts every descendant materialised path on rename/move [reproduced]
+### 2.2 Multibyte content corrupts every descendant materialised path on rename/move [reproduced]  — ✅ **FIXED**
 
 `src/Concerns/HasMaterialisedPath.php:427` computes the rewrite offset with `strlen()` (bytes) but the SQL uses `SUBSTRING`/`SUBSTR` (characters on utf8mb4 MySQL, PG, sqlite). Any non-ASCII character in the old path — including the `' › '` separator showcased in the docs — chops characters off every descendant path. Reproduced: renaming `Café` → `Bücher` ate the separator space in the child path. **Fix:** `mb_strlen($oldPrefix, 'UTF-8')` or compute the offset in SQL via `CHAR_LENGTH(?)+1`. No multibyte fixture exists anywhere in the path tests — add one.
 
-### 2.3 Closure-source materialised paths cannot be repaired or cloned [reproduced]
+### 2.3 Closure-source materialised paths cannot be repaired or cloned [reproduced]  — ✅ **FIXED**
 
 `src/Concerns/HasTreeRepair.php:237-250` selects only structural columns + `sourceColumn()` per path; closure sources (`MaterialisedPath::from(...)`) return `null` there, so the closure reads missing attributes, produces an empty segment, and the row is silently skipped at `:298-300`. Reproduced: `fixMaterialisedPaths()` returned 0 and left `/garbage/` in place. Knock-on: `cloneSubtreeTo()` strips path columns and relies on `fixMaterialisedPaths` — reproduced that cloning a closure-path subtree leaves every cloned row with NULL paths, and `assertClonedPathsUnique` skips empties so nothing throws. **Fix:** select all columns in `rebuildMaterialisedPaths` (it already loads every row), or let `MaterialisedPath::from()` declare its dependent columns.
 
-### 2.4 Multi-column scope: path-rewrite bindings bound to the wrong columns [reproduced via SQL]
+### 2.4 Multi-column scope: path-rewrite bindings bound to the wrong columns [reproduced via SQL]  — ✅ **FIXED**
 
 `HasMaterialisedPath.php:448-450` vs `:491-493` — the WHERE prepends scope predicates (reversing column order) while values are appended in forward order. With `#[NestedSetScope(['tenant_id', 'menu_id'])]`, tenant binds to menu_id and vice versa: rewrites miss all descendants or hit another tenant's rows. Only single-column-scope fixtures are tested, which is why CI is green. **Fix:** append predicates in iteration order; add a two-column-scope fixture.
 
-### 2.5 `cloneSubtreeTo()` silently drops non-fillable columns [reproduced]
+### 2.5 `cloneSubtreeTo()` silently drops non-fillable columns [reproduced]  — ✅ **FIXED**
 
 `src/Concerns/HasSubtreeClone.php:484-560` builds the payload from raw DB rows but delegates to `bulkInsertTree`, which mass-assigns (`new static($attrs)`). Guarded columns are silently zeroed — reproduced with a guarded `tickets` column (42 → 0). Respecting `$fillable` is right for user payloads, wrong for a deep-copy primitive. **Fix:** internal force-fill mode (`static::unguarded()`) for the clone path; add a guarded-column fixture (every current fixture declares everything fillable, so this is untestable today).
 
-### 2.6 `TreeDiff::apply()` throws on legal diffs [reproduced ×2]
+### 2.6 `TreeDiff::apply()` throws on legal diffs [reproduced ×2]  — ✅ **FIXED**
 
 - `TreeDiffApplier.php:419, 505-508`: an added node positioned after a *moved-in* sibling throws `LogicException` from `moveToSiblingPosition` — adds run before moves, so the earlier-ranked sibling isn't there yet.
 - `TreeDiffApplier.php:438-492`: flat-shape input (including plain Eloquent collections — the docs' primary example) applies moves in row order, so a parent/child swap throws `CyclicMoveException`.
 
 **Fix:** topologically sort moves by after-parent chains (the `topologicalSortAdded` machinery already exists), and clamp/defer sibling positions — or run one final reorder pass after all adds/moves/removes.
 
-### 2.7 `fixTree()` destroys deliberate sibling order [reproduced]
+### 2.7 `fixTree()` destroys deliberate sibling order [reproduced]  — ✅ **FIXED**
 
 `src/Query/TreeRepairBuilder.php:294-301, 340-345` order children by id only. Running `fixTree()` on a *healthy* tree reverts every `insertBeforeNode`/`up()`/`reorderChildren` ordering to PK order. `corruption.md` frames fixTree as the universal recovery, so following the docs loses user data. **Fix:** order by `(lft, id)` — preserves valid order, keeps id-tiebreak determinism, and garbage lft values degrade to id order naturally. Cheap and strictly better.
 
-### 2.8 Cross-scope leak in every positional read method [reproduced]
+### 2.8 Cross-scope leak in every positional read method [reproduced]  — ✅ **FIXED**
 
 `src/Query/TreeQueryBuilder.php:93-228` — `whereDescendantOf`, `whereAncestorOf`, `whereIsRoot`, `root()`, `whereIsAfter/Before`, etc. take `NodeBounds` (no scope) and apply no scope predicates. Scoped trees all restart lft at 1, so overlap is the norm: `MenuItem::whereDescendantOf($menu1Root->getBounds())` returned rows from menu 2; `root()` returns an arbitrary tree's root. The relations layer adds scope manually, so the internals know it's required — the public query API leaves it to the caller, documented only for `whereDescendantOf`. **Fix (pre-1.0):** carry scope values on `NodeBounds` (the model has them at `getBounds()` time) and apply them in the predicates, or auto-apply scope when handed a model. This is the kind of silent-wrong-data default that's much harder to change after 1.0.
 
