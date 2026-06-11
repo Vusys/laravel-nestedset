@@ -75,6 +75,11 @@ trait HasBulkInsert
      *                                            (e.g. importing a whole tree into a tenant). Ignored when
      *                                            `$appendTo` is given (the anchor's scope wins). Must cover every
      *                                            declared scope column.
+     * @param  bool  $includeKeys  When true, a row may carry its own
+     *                             primary key and it is inserted verbatim (rather than the column
+     *                             being reserved). The package still computes lft/rgt/depth and
+     *                             parent_id. A duplicate key surfaces as the driver's unique
+     *                             violation.
      * @return list<static>
      *
      * @throws ScopeViolationException When the model is scoped and neither `$appendTo` nor `$scope` is given.
@@ -84,6 +89,7 @@ trait HasBulkInsert
         array $tree,
         ?HasNestedSet $appendTo = null,
         ?array $scope = null,
+        bool $includeKeys = false,
     ): array {
         if ($tree === []) {
             return [];
@@ -159,7 +165,12 @@ trait HasBulkInsert
         $depthCol = $instance->getDepthName();
         $parentIdCol = $instance->getParentIdName();
         $keyName = $instance->getKeyName();
-        $reservedCols = [$lftCol, $rgtCol, $depthCol, $parentIdCol, $keyName];
+        // The primary key is normally reserved (the package lets the
+        // store assign it). With $includeKeys the caller supplies it, so
+        // un-reserve it and set it explicitly on each row below.
+        $reservedCols = $includeKeys
+            ? [$lftCol, $rgtCol, $depthCol, $parentIdCol]
+            : [$lftCol, $rgtCol, $depthCol, $parentIdCol, $keyName];
 
         $scopeValues = match (true) {
             $appendTo instanceof Model => NestedSetScopeResolver::valuesFor($appendTo),
@@ -213,6 +224,8 @@ trait HasBulkInsert
             $scopeValues,
             $mutator,
             $appendTo,
+            $includeKeys,
+            $keyName,
         ): array {
             // Read + lock the anchor row inside the transaction — same
             // discipline as actAppendTo. The in-memory $appendTo may be
@@ -246,6 +259,12 @@ trait HasBulkInsert
 
             foreach ($plan as $planIndex => $node) {
                 $model = new static($node['attributes']);
+
+                // Mass assignment drops a guarded primary key, so when the
+                // caller supplies keys set the PK explicitly.
+                if ($includeKeys && array_key_exists($keyName, $node['attributes'])) {
+                    $model->setAttribute($keyName, $node['attributes'][$keyName]);
+                }
 
                 foreach ($scopeValues as $col => $val) {
                     $model->setAttribute($col, $val);

@@ -18,11 +18,7 @@ use Vusys\NestedSet\Tests\TestCase;
  * input, invalid JSON, flat-shape import, scoped roots requiring
  * scope columns, and scope inheritance under an existing parent.
  *
- * `includeKeys = true` is intentionally not covered here — the
- * underlying `bulkInsertTree` path rejects an `id` row attribute as
- * reserved, so the importer can't currently exercise the collision
- * branch end-to-end. Re-add a test once that upstream guard is
- * relaxed.
+ * `includeKeys = true` is covered by {@see JsonImportIncludeKeysTest}.
  */
 final class JsonImportEdgeCasesTest extends TestCase
 {

@@ -89,7 +89,7 @@ final class JsonTreeImporter
                 ));
             }
             /** @var list<Model&HasNestedSet> $saved */
-            $saved = $callable($tree, $parent, $rootScope);
+            $saved = $callable($tree, $parent, $rootScope, $options->includeKeys);
         } catch (QueryException $e) {
             if ($options->includeKeys && self::isUniqueViolation($e)) {
                 throw new JsonImportKeyCollisionException(
