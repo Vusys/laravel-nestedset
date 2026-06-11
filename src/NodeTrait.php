@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Concerns\HasBulkInsert;
 use Vusys\NestedSet\Concerns\HasMaterialisedPath;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
@@ -142,7 +143,17 @@ trait NodeTrait
                 $node->getParentIdName(),
             ];
             $scopeColumns = NestedSetScopeResolver::columns($node::class);
-            $columnsToRead = array_unique(array_merge($structuralColumns, $scopeColumns));
+            // Aggregate display/companion columns too: the deleted hook
+            // subtracts this node's stored aggregate values from its
+            // ancestors, but delta maintenance updates those columns via
+            // raw SQL without syncing the model — a held-then-deleted
+            // instance would otherwise subtract a stale total.
+            $aggregateColumns = AggregateRegistry::maintainedColumnsFor($node::class);
+            $columnsToRead = array_values(array_unique(array_merge(
+                $structuralColumns,
+                $scopeColumns,
+                $aggregateColumns,
+            )));
             $row = $node->getConnection()
                 ->table($node->getTable())
                 ->where($node->getKeyName(), $key)

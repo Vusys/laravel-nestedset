@@ -7,7 +7,9 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\Mutation\NodeMoved;
 use Vusys\NestedSet\Events\Mutation\NodePromotedToRoot;
@@ -862,12 +864,27 @@ trait HasTreeMutation
         // a sibling insert (or any prior mutation) since this instance
         // was loaded may have shifted its lft/rgt, and the before-move
         // aggregate hook + the move events all key off these bounds.
-        // Stash it so positionAt() reuses the same read instead of
-        // issuing a second identical SELECT — the before-move hook only
-        // touches ancestor aggregate columns, never the mover's bounds,
-        // so the value is still current when positionAt runs.
-        $from = $wasExisting ? $this->freshBoundsOf($this) : null;
+        // Lock the mover's row FOR UPDATE: between this read and the
+        // target lock sit the SubtreeMoving dispatch and the before-move
+        // aggregate hook — a wide window in which a concurrent committed
+        // insert/move could shift the mover's bounds and make the
+        // moveNode() CASE band match the wrong rows. Stash it so
+        // positionAt() reuses the same read instead of issuing a second
+        // identical SELECT — the before-move hook only touches ancestor
+        // aggregate columns, never the mover's bounds, so the value is
+        // still current when positionAt runs.
+        $from = $wasExisting ? $this->freshBoundsOf($this, lockForUpdate: true) : null;
         $this->pendingMoveFromBounds = $from;
+
+        // Re-read the mover's stored aggregate columns before the
+        // before-move hook subtracts them from the old ancestor chain.
+        // Delta maintenance writes these via raw SQL without syncing the
+        // model, so a held instance (source updated, child appended, or
+        // freshly created then moved in the same instance) carries stale
+        // totals the move would otherwise transfer verbatim.
+        if ($wasExisting && $this instanceof MaintainsTreeAggregates) {
+            $this->refreshMaintainedAggregateColumns();
+        }
 
         $previousParentId = $wasExisting ? $this->getParentId() : null;
         $previousDepth = $wasExisting ? $this->getDepth() : 0;
@@ -1327,6 +1344,36 @@ trait HasTreeMutation
         $mutator = $this->newTreeMutator();
 
         return $mutator->getNodeData($this->keyOf($other), $lockForUpdate);
+    }
+
+    /**
+     * Re-reads this node's maintained aggregate columns from the DB into
+     * the in-memory model. Delta maintenance writes these columns via
+     * raw SQL and never syncs the model, so without this a held instance
+     * carries stale totals that the before-move hook would transfer to
+     * the new ancestor chain. Syncs originals so the columns stay clean
+     * for dirty tracking.
+     */
+    private function refreshMaintainedAggregateColumns(): void
+    {
+        $columns = AggregateRegistry::maintainedColumnsFor(static::class);
+        if ($columns === []) {
+            return;
+        }
+
+        $row = $this->getConnection()
+            ->table($this->getTable())
+            ->where($this->getKeyName(), $this->getKey())
+            ->first($columns);
+
+        if ($row === null) {
+            return;
+        }
+
+        foreach ($columns as $column) {
+            $this->setAttribute($column, $row->{$column});
+            $this->syncOriginalAttribute($column);
+        }
     }
 
     /**
