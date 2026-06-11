@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Query;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
 use RuntimeException;
+use Vusys\NestedSet\Exceptions\CyclicMoveException;
 use Vusys\NestedSet\NodeBounds;
 
 /**
@@ -121,7 +122,7 @@ final readonly class TreeMutationBuilder
         $height = $rgt - $lft + 1;
 
         if ($lft < $position && $position <= $rgt) {
-            throw new \LogicException('Cannot move node into itself.');
+            throw new CyclicMoveException('Cannot move node into itself.');
         }
 
         $boundFrom = min($lft, $position);

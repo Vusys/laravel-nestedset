@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use PHPUnit\Framework\Attributes\Test;
-use Vusys\NestedSet\Exceptions\DuplicatePathSegment;
+use Vusys\NestedSet\Exceptions\DuplicatePathSegmentException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\KeyPathCategory;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
@@ -60,7 +60,7 @@ final class MaterialisedPathListenerBranchesTest extends TestCase
 
         $b = new SluggedCategory(['name' => 'root']);
 
-        $this->expectException(DuplicatePathSegment::class);
+        $this->expectException(DuplicatePathSegmentException::class);
         $this->expectExceptionMessageMatches('/under parent \(root\)/');
 
         $b->makeRoot()->save();

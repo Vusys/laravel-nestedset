@@ -20,21 +20,22 @@ class Category extends Model implements MaintainsTreeAggregates
 }
 ```
 
-`NodeTrait` is deliberately thin — it is a **composition of nine concerns**, each owning one slice of behaviour, plus a handful of Eloquent overrides. The trait body is little more than a list of `use` statements:
+`NodeTrait` is deliberately thin — it is a **composition of eleven concerns**, each owning one slice of behaviour, plus a handful of Eloquent overrides. The trait body is little more than a list of `use` statements:
 
 ```php
 trait NodeTrait
 {
     use HasBulkInsert;
+    use HasMaterialisedPath;
     use HasNestedSetAggregates;
     use HasNodeInspection;
     use HasSoftDeleteTree;
+    use HasSubtreeClone;
     use HasTreeExport;
     use HasTreeMutation;
     use HasTreeRelations;
     use HasTreeRepair;
     use HasTreeWalk;
-    // ...
 }
 ```
 
@@ -49,6 +50,8 @@ trait NodeTrait
 | `HasBulkInsert` | `bulkInsertTree()` — one `makeGap` + N saves + one deferred `fixAggregates` | [Bulk Insertion](../tree-operations/bulk-insertion.html) |
 | `HasTreeExport` | `toAsciiTree()` / `toMermaid()` / `toDot()` / `toJsonTree()` tree serialisers, plus `*Forest` / `*Scope` static counterparts | [Tree Exporters](../querying/exporters.html) |
 | `HasTreeWalk` | `walk()` / `dfs()` / `dfsPostOrder()` / `bfs()` / `flattenedSubtree()` — visitor + generators over a loaded subtree, with `WalkContext` and `WalkFilter` | [Walking Subtrees](../querying/walking.html) |
+| `HasSubtreeClone` | `cloneSubtreeTo()` / `cloneSubtreeAsRoot()` — deep-copy a subtree (refresh + delegate to `bulkInsertTree`) | [Cloning Subtrees](../tree-operations/cloning.html) |
+| `HasMaterialisedPath` | maintained slug/id path columns alongside `lft`/`rgt` | [Materialised Paths](../tree-operations/materialised-paths.html) |
 
 ### The walker — `src/Walker/`
 
@@ -61,7 +64,7 @@ trait NodeTrait
 
 The walker is purely a consumer of in-memory data — it never queries. When the public methods on `HasTreeWalk` are called without an explicit `$subtree`, they fall back to `$this->descendants`; if the relation is not loaded either, they throw `UnloadedSubtreeException`. The exporters use it internally to compute their visible-key set when a `WalkFilter` is supplied.
 
-Models **must** `implements MaintainsTreeAggregates` (`src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
+Models **must** `implements MaintainsTreeAggregates` (`src/Contracts/MaintainsTreeAggregates.php`, which extends `HasNestedSet` in `src/Contracts/HasNestedSet.php`). The trait supplies a default implementation of every contract method, so the interface costs nothing to satisfy — its job is to give Larastan (and your IDE) a typed surface to resolve `getLft()`, `getBounds()`, and the column-name accessors against.
 
 ## The layers underneath
 
@@ -77,7 +80,7 @@ The concerns are the API surface. They delegate the actual SQL to a layer of que
  TreeMutationBuilder        ← emits the atomic CASE WHEN UPDATE (makeGap/moveNode)
    │  new TreeExpression(...)
    ▼
- TreeExpression             ← backend-aware raw SQL fragment (no binding escaping)
+ TreeExpression             ← thin Expression wrapper for package-owned SQL fragments
    ▼
  database
 ```
@@ -85,7 +88,7 @@ The concerns are the API surface. They delegate the actual SQL to a layer of que
 - `TreeBaseQueryBuilder` — the package's `Illuminate\Database\Query\Builder` subclass; a home for SQL-execution hooks (e.g. the MariaDB `optimizer_switch` prefix used by fresh-aggregate reads).
 - `TreeQueryBuilder` — the Eloquent builder returned from every `NodeTrait` model. Adds `whereDescendantOf`, `whereAncestorOf`, `whereIsRoot`, `withDepth`, `defaultOrder`, `withFreshAggregates`, and more.
 - `TreeMutationBuilder` / `TreeRepairBuilder` — internal builders for the write and repair paths. They take a connection, table, and column names and emit the single-statement updates.
-- `TreeExpression` — wraps a raw SQL string as an `Expression` so the query builder splices it into the `SET` clause verbatim. It is also the backend-dialect generator (LATERAL on PostgreSQL/MySQL, `STRAIGHT_JOIN` on MySQL, derived-table shape on MariaDB, correlated fallback on SQLite).
+- `TreeExpression` — a thin `Expression` wrapper that lets dynamically-composed (but package-owned) SQL bypass Laravel's `literal-string` constraint, so the query builder splices it into the `SET` clause verbatim. It is **not** a backend dispatcher: the per-driver SQL shapes (LATERAL on PostgreSQL/MySQL, derived-table on MariaDB, correlated fallback on SQLite) live in `src/Query/Aggregates/Read/AggregateSqlFragments.php` and `FreshAggregateProjector.php`.
 
 `NodeTrait` wires these in via two Eloquent overrides:
 

@@ -13,11 +13,29 @@ public function save(array $options = []): bool
         return parent::save($options);
     }
 
-    return (bool) $this->getConnection()->transaction(fn (): bool => parent::save($options));
+    try {
+        return (bool) $this->getConnection()->transaction(function () use ($options): bool {
+            $saved = parent::save($options);
+
+            // A saving/creating/updating listener cancelled the save by
+            // returning false — but the trait's own `saving` listener has
+            // already run the structural SQL (makeGap / moveNode). A bare
+            // `return false` would commit that gap/move with no row write.
+            // Throw to force the rollback; the catch restores the
+            // cancelled-save contract for the caller.
+            if ($saved === false) {
+                throw new SaveCancelledException;
+            }
+
+            return $saved;
+        });
+    } catch (SaveCancelledException) {
+        return false;
+    }
 }
 ```
 
-This is what makes a mutation all-or-nothing. A single `save()` performs several distinct writes — the gap shift or `moveNode` (from the `saving` hook), the Eloquent INSERT/UPDATE itself, and the aggregate maintenance (from the `saved` / `created` hooks). Without the wrap, a failure partway through — a unique constraint, a throwing listener — would leave the gap committed and the row never inserted, a permanent hole in the `lft`/`rgt` sequence. The docblock makes the failure mode explicit. Laravel handles nested `transaction()` calls via savepoints, so wrapping inside your own outer transaction is safe.
+This is what makes a mutation all-or-nothing. A single `save()` performs several distinct writes — the gap shift or `moveNode` (from the `saving` hook), the Eloquent INSERT/UPDATE itself, and the aggregate maintenance (from the `saved` / `created` hooks). Without the wrap, a failure partway through — a unique constraint, a throwing listener — would leave the gap committed and the row never inserted, a permanent hole in the `lft`/`rgt` sequence. The `SaveCancelledException` dance is load-bearing: because the structural SQL already ran in the `saving` listener, a listener that *cancels* the save (returns `false`) must still roll back, so the override converts the cancellation into a thrown exception inside the transaction and then re-presents it to the caller as a plain `false`. Laravel handles nested `transaction()` calls via savepoints, so wrapping inside your own outer transaction is safe.
 
 Set `auto_transaction => false` only if you are managing transactions yourself at the call site — then *you* own the atomicity guarantee.
 

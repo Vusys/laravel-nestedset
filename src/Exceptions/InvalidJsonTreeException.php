@@ -18,4 +18,4 @@ use InvalidArgumentException;
  * Extends InvalidArgumentException because the malformed payload is
  * the caller's responsibility.
  */
-final class InvalidJsonTreeException extends InvalidArgumentException {}
+final class InvalidJsonTreeException extends InvalidArgumentException implements NestedSetException {}

@@ -9,7 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
-use Vusys\NestedSet\Exceptions\NonDeterministicPathSegment;
+use Vusys\NestedSet\Exceptions\NonDeterministicPathSegmentException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NodeTrait;
@@ -69,7 +69,7 @@ final class MaterialisedPathDeterminismGuardTest extends TestCase
     {
         config(['app.debug' => true]);
 
-        $this->expectException(NonDeterministicPathSegment::class);
+        $this->expectException(NonDeterministicPathSegmentException::class);
         $this->expectExceptionMessageMatches('/different values on repeated calls/');
 
         $node = new NonDeterministicNode(['name' => 'r']);

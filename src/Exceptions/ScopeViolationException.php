@@ -19,4 +19,4 @@ use Vusys\NestedSet\Attributes\NestedSetScope;
  * Extends LogicException because the cross-scope move is a programmer
  * error, not a runtime/data problem.
  */
-final class ScopeViolationException extends LogicException {}
+final class ScopeViolationException extends LogicException implements NestedSetException {}

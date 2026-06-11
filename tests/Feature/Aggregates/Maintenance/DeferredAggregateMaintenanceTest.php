@@ -41,6 +41,37 @@ final class DeferredAggregateMaintenanceTest extends TestCase
     }
 
     #[Test]
+    public function mid_tree_anchor_repairs_ancestors_above_the_anchor(): void
+    {
+        // root > A > A1. Defer with a MID-TREE anchor (A) and append a
+        // heavy child under A inside the closure. The closing repair
+        // must settle the whole tree — a subtree-only repair anchored at
+        // A would leave the root drifted (missing the new child's
+        // contribution).
+        $root = new Area(['name' => 'root', 'tickets' => 0]);
+        $root->saveAsRoot();
+
+        $a = new Area(['name' => 'A', 'tickets' => 10]);
+        $a->appendToNode($root->refresh())->save();
+
+        $a1 = new Area(['name' => 'A1', 'tickets' => 5]);
+        $a1->appendToNode($a->refresh())->save();
+
+        $a = $a->refresh();
+
+        Area::withDeferredAggregateMaintenance(function () use ($a): void {
+            $child = new Area(['name' => 'A2', 'tickets' => 100]);
+            $child->appendToNode($a)->save();
+        }, $a);
+
+        $this->assertFalse(Area::aggregatesAreBroken(), 'whole tree settled, not just the anchor subtree');
+
+        $root = $root->refresh();
+        $this->assertSame(115, (int) $root->tickets_total, 'root = 0 + 10 + 5 + 100');
+        $this->assertSame(4, (int) $root->tickets_count_all);
+    }
+
+    #[Test]
     public function eloquent_events_still_fire_per_row(): void
     {
         $root = new Area(['name' => 'r', 'tickets' => 0]);

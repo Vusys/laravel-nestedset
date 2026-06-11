@@ -18,4 +18,4 @@ use InvalidArgumentException;
  * caller's responsibility: either pick a different `$on`, or
  * deduplicate the source before calling.
  */
-final class DuplicateNodeIdentityException extends InvalidArgumentException {}
+final class DuplicateNodeIdentityException extends InvalidArgumentException implements NestedSetException {}

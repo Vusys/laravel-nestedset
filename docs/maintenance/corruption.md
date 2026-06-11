@@ -127,7 +127,7 @@ The package can't pick the right answer because the right answer is domain-speci
 
 **Symptom.** A placed row has a bound below `1` (a stray `0`), or a value that is simultaneously one row's `lft` and another's `rgt` — a cross-column collision, e.g. `X(0, 1)` sitting alongside `Root(1, 4)` (the value `1` is both `X.rgt` and `Root.lft`).
 
-**Meaning.** In a valid nested set every `lft`/`rgt` value is distinct and `>= 1`, so the `lft` and `rgt` value sets are disjoint. A below-`1` bound or a cross-column collision breaks that in a way `lft >= rgt` and the per-column duplicate checks miss. The check is **gap-tolerant**: a sparse but otherwise valid tree (reserved slots not yet filled) is not flagged, and fully-unplaced rows (`lft = rgt = 0`) are a legitimate transient state, not corruption.
+**Meaning.** In a valid nested set every `lft`/`rgt` value is distinct and `>= 1`, so the `lft` and `rgt` value sets are disjoint. A below-`1` bound or a cross-column collision breaks that in a way `lft >= rgt` and the per-column duplicate checks miss. The check is **gap-tolerant**: a sparse but otherwise valid tree (reserved slots not yet filled) is not flagged, and fully-unplaced rows (`lft = rgt = 0`) are excluded — they only arise from raw SQL inserts that bypass the model (saving an unplaced node through the normal API throws `UnplacedNodeException`), so they aren't treated as corruption.
 
 **Typical causes.**
 

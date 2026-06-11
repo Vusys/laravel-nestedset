@@ -13,15 +13,17 @@ use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
  *
  * Construct via the three factory methods; the constructor is private.
  *
- * **Security:** filter values and raw SQL are inlined into the generated
- * aggregate queries; they do not flow through PDO parameter binding.
- * Only pass **trusted constants** — class-level literals, config values
- * you control, or developer-written SQL fragments. **Never pass
- * user-supplied input**, or a string like `"x' OR 1=1 --"` will render
- * as a SQL fragment. PHP enforces the constant-only constraint for the
- * attribute form (`#[NestedSetAggregate(filter: [...])]`); only the
- * fluent method-override form (`Aggregate::sum(...)->filter([...])`)
- * can flow runtime data, so the constraint is on the caller there.
+ * **Security:** equality-filter *values* flow through PDO parameter
+ * binding (`?` placeholders), so they are safe even with runtime data.
+ * The one exception is **raw SQL** passed to `filterRaw(...)`: that
+ * fragment is spliced into the query verbatim, so it must be a
+ * **trusted developer-written constant** — never user-supplied input,
+ * or a string like `"x' OR 1=1 --"` renders as SQL. Column *names*
+ * (the keys of an equality filter) are likewise treated as trusted
+ * identifiers, not bound. PHP enforces the constant-only constraint for
+ * the attribute form (`#[NestedSetAggregate(filterRaw: '...')]`); the
+ * fluent form (`Aggregate::sum(...)->filterRaw('...')`) can flow runtime
+ * data, so the constraint is on the caller there.
  */
 final readonly class FilterPredicate
 {

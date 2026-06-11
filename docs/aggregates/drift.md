@@ -104,7 +104,7 @@ Clones reset every aggregate column to the function's empty element. Count-shape
 
 ### Unplaced nodes skip aggregate maintenance
 
-Plain `Category::create(...)` without `appendToNode()` / `makeRoot()` leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance is skipped until the node is placed in the tree. Check the state with `$node->isPlacedInTree(): bool` — returns false when both `lft` and `rgt` are still the migration default.
+Saving a node that hasn't been placed in the tree — `Category::create(...)` or `->save()` without a preceding `appendToNode()` / `makeRoot()` — now throws `UnplacedNodeException`, so a node with `lft = rgt = 0` is no longer a state you can reach through the normal API. Unplaced rows only arise from raw SQL inserts that bypass the model; aggregate maintenance is skipped for them until they're placed. Check the state with `$node->isPlacedInTree(): bool` — returns false when both `lft` and `rgt` are still the migration default.
 
 ### AVG over a nullable source
 

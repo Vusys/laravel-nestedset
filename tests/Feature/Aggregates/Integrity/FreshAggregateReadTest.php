@@ -86,6 +86,30 @@ final class FreshAggregateReadTest extends TestCase
     }
 
     #[Test]
+    public function fresh_aggregate_return_type_matches_the_column_cast(): void
+    {
+        // freshAggregate() routes its raw scalar through the model's
+        // cast, so it is type-stable across every backend — without it
+        // MySQL/PG return numerics as strings and a decimal column keeps
+        // full precision instead of the column's scale. (The fixture
+        // seeds rows raw, so the stored aggregate columns are unmaintained
+        // here; we assert the recomputed value + its type.)
+        $root = Area::query()->where('id', 1)->firstOrFail();
+
+        // integer-cast column → int on every backend.
+        $freshTotal = $root->freshAggregate('tickets_total');
+        $this->assertIsInt($freshTotal);
+        $this->assertSame(225, $freshTotal);
+
+        // decimal:4-cast column → the scale-fixed string Eloquent's
+        // decimal cast produces (225 / 4 = 56.25), not a full-precision
+        // float or a raw driver string.
+        $freshAvg = $root->freshAggregate('tickets_avg');
+        $this->assertIsString($freshAvg);
+        $this->assertSame('56.2500', $freshAvg);
+    }
+
+    #[Test]
     public function fresh_aggregate_sum_at_intermediate_node(): void
     {
         $a = Area::query()->where('id', 2)->firstOrFail();

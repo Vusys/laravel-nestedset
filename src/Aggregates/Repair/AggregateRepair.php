@@ -100,6 +100,16 @@ final class AggregateRepair
         ?int $chunkSize = null,
         ?\Closure $onChunk = null,
     ): AggregateFixResult {
+        // A model that declares no aggregate columns has nothing to
+        // repair, so requiring a scope anchor would be pointless — and
+        // it would block legitimate no-aggregate flows (e.g. seeding
+        // roots for a scoped menu via bulkInsertTree / fromJsonTree,
+        // whose deferred pass calls this). Short-circuit before the
+        // anchor check.
+        if (AggregateRegistry::for($modelClass) === []) {
+            return new AggregateFixResult(totalRowsUpdated: 0, perColumn: []);
+        }
+
         if ($chunkSize !== null && $chunkSize > 0) {
             return self::fixAggregatesChunked($modelClass, $anchor, $chunkSize, $onChunk);
         }

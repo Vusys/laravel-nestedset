@@ -15,4 +15,4 @@ use RuntimeException;
  * Extends RuntimeException because the failure reflects an environment
  * mismatch at apply time, not a programmer error at the call site.
  */
-final class MissingParentException extends RuntimeException {}
+final class MissingParentException extends RuntimeException implements NestedSetException {}

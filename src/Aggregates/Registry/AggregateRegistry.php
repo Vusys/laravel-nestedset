@@ -101,6 +101,27 @@ final class AggregateRegistry
     }
 
     /**
+     * Every maintained aggregate column on $class — display columns and
+     * auto-promoted companions alike. Used by the delete and move hooks
+     * to re-read these columns from the DB before they consume the
+     * in-memory values: delta maintenance writes them via raw SQL and
+     * never syncs the model, so a held instance can carry stale totals
+     * that a later move/delete would transfer or subtract verbatim.
+     *
+     * @param  class-string<Model&HasNestedSet>  $class
+     * @return list<string>
+     */
+    public static function maintainedColumnsFor(string $class): array
+    {
+        $columns = [];
+        foreach (self::for($class) as $definition) {
+            $columns[$definition->getColumn()] = true;
+        }
+
+        return array_keys($columns);
+    }
+
+    /**
      * Returns invalidation specs for every lazy aggregate column declared
      * on `$class` — user-facing and internal companions alike (an internal
      * companion can never be lazy today, but the iteration is robust

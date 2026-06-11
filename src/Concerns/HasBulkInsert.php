@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\BulkInsert\BulkInsertNodeSaved;
 use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeCompleted;
@@ -58,8 +59,9 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  *      fires once the closure exits.
  *
  * Scope. The method copies scope-column values from `$appendTo` to
- * every inserted row. Scoped models therefore *require* an anchor;
- * passing `null` on a scoped class throws.
+ * every inserted row. To seed NEW ROOTS on a scoped model (no anchor),
+ * pass the `$scope` argument with the target scope-column values;
+ * passing neither an anchor nor `$scope` on a scoped class throws.
  *
  * @mixin Model
  * @mixin HasNestedSet
@@ -68,14 +70,26 @@ trait HasBulkInsert
 {
     /**
      * @param  list<array<string, mixed>>  $tree
+     * @param  array<string, mixed>|null  $scope  Explicit scope-column
+     *                                            values for seeding NEW ROOTS on a scoped model without an anchor
+     *                                            (e.g. importing a whole tree into a tenant). Ignored when
+     *                                            `$appendTo` is given (the anchor's scope wins). Must cover every
+     *                                            declared scope column.
+     * @param  bool  $includeKeys  When true, a row may carry its own
+     *                             primary key and it is inserted verbatim (rather than the column
+     *                             being reserved). The package still computes lft/rgt/depth and
+     *                             parent_id. A duplicate key surfaces as the driver's unique
+     *                             violation.
      * @return list<static>
      *
-     * @throws ScopeViolationException When the model is scoped and `$appendTo` is null.
-     * @throws InvalidArgumentException On malformed input or reserved-attribute use.
+     * @throws ScopeViolationException When the model is scoped and neither `$appendTo` nor `$scope` is given.
+     * @throws InvalidArgumentException On malformed input, reserved-attribute use, or an incomplete `$scope`.
      */
     public static function bulkInsertTree(
         array $tree,
         ?HasNestedSet $appendTo = null,
+        ?array $scope = null,
+        bool $includeKeys = false,
     ): array {
         if ($tree === []) {
             return [];
@@ -100,21 +114,33 @@ trait HasBulkInsert
             tree: $tree,
         ));
 
-        // Scoped models need an anchor — the scope-column values are
-        // copied from it onto every inserted row.
+        // Scoped models need either an anchor (scope copied from it) or
+        // an explicit $scope (for seeding new roots into a tree, e.g. a
+        // JSON import into a tenant).
         $scopeColumns = NestedSetScopeResolver::columns(static::class);
         if ($scopeColumns !== [] && ! $appendTo instanceof HasNestedSet) {
-            $message = sprintf(
-                '%s declares a scope (%s); pass an anchor node so bulkInsertTree can scope the inserted rows.',
-                static::class,
-                implode(', ', $scopeColumns),
-            );
-            EventDispatcher::dispatch(new ScopeViolationDetected(
-                modelClass: static::class,
-                stage: 'bulk_insert',
-                message: $message,
-            ));
-            throw new ScopeViolationException($message);
+            if ($scope === null) {
+                $message = sprintf(
+                    '%s declares a scope (%s); pass an anchor node, or an explicit $scope for root seeding, so bulkInsertTree can scope the inserted rows.',
+                    static::class,
+                    implode(', ', $scopeColumns),
+                );
+                EventDispatcher::dispatch(new ScopeViolationDetected(
+                    modelClass: static::class,
+                    stage: 'bulk_insert',
+                    message: $message,
+                ));
+                throw new ScopeViolationException($message);
+            }
+
+            $missing = array_diff($scopeColumns, array_keys($scope));
+            if ($missing !== []) {
+                throw new InvalidArgumentException(sprintf(
+                    'bulkInsertTree: $scope is missing scope column(s) %s required by %s.',
+                    implode(', ', $missing),
+                    static::class,
+                ));
+            }
         }
 
         if ($appendTo instanceof HasNestedSet && ! $appendTo instanceof static) {
@@ -139,11 +165,18 @@ trait HasBulkInsert
         $depthCol = $instance->getDepthName();
         $parentIdCol = $instance->getParentIdName();
         $keyName = $instance->getKeyName();
-        $reservedCols = [$lftCol, $rgtCol, $depthCol, $parentIdCol, $keyName];
+        // The primary key is normally reserved (the package lets the
+        // store assign it). With $includeKeys the caller supplies it, so
+        // un-reserve it and set it explicitly on each row below.
+        $reservedCols = $includeKeys
+            ? [$lftCol, $rgtCol, $depthCol, $parentIdCol]
+            : [$lftCol, $rgtCol, $depthCol, $parentIdCol, $keyName];
 
-        $scopeValues = $appendTo instanceof Model
-            ? NestedSetScopeResolver::valuesFor($appendTo)
-            : [];
+        $scopeValues = match (true) {
+            $appendTo instanceof Model => NestedSetScopeResolver::valuesFor($appendTo),
+            $scopeColumns !== [] && $scope !== null => array_intersect_key($scope, array_fill_keys($scopeColumns, true)),
+            default => [],
+        };
 
         // 1. DFS walk → flat plan with relative lft/rgt/depth.
         $plan = self::bulkInsertPlan($tree, $reservedCols);
@@ -178,84 +211,105 @@ trait HasBulkInsert
         $repairAnchor = self::resolveBulkInsertRepairAnchor($appendTo, $scopeValues);
 
         $startNs = hrtime(true);
-        $saved = self::withDeferredAggregateMaintenance(
-            fn (): array => $connection->transaction(static function () use (
-                $plan,
-                $hasAnchor,
-                $anchorParentId,
-                $gapSize,
-                $instance,
-                $rgtCol,
-                $lftCol,
-                $depthCol,
-                $parentIdCol,
-                $scopeValues,
-                $mutator,
-                $appendTo,
-            ): array {
-                // Read + lock the anchor row inside the transaction — same
-                // discipline as actAppendTo. The in-memory $appendTo may be
-                // stale (a sibling deleted before it shifted its bounds
-                // left), and the FOR UPDATE lock serialises concurrent
-                // appenders against the same parent, which a bulk insert
-                // otherwise never took.
-                $anchorDepth = -1;
-                if ($hasAnchor && $anchorParentId !== null) {
-                    $anchorData = $mutator->getNodeData($anchorParentId, lockForUpdate: true);
-                    $anchorDepth = $anchorData->depth;
-                    $mutator->makeGap($anchorData->rgt, $gapSize);
-                    $boundsOffset = $anchorData->rgt - 1;
+        $insert = fn (): array => $connection->transaction(static function () use (
+            $plan,
+            $hasAnchor,
+            $anchorParentId,
+            $gapSize,
+            $instance,
+            $rgtCol,
+            $lftCol,
+            $depthCol,
+            $parentIdCol,
+            $scopeValues,
+            $mutator,
+            $appendTo,
+            $includeKeys,
+            $keyName,
+        ): array {
+            // Read + lock the anchor row inside the transaction — same
+            // discipline as actAppendTo. The in-memory $appendTo may be
+            // stale (a sibling deleted before it shifted its bounds
+            // left), and the FOR UPDATE lock serialises concurrent
+            // appenders against the same parent, which a bulk insert
+            // otherwise never took.
+            $anchorDepth = -1;
+            if ($hasAnchor && $anchorParentId !== null) {
+                $anchorData = $mutator->getNodeData($anchorParentId, lockForUpdate: true);
+                $anchorDepth = $anchorData->depth;
+                $mutator->makeGap($anchorData->rgt, $gapSize);
+                $boundsOffset = $anchorData->rgt - 1;
+            } else {
+                // No anchor — seeding new roots. The new lft values
+                // start one past the current MAX(rgt) so we don't
+                // collide with any existing forest. On a scoped model
+                // the max must be taken WITHIN the target scope, or a
+                // new tree would land past another scope's bounds.
+                $maxQuery = $instance->newQuery()->getQuery();
+                foreach ($scopeValues as $col => $val) {
+                    $maxQuery->where($col, $val);
+                }
+                $rawMaxRgt = $maxQuery->max($rgtCol);
+                $existingMaxRgt = is_numeric($rawMaxRgt) ? (int) $rawMaxRgt : 0;
+                $boundsOffset = $existingMaxRgt;
+            }
+
+            $saved = [];
+            $totalNodes = count($plan);
+
+            foreach ($plan as $planIndex => $node) {
+                $model = new static($node['attributes']);
+
+                // Mass assignment drops a guarded primary key, so when the
+                // caller supplies keys set the PK explicitly.
+                if ($includeKeys && array_key_exists($keyName, $node['attributes'])) {
+                    $model->setAttribute($keyName, $node['attributes'][$keyName]);
+                }
+
+                foreach ($scopeValues as $col => $val) {
+                    $model->setAttribute($col, $val);
+                }
+
+                if ($node['parentPlanIndex'] === null) {
+                    $parentId = $anchorParentId;
+                    $parentNode = $appendTo;
                 } else {
-                    // No anchor — seeding new roots. The new lft values
-                    // start one past the current MAX(rgt) so we don't
-                    // collide with any existing forest in the same table.
-                    $rawMaxRgt = $instance->newQuery()->getQuery()->max($rgtCol);
-                    $existingMaxRgt = is_numeric($rawMaxRgt) ? (int) $rawMaxRgt : 0;
-                    $boundsOffset = $existingMaxRgt;
+                    $parentModel = $saved[$node['parentPlanIndex']];
+                    $parentKey = $parentModel->getKey();
+                    $parentId = is_int($parentKey) || is_string($parentKey) ? $parentKey : null;
+                    $parentNode = $parentModel;
                 }
 
-                $saved = [];
-                $totalNodes = count($plan);
+                $model->setAttribute($lftCol, $node['lft'] + $boundsOffset);
+                $model->setAttribute($rgtCol, $node['rgt'] + $boundsOffset);
+                $model->setAttribute($depthCol, $node['depth'] + $anchorDepth + 1);
+                $model->setAttribute($parentIdCol, $parentId);
 
-                foreach ($plan as $planIndex => $node) {
-                    $model = new static($node['attributes']);
+                $model->save();
 
-                    foreach ($scopeValues as $col => $val) {
-                        $model->setAttribute($col, $val);
-                    }
+                $saved[] = $model;
 
-                    if ($node['parentPlanIndex'] === null) {
-                        $parentId = $anchorParentId;
-                        $parentNode = $appendTo;
-                    } else {
-                        $parentModel = $saved[$node['parentPlanIndex']];
-                        $parentKey = $parentModel->getKey();
-                        $parentId = is_int($parentKey) || is_string($parentKey) ? $parentKey : null;
-                        $parentNode = $parentModel;
-                    }
+                EventDispatcher::dispatch(new BulkInsertNodeSaved(
+                    modelClass: static::class,
+                    node: $model,
+                    planIndex: $planIndex,
+                    totalNodes: $totalNodes,
+                    parent: $parentNode,
+                ));
+            }
 
-                    $model->setAttribute($lftCol, $node['lft'] + $boundsOffset);
-                    $model->setAttribute($rgtCol, $node['rgt'] + $boundsOffset);
-                    $model->setAttribute($depthCol, $node['depth'] + $anchorDepth + 1);
-                    $model->setAttribute($parentIdCol, $parentId);
+            return $saved;
+        });
 
-                    $model->save();
+        // Appending under an anchor: the deferred wrapper repairs the
+        // anchor's tree at the outermost exit. Seeding new roots: the
+        // roots don't exist until the insert runs, so we can't anchor
+        // the deferred repair upfront — suppress per-row maintenance,
+        // then repair each seeded root once its key exists.
+        $saved = $hasAnchor
+            ? self::withDeferredAggregateMaintenance($insert, anchor: $repairAnchor)
+            : self::seedRootsWithDeferredMaintenance($insert);
 
-                    $saved[] = $model;
-
-                    EventDispatcher::dispatch(new BulkInsertNodeSaved(
-                        modelClass: static::class,
-                        node: $model,
-                        planIndex: $planIndex,
-                        totalNodes: $totalNodes,
-                        parent: $parentNode,
-                    ));
-                }
-
-                return $saved;
-            }),
-            anchor: $repairAnchor,
-        );
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
         EventDispatcher::dispatch(new BulkInsertTreeSaved(
@@ -457,5 +511,37 @@ trait HasBulkInsert
         }
 
         return $appendTo;
+    }
+
+    /**
+     * Runs the root-seeding insert with per-row aggregate maintenance
+     * suspended, then repairs each newly-seeded root's aggregates once
+     * its key exists — the deferred wrapper can't anchor this upfront
+     * because the roots don't exist until the insert runs. Mirrors the
+     * outermost-only repair semantics of withDeferredAggregateMaintenance
+     * and is a no-op for models that declare no aggregate columns.
+     *
+     * @param  \Closure(): list<static>  $insert
+     * @return list<static>
+     */
+    private static function seedRootsWithDeferredMaintenance(\Closure $insert): array
+    {
+        static::incrementAggregateDeferredDepth();
+
+        try {
+            $saved = $insert();
+        } finally {
+            static::decrementAggregateDeferredDepth();
+        }
+
+        if (static::aggregateDeferredDepth() === 0 && AggregateRegistry::for(static::class) !== []) {
+            foreach ($saved as $node) {
+                if ($node->getParentId() === null) {
+                    static::fixAggregates($node);
+                }
+            }
+        }
+
+        return $saved;
     }
 }

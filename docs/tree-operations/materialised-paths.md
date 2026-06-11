@@ -152,11 +152,11 @@ No `formatPath()`, no Stringable wrapper, no breadcrumb helper — `explode` han
 
 | Condition | Exception | Default |
 |---|---|---|
-| Segment is the empty string | `EmptyPathSegment` | Throw |
-| Segment contains the separator | `InvalidPathSegment` | Throw, unless `rejectSeparatorInSegment(false)` → silently strip |
-| Two siblings produce the same segment under one parent | `DuplicatePathSegment` | Throw, unless `uniquePerParent(false)` |
-| Computed path exceeds `maxLength` | `PathTooLong` | Throw |
-| Builder is non-deterministic (dev only) | `NonDeterministicPathSegment` | Throw when `APP_DEBUG=true` |
+| Segment is the empty string | `EmptyPathSegmentException` | Throw |
+| Segment contains the separator | `InvalidPathSegmentException` | Throw, unless `rejectSeparatorInSegment(false)` → silently strip |
+| Two siblings produce the same segment under one parent | `DuplicatePathSegmentException` | Throw, unless `uniquePerParent(false)` |
+| Computed path exceeds `maxLength` | `PathTooLongException` | Throw |
+| Builder is non-deterministic (dev only) | `NonDeterministicPathSegmentException` | Throw when `APP_DEBUG=true` |
 | Attribute declares zero or multiple sources | `MaterialisedPathConfigurationException` | Throw at boot |
 
 Per-parent uniqueness comparison is byte-exact (`strcmp`). For case-insensitive collision detection, lowercase inside the segment builder itself (`MaterialisedPath::from(fn ($n) => Str::lower(Str::slug($n->name)))`). No comparator config knob — collation semantics are too varied to wrap.

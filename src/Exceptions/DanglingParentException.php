@@ -17,4 +17,4 @@ use InvalidArgumentException;
  * Extends InvalidArgumentException because the malformed snapshot is
  * the caller's responsibility, not a runtime/data condition.
  */
-final class DanglingParentException extends InvalidArgumentException {}
+final class DanglingParentException extends InvalidArgumentException implements NestedSetException {}

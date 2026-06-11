@@ -180,25 +180,13 @@ final class CollectionTest extends TestCase
     }
 
     #[Test]
-    public function to_tree_infers_root_from_lowest_lft_when_root_is_not_in_collection(): void
+    public function to_tree_promotes_a_parent_absent_node_to_the_top_level(): void
     {
-        // When toTree() is called with no explicit root and the actual
-        // tree root isn't in the collection, the implementation walks
-        // every node to find the lowest-lft entry and uses its
-        // parent_id as the implicit root.
-        //
-        // The existing tests either include the root (parent_id=null,
-        // so the inference happens to coincide with the null fallback)
-        // or pass the root explicitly. Without this case, the
-        // `$leastLft === null` and the `||` short-circuit on the
-        // first loop iteration can be mutated without any observable
-        // test failure — they only matter when the inferred parent_id
-        // is something other than null.
-        //
-        // Build a descendants-only collection: Child A, AA, AB. The
-        // lowest lft (2 → Child A) has parent_id = 1 (Root). The
-        // implicit root key is therefore 1, which means the tree's
-        // top-level node should be Child A.
+        // Descendants-only collection: Child A, AA, AB (the real root,
+        // Root, isn't fetched). Child A's parent (Root) is absent from
+        // the collection, so Child A surfaces as the single top-level
+        // node with AA/AB nested under it. No explicit root, no
+        // lowest-lft inference — just the forest rule.
         $sub = Category::query()
             ->whereIn('id', [2, 3, 4])
             ->orderBy('lft')
@@ -206,7 +194,7 @@ final class CollectionTest extends TestCase
 
         $tree = $sub->toTree();
 
-        $this->assertCount(1, $tree, 'Inferred root should yield exactly one top-level node (Child A)');
+        $this->assertCount(1, $tree, 'Child A is the only node whose parent is absent');
         $top = $tree->first();
         $this->assertInstanceOf(Category::class, $top);
         $this->assertSame('Child A', $top->name);
@@ -217,6 +205,43 @@ final class CollectionTest extends TestCase
             ['AA', 'AB'],
             $children->sortBy('lft')->pluck('name')->all(),
         );
+    }
+
+    #[Test]
+    public function to_tree_returns_a_forest_and_drops_no_disconnected_nodes(): void
+    {
+        // Partial fetch whose members belong to two different absent
+        // parents: AA/AB under Child A (absent), Child B under Root
+        // (absent). The old "single inferred root" rule kept only
+        // AA/AB and silently dropped Child B. The forest rule promotes
+        // every parent-absent node, so all three maximal subtrees show.
+        $sub = Category::query()
+            ->whereIn('id', [3, 4, 5])
+            ->orderBy('lft')
+            ->get();
+
+        $tree = $sub->toTree();
+
+        $this->assertSame(
+            ['AA', 'AB', 'Child B'],
+            $tree->sortBy('lft')->pluck('name')->all(),
+            'no node may vanish — disconnected subtrees become their own roots',
+        );
+    }
+
+    #[Test]
+    public function link_nodes_leaves_an_absent_parent_unloaded_for_lazy_access(): void
+    {
+        // AA's parent (Child A) isn't in this collection. linkNodes()
+        // must NOT mark the `parent` relation loaded-null, or lazy
+        // `$aa->parent` would wrongly return null instead of querying.
+        $sub = Category::query()->whereIn('id', [3, 4])->orderBy('lft')->get();
+        $sub->linkNodes();
+
+        /** @var Category $aa */
+        $aa = $sub->firstOrFail();
+        $this->assertFalse($aa->relationLoaded('parent'), 'absent parent must stay unloaded');
+        $this->assertSame('Child A', $aa->parent?->name, 'lazy parent still resolves from the DB');
     }
 
     // ----------------------------------------------------------------
@@ -253,6 +278,22 @@ final class CollectionTest extends TestCase
     {
         $flat = (new NodeCollection)->toFlatTree();
         $this->assertCount(0, $flat);
+    }
+
+    #[Test]
+    public function to_flat_tree_includes_disconnected_nodes_in_dfs_order(): void
+    {
+        // Same forest as the toTree disconnected case: AA, AB (under
+        // absent Child A) and Child B (under absent Root). Each
+        // parent-absent node is emitted as a DFS root; none is dropped.
+        $sub = Category::query()
+            ->whereIn('id', [3, 4, 5])
+            ->orderBy('lft')
+            ->get();
+
+        $flat = $sub->toFlatTree();
+
+        $this->assertSame(['AA', 'AB', 'Child B'], $flat->pluck('name')->all());
     }
 
     #[Test]

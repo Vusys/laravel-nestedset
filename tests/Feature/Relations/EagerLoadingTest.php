@@ -260,17 +260,19 @@ final class EagerLoadingTest extends TestCase
     }
 
     #[Test]
-    public function children_relation_applies_scope_filters_on_scoped_models(): void
+    public function children_relation_keys_purely_on_parent_id_on_scoped_models(): void
     {
-        // On a scoped model (MenuItem with #[NestedSetScope('menu_id')])
-        // the children() builder gets an extra `menu_id = ?` so
-        // multi-tree tables don't return rows from another tree that
-        // happen to share a parent_id value. Two menus with their own
-        // root + a child each:
-        // The rogue row below deliberately points its parent_id at a
-        // row in another menu — that's structural corruption (from
-        // menu 2's perspective the rogue is now an orphan), so opt
-        // out of the integrity check.
+        // children() carries no scope predicate: parent_id references
+        // the globally-unique primary key, so in any well-formed tree a
+        // child and its parent share a scope automatically. A row that
+        // claims a parent_id in another menu is already corruption that
+        // isBroken() reports — it is not the relation's job to mask it,
+        // and masking it broke eager-load / withCount / whereHas (which
+        // build the relation on an attribute-less prototype).
+        //
+        // Here the "rogue" row in menu 200 points at menu 100's root.
+        // children() returns it because it matches on parent_id, exactly
+        // like the plain parent() BelongsTo would resolve it back.
         $this->allowBrokenTreeAtTearDown = true;
         DB::table('menus')->insert([
             ['id' => 100, 'name' => 'Menu A'],
@@ -280,16 +282,14 @@ final class EagerLoadingTest extends TestCase
             ['id' => 1001, 'menu_id' => 100, 'name' => 'A-root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
             ['id' => 1002, 'menu_id' => 100, 'name' => 'A-leaf', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1001],
             ['id' => 2001, 'menu_id' => 200, 'name' => 'B-root', 'lft' => 1, 'rgt' => 4, 'depth' => 0, 'parent_id' => null],
-            // Same parent_id (1001) but in a different scope. Would
-            // leak into A-root's children without the scope filter.
             ['id' => 2002, 'menu_id' => 200, 'name' => 'B-rogue', 'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1001],
         ]);
 
         /** @var MenuItem $aRoot */
         $aRoot = MenuItem::query()->findOrFail(1001);
 
-        $names = $aRoot->children->pluck('name')->all();
+        $names = $aRoot->children->sortBy('id')->pluck('name')->all();
 
-        $this->assertSame(['A-leaf'], array_values($names));
+        $this->assertSame(['A-leaf', 'B-rogue'], array_values($names));
     }
 }
