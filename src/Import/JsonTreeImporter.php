@@ -10,6 +10,7 @@ use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\InvalidJsonTreeException;
 use Vusys\NestedSet\Exceptions\JsonImportKeyCollisionException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\NodeCollection;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -79,7 +80,7 @@ final class JsonTreeImporter
         try {
             $callable = [$modelClass, 'bulkInsertTree'];
             if (! is_callable($callable)) {
-                throw new \LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     'fromJsonTree: %s must use NodeTrait (HasBulkInsert) to expose static bulkInsertTree().',
                     $modelClass,
                 ));

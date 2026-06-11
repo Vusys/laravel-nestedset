@@ -13,6 +13,7 @@ use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 use Vusys\NestedSet\Contracts\AggregateDefinitionContract;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
+use Vusys\NestedSet\Exceptions\NestedSetRuntimeException;
 use Vusys\NestedSet\NodeBounds;
 
 /**
@@ -249,7 +250,7 @@ final class LazyAggregateAccess
             // would silently widen to every row in scope. Fail loudly
             // instead — the caller can decide whether to retry or skip.
             if ($bounds === null) {
-                throw new \RuntimeException(sprintf(
+                throw new NestedSetRuntimeException(sprintf(
                     '%s::stampForFix: anchor id %s not found — was the row deleted? '
                     .'Refusing to widen the lazy-stamp UPDATE to the whole scope.',
                     $instance::class,

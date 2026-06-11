@@ -7,6 +7,7 @@ namespace Vusys\NestedSet;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 
 /**
  * Eloquent collection with in-memory tree-building utilities.
@@ -183,7 +184,7 @@ class NodeCollection extends EloquentCollection
             return $key;
         }
 
-        throw new \LogicException(
+        throw new NestedSetLogicException(
             'NestedSet models must have a scalar primary key; got '.get_debug_type($key),
         );
     }

@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
-use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\Repair\FixTreeCompleted;
 use Vusys\NestedSet\Events\Repair\TreeIntegrityChecked;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
@@ -103,7 +103,7 @@ trait HasTreeRepair
         // paths (isBroken/countErrors) stay permissive — they're used
         // with stub anchors as a scope carrier, and the fallback is safe.
         if ($anchor instanceof Model && $anchor->getKey() === null) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 '%s::fixTree: $anchor has no primary key — was it saved? '
                 .'Pass a persisted anchor to scope the rebuild to its subtree, '
                 .'or omit the anchor to rebuild the whole table.',
@@ -185,7 +185,7 @@ trait HasTreeRepair
 
         if ($column !== null) {
             if (! isset($paths[$column])) {
-                throw new InvalidArgumentException(sprintf(
+                throw new NestedSetInvalidArgumentException(sprintf(
                     '%s::fixMaterialisedPaths: column "%s" is not declared. Known: %s.',
                     static::class,
                     $column,
@@ -358,7 +358,7 @@ trait HasTreeRepair
         }
 
         if ($anchor instanceof HasNestedSet && ! $anchor instanceof static) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 '%s repair: $anchor must be an instance of %s, got %s. '
                 .'Cross-class anchors silently target the wrong table — pass an anchor of the same model.',
                 static::class,

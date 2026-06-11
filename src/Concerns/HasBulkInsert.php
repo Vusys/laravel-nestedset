@@ -14,6 +14,7 @@ use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeSaved;
 use Vusys\NestedSet\Events\BulkInsert\BulkInsertTreeStarting;
 use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Query\TreeMutationBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -95,7 +96,7 @@ trait HasBulkInsert
         // the event payloads (which carry the anchor as `Model&HasNestedSet`)
         // see the correctly-typed value without per-site casts.
         if ($appendTo instanceof HasNestedSet && ! $appendTo instanceof Model) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'bulkInsertTree: $appendTo must be a Model instance; got %s.',
                 get_debug_type($appendTo),
             ));
@@ -125,7 +126,7 @@ trait HasBulkInsert
         }
 
         if ($appendTo instanceof HasNestedSet && ! $appendTo instanceof static) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'bulkInsertTree: $appendTo must be an instance of %s, got %s. '
                 .'A cross-class anchor would read bounds from the wrong table.',
                 static::class,
@@ -134,7 +135,7 @@ trait HasBulkInsert
         }
 
         if ($appendTo instanceof Model && ! $appendTo->exists) {
-            throw new InvalidArgumentException(
+            throw new NestedSetInvalidArgumentException(
                 'bulkInsertTree: $appendTo must be a persisted model — its id and bounds are read.',
             );
         }
@@ -353,7 +354,7 @@ trait HasBulkInsert
 
             $branch = $task['branch'];
             if (! is_array($branch)) {
-                throw new InvalidArgumentException(
+                throw new NestedSetInvalidArgumentException(
                     'bulkInsertTree: every node must be an associative array of attributes.',
                 );
             }
@@ -366,7 +367,7 @@ trait HasBulkInsert
                 $rawChildren = $attrs['children'];
                 unset($attrs['children']);
                 if (! is_array($rawChildren)) {
-                    throw new InvalidArgumentException(
+                    throw new NestedSetInvalidArgumentException(
                         'bulkInsertTree: "children" must be an array of further nodes.',
                     );
                 }
@@ -376,7 +377,7 @@ trait HasBulkInsert
 
             foreach ($reservedCols as $reserved) {
                 if (array_key_exists($reserved, $attrs)) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new NestedSetInvalidArgumentException(sprintf(
                         'bulkInsertTree: row attribute "%s" is reserved — the package computes nested-set columns and primary keys.',
                         $reserved,
                     ));

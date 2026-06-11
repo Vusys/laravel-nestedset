@@ -10,9 +10,9 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection as SupportCollection;
-use InvalidArgumentException;
-use LogicException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -58,18 +58,18 @@ trait BuildsNestedSetTrees
         bool $afterCreating = true,
     ): static {
         if ($depth < 0) {
-            throw new InvalidArgumentException(sprintf('tree(): depth must be >= 0, got %d.', $depth));
+            throw new NestedSetInvalidArgumentException(sprintf('tree(): depth must be >= 0, got %d.', $depth));
         }
 
         if (is_int($branching)) {
             if ($branching < 1 && $depth > 0) {
-                throw new InvalidArgumentException(
+                throw new NestedSetInvalidArgumentException(
                     'tree(): branching must be >= 1 when depth > 0 (a non-leaf with zero children cannot exist; use depth: 0 for a single root).',
                 );
             }
         } elseif (is_array($branching)) {
             if (count($branching) < $depth) {
-                throw new InvalidArgumentException(sprintf(
+                throw new NestedSetInvalidArgumentException(sprintf(
                     'tree(): branching array length (%d) is less than depth (%d) — provide one entry per generation.',
                     count($branching),
                     $depth,
@@ -77,7 +77,7 @@ trait BuildsNestedSetTrees
             }
             foreach ($branching as $level => $count) {
                 if ($count < 1 && $level < $depth) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new NestedSetInvalidArgumentException(sprintf(
                         'tree(): branching[%d] is %d but depth %d still requires children.',
                         $level,
                         $count,
@@ -113,7 +113,7 @@ trait BuildsNestedSetTrees
         bool $afterCreating = true,
     ): static {
         if ($shape === []) {
-            throw new InvalidArgumentException(
+            throw new NestedSetInvalidArgumentException(
                 'treeFromShape(): shape must contain at least one top-level entry.',
             );
         }
@@ -142,7 +142,7 @@ trait BuildsNestedSetTrees
     {
         $shape = $this->treeShape;
         if ($shape === null) {
-            throw new LogicException('previewTree(): call tree() or treeFromShape() first.');
+            throw new NestedSetLogicException('previewTree(): call tree() or treeFromShape() first.');
         }
 
         $this->assertParentLive($shape->parent);
@@ -188,7 +188,7 @@ trait BuildsNestedSetTrees
     public function make($attributes = [], ?Model $parent = null)
     {
         if ($this->treeShape !== null) {
-            throw new LogicException(
+            throw new NestedSetLogicException(
                 'The tree factory builder requires create() — make() cannot build a placed tree without inserting. '
                 .'Use previewTree() for the resolved attribute payload without a DB round-trip.',
             );
@@ -209,7 +209,7 @@ trait BuildsNestedSetTrees
     public function count(?int $count): static
     {
         if ($this->treeShape !== null) {
-            throw new LogicException(
+            throw new NestedSetLogicException(
                 'count() must come before tree()/treeFromShape() — tree-then-count is undefined; '
                 .'use count(N)->tree(...) for N independent trees.',
             );
@@ -261,7 +261,7 @@ trait BuildsNestedSetTrees
         $shape = $this->treeShape;
 
         if ($shape === null) {
-            throw new LogicException('createTrees() called without a queued shape.');
+            throw new NestedSetLogicException('createTrees() called without a queued shape.');
         }
 
         $this->assertParentLive($shape->parent);
@@ -462,7 +462,7 @@ trait BuildsNestedSetTrees
             $perResult = ($shape->per)($depth, $siblingIndex, $parentAttrs);
 
             if (! is_array($perResult)) {
-                throw new InvalidArgumentException(sprintf(
+                throw new NestedSetInvalidArgumentException(sprintf(
                     'tree(per: ...): closure must return an associative array of attributes, got %s.',
                     get_debug_type($perResult),
                 ));
@@ -524,7 +524,7 @@ trait BuildsNestedSetTrees
     {
         $callable = [$modelClass, 'bulkInsertTree'];
         if (! is_callable($callable)) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 'tree(): %s must use HasBulkInsert (typically via NodeTrait) to expose static bulkInsertTree().',
                 $modelClass,
             ));
@@ -553,7 +553,7 @@ trait BuildsNestedSetTrees
         }
 
         if (method_exists($parent, 'trashed') && $parent->trashed()) {
-            throw new InvalidArgumentException(
+            throw new NestedSetInvalidArgumentException(
                 'tree(): cannot graft onto a trashed parent — restore it (->restore()) or pass null to seed a fresh root.',
             );
         }
@@ -681,7 +681,7 @@ trait BuildsNestedSetTrees
 
         $columns = $connection->getSchemaBuilder()->getColumnListing($table);
         if (! in_array($labelColumn, $columns, true)) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'tree(): labelColumn "%s" does not exist on %s (table %s). Actual columns: %s.',
                 $labelColumn,
                 $instance::class,

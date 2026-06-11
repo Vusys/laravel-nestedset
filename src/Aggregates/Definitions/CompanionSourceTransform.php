@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Aggregates\Definitions;
 
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
+
 /**
  * Transformation applied to a companion column's source value before it
  * feeds into the underlying delta function (Sum / Count).
@@ -112,7 +114,7 @@ enum CompanionSourceTransform
             self::Square => "({$sourceRef} * {$sourceRef})",
             self::TimesWeight => sprintf(
                 '(%s * %s)',
-                $weightRef ?? throw new \LogicException(
+                $weightRef ?? throw new NestedSetLogicException(
                     'CompanionSourceTransform::TimesWeight requires a weightRef.',
                 ),
                 $sourceRef,

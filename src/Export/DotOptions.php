@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Export;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 use Vusys\NestedSet\Walker\WalkFilter;
 
 /**
@@ -31,7 +32,7 @@ final readonly class DotOptions
         public ?WalkFilter $filter = null,
     ) {
         if (! in_array($direction, self::VALID_DIRECTIONS, true)) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'Invalid Graphviz rankdir "%s". Expected one of: %s.',
                 $direction,
                 implode(', ', self::VALID_DIRECTIONS),

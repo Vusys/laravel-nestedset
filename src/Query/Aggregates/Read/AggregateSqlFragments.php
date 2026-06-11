@@ -18,6 +18,7 @@ use Vusys\NestedSet\Aggregates\Sql\DerivedAggregateFragments;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
 use Vusys\NestedSet\Aggregates\Sql\VarianceSqlFragments;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 
 /**
  * Per-aggregate-kind SQL expression builders.
@@ -318,7 +319,7 @@ final class AggregateSqlFragments
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerQualifier, $rawFragment)->sql,
             AggregateFunction::Median,
-            AggregateFunction::Percentile => throw new \LogicException(
+            AggregateFunction::Percentile => throw new NestedSetLogicException(
                 'Median/Percentile cannot appear in inlineRawFilterExpression() — they are pre-extracted as correlated subqueries.',
             ),
             AggregateFunction::DistinctCount,
@@ -330,7 +331,7 @@ final class AggregateSqlFragments
                 $innerQualifier,
                 $rawFragment,
             )->sql,
-            AggregateFunction::TopK => throw new \LogicException(
+            AggregateFunction::TopK => throw new NestedSetLogicException(
                 'TopK cannot appear in inlineRawFilterExpression() — it is pre-extracted as a correlated subquery.',
             ),
         };
@@ -525,7 +526,7 @@ final class AggregateSqlFragments
             AggregateFunction::GeometricMean,
             AggregateFunction::HarmonicMean => DerivedAggregateFragments::build($definition, $innerAlias.'.', BoundFragment::literal($rawSql))->sql,
             AggregateFunction::Median,
-            AggregateFunction::Percentile => throw new \LogicException(
+            AggregateFunction::Percentile => throw new NestedSetLogicException(
                 'Median/Percentile cannot appear in correlatedRawFilterExpression() — they are pre-extracted as correlated subqueries.',
             ),
             AggregateFunction::DistinctCount,
@@ -537,7 +538,7 @@ final class AggregateSqlFragments
                 $innerAlias.'.',
                 BoundFragment::literal($rawSql),
             )->sql,
-            AggregateFunction::TopK => throw new \LogicException(
+            AggregateFunction::TopK => throw new NestedSetLogicException(
                 'TopK cannot appear in correlatedRawFilterExpression() — it is pre-extracted as a correlated subquery.',
             ),
         };

@@ -13,6 +13,7 @@ use Vusys\NestedSet\Aggregates\Filters\FilterPredicate;
 use Vusys\NestedSet\Aggregates\Numeric;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateValueComparator;
 
@@ -329,7 +330,7 @@ final class ListenerMaintenance
             AggregateFunction::HarmonicMean => self::harmonicMean($contributions),
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
-            AggregateFunction::BitXor => throw new \LogicException(
+            AggregateFunction::BitXor => throw new NestedSetLogicException(
                 'Bitwise listener aggregates are not supported — ListenerAggregateDefinition rejects them at construction.',
             ),
             AggregateFunction::WeightedAvg,
@@ -569,7 +570,7 @@ final class ListenerMaintenance
             CompanionSourceTransform::Ln => $raw > 0 ? log((float) $raw) : null,
             CompanionSourceTransform::Recip => $raw != 0 ? 1.0 / $raw : null,
             CompanionSourceTransform::AsInt => $raw != 0 ? 1 : 0,
-            CompanionSourceTransform::TimesWeight => throw new \LogicException(
+            CompanionSourceTransform::TimesWeight => throw new NestedSetLogicException(
                 'CompanionSourceTransform::TimesWeight is not supported for listener aggregates; '
                 .'WeightedAvg routes through SQL aggregates only.',
             ),

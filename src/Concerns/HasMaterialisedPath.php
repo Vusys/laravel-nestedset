@@ -14,6 +14,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\DuplicatePathSegment;
 use Vusys\NestedSet\Exceptions\EmptyPathSegment;
 use Vusys\NestedSet\Exceptions\InvalidPathSegment;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 use Vusys\NestedSet\Exceptions\NonDeterministicPathSegment;
 use Vusys\NestedSet\Exceptions\PathTooLong;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
@@ -93,7 +94,7 @@ trait HasMaterialisedPath
     {
         $paths = MaterialisedPathRegistry::for(static::class);
         if (! isset($paths[$column])) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 '%s does not declare a materialised-path column named "%s". Declared columns: %s.',
                 static::class,
                 $column,

@@ -20,7 +20,7 @@ use LogicException;
  * programmer errors that surface as data corruption, not as caller
  * input we should tolerate at runtime.
  */
-final class NonDeterministicPathSegment extends LogicException
+final class NonDeterministicPathSegment extends LogicException implements NestedSetException
 {
     public function __construct(
         string $message,

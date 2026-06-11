@@ -15,6 +15,8 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\Subtree\SubtreeCloned;
 use Vusys\NestedSet\Exceptions\InvalidCloneTargetException;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
@@ -130,7 +132,7 @@ trait HasSubtreeClone
         bool $includeTrashed = false,
     ): static {
         if (! $source instanceof static) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'cloneSubtree: $source must be an instance of %s, got %s.',
                 static::class,
                 $source::class,
@@ -187,7 +189,7 @@ trait HasSubtreeClone
         $rows = $this->loadSourceRows($includeTrashed);
 
         if ($rows === []) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 'cloneSubtreeTo: source subtree under %s contained no rows after applying includeTrashed filter — this should be unreachable since the pre-checks accept the source.',
                 static::class,
             ));
@@ -238,7 +240,7 @@ trait HasSubtreeClone
             });
 
             if ($inserted === []) {
-                throw new LogicException('cloneSubtreeTo: bulkInsertTree returned no rows.');
+                throw new NestedSetLogicException('cloneSubtreeTo: bulkInsertTree returned no rows.');
             }
 
             $root = $inserted[0];
@@ -313,7 +315,7 @@ trait HasSubtreeClone
         }
 
         if ($this->isSourceTrashed()) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'cloneSubtreeTo: source %s id=%s is soft-deleted; restore it or pass includeTrashed: true.',
                 static::class,
                 $this->describeKey(),
@@ -330,7 +332,7 @@ trait HasSubtreeClone
     private function narrowDestinationParent(HasNestedSet $parent): static
     {
         if (! $parent instanceof static) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'cloneSubtreeTo: destination parent must be an instance of %s, got %s.',
                 static::class,
                 $parent::class,
@@ -362,7 +364,7 @@ trait HasSubtreeClone
             // a trashed parent can never receive a clone. Cloning into
             // a deleted tree would orphan the new rows on restore /
             // forceDelete.
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'cloneSubtreeTo: destination parent %s id=%s is soft-deleted; restore it before cloning into it.',
                 $parent::class,
                 $this->describeKeyOf($parent),
@@ -425,7 +427,7 @@ trait HasSubtreeClone
     {
         foreach ($reservedColumns as $column) {
             if (array_key_exists($column, $attributes)) {
-                throw new LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     'cloneSubtreeTo: $transform returned reserved column "%s" — lft/rgt/depth/parent_id/scope/primary-key are owned by the package and cannot be overridden.',
                     $column,
                 ));
@@ -499,7 +501,7 @@ trait HasSubtreeClone
         foreach ($rows as $row) {
             $key = $row->getKey();
             if (! is_int($key) && ! is_string($key)) {
-                throw new LogicException('cloneSubtreeTo: source row has no primary key.');
+                throw new NestedSetLogicException('cloneSubtreeTo: source row has no primary key.');
             }
             $mapKey = (string) $key;
 
@@ -534,7 +536,7 @@ trait HasSubtreeClone
             }
             $parentId = $row->getParentId();
             if ($parentId === null) {
-                throw new LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     'cloneSubtreeTo: source row id=%s has no parent_id but is not the clone root.',
                     $this->describeKeyOf($row),
                 ));
@@ -641,7 +643,7 @@ trait HasSubtreeClone
         $result = $transform($rawAttributes, $destinationDepth);
 
         if (! is_array($result)) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 'cloneSubtreeTo: $transform must return an array, got %s.',
                 get_debug_type($result),
             ));
@@ -651,7 +653,7 @@ trait HasSubtreeClone
         $stringKeyed = [];
         foreach ($result as $key => $value) {
             if (! is_string($key)) {
-                throw new LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     'cloneSubtreeTo: $transform must return an array keyed by column name (string), got %s key.',
                     get_debug_type($key),
                 ));
@@ -724,7 +726,7 @@ trait HasSubtreeClone
         } else {
             \assert(is_int($position));
             if ($position < 0) {
-                throw new LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     'cloneSubtreeAsRoot: int position must be non-negative. Got %d.',
                     $position,
                 ));

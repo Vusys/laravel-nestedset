@@ -18,6 +18,7 @@ use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleting;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoving;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Exceptions\SaveCancelledException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
@@ -158,14 +159,14 @@ trait HasTreeMutation
             return match ($position) {
                 'last' => $this->appendToNode($parent),
                 'first' => $this->prependToNode($parent),
-                default => throw new LogicException(
+                default => throw new NestedSetLogicException(
                     "moveTo() string position must be 'first' or 'last'. Got '{$position}'."
                 ),
             };
         }
 
         if ($position < 0) {
-            throw new LogicException("moveTo() int position must be non-negative. Got {$position}.");
+            throw new NestedSetLogicException("moveTo() int position must be non-negative. Got {$position}.");
         }
 
         if ($position === 0) {
@@ -173,7 +174,7 @@ trait HasTreeMutation
         }
 
         if (! $parent instanceof Model || ! $parent->exists) {
-            throw new LogicException('moveTo() requires a saved parent model.');
+            throw new NestedSetLogicException('moveTo() requires a saved parent model.');
         }
 
         $target = $this->orderedSiblingsUnder($parent)->skip($position)->first();
@@ -413,7 +414,7 @@ trait HasTreeMutation
         $parent = $this->newQuery()->whereKey($parentId)->first();
 
         if ($parent === null) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 '%s::moveToSiblingPosition(): parent (id=%s) not found.',
                 static::class,
                 (string) $parentId,
@@ -424,7 +425,7 @@ trait HasTreeMutation
         $count = count($siblings);
 
         if ($position < 1 || $position > $count) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 '%s::moveToSiblingPosition(%d): position must be in [1, %d].',
                 static::class,
                 $position,
@@ -459,7 +460,7 @@ trait HasTreeMutation
     public static function reorderSiblings(Model&HasNestedSet $parent, array $idsInOrder): static
     {
         if (! $parent instanceof static) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 '%s::reorderSiblings(): parent must be an instance of %s, got %s.',
                 static::class,
                 static::class,
@@ -531,7 +532,7 @@ trait HasTreeMutation
             }
 
             if (! is_int($key) && ! is_string($key)) {
-                throw new LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     '%s::reorderChildren(): every entry must be a primary key (int|string) or a saved %s instance; got %s.',
                     static::class,
                     static::class,
@@ -988,7 +989,7 @@ trait HasTreeMutation
                 'prependTo' => $this->actPrependTo($this->requireModelNode($op)),
                 'sibling' => $this->actSibling($this->requireModelNode($op), $op->position),
                 'root' => $this->actMakeRoot(),
-                default => throw new LogicException("Unknown pending action: {$op->action}"),
+                default => throw new NestedSetLogicException("Unknown pending action: {$op->action}"),
             };
 
             if ($wasExisting && $from !== null) {
@@ -1124,7 +1125,7 @@ trait HasTreeMutation
         $node = $op->node;
 
         if (! $node instanceof HasNestedSet || ! $node instanceof Model) {
-            throw new LogicException("Pending action {$op->action} requires a Model target node.");
+            throw new NestedSetLogicException("Pending action {$op->action} requires a Model target node.");
         }
 
         return $node;
@@ -1159,7 +1160,7 @@ trait HasTreeMutation
     private function actSibling(Model&HasNestedSet $sibling, Position $position): void
     {
         if ($this->exists && $sibling->getKey() === $this->getKey()) {
-            throw new LogicException('Cannot position node as a sibling of itself.');
+            throw new NestedSetLogicException('Cannot position node as a sibling of itself.');
         }
 
         // Read bounds AND parent_id from the same fresh row. Using the
@@ -1440,7 +1441,7 @@ trait HasTreeMutation
             return $key;
         }
 
-        throw new LogicException('NestedSet anchor has no primary key — was it saved?');
+        throw new NestedSetLogicException('NestedSet anchor has no primary key — was it saved?');
     }
 
     protected function newTreeMutator(): TreeMutationBuilder

@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Query;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\AggregateDefinition;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 
 /**
@@ -162,7 +163,7 @@ final class ChainFoldAccumulator
             AggregateFunction::Avg => $this->sum / $this->count,
             AggregateFunction::Variance => $this->computeVariance($this->sum, $this->sumSq, $this->count, $this->definition->sample),
             AggregateFunction::Stddev => $this->computeStddev($this->sum, $this->sumSq, $this->count, $this->definition->sample),
-            default => throw new \LogicException(
+            default => throw new NestedSetLogicException(
                 'deriveCompanionDisplay called with non-companion-derived function '.$this->definition->function->value,
             ),
         };
@@ -301,7 +302,7 @@ final class ChainFoldAccumulator
             case AggregateFunction::BoolAnd:
             case AggregateFunction::GeometricMean:
             case AggregateFunction::HarmonicMean:
-                throw new \LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     '%s must be handled inline in the chain-fold accumulator.',
                     strtoupper($definition->function->value),
                 ));
@@ -313,7 +314,7 @@ final class ChainFoldAccumulator
             case AggregateFunction::Median:
             case AggregateFunction::Percentile:
             case AggregateFunction::TopK:
-                throw new \LogicException(sprintf(
+                throw new NestedSetLogicException(sprintf(
                     'ChainFoldAccumulator does not handle %s — recompute-only kinds skip the chain fold.',
                     $definition->function->value,
                 ));

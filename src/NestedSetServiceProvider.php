@@ -9,12 +9,12 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
-use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFunction;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceOrigin;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSourceTransform;
 use Vusys\NestedSet\Aggregates\Definitions\CompanionSpec;
 use Vusys\NestedSet\Aggregates\Sql\SqliteBitwiseAggregates;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 
 final class NestedSetServiceProvider extends ServiceProvider
 {
@@ -391,7 +391,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             return;
         }
 
-        throw new InvalidArgumentException(self::unknownTypeMessage($type));
+        throw new NestedSetInvalidArgumentException(self::unknownTypeMessage($type));
     }
 
     /**
@@ -499,7 +499,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             self::AGGREGATE_TYPE_STRING_AGG,
             self::AGGREGATE_TYPE_JSON,
             self::AGGREGATE_TYPE_TOP_K => null,
-            default => throw new InvalidArgumentException(self::unknownTypeMessage($type)),
+            default => throw new NestedSetInvalidArgumentException(self::unknownTypeMessage($type)),
         };
     }
 
@@ -590,7 +590,7 @@ final class NestedSetServiceProvider extends ServiceProvider
             'uuid' => $table->uuid($column)->nullable(),
             'ulid' => $table->ulid($column)->nullable(),
             'string' => $table->string($column)->nullable(),
-            default => throw new InvalidArgumentException(sprintf(
+            default => throw new NestedSetInvalidArgumentException(sprintf(
                 'nestedSet: unsupported parentIdType "%s". Use "bigint", "uuid", "ulid", "string", or a Closure.',
                 $type,
             )),

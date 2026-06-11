@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates\Repair;
 
 use Illuminate\Database\Eloquent\Model;
-use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
 use Vusys\NestedSet\Aggregates\Lazy\LazyAggregateAccess;
 use Vusys\NestedSet\Aggregates\Listeners\ListenerCalculator;
@@ -17,6 +16,8 @@ use Vusys\NestedSet\Events\Aggregates\AggregateDriftDetected;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesCompleted;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
+use Vusys\NestedSet\Exceptions\NestedSetRuntimeException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Jobs\FixAggregatesJob;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
@@ -175,7 +176,7 @@ final class AggregateRepair
         $softDeletedColumn = AggregateAnchor::softDeleteColumn($instance);
 
         if ($chunkSize <= 0) {
-            throw new InvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
+            throw new NestedSetInvalidArgumentException('fixAggregatesChunk: chunkSize must be > 0.');
         }
 
         $key = $instance->getKeyName();
@@ -206,7 +207,7 @@ final class AggregateRepair
             // run unbounded over the whole scope — a silently widened
             // repair on a multi-million-row table.
             if ($rootRow === null) {
-                throw new \RuntimeException(sprintf(
+                throw new NestedSetRuntimeException(sprintf(
                     '%s::fixAggregatesChunk: anchor id %s not found — was the row deleted? '
                     .'Refusing to widen the repair to the whole scope.',
                     $modelClass,
@@ -373,7 +374,7 @@ final class AggregateRepair
 
             if ($cursor !== null && $cursor === $prevCursor) {
                 if (++$cursorRepeats > 2) {
-                    throw new \RuntimeException(sprintf(
+                    throw new NestedSetRuntimeException(sprintf(
                         'fixAggregates(chunkSize: …): cursor stuck at %s — chunk loop is not advancing.',
                         (string) $cursor,
                     ));

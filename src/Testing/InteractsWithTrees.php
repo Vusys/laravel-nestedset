@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Testing;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 
 /**
  * Test-time assertion helpers for models that use `NodeTrait`. Drop
@@ -326,7 +327,7 @@ trait InteractsWithTrees
             return $key;
         }
 
-        throw new \LogicException(sprintf(
+        throw new NestedSetLogicException(sprintf(
             'NestedSet testing: model has no primary key (got %s) — was it saved?',
             get_debug_type($key),
         ));

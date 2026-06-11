@@ -23,6 +23,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Query\TreeBaseQueryBuilder;
@@ -317,7 +318,7 @@ trait NodeTrait
             return (string) $v;
         }
 
-        throw new \LogicException(sprintf(
+        throw new NestedSetLogicException(sprintf(
             'parent_id attribute on %s is not int/string/stringable; got %s.',
             static::class,
             get_debug_type($v),
@@ -341,7 +342,7 @@ trait NodeTrait
             return (int) $v;
         }
 
-        throw new \LogicException("Attribute {$name} is not numeric");
+        throw new NestedSetLogicException("Attribute {$name} is not numeric");
     }
 
     public function getBounds(): NodeBounds

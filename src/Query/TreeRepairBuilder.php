@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
+use Vusys\NestedSet\Exceptions\NestedSetRuntimeException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\Aggregates\Maintenance\AggregateDiffer;
 use Vusys\NestedSet\TreeFixResult;
@@ -330,7 +331,7 @@ final readonly class TreeRepairBuilder
         // colliding with the live root and *creating* corruption. Mirrors
         // AggregateRepair::fixAggregatesChunk, which refuses the same case.
         if ($rootRow === null) {
-            throw new \RuntimeException(sprintf(
+            throw new NestedSetRuntimeException(sprintf(
                 'fixTree: anchor id %s not found — was the row deleted? '
                 .'Refusing to rebuild its subtree over lft 1 and corrupt the live tree. '
                 .'Run an unanchored fixTree() to rebuild from the roots.',

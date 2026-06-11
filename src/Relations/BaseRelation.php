@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Query\TreeExpression;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -112,7 +113,7 @@ abstract class BaseRelation extends Relation
     protected function treeQuery(): TreeQueryBuilder
     {
         if (! $this->query instanceof TreeQueryBuilder) {
-            throw new \LogicException(
+            throw new NestedSetLogicException(
                 'NestedSet relations require the related model to use TreeQueryBuilder.',
             );
         }

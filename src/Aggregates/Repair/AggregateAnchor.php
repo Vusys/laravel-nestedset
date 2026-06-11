@@ -6,11 +6,11 @@ namespace Vusys\NestedSet\Aggregates\Repair;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use InvalidArgumentException;
 use Vusys\NestedSet\Aggregates\Strategy\DeltaMaintenance;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\Diagnostics\ScopeViolationDetected;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -57,7 +57,7 @@ final class AggregateAnchor
         }
 
         if ($anchor instanceof HasNestedSet && ! $anchor instanceof $modelClass) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 '%s aggregate repair: $anchor must be an instance of %s, got %s. '
                 .'A cross-class anchor would silently target a different table (or no rows at all).',
                 $modelClass,
@@ -90,7 +90,7 @@ final class AggregateAnchor
         $instance = self::anchorOrFail($modelClass, $anchor);
 
         if ($anchor instanceof Model && $anchor->getKey() === null) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 '%s::fixAggregates: $anchor has no primary key — was it saved? '
                 .'Pass a persisted anchor to scope the repair to its subtree, '
                 .'or omit the anchor to repair the whole table.',

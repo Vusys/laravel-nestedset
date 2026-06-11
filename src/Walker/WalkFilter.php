@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Walker;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 
 /**
  * Static pruning rules for {@see SubtreeWalker} walks.
@@ -46,7 +47,7 @@ final readonly class WalkFilter
     public static function depth(int $maxDepth): self
     {
         if ($maxDepth < 0) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'WalkFilter::depth: $maxDepth must be >= 0; got %d. '
                 .'A negative maxDepth would reject every node — including the walk root.',
                 $maxDepth,

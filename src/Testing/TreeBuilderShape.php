@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Testing;
 
 use Closure;
-use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 
 /**
  * Internal request descriptor produced by {@see BuildsNestedSetTrees::tree()}
@@ -99,7 +99,7 @@ final readonly class TreeBuilderShape
                 $rawChildren = $attributes[self::CHILDREN_KEY];
                 unset($attributes[self::CHILDREN_KEY]);
                 if (! is_array($rawChildren)) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new NestedSetInvalidArgumentException(sprintf(
                         'treeFromShape: "%s" must be an array of further nodes, got %s.',
                         self::CHILDREN_KEY,
                         get_debug_type($rawChildren),
@@ -177,7 +177,7 @@ final readonly class TreeBuilderShape
 
         if (is_array($this->branching)) {
             if (! array_key_exists($parentDepth, $this->branching)) {
-                throw new InvalidArgumentException(sprintf(
+                throw new NestedSetInvalidArgumentException(sprintf(
                     'tree(): branching array has no entry for parent depth %d (length %d) — provide one entry per generation up to depth.',
                     $parentDepth,
                     count($this->branching),
@@ -190,14 +190,14 @@ final readonly class TreeBuilderShape
         $value = ($this->branching)($parentDepth);
 
         if (! is_int($value)) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'tree(): branching closure must return int, got %s.',
                 get_debug_type($value),
             ));
         }
 
         if ($value < 0) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'tree(): branching closure returned %d at depth %d (must be >= 0).',
                 $value,
                 $parentDepth,
@@ -221,7 +221,7 @@ final readonly class TreeBuilderShape
                 $raw = $attrs[self::CHILDREN_KEY];
                 unset($attrs[self::CHILDREN_KEY]);
                 if (! is_array($raw)) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new NestedSetInvalidArgumentException(sprintf(
                         'treeFromShape: "%s" must be an array of further nodes, got %s.',
                         self::CHILDREN_KEY,
                         get_debug_type($raw),

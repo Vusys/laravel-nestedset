@@ -15,6 +15,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\FixAggregatesChunkCompleted;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\NestedSetRuntimeException;
 
 /**
  * Phase N: queued repair of stored aggregate columns.
@@ -76,7 +77,7 @@ final class FixAggregatesJob implements ShouldQueue
             /** @var Model|null $instance */
             $instance = $modelClass::query()->find($this->anchorId);
             if (! $instance instanceof HasNestedSet) {
-                throw new \RuntimeException(sprintf(
+                throw new NestedSetRuntimeException(sprintf(
                     'FixAggregatesJob: anchor id %s not found on %s — the row was deleted between dispatch and execution.',
                     (string) $this->anchorId,
                     $modelClass,

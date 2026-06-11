@@ -9,8 +9,8 @@ use Countable;
 use Generator;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
-use InvalidArgumentException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetInvalidArgumentException;
 
 /**
  * Pure in-memory traversal helper over an already-loaded subtree.
@@ -534,7 +534,7 @@ final class SubtreeWalker implements Countable
     private function assertStrategy(string $strategy): void
     {
         if (! in_array($strategy, ['pre', 'post', 'bfs'], true)) {
-            throw new InvalidArgumentException(sprintf(
+            throw new NestedSetInvalidArgumentException(sprintf(
                 'Unsupported walk strategy: "%s"; expected one of: pre, post, bfs.',
                 $strategy,
             ));
@@ -553,7 +553,7 @@ final class SubtreeWalker implements Countable
             return $key;
         }
 
-        throw new InvalidArgumentException(sprintf(
+        throw new NestedSetInvalidArgumentException(sprintf(
             'SubtreeWalker requires scalar primary keys; got %s on %s.',
             get_debug_type($key),
             $node::class,

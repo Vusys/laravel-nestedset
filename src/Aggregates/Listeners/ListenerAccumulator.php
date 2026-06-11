@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Aggregates\Listeners;
 
 use Vusys\NestedSet\Aggregates\AggregateFunction;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 
 /**
  * Mutable running aggregate of contributions for one ancestor's subtree
@@ -126,7 +127,7 @@ final class ListenerAccumulator
             AggregateFunction::HarmonicMean => ($this->countNonZero === 0 || $this->sumRecip === 0.0)
                 ? null
                 : $this->countNonZero / $this->sumRecip,
-            default => throw new \LogicException(sprintf(
+            default => throw new NestedSetLogicException(sprintf(
                 'ListenerAccumulator: operation %s is not maintainable in PHP. '
                 .'ListenerAggregateDefinition / applyListenerOperation reject this case earlier.',
                 $this->operation->value,

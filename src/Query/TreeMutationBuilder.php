@@ -6,7 +6,8 @@ namespace Vusys\NestedSet\Query;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
-use RuntimeException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
+use Vusys\NestedSet\Exceptions\NestedSetRuntimeException;
 use Vusys\NestedSet\NodeBounds;
 
 /**
@@ -121,7 +122,7 @@ final readonly class TreeMutationBuilder
         $height = $rgt - $lft + 1;
 
         if ($lft < $position && $position <= $rgt) {
-            throw new \LogicException('Cannot move node into itself.');
+            throw new NestedSetLogicException('Cannot move node into itself.');
         }
 
         $boundFrom = min($lft, $position);
@@ -286,7 +287,7 @@ final readonly class TreeMutationBuilder
         $row = $query->first();
 
         if ($row === null) {
-            throw new RuntimeException("Node {$id} not found.");
+            throw new NestedSetRuntimeException("Node {$id} not found.");
         }
 
         $parentId = $row->{$this->parentId} ?? null;

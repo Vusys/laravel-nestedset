@@ -12,7 +12,7 @@ use RuntimeException;
  * written; the underlying VARCHAR / TEXT length is the user's
  * migration decision and is documented separately.
  */
-final class PathTooLong extends RuntimeException
+final class PathTooLong extends RuntimeException implements NestedSetException
 {
     public function __construct(
         string $message,

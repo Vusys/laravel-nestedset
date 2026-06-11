@@ -6,7 +6,6 @@ namespace Vusys\NestedSet\Diff;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
-use LogicException;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Diff\TreeChange\Added;
 use Vusys\NestedSet\Diff\TreeChange\Modified;
@@ -14,6 +13,7 @@ use Vusys\NestedSet\Diff\TreeChange\Moved;
 use Vusys\NestedSet\Diff\TreeChange\Removed;
 use Vusys\NestedSet\Exceptions\CyclicMoveException;
 use Vusys\NestedSet\Exceptions\MissingParentException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 
 /**
  * Applies a {@see TreeDiff} to a live model class.
@@ -133,7 +133,7 @@ final class TreeDiffApplier
     {
         $callable = [$modelClass, $method];
         if (! is_callable($callable)) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 'TreeDiff::apply(): %s does not expose static %s() — typically NodeTrait is missing.',
                 $modelClass,
                 $method,
@@ -153,7 +153,7 @@ final class TreeDiffApplier
     {
         $callable = [$model, $method];
         if (! is_callable($callable)) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 'TreeDiff::apply(): %s::%s() not callable — typically NodeTrait is missing on the model.',
                 $model::class,
                 $method,
@@ -193,7 +193,7 @@ final class TreeDiffApplier
         }
 
         if ($offenders !== []) {
-            throw new LogicException(sprintf(
+            throw new NestedSetLogicException(sprintf(
                 'TreeDiff::apply(): %s has no columns %s — refusing to apply.',
                 $instance::class,
                 implode(', ', array_keys($offenders)),

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Query\TreeQueryBuilder;
 use Vusys\NestedSet\Relations\AncestorsRelation;
 use Vusys\NestedSet\Relations\DescendantsRelation;
@@ -97,7 +98,7 @@ trait HasTreeRelations
         $builder = $node->newQuery();
 
         if (! $builder instanceof TreeQueryBuilder) {
-            throw new \LogicException('NodeTrait requires newEloquentBuilder to return TreeQueryBuilder.');
+            throw new NestedSetLogicException('NodeTrait requires newEloquentBuilder to return TreeQueryBuilder.');
         }
 
         return $builder;

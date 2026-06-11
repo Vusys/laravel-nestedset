@@ -14,6 +14,7 @@ use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\TreeAggregateListener;
 use Vusys\NestedSet\Exceptions\AggregateConfigurationException;
+use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
@@ -122,7 +123,7 @@ final class ListenerCalculator
                 : $countNonZero / $sumRecip,
             AggregateFunction::BitOr,
             AggregateFunction::BitAnd,
-            AggregateFunction::BitXor => throw new \LogicException(
+            AggregateFunction::BitXor => throw new NestedSetLogicException(
                 'Bitwise listener aggregates are not supported — ListenerAggregateDefinition rejects them at construction.',
             ),
             AggregateFunction::WeightedAvg,
