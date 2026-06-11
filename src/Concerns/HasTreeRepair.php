@@ -56,7 +56,7 @@ trait HasTreeRepair
      * Pass an $anchor for scoped models (required when the class declares
      * #[NestedSetScope] or getScopeAttributes()).
      *
-     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int}
+     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int, overlapping_bounds: int, even_bounds_width: int}
      *
      * @throws ScopeViolationException When called without an anchor on a scoped model.
      */
@@ -251,8 +251,22 @@ trait HasTreeRepair
 
         $query = $connection->table($table);
         if ($anchor instanceof Model) {
-            $query->where($lftName, '>=', $anchor->getLft())
-                ->where($rgtName, '<=', $anchor->getRgt());
+            // Re-read the anchor's bounds from the DB by key. When this
+            // runs inside fixTree() the structural rebuild has just
+            // renumbered lft/rgt, so the in-memory anchor's bounds are
+            // stale and would band the wrong rows — the exact failure
+            // documented for the "raw UPDATE parent_id then fixTree()"
+            // recovery. The aggregate pass reads fresh bounds by id for
+            // the same reason; this keeps the path pass consistent.
+            $fresh = $connection->table($table)
+                ->where($keyName, $anchor->getKey())
+                ->first([$lftName, $rgtName]);
+
+            $anchorLft = $fresh !== null ? (int) $fresh->{$lftName} : $anchor->getLft();
+            $anchorRgt = $fresh !== null ? (int) $fresh->{$rgtName} : $anchor->getRgt();
+
+            $query->where($lftName, '>=', $anchorLft)
+                ->where($rgtName, '<=', $anchorRgt);
             foreach (NestedSetScopeResolver::valuesFor($anchor) as $col => $value) {
                 $query->where($col, $value);
             }

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Columns;
+use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 
@@ -19,11 +20,24 @@ use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 class TreeQueryBuilder extends Builder
 {
     // ----------------------------------------------------------------
-    // Column name resolution — overridable in Phase 8 via NodeTrait
+    // Column name resolution
+    //
+    // Delegates to the model's own accessors so per-model column-name
+    // overrides (getLftName() etc.) flow through the entire read layer.
+    // The model accessors already fall back to global config, so a
+    // non-overriding model resolves identically. The instanceof guard
+    // covers the (misconfigured) case of a builder bound to a model that
+    // doesn't use NodeTrait.
     // ----------------------------------------------------------------
 
     public function lftColumn(): string
     {
+        $model = $this->getModel();
+
+        if ($model instanceof HasNestedSet) {
+            return $model->getLftName();
+        }
+
         $v = config('nestedset.columns.lft');
 
         return is_string($v) ? $v : Columns::LFT;
@@ -31,6 +45,12 @@ class TreeQueryBuilder extends Builder
 
     public function rgtColumn(): string
     {
+        $model = $this->getModel();
+
+        if ($model instanceof HasNestedSet) {
+            return $model->getRgtName();
+        }
+
         $v = config('nestedset.columns.rgt');
 
         return is_string($v) ? $v : Columns::RGT;
@@ -38,6 +58,12 @@ class TreeQueryBuilder extends Builder
 
     public function parentIdColumn(): string
     {
+        $model = $this->getModel();
+
+        if ($model instanceof HasNestedSet) {
+            return $model->getParentIdName();
+        }
+
         $v = config('nestedset.columns.parent_id');
 
         return is_string($v) ? $v : Columns::PARENT_ID;
@@ -45,6 +71,12 @@ class TreeQueryBuilder extends Builder
 
     public function depthColumn(): string
     {
+        $model = $this->getModel();
+
+        if ($model instanceof HasNestedSet) {
+            return $model->getDepthName();
+        }
+
         $v = config('nestedset.columns.depth');
 
         return is_string($v) ? $v : Columns::DEPTH;

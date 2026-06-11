@@ -167,6 +167,65 @@ final class ScopedRelationsTest extends TestCase
         $this->assertSame(2, (int) $twoC->ancestors_count);
     }
 
+    // ----------------------------------------------------------------
+    // children() — must work under eager load / withCount / whereHas on
+    // scoped models. The relation keys on parent_id (a globally-unique
+    // PK reference), so no scope predicate is needed and none may be
+    // baked in from $this's attributes (that broke the prototype-built
+    // eager-load paths).
+    // ----------------------------------------------------------------
+
+    #[Test]
+    public function children_lazy_load_returns_only_direct_children(): void
+    {
+        $this->assertSame(['1B'], $this->find(11)->children()->orderBy('lft')->pluck('name')->all());
+    }
+
+    #[Test]
+    public function children_eager_load_populates_on_scoped_model(): void
+    {
+        $rows = MenuItem::query()->with('children')->orderBy('id')->get()->keyBy('id');
+
+        $oneA = $rows->get(11);
+        $twoA = $rows->get(21);
+
+        $this->assertInstanceOf(MenuItem::class, $oneA);
+        $this->assertInstanceOf(MenuItem::class, $twoA);
+
+        $this->assertSame(['1B'], $oneA->children->sortBy('lft')->pluck('name')->all());
+        $this->assertSame(['2B'], $twoA->children->sortBy('lft')->pluck('name')->all());
+    }
+
+    #[Test]
+    public function with_count_children_counts_on_scoped_model(): void
+    {
+        $rows = MenuItem::query()->withCount('children')->get()->keyBy('id');
+
+        /** @var MenuItem $rootA */
+        $rootA = $rows->get(11);
+        /** @var MenuItem $childB */
+        $childB = $rows->get(12);
+        /** @var MenuItem $leafC */
+        $leafC = $rows->get(13);
+
+        $this->assertSame(1, (int) $rootA->children_count);
+        $this->assertSame(1, (int) $childB->children_count);
+        $this->assertSame(0, (int) $leafC->children_count);
+    }
+
+    #[Test]
+    public function where_has_children_matches_on_scoped_model(): void
+    {
+        $names = MenuItem::query()
+            ->whereHas('children')
+            ->orderBy('menu_id')
+            ->orderBy('lft')
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['1A', '1B', '2A', '2B'], $names);
+    }
+
     #[Test]
     public function depth_bounded_descendants_eager_load_respects_scope(): void
     {

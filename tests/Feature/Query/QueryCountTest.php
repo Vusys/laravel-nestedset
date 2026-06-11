@@ -109,6 +109,8 @@ final class QueryCountTest extends TestCase
         // 6: depth_mismatch
         // 7: bounds_out_of_range — below-1 scan
         // 8: bounds_out_of_range — cross-column collision join
-        $this->assertSame(8, $queries);
+        // 9: overlapping_bounds
+        // 10: even_bounds_width
+        $this->assertSame(10, $queries);
     }
 }

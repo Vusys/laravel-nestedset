@@ -45,7 +45,7 @@ final readonly class TreeRepairBuilder
     /**
      * Returns counts of known tree invariant violations.
      *
-     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int}
+     * @return array{invalid_bounds: int, duplicate_lft: int, duplicate_rgt: int, orphans: int, parent_bounds_mismatch: int, depth_mismatch: int, bounds_out_of_range: int, overlapping_bounds: int, even_bounds_width: int}
      */
     public function countErrors(): array
     {
@@ -87,6 +87,23 @@ final readonly class TreeRepairBuilder
         // that slip past `lft >= rgt` and the per-column duplicate checks.
         $boundsOutOfRange = $this->countBoundsOutOfRange();
 
+        // Partially overlapping sibling intervals: A(2,6) and B(4,9)
+        // overlap without one nesting inside the other. Every per-row
+        // and per-column check above reads clean on this shape, yet
+        // `whereDescendantOf(A)` wrongly returns B — the "containment ⇔
+        // ancestry" invariant the whole model rests on is violated.
+        $overlappingBounds = (int) $this->overlappingBoundsQuery()->count();
+
+        // Parity: in a valid nested set rgt - lft is always odd (a leaf
+        // spans 1, each descendant adds 2). An even, positive width is
+        // therefore structurally impossible and slips past the bounds
+        // checks above whenever the stray values happen not to collide.
+        $evenBoundsWidth = (int) $this->scoped()
+            ->whereColumn($this->rgt, '>', $this->lft)
+            ->where($this->lft, '>=', 1)
+            ->whereRaw(new TreeExpression("({$this->rgt} - {$this->lft}) % 2 = 0"))
+            ->count();
+
         return [
             'invalid_bounds' => $invalidBounds,
             'duplicate_lft' => $duplicateLft,
@@ -95,7 +112,40 @@ final readonly class TreeRepairBuilder
             'parent_bounds_mismatch' => $parentBoundsMismatch,
             'depth_mismatch' => $depthMismatch,
             'bounds_out_of_range' => $boundsOutOfRange,
+            'overlapping_bounds' => $overlappingBounds,
+            'even_bounds_width' => $evenBoundsWidth,
         ];
+    }
+
+    /**
+     * Pairs of rows in the same scope whose intervals partially overlap
+     * without nesting: `a.lft < b.lft <= a.rgt < b.rgt`. Restricted to
+     * placed rows (lft >= 1) so unplaced (0,0) rows don't match. One
+     * directed comparison per pair is enough — the asymmetric predicate
+     * names the "left" interval as `a`, so each offending pair is
+     * counted once.
+     */
+    private function overlappingBoundsQuery(): Builder
+    {
+        $scopeColumns = array_keys($this->scope);
+
+        $query = $this->connection->table("{$this->table} as a")
+            ->join("{$this->table} as b", function ($join) use ($scopeColumns): void {
+                $join->on("a.{$this->idCol}", '!=', "b.{$this->idCol}");
+                $join->on("a.{$this->lft}", '<', "b.{$this->lft}");
+                $join->on("b.{$this->lft}", '<=', "a.{$this->rgt}");
+                $join->on("a.{$this->rgt}", '<', "b.{$this->rgt}");
+                foreach ($scopeColumns as $column) {
+                    $join->on("a.{$column}", '=', "b.{$column}");
+                }
+            })
+            ->where("a.{$this->lft}", '>=', 1);
+
+        foreach ($this->scope as $column => $value) {
+            $query->where("a.{$column}", '=', $value);
+        }
+
+        return $query;
     }
 
     /**
