@@ -904,6 +904,30 @@ trait HasTreeMutation
             $this->refreshMaintainedAggregateColumns();
         }
 
+        // Reject moving a node into one of its own descendants BEFORE
+        // the before-move aggregate hook and SubtreeMoving dispatch run.
+        // The structural backstop in moveNode() throws too, but it fires
+        // after the hook has already subtracted the subtree's
+        // contribution from the old ancestor chain. When the package
+        // opens its own transaction (the default) that rolls back
+        // cleanly, so the early check is only needed — and the extra
+        // bounds read only paid — when auto_transaction is off and the
+        // caller may not have wrapped the work; there the dangling
+        // subtraction would otherwise permanently drift aggregates on a
+        // move that never structurally happened. The pure-self cases are
+        // left to moveNode()/actSibling() so their existing messages
+        // stand; strict containment matches proper descendants only.
+        if ($wasExisting
+            && $from !== null
+            && $op->node instanceof Model
+            && ! config('nestedset.auto_transaction', true)
+        ) {
+            $targetBounds = $this->freshBoundsOf($op->node);
+            if ($targetBounds->lft > $from->lft && $targetBounds->rgt < $from->rgt) {
+                throw new LogicException('Cannot move node into itself or its own subtree.');
+            }
+        }
+
         $previousParentId = $wasExisting ? $this->getParentId() : null;
         $previousDepth = $wasExisting ? $this->getDepth() : 0;
 
