@@ -189,7 +189,7 @@ trait NodeTrait
             // aggregates) read a stale "still-live" descendant set and
             // produce values that don't match the post-cascade state.
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
-                HasSoftDeleteTree::applySoftDeleteCascade($node);
+                $node::applySoftDeleteCascade($node);
             }
 
             // Hard-delete cascade: clear every descendant from the
@@ -240,7 +240,7 @@ trait NodeTrait
                 return;
             }
             if (in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
-                HasSoftDeleteTree::applyRestoreCascade($node);
+                $node::applyRestoreCascade($node);
             }
             self::runAggregateHook($node, 'on_restore', static fn () => $node->applyAggregateOnRestore());
         });
