@@ -61,7 +61,29 @@ trait HasTreeMutation
      */
     public function appendToNode(HasNestedSet $parent): static
     {
-        $this->pending = new PendingOperation('appendTo', $parent);
+        return $this->queuePending(new PendingOperation('appendTo', $parent));
+    }
+
+    /**
+     * Records a pending tree operation to be flushed on the next save().
+     * Throws if one is already queued and undispatched — chaining two
+     * placement calls (e.g. `appendToNode($a)->insertAfterNode($b)`)
+     * used to silently drop the first, a near-certain bug. The pending
+     * slot is cleared on dispatch, so re-queuing after a save is fine.
+     */
+    private function queuePending(PendingOperation $op): static
+    {
+        if ($this->pending !== null) {
+            throw new LogicException(sprintf(
+                '%s already has an undispatched "%s" operation queued; call save() before queuing "%s". '
+                .'Chaining two placement calls would silently drop the first.',
+                static::class,
+                $this->pending->action,
+                $op->action,
+            ));
+        }
+
+        $this->pending = $op;
 
         return $this;
     }
@@ -74,9 +96,7 @@ trait HasTreeMutation
      */
     public function prependToNode(HasNestedSet $parent): static
     {
-        $this->pending = new PendingOperation('prependTo', $parent);
-
-        return $this;
+        return $this->queuePending(new PendingOperation('prependTo', $parent));
     }
 
     /**
@@ -87,9 +107,7 @@ trait HasTreeMutation
      */
     public function insertBeforeNode(HasNestedSet $sibling): static
     {
-        $this->pending = new PendingOperation('sibling', $sibling, Position::Before);
-
-        return $this;
+        return $this->queuePending(new PendingOperation('sibling', $sibling, Position::Before));
     }
 
     /**
@@ -100,9 +118,7 @@ trait HasTreeMutation
      */
     public function insertAfterNode(HasNestedSet $sibling): static
     {
-        $this->pending = new PendingOperation('sibling', $sibling, Position::After);
-
-        return $this;
+        return $this->queuePending(new PendingOperation('sibling', $sibling, Position::After));
     }
 
     /**
@@ -111,9 +127,7 @@ trait HasTreeMutation
      */
     public function makeRoot(): static
     {
-        $this->pending = new PendingOperation('root');
-
-        return $this;
+        return $this->queuePending(new PendingOperation('root'));
     }
 
     /**

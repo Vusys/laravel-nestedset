@@ -104,4 +104,40 @@ final class MutationEdgeCasesTest extends TestCase
         $this->assertFalse($root->refresh()->up());
         $this->assertFalse($root->refresh()->down());
     }
+
+    #[Test]
+    public function chaining_two_placement_calls_without_saving_throws(): void
+    {
+        DB::table('categories')->insert([
+            ['id' => 1, 'name' => 'Root', 'lft' => 1, 'rgt' => 6, 'depth' => 0, 'parent_id' => null],
+            ['id' => 2, 'name' => 'A',    'lft' => 2, 'rgt' => 3, 'depth' => 1, 'parent_id' => 1],
+            ['id' => 3, 'name' => 'B',    'lft' => 4, 'rgt' => 5, 'depth' => 1, 'parent_id' => 1],
+        ]);
+
+        $root = Category::query()->findOrFail(1);
+        $b = Category::query()->findOrFail(3);
+        $node = new Category(['name' => 'X']);
+
+        // Queueing a second placement before save() used to silently
+        // drop the first; it now throws.
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('already has an undispatched');
+
+        $node->appendToNode($root)->insertAfterNode($b);
+    }
+
+    #[Test]
+    public function re_queuing_after_a_save_is_allowed(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+
+        // makeRoot dispatched on save() clears the pending slot, so a
+        // later placement on the same instance is fine.
+        $child = new Category(['name' => 'child']);
+        $child->appendToNode($root->refresh())->save();
+        $child->appendToNode($root->refresh())->save();
+
+        $this->assertFalse(Category::isBroken());
+    }
 }
