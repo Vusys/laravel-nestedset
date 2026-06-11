@@ -7,7 +7,6 @@ namespace Vusys\NestedSet\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Support\Carbon;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Events\EventDispatcher;
 use Vusys\NestedSet\Events\SoftDelete\SoftDeleteMarkerCaptured;
@@ -277,7 +276,12 @@ trait HasSoftDeleteTree
      */
     private static function stringifyTimestamp(mixed $value): ?string
     {
-        if ($value instanceof Carbon) {
+        // Any DateTimeInterface, not just Illuminate's Carbon — a model
+        // using the `immutable_datetime` cast stores a CarbonImmutable,
+        // which does NOT extend Carbon. The old narrow check returned null
+        // for it, so the whole cascade silently no-opped and descendants
+        // stayed live with no error.
+        if ($value instanceof \DateTimeInterface) {
             return $value->format('Y-m-d H:i:s');
         }
 

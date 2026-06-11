@@ -63,7 +63,7 @@ abstract class TestCase extends OrchestraTestCase
         AggregateRegistry::flush();
         MaterialisedPathRegistry::forgetCache();
 
-        $tables = ['areas', 'archived_branches', 'bitwise_areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags', 'uuid_tags', 'uuid_menu_items', 'uuid_menus', 'metric_areas', 'text_json_areas', 'weighted_areas', 'flag_areas', 'mean_areas', 'scoped_areas', 'multi_scoped_branches', 'slugged_categories', 'multi_path_categories', 'key_path_categories', 'closure_path_articles', 'scoped_slugged_menu_items', 'multi_scoped_path_items', 'lazy_areas', 'top_k_areas', 'stats_monsters', 'priced_areas', 'count_areas', 'nullable_metric_areas', 'status_branches', 'guarded_nodes', 'bool_filter_areas'];
+        $tables = ['areas', 'archived_branches', 'bitwise_areas', 'branches', 'categories', 'menu_items', 'menus', 'typed_areas', 'monsters', 'soft_branches', 'custom_column_branches', 'tags', 'uuid_tags', 'uuid_menu_items', 'uuid_menus', 'metric_areas', 'text_json_areas', 'weighted_areas', 'flag_areas', 'mean_areas', 'scoped_areas', 'multi_scoped_branches', 'slugged_categories', 'multi_path_categories', 'key_path_categories', 'closure_path_articles', 'scoped_slugged_menu_items', 'multi_scoped_path_items', 'lazy_areas', 'top_k_areas', 'stats_monsters', 'priced_areas', 'count_areas', 'nullable_metric_areas', 'status_branches', 'guarded_nodes', 'bool_filter_areas', 'immutable_soft_nodes'];
 
         foreach ($tables as $table) {
             if (DB::connection()->getSchemaBuilder()->hasTable($table)) {
