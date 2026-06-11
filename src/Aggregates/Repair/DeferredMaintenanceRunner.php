@@ -6,6 +6,7 @@ namespace Vusys\NestedSet\Aggregates\Repair;
 
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\AggregateFixResult;
+use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\DeferredAggregateMaintenanceCompleted;
@@ -55,8 +56,13 @@ final class DeferredMaintenanceRunner
         // Validate the anchor upfront — scoped models need one for the
         // final fixAggregates call, and a synchronous failure here is
         // friendlier than running the entire closure and only failing
-        // at the repair pass.
-        AggregateAnchor::writeAnchorOrFail($modelClass, $anchor);
+        // at the repair pass. Skipped when the model declares no
+        // aggregate columns: there's nothing to repair, so demanding a
+        // scope anchor would block no-aggregate flows that defer (e.g.
+        // bulkInsertTree seeding scoped roots).
+        if (AggregateRegistry::for($modelClass) !== []) {
+            AggregateAnchor::writeAnchorOrFail($modelClass, $anchor);
+        }
 
         $modelClass::incrementAggregateDeferredDepth();
         $isOutermost = $modelClass::aggregateDeferredDepth() === 1;

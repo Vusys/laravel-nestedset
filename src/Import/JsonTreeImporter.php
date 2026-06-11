@@ -62,8 +62,12 @@ final class JsonTreeImporter
         $knownColumns = array_fill_keys($tableColumns, true);
 
         $scopeColumns = NestedSetScopeResolver::columns($modelClass);
+        $rootScope = null;
         if (! $parent instanceof HasNestedSet && $scopeColumns !== []) {
-            self::assertScopeColumnsPresent($normalised, $scopeColumns);
+            // Seeding roots on a scoped model: every root row must carry
+            // the scope columns and they must all agree on one scope —
+            // a single import lands in one tree/tenant.
+            $rootScope = self::resolveRootScope($normalised, $scopeColumns);
         }
 
         $tree = self::buildBulkInsertInput(
@@ -85,7 +89,7 @@ final class JsonTreeImporter
                 ));
             }
             /** @var list<Model&HasNestedSet> $saved */
-            $saved = $callable($tree, $parent);
+            $saved = $callable($tree, $parent, $rootScope);
         } catch (QueryException $e) {
             if ($options->includeKeys && self::isUniqueViolation($e)) {
                 throw new JsonImportKeyCollisionException(
@@ -187,6 +191,39 @@ final class JsonTreeImporter
         }
 
         return $out;
+    }
+
+    /**
+     * Validates that every top-level row carries the scope columns and
+     * that they all describe one scope, then returns that scope's values
+     * for {@see HasBulkInsert::bulkInsertTree()} to seed roots with.
+     *
+     * @param  list<NormalisedNode>  $normalised
+     * @param  list<string>  $scopeColumns
+     * @return array<string, mixed>
+     */
+    private static function resolveRootScope(array $normalised, array $scopeColumns): array
+    {
+        self::assertScopeColumnsPresent($normalised, $scopeColumns);
+
+        $scope = [];
+        foreach ($scopeColumns as $col) {
+            $scope[$col] = $normalised[0]['attributes'][$col];
+        }
+
+        foreach ($normalised as $i => $node) {
+            foreach ($scopeColumns as $col) {
+                if ($node['attributes'][$col] !== $scope[$col]) {
+                    throw new ScopeViolationException(sprintf(
+                        'fromJsonTree: top-level rows span multiple scopes (row [%d], column "%s") — import one scope per call.',
+                        $i,
+                        $col,
+                    ));
+                }
+            }
+        }
+
+        return $scope;
     }
 
     /**
