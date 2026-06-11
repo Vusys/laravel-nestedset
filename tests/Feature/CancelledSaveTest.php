@@ -70,6 +70,87 @@ final class CancelledSaveTest extends TestCase
         $this->assertSame(0, $root->refresh()->getDescendantCount());
     }
 
+    #[Test]
+    public function retrying_an_insert_after_a_cancelled_save_does_not_duplicate_bounds(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+
+        $a = new Category(['name' => 'A']);
+        $a->appendToNode($root->refresh())->save();
+
+        Category::creating(fn (): ?bool => $this->cancelSave ? false : null);
+        $this->cancelSave = true;
+
+        $child = new Category(['name' => 'Child']);
+        $first = $child->appendToNode($root->refresh())->save();
+        $this->assertFalse($first, 'first save must report the cancellation');
+
+        // Retry the same poisoned instance now that the cancel is lifted.
+        $this->cancelSave = false;
+        $second = $child->save();
+
+        $this->assertTrue($second, 'retry must succeed');
+        $this->assertTreeIsIntact(Category::class);
+        $this->assertIsChildOf($child->refresh(), $root->refresh());
+    }
+
+    #[Test]
+    public function retrying_a_move_after_a_cancelled_save_keeps_the_tree_intact(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+
+        $a = new Category(['name' => 'A']);
+        $a->appendToNode($root->refresh())->save();
+
+        $b = new Category(['name' => 'B']);
+        $b->appendToNode($root->refresh())->save();
+
+        Category::saving(fn (): ?bool => $this->cancelSave ? false : null);
+        $this->cancelSave = true;
+
+        $first = $a->appendToNode($b->refresh())->save();
+        $this->assertFalse($first, 'first move must report the cancellation');
+
+        $this->cancelSave = false;
+        $second = $a->appendToNode($b->refresh())->save();
+
+        $this->assertTrue($second, 'retry must succeed');
+        $this->assertTreeIsIntact(Category::class);
+        $this->assertIsChildOf($a->refresh(), $b->refresh());
+    }
+
+    #[Test]
+    public function retrying_an_insert_after_a_throwing_listener_does_not_duplicate_bounds(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->saveAsRoot();
+
+        $a = new Category(['name' => 'A']);
+        $a->appendToNode($root->refresh())->save();
+
+        Category::saved(function (): void {
+            if ($this->cancelSave) {
+                throw new \RuntimeException('listener blew up after the row write');
+            }
+        });
+        $this->cancelSave = true;
+
+        $child = new Category(['name' => 'Child']);
+        try {
+            $child->appendToNode($root->refresh())->save();
+            $this->fail('the throwing listener should have propagated');
+        } catch (\RuntimeException) {
+            // expected — the auto-transaction rolled back
+        }
+
+        $this->cancelSave = false;
+        $this->assertTrue($child->save(), 'retry must succeed');
+        $this->assertTreeIsIntact(Category::class);
+        $this->assertIsChildOf($child->refresh(), $root->refresh());
+    }
+
     /**
      * @return array<int, array{lft: int, rgt: int, depth: int, parent_id: int|null}>
      */

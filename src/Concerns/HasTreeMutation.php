@@ -633,6 +633,19 @@ trait HasTreeMutation
             return parent::save($options);
         }
 
+        // Snapshot the in-memory state that the `saving` listener mutates
+        // (callPendingAction consumes `$pending` and writes lft/rgt/depth/
+        // parent_id; parent::save() flips `exists`/the key on insert). When
+        // the auto-transaction rolls back — a listener returning false, or
+        // any DB/listener exception — the DB is restored but these in-memory
+        // values are left holding the rolled-back placement with `$pending`
+        // already cleared. A retry save() would then INSERT a new node with
+        // stale bounds and no makeGap (duplicate lft/rgt), or UPDATE an
+        // existing node's parent_id with no structural SQL. Restore the
+        // snapshot on every non-commit path so a retry re-dispatches the
+        // queued operation from a clean slate.
+        $snapshot = $this->snapshotForSaveRollback();
+
         try {
             return (bool) $this->getConnection()->transaction(function () use ($options): bool {
                 $saved = parent::save($options);
@@ -651,8 +664,51 @@ trait HasTreeMutation
                 return $saved;
             });
         } catch (SaveCancelledException) {
+            $this->restoreFromSaveSnapshot($snapshot);
+
             return false;
+        } catch (\Throwable $e) {
+            $this->restoreFromSaveSnapshot($snapshot);
+
+            throw $e;
         }
+    }
+
+    /**
+     * Captures the in-memory state that {@see save()} must be able to roll
+     * back when its auto-transaction aborts. See the call site for why.
+     *
+     * @return array{attributes: array<string, mixed>, original: array<string, mixed>, changes: array<string, mixed>, exists: bool, recentlyCreated: bool, pending: ?PendingOperation, moveFrom: ?NodeBounds}
+     */
+    private function snapshotForSaveRollback(): array
+    {
+        return [
+            'attributes' => $this->attributes,
+            'original' => $this->original,
+            'changes' => $this->changes,
+            'exists' => $this->exists,
+            'recentlyCreated' => $this->wasRecentlyCreated,
+            'pending' => $this->pending,
+            'moveFrom' => $this->pendingMoveFromBounds,
+        ];
+    }
+
+    /**
+     * Restores a snapshot taken by {@see snapshotForSaveRollback()} after a
+     * rolled-back save, returning the model to its pre-save state so the
+     * caller can retry without corrupting the tree.
+     *
+     * @param  array{attributes: array<string, mixed>, original: array<string, mixed>, changes: array<string, mixed>, exists: bool, recentlyCreated: bool, pending: ?PendingOperation, moveFrom: ?NodeBounds}  $snapshot
+     */
+    private function restoreFromSaveSnapshot(array $snapshot): void
+    {
+        $this->attributes = $snapshot['attributes'];
+        $this->original = $snapshot['original'];
+        $this->changes = $snapshot['changes'];
+        $this->exists = $snapshot['exists'];
+        $this->wasRecentlyCreated = $snapshot['recentlyCreated'];
+        $this->pending = $snapshot['pending'];
+        $this->pendingMoveFromBounds = $snapshot['moveFrom'];
     }
 
     /**
