@@ -496,6 +496,11 @@ trait HasMaterialisedPath
         // appends forward. Prepending each predicate (reversing column order)
         // bound tenant_id to menu_id and vice versa on multi-column scopes,
         // so rewrites missed every descendant or hit another tenant's rows.
+        // Scope predicates must appear in iteration order so their
+        // placeholders line up with the scope values, which emitSubtreeRewrite
+        // appends forward. Prepending each predicate (reversing column order)
+        // bound tenant_id to menu_id and vice versa on multi-column scopes,
+        // so rewrites missed every descendant or hit another tenant's rows.
         $scopeClause = '';
         foreach (array_keys($scope) as $scopeColumn) {
             $scopeClause .= $grammar->wrap($scopeColumn).' = ? AND ';
