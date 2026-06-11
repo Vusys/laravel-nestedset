@@ -29,7 +29,7 @@ No extra queries fire — `toTree()` walks the already-loaded collection and rew
 
 ## Flat-with-hierarchy
 
-`toFlatTree()` returns a single flat collection in depth-first order with `parent` and `children` relations populated — handy when you want to render a tree with `<ul>`-style indenting but don't want to recurse:
+`toFlatTree()` returns a single flat collection in depth-first order — handy when you want to render a tree with `<ul>`-style indenting but don't want to recurse. It only orders the rows; it does not populate the `parent` / `children` relations. If you need those on the flat collection (to call `->parent` / `->children` without lazy loading), call `linkNodes()` as shown below:
 
 ```php
 foreach ($flat->toFlatTree() as $node) {

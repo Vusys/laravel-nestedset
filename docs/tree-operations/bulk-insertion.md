@@ -83,9 +83,9 @@ Rows must not contain `lft`, `rgt`, `depth`, `parent_id`, or the primary key —
 
 On scoped models, every inserted row's scope-column attributes are replaced with the values read off `$appendTo` regardless of what the input row contains. This is by design (a bulk insert into one anchor's subtree always belongs to that anchor's scope) but worth knowing — passing `['tenant_id' => 99]` in a row when `$appendTo->tenant_id === 7` produces a row with `tenant_id = 7`, not an error.
 
-### Scoped models require an anchor
+### Scoped models require scope context
 
-Models declared with `#[NestedSetScope]` or `getScopeAttributes()` require an `$appendTo` argument — the scope-column values are copied from it onto every inserted row.
+Models declared with `#[NestedSetScope]` or `getScopeAttributes()` need scope-column values from somewhere — either an `$appendTo` anchor (its scope is copied onto every inserted row) **or**, when seeding new roots with no anchor, an explicit `$scope` argument (`bulkInsertTree($tree, null, ['tenant_id' => 7])`). Passing neither throws `ScopeViolationException`.
 
 ### Transactional
 

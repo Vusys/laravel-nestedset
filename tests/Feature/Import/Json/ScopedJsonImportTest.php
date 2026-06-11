@@ -60,6 +60,11 @@ final class ScopedJsonImportTest extends TestCase
         ]]]);
 
         $r2 = MenuItem::query()->where('menu_id', $menu2->id)->where('name', 'R2')->firstOrFail();
+        $this->assertIsRoot($r2);
+        // The raw lft check is the scope-isolation assertion itself: menu 2
+        // must restart its own sequence at 1 rather than continue past
+        // menu 1's bounds. isBroken() is gap-tolerant and wouldn't catch a
+        // root that started at, say, 5, so the explicit bound is intentional.
         $this->assertSame(1, $r2->lft, 'menu 2 restarts its own lft sequence');
         $this->assertFalse(MenuItem::isBroken(MenuItem::query()->where('menu_id', $menu1->id)->first()));
         $this->assertFalse(MenuItem::isBroken($r2));
