@@ -101,6 +101,26 @@ final class NodeInspectionTest extends TestCase
     }
 
     #[Test]
+    public function bounds_predicates_return_false_on_a_never_placed_node(): void
+    {
+        // A freshly-constructed, never-saved model has null lft/rgt.
+        // The bounds predicates must answer false cleanly (the same as a
+        // persisted-but-unplaced row) instead of throwing a bare
+        // LogicException out of getBounds(). docs/querying/inspection.md
+        // constructs exactly this shape.
+        $unplaced = new Category(['name' => 'orphan']);
+        $root = $this->find(1);
+
+        $this->assertFalse($unplaced->isLeaf());
+        $this->assertFalse($unplaced->isDescendantOf($root));
+        $this->assertFalse($unplaced->isAncestorOf($root));
+
+        // Placed node measured against an unplaced one is also false.
+        $this->assertFalse($root->isDescendantOf($unplaced));
+        $this->assertFalse($root->isAncestorOf($unplaced));
+    }
+
+    #[Test]
     public function is_ancestor_of_is_the_inverse_of_is_descendant_of(): void
     {
         $root = $this->find(1);

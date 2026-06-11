@@ -26,4 +26,4 @@ use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
  * the registry surfaces it once at boot time so failure is immediate
  * rather than runtime-only.
  */
-final class MaterialisedPathConfigurationException extends LogicException {}
+final class MaterialisedPathConfigurationException extends LogicException implements NestedSetException {}

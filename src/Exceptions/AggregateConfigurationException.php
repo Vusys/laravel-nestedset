@@ -21,4 +21,4 @@ use Vusys\NestedSet\Attributes\NestedSetAggregate;
  * not a runtime/data problem; the registry resolves declarations once
  * at boot time so failures here surface immediately, not in production.
  */
-final class AggregateConfigurationException extends LogicException {}
+final class AggregateConfigurationException extends LogicException implements NestedSetException {}

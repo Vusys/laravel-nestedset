@@ -29,6 +29,14 @@ trait HasNodeInspection
 
     public function isLeaf(): bool
     {
+        // A never-placed node (lft/rgt still null on a fresh model) has
+        // no bounds to subtract — getRgt()/getLft() would throw. It is
+        // simply not a leaf, matching the persisted-unplaced (0,0) row
+        // which already answers false.
+        if (! $this->isPlacedInTree()) {
+            return false;
+        }
+
         return $this->getRgt() - $this->getLft() === 1;
     }
 
@@ -53,12 +61,25 @@ trait HasNodeInspection
 
     public function isDescendantOf(HasNestedSet $other): bool
     {
+        // A never-placed node can't stand in any ancestry relation, and
+        // reading its bounds would throw. Return false cleanly — the
+        // same answer a persisted-but-unplaced (0,0) row gives — instead
+        // of a bare LogicException. (docs/querying/inspection.md
+        // constructs exactly this case.)
+        if (! $this->isPlacedInTree() || ! $other->isPlacedInTree()) {
+            return false;
+        }
+
         return $this->inSameScopeAs($other)
             && $other->getBounds()->contains($this->getBounds());
     }
 
     public function isAncestorOf(HasNestedSet $other): bool
     {
+        if (! $this->isPlacedInTree() || ! $other->isPlacedInTree()) {
+            return false;
+        }
+
         return $this->inSameScopeAs($other)
             && $this->getBounds()->contains($other->getBounds());
     }

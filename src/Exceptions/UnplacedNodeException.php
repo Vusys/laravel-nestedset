@@ -23,4 +23,4 @@ use LogicException;
  * Extends LogicException because forgetting to place a new node is a
  * programmer error.
  */
-final class UnplacedNodeException extends LogicException {}
+final class UnplacedNodeException extends LogicException implements NestedSetException {}

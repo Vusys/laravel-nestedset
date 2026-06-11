@@ -18,4 +18,4 @@ use LogicException;
  * Extends LogicException because the contradictory move plan is a
  * programmer error in whatever produced the `after` snapshot.
  */
-final class CyclicMoveException extends LogicException {}
+final class CyclicMoveException extends LogicException implements NestedSetException {}

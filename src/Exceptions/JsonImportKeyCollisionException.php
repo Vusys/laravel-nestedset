@@ -16,7 +16,7 @@ use RuntimeException;
  * Extends RuntimeException because the collision is a runtime data
  * condition rather than a programmer error at the call site.
  */
-final class JsonImportKeyCollisionException extends RuntimeException
+final class JsonImportKeyCollisionException extends RuntimeException implements NestedSetException
 {
     public function __construct(
         public readonly int|string $offendingKey,

@@ -22,4 +22,4 @@ use LogicException;
  * Extends LogicException because forgetting to load is a programmer
  * error at the call site, not a data corruption problem.
  */
-final class UnloadedSubtreeException extends LogicException {}
+final class UnloadedSubtreeException extends LogicException implements NestedSetException {}

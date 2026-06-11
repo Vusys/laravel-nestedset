@@ -406,4 +406,4 @@ Tag::factory()
 | `tree(...)->make()` or `treeFromShape(...)->make()` | `LogicException` | Use `create()`, or `previewTree()` for the no-DB case. |
 | `tree(...)->count(N)` | `LogicException` | Put `count()` first: `count(N)->tree(...)`. |
 
-All package-specific exceptions extend `NestedSetException`.
+All package-specific exceptions implement the `Vusys\NestedSet\Exceptions\NestedSetException` marker interface (which extends `Throwable`), so you can catch any package-originated failure with a single `catch (\Vusys\NestedSet\Exceptions\NestedSetException $e)` regardless of the SPL base class each one extends.
