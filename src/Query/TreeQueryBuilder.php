@@ -168,7 +168,11 @@ class TreeQueryBuilder extends Builder
         $col = $grammar->wrap($this->qualifyColumn($this->depthColumn()));
         $alias = $grammar->wrap($as);
 
-        $this->addSelect(['*', new TreeExpression("{$col} as {$alias}")]);
+        // Only widen to '*' when no explicit select() has narrowed the
+        // columns — otherwise this would silently re-add every column and
+        // undo the caller's projection.
+        $base = $this->getQuery()->columns === null ? ['*'] : [];
+        $this->addSelect([...$base, new TreeExpression("{$col} as {$alias}")]);
 
         return $this;
     }

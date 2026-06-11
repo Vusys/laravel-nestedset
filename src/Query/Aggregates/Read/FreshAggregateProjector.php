@@ -130,10 +130,7 @@ final class FreshAggregateProjector
                         $connection,
                     );
 
-                    $builder->addSelect(['*', new TreeExpression("{$cased->sql} as {$alias}")]);
-                    if ($cased->bindings !== []) {
-                        $builder->getQuery()->addBinding($cased->bindings, 'select');
-                    }
+                    self::addFreshProjection($builder, $alias, $cased->sql, $cased->bindings);
                 }
             }
         }
@@ -155,10 +152,7 @@ final class FreshAggregateProjector
                 $connection,
             );
 
-            $builder->addSelect(['*', new TreeExpression("{$cased->sql} as {$alias}")]);
-            if ($cased->bindings !== []) {
-                $builder->getQuery()->addBinding($cased->bindings, 'select');
-            }
+            self::addFreshProjection($builder, $alias, $cased->sql, $cased->bindings);
         }
 
         // TopK also needs a dedicated subquery shape — the JSON aggregator
@@ -177,10 +171,25 @@ final class FreshAggregateProjector
                 $connection,
             );
 
-            $builder->addSelect(['*', new TreeExpression("{$cased->sql} as {$alias}")]);
-            if ($cased->bindings !== []) {
-                $builder->getQuery()->addBinding($cased->bindings, 'select');
-            }
+            self::addFreshProjection($builder, $alias, $cased->sql, $cased->bindings);
+        }
+    }
+
+    /**
+     * Appends one fresh-aggregate projection column, widening to '*' only
+     * when the caller hasn't narrowed the select() — otherwise this would
+     * silently re-add every column and discard the caller's projection.
+     *
+     * @param  TreeQueryBuilder<Model>  $builder
+     * @param  list<mixed>  $bindings
+     */
+    private static function addFreshProjection(TreeQueryBuilder $builder, string $alias, string $sql, array $bindings): void
+    {
+        $base = $builder->getQuery()->columns === null ? ['*'] : [];
+        $builder->addSelect([...$base, new TreeExpression("{$sql} as {$alias}")]);
+
+        if ($bindings !== []) {
+            $builder->getQuery()->addBinding($bindings, 'select');
         }
     }
 
@@ -707,10 +716,32 @@ final class FreshAggregateProjector
                 );
             }
 
+            // The alias is interpolated verbatim into the SELECT
+            // (`<expr> as <alias>`); reject anything that isn't a bare SQL
+            // identifier so a key like `x, (SELECT secret) AS y` can't
+            // smuggle arbitrary SQL into the projection.
+            self::assertSqlIdentifier($key);
+
             $resolved[$key] = $value->into($key);
         }
 
         return $resolved;
+    }
+
+    /**
+     * Guards a user-supplied string destined for raw interpolation as a SQL
+     * identifier (a fresh-aggregate column alias).
+     */
+    private static function assertSqlIdentifier(string $identifier): void
+    {
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier) !== 1) {
+            throw new AggregateConfigurationException(sprintf(
+                'withFreshAggregates(): alias "%s" is not a valid SQL identifier '
+                .'(letters, digits and underscore only, not starting with a digit). '
+                .'The alias is interpolated into the SELECT, so it is rejected to prevent injection.',
+                $identifier,
+            ));
+        }
     }
 
     /**
