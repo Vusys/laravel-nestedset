@@ -761,6 +761,12 @@ trait HasTreeMutation
      */
     public function delete(): ?bool
     {
+        // A queued placement is abandoned by deletion — without this, a
+        // model that was appendToNode()'d, then deleted, would still
+        // dispatch the stale op (makeGap/move) on a later save() and
+        // corrupt the tree.
+        $this->pending = null;
+
         if (! config('nestedset.auto_transaction', true)) {
             return parent::delete();
         }
@@ -768,6 +774,28 @@ trait HasTreeMutation
         $result = $this->getConnection()->transaction(fn (): ?bool => parent::delete());
 
         return is_bool($result) ? $result : null;
+    }
+
+    /**
+     * Discards a queued tree operation (appendToNode / prependToNode /
+     * insertBeforeNode / insertAfterNode / makeRoot / moveTo) before it is
+     * dispatched on save(). Returns $this for chaining. A no-op when nothing
+     * is queued.
+     */
+    public function clearPendingOperation(): static
+    {
+        $this->pending = null;
+        $this->pendingMoveFromBounds = null;
+
+        return $this;
+    }
+
+    /**
+     * Whether a tree operation is queued and waiting for save() to dispatch.
+     */
+    public function hasPendingOperation(): bool
+    {
+        return $this->pending !== null;
     }
 
     /**
