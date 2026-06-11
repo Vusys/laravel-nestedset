@@ -251,95 +251,113 @@ trait HasTreeMutation
             ));
         }
 
-        // Resolve the parent's own bounds from the database — the
-        // in-memory copy may be stale (e.g. siblings have been added
-        // since this instance was loaded) and the UPDATE predicate
-        // hinges on those bounds being current.
         $mutator = $this->newTreeMutator();
-        $parentBounds = $mutator->getNodeData($this->keyOf($this));
-
-        // The parent's subtree is empty — nothing to reorder.
-        if ($parentBounds->rgt - $parentBounds->lft === 1) {
-            if ($idsInOrder !== []) {
-                throw InvalidSiblingOrderException::unknownChildren(
-                    $this->normaliseSiblingKeys($idsInOrder),
-                );
-            }
-
-            return $this;
-        }
-
-        $requestedKeys = $this->normaliseSiblingKeys($idsInOrder);
-        $duplicates = $this->duplicateKeys($requestedKeys);
-        if ($duplicates !== []) {
-            throw InvalidSiblingOrderException::duplicateChildren($duplicates);
-        }
-
-        // The leaf-check above (rgt - lft === 1) guarantees the parent
-        // has at least one descendant, which in turn means at least one
-        // direct child — so this list is never empty here.
-        /** @var list<array{key: int|string, lft: int, rgt: int}> $current */
-        $current = $this->loadDirectChildBounds();
-
-        $currentKeys = array_map(static fn (array $row): int|string => $row['key'], $current);
-
-        $unknown = array_values(array_diff($requestedKeys, $currentKeys));
-        if ($unknown !== []) {
-            throw InvalidSiblingOrderException::unknownChildren($unknown);
-        }
-
-        $missing = array_values(array_diff($currentKeys, $requestedKeys));
-        if ($missing !== []) {
-            throw InvalidSiblingOrderException::missingChildren($missing);
-        }
-
-        // Identity reorder: every position matches → no UPDATE.
-        $isIdentity = true;
-        foreach ($currentKeys as $i => $key) {
-            if (! $this->keysEqual($key, $requestedKeys[$i])) {
-                $isIdentity = false;
-                break;
-            }
-        }
-        if ($isIdentity) {
-            return $this;
-        }
-
-        // Index current rows by key for O(1) lookup as we walk the
-        // requested order computing new starting lft for each sibling.
-        $byKey = [];
-        foreach ($current as $row) {
-            $byKey[(string) $row['key']] = $row;
-        }
-
-        /** @var list<array{int, int, int}> $shifts */
-        $shifts = [];
-        $cursor = $parentBounds->lft + 1;
-        foreach ($requestedKeys as $key) {
-            $row = $byKey[(string) $key];
-            $height = $row['rgt'] - $row['lft'] + 1;
-            $delta = $cursor - $row['lft'];
-            $shifts[] = [$row['lft'], $row['rgt'], $delta];
-            $cursor += $height;
-        }
-
         $startNs = hrtime(true);
 
-        $rowsAffected = $this->getConnection()->transaction(
-            fn (): int => $mutator->reorderSiblings(
+        // Wrap the parent-bounds read, the child-bounds read, and the
+        // reorder UPDATE in ONE transaction with the parent row locked
+        // FOR UPDATE. Previously the reads ran outside the transaction,
+        // so a concurrent append to the same parent between the reads
+        // and the UPDATE could shift the child windows and corrupt the
+        // computed shifts. Validation exceptions thrown inside roll back
+        // the (still write-free) transaction harmlessly.
+        //
+        // Returns null for the no-op cases (empty parent, identity
+        // reorder) so the caller returns $this without an event; on a
+        // real reorder it returns the affected-row count and the
+        // requested key order for the post-commit event.
+        /** @var array{rowsAffected: int, requestedKeys: list<int|string>}|null $outcome */
+        $outcome = $this->getConnection()->transaction(function () use ($mutator, $idsInOrder): ?array {
+            // Resolve the parent's own bounds under a row lock — the
+            // in-memory copy may be stale and the UPDATE predicate hinges
+            // on these being current and held until commit.
+            $parentBounds = $this->freshBoundsOf($this, lockForUpdate: true);
+
+            // The parent's subtree is empty — nothing to reorder.
+            if ($parentBounds->rgt - $parentBounds->lft === 1) {
+                if ($idsInOrder !== []) {
+                    throw InvalidSiblingOrderException::unknownChildren(
+                        $this->normaliseSiblingKeys($idsInOrder),
+                    );
+                }
+
+                return null;
+            }
+
+            $requestedKeys = $this->normaliseSiblingKeys($idsInOrder);
+            $duplicates = $this->duplicateKeys($requestedKeys);
+            if ($duplicates !== []) {
+                throw InvalidSiblingOrderException::duplicateChildren($duplicates);
+            }
+
+            // The leaf-check above (rgt - lft === 1) guarantees the parent
+            // has at least one descendant, which in turn means at least one
+            // direct child — so this list is never empty here.
+            /** @var list<array{key: int|string, lft: int, rgt: int}> $current */
+            $current = $this->loadDirectChildBounds();
+
+            $currentKeys = array_map(static fn (array $row): int|string => $row['key'], $current);
+
+            $unknown = array_values(array_diff($requestedKeys, $currentKeys));
+            if ($unknown !== []) {
+                throw InvalidSiblingOrderException::unknownChildren($unknown);
+            }
+
+            $missing = array_values(array_diff($currentKeys, $requestedKeys));
+            if ($missing !== []) {
+                throw InvalidSiblingOrderException::missingChildren($missing);
+            }
+
+            // Identity reorder: every position matches → no UPDATE.
+            $isIdentity = true;
+            foreach ($currentKeys as $i => $key) {
+                if (! $this->keysEqual($key, $requestedKeys[$i])) {
+                    $isIdentity = false;
+                    break;
+                }
+            }
+            if ($isIdentity) {
+                return null;
+            }
+
+            // Index current rows by key for O(1) lookup as we walk the
+            // requested order computing new starting lft for each sibling.
+            $byKey = [];
+            foreach ($current as $row) {
+                $byKey[(string) $row['key']] = $row;
+            }
+
+            /** @var list<array{int, int, int}> $shifts */
+            $shifts = [];
+            $cursor = $parentBounds->lft + 1;
+            foreach ($requestedKeys as $key) {
+                $row = $byKey[(string) $key];
+                $height = $row['rgt'] - $row['lft'] + 1;
+                $delta = $cursor - $row['lft'];
+                $shifts[] = [$row['lft'], $row['rgt'], $delta];
+                $cursor += $height;
+            }
+
+            $rowsAffected = $mutator->reorderSiblings(
                 parentLft: $parentBounds->lft,
                 parentRgt: $parentBounds->rgt,
                 shifts: $shifts,
-            ),
-        );
+            );
+
+            return ['rowsAffected' => $rowsAffected, 'requestedKeys' => $requestedKeys];
+        });
+
+        if ($outcome === null) {
+            return $this;
+        }
 
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
         EventDispatcher::dispatch(new SiblingsReordered(
             modelClass: static::class,
             parent: $this,
-            idsInOrder: $requestedKeys,
-            rowsAffected: $rowsAffected,
+            idsInOrder: $outcome['requestedKeys'],
+            rowsAffected: $outcome['rowsAffected'],
             durationMs: $durationMs,
         ));
 
