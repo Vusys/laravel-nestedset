@@ -164,7 +164,10 @@ final class DeltaCapture
                 );
                 $delta = ($newPred ? $newSource : 0) - ($oldPred ? $oldSource : 0);
 
-                if ($delta !== 0) {
+                // Loose `!= 0`, not strict `!== 0`: a float source yields a
+                // float delta, and `0.0 !== 0` is true — so a no-op save
+                // (delta 0.0) would otherwise issue a full ancestor UPDATE.
+                if ($delta != 0) {
                     $state->deltas[$definition->column] = $delta;
                 }
 

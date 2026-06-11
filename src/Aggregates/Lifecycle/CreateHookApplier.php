@@ -87,8 +87,7 @@ final class CreateHookApplier
             }
 
             if ($definition->function === AggregateFunction::Sum && $definition->source !== null) {
-                if ($definition->filter instanceof FilterPredicate
-                    && $definition->filter->evaluateFor($node->getAttributes()) !== true) {
+                if (self::filterExcludes($node, $definition->filter)) {
                     continue;
                 }
                 $value = $definition->sourceTransform->applyPhp(
@@ -97,7 +96,7 @@ final class CreateHookApplier
                         ? Numeric::asNumericOrNull($node->getAttribute($definition->weight))
                         : null,
                 );
-                if ($value !== 0) {
+                if ($value != 0) {
                     $deltas[$definition->column] = $value;
                 }
 
@@ -105,8 +104,7 @@ final class CreateHookApplier
             }
 
             if ($definition->function === AggregateFunction::Count) {
-                if ($definition->filter instanceof FilterPredicate
-                    && $definition->filter->evaluateFor($node->getAttributes()) !== true) {
+                if (self::filterExcludes($node, $definition->filter)) {
                     continue;
                 }
                 if ($definition->source !== null && $node->getAttribute($definition->source) === null) {
@@ -121,8 +119,7 @@ final class CreateHookApplier
                 || $definition->function === AggregateFunction::Min)
                 && $definition->source !== null
             ) {
-                if ($definition->filter instanceof FilterPredicate
-                    && $definition->filter->evaluateFor($node->getAttributes()) !== true) {
+                if (self::filterExcludes($node, $definition->filter)) {
                     continue;
                 }
                 // SQL MIN/MAX ignore NULL — a NULL source contributes
@@ -277,5 +274,27 @@ final class CreateHookApplier
         ChangeFeedRecorder::dispatch($node, $preSnapshot);
 
         LifecycleSupport::dispatchAggregatesRecomputed($node, 'on_create');
+    }
+
+    /**
+     * Whether a filter predicate excludes the new node. Evaluates against
+     * cast attribute values, not the raw attribute set: filters compare to
+     * declared values (e.g. `true`) while getAttributes() returns the raw
+     * stored form (`1` for a boolean column created with `active = 1`), so
+     * a raw read drifts permanently against the SQL filter's view. Matches
+     * the cast-aware read DeltaCapture uses on the update path.
+     */
+    private static function filterExcludes(Model $node, ?FilterPredicate $filter): bool
+    {
+        if (! $filter instanceof FilterPredicate) {
+            return false;
+        }
+
+        $cast = [];
+        foreach ($filter->watchColumns() as $column) {
+            $cast[$column] = $node->getAttribute($column);
+        }
+
+        return $filter->evaluateFor($cast) !== true;
     }
 }
