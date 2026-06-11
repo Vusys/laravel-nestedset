@@ -9,6 +9,8 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-11
+
 ### Fixed
 
 - **Soft-delete cascade marker format diverged from the anchor row**
@@ -85,7 +87,8 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 - Subtree cloning (`cloneSubtreeTo`, `cloneSubtreeAsRoot`).
 - Sibling reorder primitive (one `CASE WHEN` UPDATE per reorder).
 
-[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/vusys/laravel-nestedset/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/vusys/laravel-nestedset/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/vusys/laravel-nestedset/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/vusys/laravel-nestedset/compare/v0.18.2...v0.19.0
