@@ -1287,13 +1287,30 @@ trait HasTreeMutation
     private function actMakeRoot(): void
     {
         $driver = $this->getConnection()->getDriverName();
+        $scope = NestedSetScopeResolver::valuesFor($this);
+
+        // PostgreSQL has no gap locks, so `FOR UPDATE` on the max-rgt
+        // read locks nothing when the scope is empty (or when the
+        // highest-rgt row was just inserted by a still-uncommitted
+        // peer): two callers both read no/zero max and both insert at
+        // (1,2) — duplicate_lft / duplicate_rgt corruption. MySQL /
+        // MariaDB serialise this with next-key gap locks on the same
+        // read, and SQLite is single-writer, so the hole is PG-only.
+        // A transaction-level advisory lock keyed on table + scope
+        // serialises all makeRoot() callers in the same scope on PG;
+        // it auto-releases at commit (and is a harmless immediate
+        // release if the caller runs with auto_transaction off and no
+        // surrounding transaction).
+        if ($driver === 'pgsql') {
+            $this->acquireMakeRootAdvisoryLock($scope);
+        }
 
         // Scope the max-rgt lookup to this node's scope. Without the
         // scope filter, the second scope's first root would land past
         // the first scope's rgt and silently break per-scope lft/rgt
         // independence. Caught by the scope-isolation fuzzer.
         $query = $this->newQuery()->getQuery();
-        foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+        foreach ($scope as $col => $value) {
             $query->where($col, $value);
         }
 
@@ -1308,7 +1325,9 @@ trait HasTreeMutation
         // directly. Locking the single row with the highest rgt via
         // ORDER BY ... LIMIT 1 FOR UPDATE returns the same value and
         // works on every backend that supports row locking.
-        // SQLite is single-writer; skip the lock there.
+        // SQLite is single-writer; skip the lock there. PG callers are
+        // already serialised by the advisory lock above, so the
+        // FOR UPDATE there only guards the non-empty case redundantly.
         if ($driver === 'sqlite') {
             $rawMax = $query->max($this->getRgtName());
         } else {
@@ -1324,6 +1343,26 @@ trait HasTreeMutation
         // Position at maxRgt + 1 places this node at the end of the table;
         // moveNode handles the gap-fill behind it.
         $this->positionAt($maxRgt + 1, 0, null);
+    }
+
+    /**
+     * Takes a PostgreSQL transaction-level advisory lock keyed on the
+     * table name and this node's scope values, serialising concurrent
+     * makeRoot() callers in the same scope. crc32 gives a stable 32-bit
+     * key per (table, scope); pg_advisory_xact_lock releases it
+     * automatically when the surrounding transaction commits or rolls
+     * back.
+     *
+     * @param  array<string, mixed>  $scope
+     */
+    private function acquireMakeRootAdvisoryLock(array $scope): void
+    {
+        $key = sprintf('%s|%s', $this->getTable(), json_encode($scope));
+
+        $this->getConnection()->statement(
+            'select pg_advisory_xact_lock(?)',
+            [crc32($key)],
+        );
     }
 
     /**
