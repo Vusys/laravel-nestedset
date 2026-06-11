@@ -16,11 +16,15 @@ Engineering
     Hardware {cost=1500}
 ```
 
-Each node's `Σ cost` is the stored `cost_total` rolled up over its subtree. A single source-column update doubles Bonuses' cost:
+Each node's `Σ cost` is the stored `cost_total` rolled up over its subtree. A single source-column update doubles Bonuses' cost — done through a **model instance**, so the `saving`/`saved` hooks fire and maintenance runs:
 
 ```php
-Bonuses::query()->update(['cost' => 4000]);
+$bonuses->cost = 4000;
+$bonuses->save();
 ```
+
+> [!WARNING]
+> Maintenance is driven by Eloquent model events. A bulk query-builder write — `Account::query()->where(...)->update(['cost' => 4000])` — fires **no** model events, so the aggregate columns are **not** updated and drift silently. After any bulk update of a source column, run [`fixAggregates()`](drift.html) (anchored, on scoped models) to resync.
 
 After the write, every **ancestor** of Bonuses has `cost_total += 2000`. Sibling rows (`Salaries`, `Tools`, `SaaS`, `Hardware`) and the unrelated `Engineering` subtree are untouched — the delta only flows up the ancestor chain:
 

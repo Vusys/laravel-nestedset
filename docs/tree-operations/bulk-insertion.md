@@ -51,7 +51,7 @@ $site1->isRoot();   // true
 $site2->isRoot();   // true
 ```
 
-Scoped models reject `appendTo: null` with `ScopeViolationException` — the anchor is also where the scope-column values come from.
+To seed new roots on a **scoped** model, pass the target scope explicitly via the `$scope` argument — `Model::bulkInsertTree($tree, null, ['tenant_id' => 7])` — and the package scopes the root placement to that tenant. Passing neither an anchor nor `$scope` on a scoped model still throws `ScopeViolationException` (the scope-column values have to come from somewhere).
 
 Each row goes through a normal `save()`, so per-row `creating` / `saving` / `created` / `saved` events still fire, every cast applies, observers run, mass-assignment guards are respected. The only operations the package does on top of `save()` are the one-shot `makeGap` (replaces N gap-shifts) and the deferred `fixAggregates` at the end of the call (replaces N aggregate-ancestor UPDATEs).
 

@@ -89,7 +89,8 @@ return [
     | every firing site — useful only if you're in a hot path and don't
     | want the overhead of constructing event objects you'll never observe.
     |
-    | Event classes live in `Vusys\NestedSet\Events\`. See README → Telemetry.
+    | Event classes live in `Vusys\NestedSet\Events\`. See docs/reference/events.md
+    | for the full catalogue.
     */
 
     'events_enabled' => true,

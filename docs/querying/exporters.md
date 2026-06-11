@@ -188,7 +188,7 @@ The payload may be a single node dict (one tree) or a list of dicts (a forest); 
 
 Invalid payload shape (missing children array, non-string keys, non-array root) throws `InvalidJsonTreeException`. Strict mode also throws on unknown columns. The whole import runs in one transaction — partial inserts never escape on failure.
 
-For models declaring `#[NestedSetScope]`, pass a `$parent` in the target scope; importing as a root in a scoped model isn't supported (the scope columns must come from somewhere). For unscoped models, omit `$parent` to import every top-level dict as a new root.
+For unscoped models, omit `$parent` to import every top-level dict as a new root. For models declaring `#[NestedSetScope]`, you can either pass a `$parent` in the target scope, **or** seed roots directly by including the scope column(s) on every root row — the importer reads the scope from the payload (all roots must agree on one scope). A root row missing the scope column, or rows spanning multiple scopes, throw `ScopeViolationException`.
 
 ## Whole-tree exports
 

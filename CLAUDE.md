@@ -124,7 +124,7 @@ Concrete fixture types in test helpers are intentional — they exist so PHPStan
 
 - Adding `@phpstan-ignore` comments or PHPStan baseline entries — these are explicitly disallowed by `.coderabbit.yaml`.
 - Mass-assigning aggregate columns — silently overwritten on next mutation; will produce drift.
-- Calling `create()` without `appendToNode()` or `makeRoot()` — leaves the row unplaced (`lft = rgt = 0`); aggregate maintenance skipped. Use `isPlacedInTree()` to check.
+- Calling `create()` / `save()` without `appendToNode()` or `makeRoot()` — the saving listener throws `UnplacedNodeException` (an unplaced node can't be persisted through the normal API). Unplaced rows (`lft = rgt = 0`) only arise from raw SQL inserts; `isPlacedInTree()` detects them.
 - Reordering existing fixture migrations — `TestCase::setUp` truncates a fixed list.
 - Calling `fixTree()` / `fixAggregates()` / `isBroken()` on scoped models without an anchor — throws `ScopeViolationException` by design (prevents accidental full-table walks on multi-million-row forests).
 - Adding code comments explaining WHAT — only add when WHY is non-obvious.

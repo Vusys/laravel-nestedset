@@ -52,7 +52,7 @@ Category::with([
 ])->whereIsRoot()->get();
 ```
 
-The composite index already covers `depth`, so the bounded `WHERE` costs no more than the unbounded eager load on the same rows.
+The bounded `WHERE` is served by the composite `(scope, lft, rgt, parent_id, …cover)` index on the `lft`/`rgt` range; the `depth` predicate is then a cheap filter over that already-narrow row set. (`depth` itself isn't in the index — add it to the migration's `cover` columns if you filter on depth heavily.)
 
 Eager-loading `descendants` is also the recommended setup for [walking a subtree](walking.md) — the walker reads the loaded relation directly without issuing its own query.
 

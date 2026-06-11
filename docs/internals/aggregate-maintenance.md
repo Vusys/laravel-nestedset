@@ -135,7 +135,6 @@ $setExpressions = array_merge(
     self::buildMeanSetClauses($deltas, $means),
     self::buildDeltaSetClauses($deltas),               // raw companions AFTER
     self::buildExtremeSetClauses($extremes),
-    self::buildBitwiseSetClauses($bitwise),
 );
 ```
 
