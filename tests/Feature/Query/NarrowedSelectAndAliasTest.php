@@ -62,4 +62,28 @@ final class NarrowedSelectAndAliasTest extends TestCase
             'x, (SELECT name FROM areas LIMIT 1) AS smuggled' => Aggregate::sum('tickets'),
         ])->get();
     }
+
+    #[Test]
+    public function ad_hoc_alias_colliding_with_a_stored_column_is_rejected(): void
+    {
+        $this->expectException(AggregateConfigurationException::class);
+        $this->expectExceptionMessageMatches('/distinct alias/');
+
+        // `tickets_total` is a real stored aggregate column on Area.
+        Area::query()->withFreshAggregates([
+            'tickets_total' => Aggregate::sum('tickets'),
+        ])->get();
+    }
+
+    #[Test]
+    public function reading_a_stored_column_as_a_snapshot_via_bare_string_is_allowed(): void
+    {
+        $root = new Area(['name' => 'Root', 'tickets' => 4]);
+        $root->makeRoot()->save();
+
+        // The string-keyed form intentionally reuses the stored column name
+        // as a read-only snapshot — must NOT throw.
+        $row = Area::query()->withFreshAggregates(['tickets_total'])->whereKey($root->id)->firstOrFail();
+        $this->assertSame(4, (int) $row->tickets_total);
+    }
 }

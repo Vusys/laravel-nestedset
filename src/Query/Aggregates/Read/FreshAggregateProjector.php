@@ -722,10 +722,41 @@ final class FreshAggregateProjector
             // smuggle arbitrary SQL into the projection.
             self::assertSqlIdentifier($key);
 
+            // An ad-hoc Aggregate keyed by a real stored-aggregate column
+            // overwrites that column's hydrated value AND its `$original`
+            // baseline, so a later save() feeds maintenance a wrong delta
+            // and drifts. Force a distinct alias. (The no-arg / string-keyed
+            // forms reuse stored names deliberately — those are the
+            // documented read-only-snapshot shapes.)
+            self::assertAliasNotStoredColumn($model, $key);
+
             $resolved[$key] = $value->into($key);
         }
 
         return $resolved;
+    }
+
+    /**
+     * Rejects an ad-hoc fresh-aggregate alias that collides with one of the
+     * model's declared (stored) aggregate columns — overlaying a real column
+     * corrupts the stored value's `$original` baseline for the next save().
+     */
+    private static function assertAliasNotStoredColumn(Model&HasNestedSet $model, string $alias): void
+    {
+        foreach (AggregateRegistry::for($model::class) as $definition) {
+            if ($definition->getColumn() === $alias) {
+                throw new AggregateConfigurationException(sprintf(
+                    'withFreshAggregates(): ad-hoc alias "%s" collides with the stored aggregate column of the '
+                    .'same name on %s. Overlaying a stored column corrupts its save() delta baseline — choose a '
+                    .'distinct alias (e.g. "%s_fresh"), or pass the bare string "%s" to read the column as a '
+                    .'read-only snapshot.',
+                    $alias,
+                    $model::class,
+                    $alias,
+                    $alias,
+                ));
+            }
+        }
     }
 
     /**
