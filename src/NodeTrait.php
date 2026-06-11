@@ -56,6 +56,16 @@ trait NodeTrait
     use HasTreeWalk;
 
     /**
+     * Set by the `deleting` listener when its structural re-read finds the
+     * row already gone (e.g. a cascade from an ancestor's hard delete in the
+     * same operation removed it first). The `deleted` listener then no-ops
+     * its cascade / aggregate decrement / closeGap, which would otherwise run
+     * against a vanished band and corrupt the tree — the general double-delete
+     * footgun.
+     */
+    protected bool $nestedSetDeleteVanished = false;
+
+    /**
      * Wires every Eloquent lifecycle event the package consumes.
      *
      *  - `saving`  → callPendingAction (Path A move/insert dispatch)
@@ -131,6 +141,7 @@ trait NodeTrait
             // bounds, or the caller mutated a scope attribute without
             // saving. Aggregate maintenance, the cascade query, and the
             // closeGap step all rely on persisted values.
+            $node->nestedSetDeleteVanished = false;
             $key = $node->getKey();
             if ($key === null) {
                 return;
@@ -148,6 +159,8 @@ trait NodeTrait
                 ->where($node->getKeyName(), $key)
                 ->first($columnsToRead);
             if ($row === null) {
+                $node->nestedSetDeleteVanished = true;
+
                 return;
             }
             foreach ($columnsToRead as $column) {
@@ -158,6 +171,15 @@ trait NodeTrait
 
         static::deleted(static function (Model $node): void {
             if (! $node instanceof MaintainsTreeAggregates) {
+                return;
+            }
+
+            // The `deleting` re-read found the row already gone — a cascade
+            // from an ancestor's hard delete in the same operation removed it
+            // first. Running the cascade / aggregate decrement / closeGap now
+            // would act on stale bounds against a vanished band, deleting
+            // innocent rows and corrupting bounds. No-op instead.
+            if ($node->nestedSetDeleteVanished) {
                 return;
             }
 

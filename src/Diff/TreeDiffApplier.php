@@ -360,13 +360,34 @@ final class TreeDiffApplier
 
         $rows = $modelClass::query()->whereIn((new $modelClass)->getKeyName(), $pks)->get();
 
+        $removedPkSet = [];
+        foreach ($pks as $pk) {
+            $removedPkSet[self::keyHash($pk)] = true;
+        }
+        $parentIdName = (new $modelClass)->getParentIdName();
+
         foreach ($rows as $row) {
-            $row->delete();
             $key = $row->getKey();
             $applied = $byPk[self::keyHash($key)] ?? $key;
             if (is_int($applied) || is_string($applied)) {
                 $accumulator->removed[] = $applied;
             }
+
+            // Delete only the top-most removed nodes. A removed node whose
+            // parent is also in the removed set is hard-deleted by its
+            // ancestor's cascade (and on soft-delete models, stamped by the
+            // cascade so stamp-matched restore still works). Calling
+            // delete() on it again would run the structural cleanup against
+            // stale bounds — the cascade already closed the gap — deleting
+            // innocent rows and corrupting the tree. Moves run before
+            // removes, so any surviving intermediate has already been moved
+            // out: parent_id here reflects the post-move shape.
+            $parentId = $row->getAttribute($parentIdName);
+            if ($parentId !== null && isset($removedPkSet[self::keyHash($parentId)])) {
+                continue;
+            }
+
+            $row->delete();
         }
     }
 
