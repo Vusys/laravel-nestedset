@@ -25,7 +25,7 @@ $tree[0]->children->count();                   // 2 — Computers, Phones
 $tree[0]->children[0]->children->count();      // 2 — Laptops, Desktops
 ```
 
-No extra queries fire — `toTree()` walks the already-loaded collection and rewires the relations using the `lft` / `rgt` ranges.
+No extra queries fire — `toTree()` walks the already-loaded collection and rewires the relations by matching each node's `parent_id` to the keys present in the collection.
 
 ## Flat-with-hierarchy
 
@@ -48,7 +48,7 @@ foreach ($flat->toFlatTree() as $node) {
 
 ## Subtree shaping
 
-Both `toTree()` and `toFlatTree()` accept an optional `$root` argument when your collection is *a subtree, not the whole table*. Without it, the implicit root is inferred from the smallest-lft node's `parent_id`.
+Both `toTree()` and `toFlatTree()` accept an optional `$root` argument when your collection is *a subtree, not the whole table*. Without it, every node whose parent isn't present in the collection becomes a top-level node — so a partial or filtered fetch returns a forest of all the maximal subtrees it contains, never silently dropping a node whose parent was filtered out. Pass `$root` to narrow the result to that node's subtree.
 
 ```php
 // Just Electronics + descendants, shaped as a subtree

@@ -53,10 +53,17 @@ class NodeCollection extends EloquentCollection
         foreach ($this->items as $node) {
             $parentId = $node->getParentId();
 
-            $node->setRelation(
-                'parent',
-                $parentId !== null && isset($byKey[$parentId]) ? $byKey[$parentId] : null,
-            );
+            if ($parentId === null) {
+                // A true root has no parent — record that explicitly.
+                $node->setRelation('parent', null);
+            } elseif (isset($byKey[$parentId])) {
+                $node->setRelation('parent', $byKey[$parentId]);
+            }
+            // else: the parent exists but wasn't fetched into this
+            // collection (a partial / filtered result). Leave the
+            // `parent` relation UNLOADED so lazy access still queries the
+            // database — marking it loaded-null would silently hide a
+            // parent that really exists.
 
             $node->setRelation(
                 'children',
@@ -72,9 +79,14 @@ class NodeCollection extends EloquentCollection
      * collection, each with its `children` relation populated recursively
      * via {@see linkNodes()}.
      *
-     * When $root is null, the top-level is inferred as the parent_id of the
-     * node with the smallest lft — i.e. the natural root of whatever subset
-     * was fetched.
+     * With no explicit `$root`, every node whose parent is NOT present in
+     * the collection becomes a top-level node — so a partial or filtered
+     * fetch returns a *forest* of all maximal subtrees it contains and no
+     * node is ever silently dropped. (A node whose parent was filtered
+     * out simply surfaces as its own root.)
+     *
+     * Passing `$root` narrows the result to that node's direct children
+     * present in the collection — the subtree rooted at `$root`.
      */
     public function toTree(?HasNestedSet $root = null): static
     {
@@ -84,12 +96,10 @@ class NodeCollection extends EloquentCollection
 
         $this->linkNodes();
 
-        $rootKey = $this->resolveRootKey($root);
-
+        $present = $this->presentKeySet();
         $tops = [];
-
         foreach ($this->items as $node) {
-            if ($node->getParentId() === $rootKey) {
+            if ($this->isTopLevel($node, $root, $present)) {
                 $tops[] = $node;
             }
         }
@@ -99,7 +109,9 @@ class NodeCollection extends EloquentCollection
 
     /**
      * Returns the (sub)tree in depth-first order, preserving the same
-     * ordering as a `defaultOrder()` query would produce.
+     * ordering as a `defaultOrder()` query would produce. Follows the
+     * same top-level rule as {@see toTree()} — a forest of every maximal
+     * subtree present, or the subtree rooted at `$root` when given.
      */
     public function toFlatTree(?HasNestedSet $root = null): static
     {
@@ -107,67 +119,72 @@ class NodeCollection extends EloquentCollection
             return $this->newSibling();
         }
 
-        /** @var array<int|string, list<TModel>> $byParentId */
+        /** @var array<string, list<TModel>> $byParentId */
         $byParentId = [];
-
         foreach ($this->items as $node) {
             $parentId = $node->getParentId();
             if ($parentId !== null) {
-                $byParentId[$parentId][] = $node;
+                $byParentId[(string) $parentId][] = $node;
             }
         }
 
-        $rootKey = $this->resolveRootKey($root);
+        $present = $this->presentKeySet();
         $result = $this->newSibling();
-
-        $this->flattenInto($result, $byParentId, $rootKey);
+        foreach ($this->items as $node) {
+            if ($this->isTopLevel($node, $root, $present)) {
+                $result->push($node);
+                $this->flattenChildren($result, $byParentId, $node);
+            }
+        }
 
         return $result;
     }
 
     /**
-     * @param  static  $result
-     * @param  array<int|string, list<TModel>>  $byParentId
+     * A node is a top level of the result when an explicit `$root` is its
+     * parent, or — with no root — when its parent is null or absent from
+     * the collection (the forest rule).
+     *
+     * @param  array<string, true>  $present
      */
-    private function flattenInto(self $result, array $byParentId, int|string|null $parentKey): void
+    private function isTopLevel(Model&HasNestedSet $node, ?HasNestedSet $root, array $present): bool
     {
-        if ($parentKey === null) {
-            // Roots have parent_id = null; iterate items in original order to
-            // preserve depth-first traversal for the root level.
-            foreach ($this->items as $node) {
-                if ($node->getParentId() === null) {
-                    $result->push($node);
-                    $this->flattenInto($result, $byParentId, $this->keyOf($node));
-                }
-            }
+        $parentId = $node->getParentId();
 
-            return;
+        if ($root instanceof Model) {
+            return $parentId !== null && (string) $parentId === (string) $this->keyOf($root);
         }
 
-        foreach ($byParentId[$parentKey] ?? [] as $node) {
-            $result->push($node);
-            $this->flattenInto($result, $byParentId, $this->keyOf($node));
-        }
+        return $parentId === null || ! isset($present[(string) $parentId]);
     }
 
-    private function resolveRootKey(?HasNestedSet $root): int|string|null
+    /**
+     * Set of primary keys present in this collection, string-keyed so
+     * int and numeric-string ids index identically.
+     *
+     * @return array<string, true>
+     */
+    private function presentKeySet(): array
     {
-        if ($root instanceof Model) {
-            return $this->keyOf($root);
-        }
-
-        // Infer: the parent_id of the lowest-lft node is the implicit root.
-        $leastLft = null;
-        $rootKey = null;
-
+        /** @var array<string, true> $present */
+        $present = [];
         foreach ($this->items as $node) {
-            if ($leastLft === null || $node->getLft() < $leastLft) {
-                $leastLft = $node->getLft();
-                $rootKey = $node->getParentId();
-            }
+            $present[(string) $this->keyOf($node)] = true;
         }
 
-        return $rootKey;
+        return $present;
+    }
+
+    /**
+     * @param  static  $result
+     * @param  array<string, list<TModel>>  $byParentId
+     */
+    private function flattenChildren(self $result, array $byParentId, Model $node): void
+    {
+        foreach ($byParentId[(string) $this->keyOf($node)] ?? [] as $child) {
+            $result->push($child);
+            $this->flattenChildren($result, $byParentId, $child);
+        }
     }
 
     /**
