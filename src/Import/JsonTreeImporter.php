@@ -133,6 +133,18 @@ final class JsonTreeImporter
                 $attrs = $transformed;
             }
 
+            // Map the exporter's display-only `label` back onto a real
+            // column so toJsonTree()→fromJsonTree() round-trips by default
+            // (label is otherwise stripped, leaving e.g. a NOT NULL `name`
+            // column unset). Never clobbers a value already supplied for
+            // that column (e.g. via extras).
+            if ($options->labelColumn !== null
+                && isset($knownColumns[$options->labelColumn])
+                && array_key_exists('label', $attrs)
+                && ($attrs[$options->labelColumn] ?? null) === null) {
+                $attrs[$options->labelColumn] = $attrs['label'];
+            }
+
             if ($options->strict) {
                 foreach (array_keys($attrs) as $col) {
                     if (isset($ignoreSet[$col])) {

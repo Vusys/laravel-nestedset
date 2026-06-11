@@ -41,4 +41,25 @@ final class JsonImportRoundTripTest extends TestCase
         $depths = Category::query()->orderBy('lft')->pluck('depth')->all();
         $this->assertSame([0, 1, 2, 1], $depths);
     }
+
+    #[Test]
+    public function default_round_trip_maps_label_back_to_name(): void
+    {
+        $root = new Category(['name' => 'Root']);
+        $root->makeRoot()->save();
+        $a = new Category(['name' => 'A']);
+        $a->appendToNode($root->refresh())->save();
+
+        // No extras: the default exporter emits `label` (from name) only.
+        // fromJsonTree must map it back onto the `name` column by default,
+        // not drop it and hit the NOT NULL constraint.
+        $json = Category::toJsonTreeForest();
+
+        Category::query()->forceDelete();
+
+        Category::fromJsonTree($json);
+
+        $names = Category::query()->orderBy('lft')->pluck('name')->all();
+        $this->assertSame(['Root', 'A'], $names);
+    }
 }
