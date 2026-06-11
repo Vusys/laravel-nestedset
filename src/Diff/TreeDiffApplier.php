@@ -71,15 +71,21 @@ final class TreeDiffApplier
 
         $accumulator = new TreeDiffApplierAccumulator;
 
-        // Order: add → move → remove → modify. Adds run first so a move
-        // can target a newly-added parent. Moves run before removes so a
-        // child the diff retains is re-parented OUT of a doomed subtree
+        // Order: add → move → remove → reorder → modify. Adds run first so
+        // a move can target a newly-added parent. Moves run before removes
+        // so a child the diff retains is re-parented OUT of a doomed subtree
         // before the remove's hard-delete cascade would take it with the
-        // parent (otherwise the later move can't resolve the deleted row).
+        // parent. Sibling placement is *deferred* to a single reorder pass
+        // after removes: an added node ranked after a moved-in sibling can't
+        // be positioned until that sibling exists (doAdds runs before
+        // doMoves), and running the placement inline threw "position out of
+        // range". The reorder pass sees the final sibling set.
         $work = static function () use ($diff, $modelClass, $resolver, &$resolved, $accumulator): void {
-            self::doAdds($diff, $modelClass, $resolver, $resolved, $accumulator);
-            self::doMoves($diff, $modelClass, $resolved, $accumulator);
+            $reorderTargets = [];
+            self::doAdds($diff, $modelClass, $resolver, $resolved, $accumulator, $reorderTargets);
+            self::doMoves($diff, $modelClass, $resolved, $accumulator, $reorderTargets);
             self::doRemoves($diff, $modelClass, $resolved, $accumulator);
+            self::doReorders($modelClass, $reorderTargets);
             self::doModifies($diff, $modelClass, $resolved, $accumulator);
         };
 
@@ -395,8 +401,10 @@ final class TreeDiffApplier
      * @param  class-string<Model&HasNestedSet>  $modelClass
      * @param  Closure(mixed): (int|string|null)  $resolver
      * @param  array<string, int|string|null>  $resolved
+     * @param  list<array{pk: int|string, parentPk: int|string|null, position: int}>  $reorderTargets
      *
      * @param-out array<string, int|string|null>  $resolved
+     * @param-out list<array{pk: int|string, parentPk: int|string|null, position: int}>  $reorderTargets
      */
     private static function doAdds(
         TreeDiff $diff,
@@ -404,6 +412,7 @@ final class TreeDiffApplier
         Closure $resolver,
         array &$resolved,
         TreeDiffApplierAccumulator $accumulator,
+        array &$reorderTargets,
     ): void {
         $keyName = (new $modelClass)->getKeyName();
 
@@ -437,7 +446,15 @@ final class TreeDiffApplier
                 }
                 self::callInstance($model, 'appendToNode', [$parent]);
                 $model->save();
-                self::reorderToSiblingPosition($model, $added->siblingPosition);
+
+                $childPk = $model->getKey();
+                if (is_int($childPk) || is_string($childPk)) {
+                    $reorderTargets[] = [
+                        'pk' => $childPk,
+                        'parentPk' => $parentPk,
+                        'position' => $added->siblingPosition,
+                    ];
+                }
             }
 
             $key = $model->getKey();
@@ -455,14 +472,22 @@ final class TreeDiffApplier
     /**
      * @param  class-string<Model&HasNestedSet>  $modelClass
      * @param  array<string, int|string|null>  $resolved
+     * @param  list<array{pk: int|string, parentPk: int|string|null, position: int}>  $reorderTargets
+     *
+     * @param-out list<array{pk: int|string, parentPk: int|string|null, position: int}>  $reorderTargets
      */
     private static function doMoves(
         TreeDiff $diff,
         string $modelClass,
         array $resolved,
         TreeDiffApplierAccumulator $accumulator,
+        array &$reorderTargets,
     ): void {
-        foreach ($diff->moved as $move) {
+        // Apply moves new-ancestor-first. A parent/child swap (B becomes the
+        // parent of its former parent A) supplied in row order would move A
+        // under B while B is still a descendant of A — a CyclicMoveException.
+        // Moving B into its new home first breaks the cycle.
+        foreach (self::orderMovesTopologically($diff->moved) as $move) {
             $rowPk = $resolved[self::keyHash($move->key)] ?? null;
             if ($rowPk === null) {
                 throw new MissingParentException(sprintf(
@@ -503,11 +528,97 @@ final class TreeDiffApplier
 
                 self::callInstance($row, 'appendToNode', [$parent]);
                 $row->save();
-                self::reorderToSiblingPosition($row, $move->toSiblingPosition);
+
+                $reorderTargets[] = [
+                    'pk' => $rowPk,
+                    'parentPk' => $parentPk,
+                    'position' => $move->toSiblingPosition,
+                ];
             }
 
             if (is_int($move->key) || is_string($move->key)) {
                 $accumulator->moved[] = $move->key;
+            }
+        }
+    }
+
+    /**
+     * Orders moves so a node is moved only after the move that places its
+     * new parent has run — parents-before-children in the *after* tree.
+     * Breaks the parent/child-swap cycle that row order otherwise hits.
+     * `assertCycleFree()` has already rejected genuine cycles in the after
+     * tree, so the visiting guard here is purely defensive.
+     *
+     * @param  list<Moved>  $moves
+     * @return list<Moved>
+     */
+    private static function orderMovesTopologically(array $moves): array
+    {
+        /** @var array<string, Moved> $byKey */
+        $byKey = [];
+        foreach ($moves as $move) {
+            $byKey[self::keyHash($move->key)] = $move;
+        }
+
+        /** @var list<Moved> $ordered */
+        $ordered = [];
+        /** @var array<string, bool> $visited */
+        $visited = [];
+        /** @var array<string, bool> $visiting */
+        $visiting = [];
+
+        $visit = static function (Moved $move) use (&$visit, &$byKey, &$ordered, &$visited, &$visiting): void {
+            $hash = self::keyHash($move->key);
+            if (isset($visited[$hash]) || isset($visiting[$hash])) {
+                return;
+            }
+            $visiting[$hash] = true;
+
+            if ($move->toParent !== null) {
+                $parentHash = self::keyHash($move->toParent);
+                if (isset($byKey[$parentHash])) {
+                    $visit($byKey[$parentHash]);
+                }
+            }
+
+            unset($visiting[$hash]);
+            $visited[$hash] = true;
+            $ordered[] = $move;
+        };
+
+        foreach ($moves as $move) {
+            $visit($move);
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * Single sibling-ordering pass run after all adds/moves/removes, when
+     * every sibling is finally present. Each parent's changed children are
+     * placed in ascending target rank; unchanged siblings keep their
+     * relative order, so ascending insertion lands each changed node at its
+     * recorded slot.
+     *
+     * @param  class-string<Model&HasNestedSet>  $modelClass
+     * @param  list<array{pk: int|string, parentPk: int|string|null, position: int}>  $reorderTargets
+     */
+    private static function doReorders(string $modelClass, array $reorderTargets): void
+    {
+        /** @var array<string, list<array{pk: int|string, parentPk: int|string|null, position: int}>> $byParent */
+        $byParent = [];
+        foreach ($reorderTargets as $target) {
+            $byParent[self::keyHash($target['parentPk'])][] = $target;
+        }
+
+        foreach ($byParent as $targets) {
+            usort($targets, static fn (array $a, array $b): int => $a['position'] <=> $b['position']);
+
+            foreach ($targets as $target) {
+                $node = $modelClass::query()->whereKey($target['pk'])->first();
+                if ($node instanceof Model) {
+                    self::reorderToSiblingPosition($node, $target['position']);
+                }
             }
         }
     }
