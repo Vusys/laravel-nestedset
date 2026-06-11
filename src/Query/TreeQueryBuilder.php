@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Vusys\NestedSet\Aggregates\Aggregate;
 use Vusys\NestedSet\Columns;
+use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
+use Vusys\NestedSet\Scope\NestedSetScopeResolver;
 
 /**
  * @template TModel of Model
@@ -179,6 +181,7 @@ class TreeQueryBuilder extends Builder
 
     public function defaultOrder(): static
     {
+        $this->orderByScopeColumns();
         $this->orderBy($this->qualifyColumn($this->lftColumn()), 'asc');
 
         return $this;
@@ -186,9 +189,30 @@ class TreeQueryBuilder extends Builder
 
     public function reversed(): static
     {
+        // Scope columns still ascend so each tree stays a contiguous block;
+        // only the within-tree lft order reverses.
+        $this->orderByScopeColumns();
         $this->orderBy($this->qualifyColumn($this->lftColumn()), 'desc');
 
         return $this;
+    }
+
+    /**
+     * Prepends an ascending order on the model's scope columns (if any) so
+     * `defaultOrder()`/`reversed()` are deterministic on scoped models —
+     * every tree restarts lft at 1, so without grouping by scope first the
+     * rows of different trees interleave arbitrarily across backends.
+     */
+    private function orderByScopeColumns(): void
+    {
+        $model = $this->getModel();
+        if (! $model instanceof HasNestedSet) {
+            return;
+        }
+
+        foreach (NestedSetScopeResolver::columns($model::class) as $scopeColumn) {
+            $this->orderBy($this->qualifyColumn($scopeColumn), 'asc');
+        }
     }
 
     public function withoutRoot(): static
