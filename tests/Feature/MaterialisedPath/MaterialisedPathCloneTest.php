@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use LogicException;
 use PHPUnit\Framework\Attributes\Test;
-use Vusys\NestedSet\Exceptions\DuplicatePathSegment;
+use Vusys\NestedSet\Exceptions\DuplicatePathSegmentException;
 use Vusys\NestedSet\Tests\Fixtures\Models\SluggedCategory;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -41,7 +41,7 @@ final class MaterialisedPathCloneTest extends TestCase
     {
         // Source is a child of Root; cloning it back under Root would
         // produce a second '/root/source/' sibling. A normal save()
-        // throws DuplicatePathSegment for this — clone must too, and the
+        // throws DuplicatePathSegmentException for this — clone must too, and the
         // whole clone must roll back (no orphaned rows left behind).
         $root = new SluggedCategory(['name' => 'Root']);
         $root->makeRoot()->save();
@@ -54,8 +54,8 @@ final class MaterialisedPathCloneTest extends TestCase
 
         try {
             $source->cloneSubtreeTo($root->refresh());
-            $this->fail('expected DuplicatePathSegment');
-        } catch (DuplicatePathSegment $e) {
+            $this->fail('expected DuplicatePathSegmentException');
+        } catch (DuplicatePathSegmentException $e) {
             $this->assertSame('url_path', $e->column);
         }
 

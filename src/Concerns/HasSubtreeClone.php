@@ -258,7 +258,7 @@ trait HasSubtreeClone
             // listener never fired) and validate uniqueness. Doing this
             // inside the transaction means a clone that would collide
             // with an existing sibling — e.g. cloning a slugged node
-            // under its own parent — rolls back with DuplicatePathSegment
+            // under its own parent — rolls back with DuplicatePathSegmentException
             // exactly as a normal save() would, instead of committing two
             // siblings with the same path; and a crash mid-rebuild can't
             // leave the cloned rows with NULL paths.
@@ -874,7 +874,7 @@ trait HasSubtreeClone
      * don't collide with an existing sibling, for every column declared
      * uniquePerParent. Only the clone root can collide — its descendants
      * carry new parent ids and paths copied from the (already-valid)
-     * source subtree. Throws DuplicatePathSegment (rolling back the clone
+     * source subtree. Throws DuplicatePathSegmentException (rolling back the clone
      * transaction) when a collision is found, matching a normal save().
      */
     private static function assertClonedPathsUnique(self $root): void

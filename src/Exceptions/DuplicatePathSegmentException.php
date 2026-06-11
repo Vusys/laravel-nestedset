@@ -15,7 +15,7 @@ use RuntimeException;
  * want case-insensitive or locale-aware comparison lowercase / fold
  * inside the segment builder itself.
  */
-final class DuplicatePathSegment extends RuntimeException implements NestedSetException
+final class DuplicatePathSegmentException extends RuntimeException implements NestedSetException
 {
     public function __construct(
         string $message,

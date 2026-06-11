@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Vusys\NestedSet\Contracts\HasNestedSet;
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Export\AsciiOptions;
 use Vusys\NestedSet\Export\DotOptions;
 use Vusys\NestedSet\Export\JsonOptions;
@@ -233,7 +234,7 @@ trait HasTreeExport
         $columns = NestedSetScopeResolver::columns(static::class);
 
         if ($columns === []) {
-            throw new \LogicException(sprintf(
+            throw new ScopeViolationException(sprintf(
                 '%s::toMermaidScope/toDotScope/toAsciiTreeScope/toJsonTreeScope are only valid on scoped models. '
                 .'Use the Forest variants for single-tree-per-class models.',
                 static::class,

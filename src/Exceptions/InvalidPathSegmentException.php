@@ -20,7 +20,7 @@ use RuntimeException;
  * malformed `name` or a too-long `display_name` — not a programmer
  * mistake in the declaration itself.
  */
-class InvalidPathSegment extends RuntimeException implements NestedSetException
+class InvalidPathSegmentException extends RuntimeException implements NestedSetException
 {
     public function __construct(
         string $message,

@@ -11,11 +11,11 @@ use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\PostgresConnection;
 use Illuminate\Database\SQLiteConnection;
 use Vusys\NestedSet\Contracts\HasNestedSet;
-use Vusys\NestedSet\Exceptions\DuplicatePathSegment;
-use Vusys\NestedSet\Exceptions\EmptyPathSegment;
-use Vusys\NestedSet\Exceptions\InvalidPathSegment;
-use Vusys\NestedSet\Exceptions\NonDeterministicPathSegment;
-use Vusys\NestedSet\Exceptions\PathTooLong;
+use Vusys\NestedSet\Exceptions\DuplicatePathSegmentException;
+use Vusys\NestedSet\Exceptions\EmptyPathSegmentException;
+use Vusys\NestedSet\Exceptions\InvalidPathSegmentException;
+use Vusys\NestedSet\Exceptions\NonDeterministicPathSegmentException;
+use Vusys\NestedSet\Exceptions\PathTooLongException;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPath;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
@@ -169,7 +169,7 @@ trait HasMaterialisedPath
             if ($this->isPathDeterminismGuarded()) {
                 $second = $path->segmentFor($this);
                 if ($second !== $segment) {
-                    throw new NonDeterministicPathSegment(sprintf(
+                    throw new NonDeterministicPathSegmentException(sprintf(
                         '%s: materialised-path builder for column "%s" returned different values on '
                         .'repeated calls within one save. The builder must be a pure function of the '
                         .'node\'s persisted attributes — avoid request(), auth(), now(), or any other '
@@ -187,7 +187,7 @@ trait HasMaterialisedPath
             $newFullPath = $this->assemblePath($parentPath, $segment, $path);
 
             if (strlen((string) $newFullPath) > $path->getMaxLength()) {
-                throw new PathTooLong(sprintf(
+                throw new PathTooLongException(sprintf(
                     '%s: materialised-path column "%s" computed length %d exceeds the configured maxLength %d.',
                     static::class,
                     $column,
@@ -269,7 +269,7 @@ trait HasMaterialisedPath
             $newFullPath = $this->assemblePath($parentPath, $segment, $path);
 
             if (strlen((string) $newFullPath) > $path->getMaxLength()) {
-                throw new PathTooLong(sprintf(
+                throw new PathTooLongException(sprintf(
                     '%s: materialised-path column "%s" computed length %d exceeds the configured maxLength %d.',
                     static::class,
                     $column,
@@ -303,7 +303,7 @@ trait HasMaterialisedPath
     private function validateSegment(string $column, MaterialisedPath $path, string $segment): string
     {
         if ($segment === '') {
-            throw new EmptyPathSegment(sprintf(
+            throw new EmptyPathSegmentException(sprintf(
                 '%s: materialised-path column "%s" segment builder returned an empty string. '
                 .'Provide a non-empty source attribute or guard the builder against null/empty values.',
                 static::class,
@@ -314,7 +314,7 @@ trait HasMaterialisedPath
         $sep = $path->getSeparator();
         if ($sep !== '' && str_contains($segment, $sep)) {
             if ($path->getRejectSeparatorInSegment()) {
-                throw new InvalidPathSegment(sprintf(
+                throw new InvalidPathSegmentException(sprintf(
                     '%s: materialised-path column "%s" segment "%s" contains the configured '
                     .'separator "%s". Configure rejectSeparatorInSegment: false to silently strip '
                     .'or fix the source attribute.',
@@ -327,7 +327,7 @@ trait HasMaterialisedPath
 
             $segment = str_replace($sep, '', $segment);
             if ($segment === '') {
-                throw new EmptyPathSegment(sprintf(
+                throw new EmptyPathSegmentException(sprintf(
                     '%s: materialised-path column "%s" segment is empty after stripping the separator. '
                     .'Source attribute consists entirely of separator characters.',
                     static::class,
@@ -531,7 +531,7 @@ trait HasMaterialisedPath
             };
             $parentIdForException = (is_int($parentId) || is_string($parentId)) ? $parentId : null;
 
-            throw new DuplicatePathSegment(sprintf(
+            throw new DuplicatePathSegmentException(sprintf(
                 '%s: materialised-path column "%s" — sibling already holds path "%s" under parent %s. '
                 .'Configure uniquePerParent: false or change the source attribute.',
                 static::class,

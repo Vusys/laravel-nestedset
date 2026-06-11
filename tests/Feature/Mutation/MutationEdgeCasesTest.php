@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Mutation;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use PHPUnit\Framework\Attributes\Test;
+use Vusys\NestedSet\Exceptions\CyclicMoveException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\TestCase;
 
@@ -66,7 +67,7 @@ final class MutationEdgeCasesTest extends TestCase
         $a = Category::query()->findOrFail(2);
         $aa = Category::query()->findOrFail(3);
 
-        $this->expectException(LogicException::class);
+        $this->expectException(CyclicMoveException::class);
         $this->expectExceptionMessageMatches('/Cannot move node into itself/');
 
         // Cycle: try to nest A inside its descendant AA.

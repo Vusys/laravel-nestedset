@@ -19,6 +19,7 @@ use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleted;
 use Vusys\NestedSet\Events\Subtree\SubtreeForceDeleting;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoved;
 use Vusys\NestedSet\Events\Subtree\SubtreeMoving;
+use Vusys\NestedSet\Exceptions\CyclicMoveException;
 use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
 use Vusys\NestedSet\Exceptions\SaveCancelledException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
@@ -939,7 +940,7 @@ trait HasTreeMutation
         ) {
             $targetBounds = $this->freshBoundsOf($op->node);
             if ($targetBounds->lft > $from->lft && $targetBounds->rgt < $from->rgt) {
-                throw new LogicException('Cannot move node into itself or its own subtree.');
+                throw new CyclicMoveException('Cannot move node into itself or its own subtree.');
             }
         }
 

@@ -6,7 +6,7 @@ namespace Vusys\NestedSet\Tests\Feature\MaterialisedPath;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
-use Vusys\NestedSet\Exceptions\PathTooLong;
+use Vusys\NestedSet\Exceptions\PathTooLongException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\ScopedSluggedMenuItem;
@@ -44,7 +44,7 @@ final class MaterialisedPathErrorPathsTest extends TestCase
         // its slug + wrap blows past it.
         $name = str_repeat('a', 1100);
 
-        $this->expectException(PathTooLong::class);
+        $this->expectException(PathTooLongException::class);
         $this->expectExceptionMessageMatches('/exceeds the configured maxLength/');
 
         $node = new SluggedCategory(['name' => $name]);

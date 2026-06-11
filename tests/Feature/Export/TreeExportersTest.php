@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\Export;
 use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Exceptions\CorruptTreeException;
+use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Export\AsciiOptions;
 use Vusys\NestedSet\Export\DotOptions;
 use Vusys\NestedSet\Export\JsonOptions;
@@ -363,7 +364,7 @@ final class TreeExportersTest extends TestCase
     #[Test]
     public function scope_export_rejects_unscoped_models(): void
     {
-        $this->expectException(\LogicException::class);
+        $this->expectException(ScopeViolationException::class);
 
         Category::toAsciiTreeScope(1);
     }
