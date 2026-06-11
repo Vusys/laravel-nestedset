@@ -243,10 +243,13 @@ final readonly class TreeRepairBuilder
     {
         $rows = $this->scoped()
             ->select([$this->idCol, $this->parentId])
-            // Order by id so sibling order is the documented primary-key
-            // order on every backend — without it PG returns heap order,
-            // which changes after non-HOT updates (a second fixTree can
-            // then scramble siblings non-reproducibly).
+            // Order by (lft, id): lft preserves whatever deliberate sibling
+            // order the tree already has (insertBeforeNode/up()/reorder),
+            // so fixTree() on a healthy tree is order-preserving rather than
+            // reverting everything to PK order. The id tiebreak keeps it
+            // deterministic across backends (PG heap order is unstable) and
+            // makes garbage/zero lft values degrade gracefully to id order.
+            ->orderBy($this->lft)
             ->orderBy($this->idCol)
             ->get()
             ->keyBy($this->idCol);
@@ -289,7 +292,9 @@ final readonly class TreeRepairBuilder
     {
         $all = $this->scoped()
             ->select([$this->idCol, $this->parentId])
-            // id order → deterministic sibling order across backends.
+            // (lft, id) order: preserve deliberate sibling order on a healthy
+            // subtree, id-tiebreak for determinism and garbage-lft fallback.
+            ->orderBy($this->lft)
             ->orderBy($this->idCol)
             ->get()
             ->keyBy($this->idCol);
