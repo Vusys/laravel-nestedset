@@ -232,23 +232,15 @@ trait HasTreeRepair
         $parentIdName = $instance->getParentIdName();
         $lftName = $instance->getLftName();
         $rgtName = $instance->getRgtName();
-        $depthName = $instance->getDepthName();
 
-        $columns = [$keyName, $parentIdName, $lftName, $rgtName, $depthName];
-        $sourceCols = [];
-        foreach ($paths as $path) {
-            $src = $path->sourceColumn();
-            if ($src !== null && ! in_array($src, $columns, true)) {
-                $columns[] = $src;
-                $sourceCols[$src] = true;
-            }
-        }
-        foreach (array_keys($paths) as $pathColumn) {
-            if (! in_array($pathColumn, $columns, true)) {
-                $columns[] = $pathColumn;
-            }
-        }
-
+        // Load every column, not just the structural + declared-source
+        // set. Closure-source paths (MaterialisedPath::from(...)) read
+        // arbitrary model attributes and have no declared sourceColumn(),
+        // so a narrow projection left those attributes missing — the
+        // closure produced an empty segment and the row was silently
+        // skipped (fixMaterialisedPaths returned 0; clones kept NULL
+        // paths). The walk already loads every row, so the extra columns
+        // are nearly free.
         $query = $connection->table($table);
         if ($anchor instanceof Model) {
             $query->where($lftName, '>=', $anchor->getLft())
@@ -257,7 +249,7 @@ trait HasTreeRepair
                 $query->where($col, $value);
             }
         }
-        $rows = $query->orderBy($lftName)->get($columns);
+        $rows = $query->orderBy($lftName)->get();
 
         $rowsById = [];
         foreach ($rows as $row) {
@@ -273,10 +265,8 @@ trait HasTreeRepair
             $updatesByValue = [];
             foreach ($rows as $row) {
                 $instanceForRow = new static;
-                foreach ($columns as $col) {
-                    if (property_exists($row, $col) || isset($row->{$col})) {
-                        $instanceForRow->setAttribute($col, $row->{$col} ?? null);
-                    }
+                foreach (get_object_vars($row) as $col => $value) {
+                    $instanceForRow->setAttribute($col, $value);
                 }
                 $instanceForRow->exists = true;
 
