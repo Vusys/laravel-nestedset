@@ -253,20 +253,26 @@ trait HasSubtreeClone
                 $this->placeAtPosition($root, $narrowedParent, $position);
             }
 
+            // Recompute materialised-path columns INSIDE the transaction
+            // (bulk insert ran under withoutEvents(), so the path saving
+            // listener never fired) and validate uniqueness. Doing this
+            // inside the transaction means a clone that would collide
+            // with an existing sibling — e.g. cloning a slugged node
+            // under its own parent — rolls back with DuplicatePathSegment
+            // exactly as a normal save() would, instead of committing two
+            // siblings with the same path; and a crash mid-rebuild can't
+            // leave the cloned rows with NULL paths.
+            if (MaterialisedPathRegistry::columnsFor(static::class) !== []) {
+                $root->refresh();
+                static::fixMaterialisedPaths(null, $root);
+                $root->refresh();
+                self::assertClonedPathsUnique($root);
+            }
+
             return $root;
         });
 
         $cloneRoot->refresh();
-
-        // Bulk insert ran under withoutEvents() so the materialised-path
-        // saving listener never fired for the cloned rows. Recompute
-        // each declared column over the new subtree in PHP. Same
-        // anchor + transaction model as the deferred aggregate
-        // recompute that already runs inside bulkInsertTree.
-        if (MaterialisedPathRegistry::columnsFor(static::class) !== []) {
-            static::fixMaterialisedPaths(null, $cloneRoot);
-            $cloneRoot->refresh();
-        }
 
         // Defer the SubtreeCloned dispatch until the outermost
         // transaction commits. With no caller transaction this fires
@@ -861,5 +867,27 @@ trait HasSubtreeClone
         $key = $node->getKey();
 
         return is_int($key) || is_string($key) ? (string) $key : '?';
+    }
+
+    /**
+     * Validates that the freshly-cloned root's materialised-path columns
+     * don't collide with an existing sibling, for every column declared
+     * uniquePerParent. Only the clone root can collide — its descendants
+     * carry new parent ids and paths copied from the (already-valid)
+     * source subtree. Throws DuplicatePathSegment (rolling back the clone
+     * transaction) when a collision is found, matching a normal save().
+     */
+    private static function assertClonedPathsUnique(self $root): void
+    {
+        foreach (MaterialisedPathRegistry::for(static::class) as $column => $path) {
+            if (! $path->getUniquePerParent()) {
+                continue;
+            }
+
+            $value = $root->getAttribute($column);
+            if (is_string($value) && $value !== '') {
+                $root->assertNoSiblingPathCollision($column, $value);
+            }
+        }
     }
 }
