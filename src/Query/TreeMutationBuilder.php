@@ -38,6 +38,19 @@ final readonly class TreeMutationBuilder
         private string $idCol = 'id',
     ) {}
 
+    /**
+     * Grammar-quote a column identifier for safe interpolation into the
+     * raw CASE-WHEN bodies. The structural columns are package-owned, but a
+     * model that renames lft/rgt/depth to a reserved word (`left`, `order`)
+     * or any name needing quoting would otherwise emit a backend-specific
+     * syntax error on every mutation. The UPDATE *keys* are wrapped by
+     * Laravel already; this covers the expression bodies it can't see into.
+     */
+    private function q(string $column): string
+    {
+        return $this->connection->getQueryGrammar()->wrap($column);
+    }
+
     // ----------------------------------------------------------------
     // Gap management
     // ----------------------------------------------------------------
@@ -48,12 +61,14 @@ final readonly class TreeMutationBuilder
      */
     public function makeGap(int $at, int $size): void
     {
+        $lft = $this->q($this->lft);
+        $rgt = $this->q($this->rgt);
         $this->scoped()->update([
             $this->lft => new TreeExpression(
-                "CASE WHEN {$this->lft} >= {$at} THEN {$this->lft} + {$size} ELSE {$this->lft} END"
+                "CASE WHEN {$lft} >= {$at} THEN {$lft} + {$size} ELSE {$lft} END"
             ),
             $this->rgt => new TreeExpression(
-                "CASE WHEN {$this->rgt} >= {$at} THEN {$this->rgt} + {$size} ELSE {$this->rgt} END"
+                "CASE WHEN {$rgt} >= {$at} THEN {$rgt} + {$size} ELSE {$rgt} END"
             ),
         ]);
     }
@@ -64,12 +79,14 @@ final readonly class TreeMutationBuilder
      */
     public function closeGap(int $at, int $size): void
     {
+        $lft = $this->q($this->lft);
+        $rgt = $this->q($this->rgt);
         $this->scoped()->update([
             $this->lft => new TreeExpression(
-                "CASE WHEN {$this->lft} > {$at} THEN {$this->lft} - {$size} ELSE {$this->lft} END"
+                "CASE WHEN {$lft} > {$at} THEN {$lft} - {$size} ELSE {$lft} END"
             ),
             $this->rgt => new TreeExpression(
-                "CASE WHEN {$this->rgt} > {$at} THEN {$this->rgt} - {$size} ELSE {$this->rgt} END"
+                "CASE WHEN {$rgt} > {$at} THEN {$rgt} - {$size} ELSE {$rgt} END"
             ),
         ]);
     }
@@ -144,11 +161,13 @@ final readonly class TreeMutationBuilder
             $bystanderShift = $height;
         }
 
+        $lftCol = $this->q($this->lft);
+        $depthCol = $this->q($this->depth);
         $this->scoped()->update([
             $this->depth => new TreeExpression(
-                "CASE WHEN {$this->lft} BETWEEN {$lft} AND {$rgt} "
-                ."THEN {$this->depth} + {$depthDelta} "
-                ."ELSE {$this->depth} END"
+                "CASE WHEN {$lftCol} BETWEEN {$lft} AND {$rgt} "
+                ."THEN {$depthCol} + {$depthDelta} "
+                ."ELSE {$depthCol} END"
             ),
             $this->lft => new TreeExpression(
                 $this->shiftCase($this->lft, $lft, $rgt, $boundFrom, $boundTo, $subtreeShift, $bystanderShift),
@@ -168,6 +187,7 @@ final readonly class TreeMutationBuilder
         int $subtreeShift,
         int $bystanderShift,
     ): string {
+        $col = $this->q($col);
         $subtree = $subtreeShift >= 0 ? "+ {$subtreeShift}" : '- '.abs($subtreeShift);
         $bystander = $bystanderShift >= 0 ? "+ {$bystanderShift}" : '- '.abs($bystanderShift);
 
@@ -229,15 +249,18 @@ final readonly class TreeMutationBuilder
         // ran, mis-routing the BETWEEN check. Build one CASE per column so
         // each predicate keys on the column being assigned (still untouched
         // at the moment of evaluation). Mirrors moveNode()/shiftCase().
+        $lftCol = $this->q($this->lft);
+        $rgtCol = $this->q($this->rgt);
+
         return $this->scoped()
             ->where($this->lft, '>', $parentLft)
             ->where($this->rgt, '<', $parentRgt)
             ->update([
                 $this->lft => new TreeExpression(
-                    "{$this->lft} + ".$this->buildShiftCase($this->lft, $movingShifts),
+                    "{$lftCol} + ".$this->buildShiftCase($this->lft, $movingShifts),
                 ),
                 $this->rgt => new TreeExpression(
-                    "{$this->rgt} + ".$this->buildShiftCase($this->rgt, $movingShifts),
+                    "{$rgtCol} + ".$this->buildShiftCase($this->rgt, $movingShifts),
                 ),
             ]);
     }
@@ -247,6 +270,7 @@ final readonly class TreeMutationBuilder
      */
     private function buildShiftCase(string $column, array $shifts): string
     {
+        $column = $this->q($column);
         $branches = '';
         foreach ($shifts as [$oldLft, $oldRgt, $delta]) {
             $branches .= "WHEN {$column} BETWEEN {$oldLft} AND {$oldRgt} THEN {$delta} ";
