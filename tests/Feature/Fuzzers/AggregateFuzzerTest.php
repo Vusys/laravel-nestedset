@@ -578,6 +578,155 @@ final class AggregateFuzzerTest extends TestCase
     }
 
     // ================================================================
+    // Stale-instance pool (Area)
+    //
+    // Aggregate maintenance must read the mutated node's bounds (and a
+    // move target's bounds) from the DATABASE at dispatch, not from a
+    // possibly-stale in-memory copy: a sibling insert or move since the
+    // instance was loaded shifts its lft/rgt, and a delta propagated off
+    // stale bounds lands on the wrong ancestors. This walk keeps a pool of
+    // instances loaded at earlier points and operates on them AFTER
+    // intervening structural shifts, without ->refresh(). Guards the
+    // stale-instance regression class (finding 2.1).
+    // ================================================================
+
+    /**
+     * @var array<int|string, Area>
+     */
+    private array $stalePool = [];
+
+    #[DataProvider('seedProvider')]
+    #[Test]
+    public function area_stale_instance_walk(int $seed, int $steps): void
+    {
+        mt_srand($seed);
+        $this->stalePool = [];
+
+        $root = new Area($this->areaAttrs('root'));
+        $root->saveAsRoot();
+
+        for ($i = 0; $i < 6; $i++) {
+            $parent = $this->randomArea();
+            if (! $parent instanceof Area) {
+                continue;
+            }
+            $node = new Area($this->areaAttrs("p{$i}"));
+            $node->appendToNode($parent)->save();
+        }
+
+        $tag = "[Area/stale seed={$seed}]";
+        $this->assertAreaInvariants("{$tag} seed");
+
+        $history = [];
+        for ($step = 1; $step <= $steps; $step++) {
+            $action = $this->pickStaleAction(mt_rand(0, 99));
+            $this->areaStaleStep($action, $step);
+            $history[] = "{$step}:{$action}";
+            $this->assertAreaInvariants("{$tag} step {$step} ({$action})\nHistory: ".implode(' ', $history));
+        }
+    }
+
+    private function pickStaleAction(int $roll): string
+    {
+        // No force-deletes — pool entries must stay alive so a later
+        // stale operation references an existing row. Structural shifts
+        // (append/move) are what make the pooled bounds stale.
+        if ($roll < 25) {
+            return 'capture';            // stash a fresh instance into the pool
+        }
+        if ($roll < 45) {
+            return 'append_fresh';       // shift bounds (makes the pool stale)
+        }
+        if ($roll < 65) {
+            return 'move_fresh';         // shift bounds harder
+        }
+        if ($roll < 85) {
+            return 'stale_mutate';       // mutate a pooled instance's source + save
+        }
+
+        return 'stale_target_append';    // append onto a pooled (stale) target
+    }
+
+    private function areaStaleStep(string $action, int $step): void
+    {
+        switch ($action) {
+            case 'capture':
+                $fresh = $this->randomArea();
+                if ($fresh instanceof Area) {
+                    // Dedupe by key so each node has a single in-pool
+                    // writer — keeps the source delta unambiguous.
+                    $key = $fresh->getKey();
+                    if (is_int($key) || is_string($key)) {
+                        $this->stalePool[$key] = $fresh;
+                    }
+                }
+
+                return;
+
+            case 'append_fresh':
+                $parent = $this->randomArea();
+                if ($parent instanceof Area) {
+                    (new Area($this->areaAttrs("s{$step}")))->appendToNode($parent)->save();
+                }
+
+                return;
+
+            case 'move_fresh':
+                $this->areaStep('move', $step);
+
+                return;
+
+            case 'stale_mutate':
+                $stale = $this->pluckStale();
+                if (! $stale instanceof Area) {
+                    return;
+                }
+                // Mutate the source on the STALE instance — its in-memory
+                // lft/rgt may be out of date, but the saved delta must
+                // still reach the correct (current) ancestor chain.
+                $stale->tickets = mt_rand(0, 50);
+                $stale->save();
+
+                return;
+
+            case 'stale_target_append':
+                $stale = $this->pluckStale();
+                if (! $stale instanceof Area) {
+                    return;
+                }
+                // Append onto the stale target WITHOUT refreshing it — the
+                // mutation engine re-reads the target's bounds at dispatch.
+                (new Area($this->areaAttrs("t{$step}")))->appendToNode($stale)->save();
+
+                return;
+        }
+    }
+
+    /**
+     * A pooled instance whose row still exists; prunes any that were
+     * removed (none are, since this walk never deletes, but the guard
+     * keeps the helper honest).
+     */
+    private function pluckStale(): ?Area
+    {
+        if ($this->stalePool === []) {
+            return null;
+        }
+
+        $keys = array_keys($this->stalePool);
+        $key = $keys[mt_rand(0, count($keys) - 1)];
+        $stale = $this->stalePool[$key];
+
+        if (Area::query()->whereKey($key)->doesntExist()) {
+            unset($this->stalePool[$key]);
+
+            return null;
+        }
+
+        return $stale;
+    }
+
+    // ================================================================
     // Shared helpers
     // ================================================================
 
