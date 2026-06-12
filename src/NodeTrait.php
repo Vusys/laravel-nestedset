@@ -177,10 +177,23 @@ trait NodeTrait
                 $scopeColumns,
                 $aggregateColumns,
             )));
-            $row = $node->getConnection()
+            $connection = $node->getConnection();
+            $query = $connection
                 ->table($node->getTable())
-                ->where($node->getKeyName(), $key)
-                ->first($columnsToRead);
+                ->where($node->getKeyName(), $key);
+            // Lock the row for the rest of the delete's transaction so a
+            // concurrent gap-shift (a sibling's closeGap, a move) can't
+            // slide this row's bounds between this re-read and the cascade
+            // / closeGap that act on them — otherwise the delete closes the
+            // wrong gap or cascades over the wrong band. Mirrors the
+            // FOR UPDATE discipline on every other stale-bounds re-read.
+            // SQLite is single-writer (no row locks); outside a transaction
+            // the lock would release immediately, so only take it when one
+            // is open (delete() wraps itself when auto_transaction is on).
+            if ($connection->getDriverName() !== 'sqlite' && $connection->transactionLevel() > 0) {
+                $query->lockForUpdate();
+            }
+            $row = $query->first($columnsToRead);
             if ($row === null) {
                 return;
             }
