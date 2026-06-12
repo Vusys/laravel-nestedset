@@ -186,8 +186,13 @@ trait HasBulkInsert
         $repairAnchor = self::resolveBulkInsertRepairAnchor($appendTo, $scopeValues);
 
         $startNs = hrtime(true);
-        $saved = self::withDeferredAggregateMaintenance(
-            fn (): array => $connection->transaction(static function () use (
+        // Transaction OUTSIDE the deferral so the trailing fixAggregates pass
+        // runs inside it: a crash (or a failed repair) between the inserts'
+        // commit and the repair would otherwise leave persistent aggregate
+        // drift. Inverting the nesting makes the inserts + the repair commit
+        // (or roll back) atomically.
+        $saved = $connection->transaction(fn (): array => self::withDeferredAggregateMaintenance(
+            static function () use (
                 $plan,
                 $hasAnchor,
                 $anchorParentId,
@@ -268,9 +273,9 @@ trait HasBulkInsert
                 }
 
                 return $saved;
-            }),
+            },
             anchor: $repairAnchor,
-        );
+        ));
         $durationMs = (hrtime(true) - $startNs) / 1_000_000;
 
         EventDispatcher::dispatch(new BulkInsertTreeSaved(

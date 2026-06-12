@@ -90,14 +90,16 @@ final class TreeDiffApplier
         };
 
         $connection = $instance->getConnection();
-        self::callStatic($modelClass, 'withDeferredAggregateMaintenance', [
-            static function () use ($connection, $work): void {
-                $connection->transaction(static function () use ($work): void {
-                    $work();
-                });
-            },
-            null,
-        ]);
+        // Transaction OUTSIDE the deferral so the trailing fixAggregates pass
+        // commits atomically with the changes — a crash between commit and
+        // the deferred repair would otherwise leave persistent aggregate
+        // drift.
+        $connection->transaction(static function () use ($modelClass, $work): void {
+            self::callStatic($modelClass, 'withDeferredAggregateMaintenance', [
+                $work,
+                null,
+            ]);
+        });
 
         return new TreeDiffResult(
             added: $accumulator->added,

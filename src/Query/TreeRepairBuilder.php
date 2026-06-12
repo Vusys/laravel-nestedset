@@ -537,6 +537,17 @@ final readonly class TreeRepairBuilder
     /**
      * Fixes the tree by rebuilding all lft/rgt/depth values and returns
      * a result describing what was corrected.
+     *
+     * Note on the returned error count for an **anchored** repair
+     * (`$rootId !== null`): `rebuildSubtree()` bands its work to the
+     * anchor's subtree, but `countErrors()` always scans the whole scope
+     * (the entire table on an unscoped model). So on a multi-root forest,
+     * `TreeFixResult::hasErrors()` can be true after a fully converged
+     * anchored repair simply because *another* tree in the same table is
+     * still corrupt — the anchored repair didn't, and can't, touch it.
+     * Treat the count as a scope-wide health signal, not a verdict on the
+     * one subtree you repaired; re-run `fixTree()` unanchored (or per
+     * affected root) to drive the whole scope to zero.
      */
     public function fixTree(int|string|null $rootId = null): TreeFixResult
     {
