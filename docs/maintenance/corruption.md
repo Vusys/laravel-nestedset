@@ -44,7 +44,7 @@ On scoped models pass an anchor: `Category::countErrors($root)`. Without one the
 
 The structural check is one indexed query per category — range scans, a `GROUP BY` for the duplicate counts, and a handful of self-joins (`parent_bounds_mismatch`, `depth_mismatch`, cross-column collisions). The aggregate-drift check is the same cost as one `withFreshAggregates` pass.
 
-> **Cycles are not currently surfaced by `countErrors()`.** They appear indirectly as "rows you couldn't see in the tree after a repair" — see [`parent_id` cycles](#parentid-cycles). Detection SQL is in [Diagnostic SQL](#diagnostic-sql).
+> **Cycles have no dedicated `countErrors()` key, but they never pass it silently.** A `parent_id` cycle has no consistent `(lft, rgt, depth)` assignment, so the rows in it always trip `parent_bounds_mismatch` and `depth_mismatch` (a node can't sit inside a parent that sits inside it, nor be `parent.depth + 1` both ways) — `isBroken()` is `true`. What `countErrors()` doesn't give you is *which* rows form the cycle; for that use the recursive-CTE detection SQL in [Diagnostic SQL](#diagnostic-sql), and see [`parent_id` cycles](#parentid-cycles) for the manual repair.
 
 > **Visualise the damage.** When `countErrors()` returns non-zero, `dd($root->toAsciiTree())` or `Category::toMermaidForest()` often makes the damage obvious at a glance. The exporters fold by `parent_id` and throw `CorruptTreeException` on cycles, so the output matches what `fixTree()` would rebuild. See [Tree Exporters](../querying/exporters.md).
 
@@ -127,7 +127,7 @@ The package can't pick the right answer because the right answer is domain-speci
 
 **Symptom.** A placed row has a bound below `1` (a stray `0`), or a value that is simultaneously one row's `lft` and another's `rgt` — a cross-column collision, e.g. `X(0, 1)` sitting alongside `Root(1, 4)` (the value `1` is both `X.rgt` and `Root.lft`).
 
-**Meaning.** In a valid nested set every `lft`/`rgt` value is distinct and `>= 1`, so the `lft` and `rgt` value sets are disjoint. A below-`1` bound or a cross-column collision breaks that in a way `lft >= rgt` and the per-column duplicate checks miss. The check is **gap-tolerant**: a sparse but otherwise valid tree (reserved slots not yet filled) is not flagged, and fully-unplaced rows (`lft = rgt = 0`) are a legitimate transient state, not corruption.
+**Meaning.** In a valid nested set every `lft`/`rgt` value is distinct and `>= 1`, so the `lft` and `rgt` value sets are disjoint. A below-`1` bound or a cross-column collision breaks that in a way `lft >= rgt` and the per-column duplicate checks miss. The check is **gap-tolerant**: a sparse but otherwise valid tree (reserved slots not yet filled) is not flagged. Note that a fully-unplaced row (`lft = rgt = 0`) is *not* exempt: `0 >= 0` trips `invalid_bounds`, so `countErrors()`/`isBroken()` report it. The `saving` guard normally prevents persisting an unplaced row (it throws `UnplacedNodeException`); one only reaches the table via a raw insert, and when it does it counts as corruption until placed or removed.
 
 **Typical causes.**
 
@@ -192,7 +192,7 @@ Category::fixTree($rootCategory);   // single tree, scoped or anchored
 
 1. Reads every row in scope into memory (just `id` and `parent_id`).
 2. Walks the tree top-down from rows where `parent_id IS NULL`, numbering `lft` / `rgt` in pre-order and assigning `depth` from the walk's recursion level.
-3. Issues per-row `UPDATE`s inside one transaction to write the new bounds.
+3. Writes the new bounds with chunked `UPDATE … SET lft = CASE id WHEN … END, rgt = …, depth = … WHERE id IN (…)` statements inside one transaction — one statement per chunk of rows, not one per row.
 4. Re-checks `countErrors()` and returns a `TreeFixResult` so you can see what's still broken.
 
 Two important consequences:
