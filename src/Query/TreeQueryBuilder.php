@@ -25,8 +25,19 @@ class TreeQueryBuilder extends Builder
     // Column name resolution — overridable in Phase 8 via NodeTrait
     // ----------------------------------------------------------------
 
+    // Structural column names come from the *model* first — a model may
+    // override getLftName()/etc. per-class (not just via the global
+    // config), and the read/aggregate SQL must use that same name or it
+    // references a column that doesn't exist. Fall back to config/default
+    // only when the builder isn't bound to a HasNestedSet model.
+
     public function lftColumn(): string
     {
+        $model = $this->getModel();
+        if ($model instanceof HasNestedSet) {
+            return $model->getLftName();
+        }
+
         $v = Runtime::config('nestedset.columns.lft');
 
         return is_string($v) ? $v : Columns::LFT;
@@ -34,6 +45,11 @@ class TreeQueryBuilder extends Builder
 
     public function rgtColumn(): string
     {
+        $model = $this->getModel();
+        if ($model instanceof HasNestedSet) {
+            return $model->getRgtName();
+        }
+
         $v = Runtime::config('nestedset.columns.rgt');
 
         return is_string($v) ? $v : Columns::RGT;
@@ -41,6 +57,11 @@ class TreeQueryBuilder extends Builder
 
     public function parentIdColumn(): string
     {
+        $model = $this->getModel();
+        if ($model instanceof HasNestedSet) {
+            return $model->getParentIdName();
+        }
+
         $v = Runtime::config('nestedset.columns.parent_id');
 
         return is_string($v) ? $v : Columns::PARENT_ID;
@@ -48,6 +69,11 @@ class TreeQueryBuilder extends Builder
 
     public function depthColumn(): string
     {
+        $model = $this->getModel();
+        if ($model instanceof HasNestedSet) {
+            return $model->getDepthName();
+        }
+
         $v = Runtime::config('nestedset.columns.depth');
 
         return is_string($v) ? $v : Columns::DEPTH;
