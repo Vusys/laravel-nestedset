@@ -98,6 +98,9 @@ Soft-delete cascade **preserves stored aggregates on the soft-deleted subtree** 
 
 Force-delete decrements the ancestor chain like a normal delete; the destroyed rows take their stored aggregate values with them.
 
+> [!WARNING]
+> **Known limitation — force-deleting a trashed subtree that has an individually-restored live descendant.** If you soft-delete a parent (cascading to its children), then `restore()` one child on its own (so it's live again under the still-trashed parent), then `forceDelete()` the parent, the cascade hard-deletes that live child but its aggregate contribution is **not** subtracted from the ancestor chain — the parent's decrement was already taken at the original soft-delete, and the guard that prevents double-decrementing the parent also skips the live child. The ancestors are left counting a row that no longer exists. Until this is fixed, run `Model::fixAggregates($anchor)` on the affected root after such a sequence, or avoid force-deleting a trashed subtree that contains individually-restored descendants. (Reproduction pinned in `ForceDeleteAfterRestoreDriftTest`.)
+
 See [Aggregates → Drift & Limitations](../aggregates/drift.html) for the full per-mutation accounting.
 
 ## Combining with scoped trees
