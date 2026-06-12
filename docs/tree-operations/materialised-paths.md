@@ -206,6 +206,12 @@ The bypass counter is reentrant. Wrapping wrappers compose. No async-by-default 
 
 One extra UPDATE per changed path per mutation, all bounded by subtree size, all single-statement.
 
+## Soft deletes
+
+Paths are maintained through the soft-delete lifecycle: a soft-deleted node keeps its stored path column (the cascade only stamps `deleted_at`), and `restore()` is one of the mutations that re-runs path maintenance, so a restored subtree's paths come back coherent.
+
+One consequence worth knowing under the default `uniquePerParent: true`: the sibling-collision check is a **raw** query that does not exclude trashed rows. A soft-deleted sibling therefore still *reserves* its path — inserting or renaming a live sibling to the same path under the same parent throws `DuplicatePathSegment` until the trashed sibling is `restore()`d or `forceDelete()`d. This matches the nested-set model's "soft-deleted means hidden, not gone" stance (the row still occupies its slot), but it can surprise: a path that looks free in a default (live-only) query may be held by a hidden row. Set `uniquePerParent: false`, or hard-delete the trashed sibling, if you need to reuse the path immediately.
+
 ## Limitations
 
 The following are out-of-scope by design — they're not "coming soon":
