@@ -287,6 +287,16 @@ final readonly class TreeDiff implements JsonSerializable
      * {@see TreeDiffApplier::apply()} for ordering and transaction
      * semantics.
      *
+     * **Scoped models with aggregates are not supported.** The applier
+     * wraps the work in `withDeferredAggregateMaintenance()` with a `null`
+     * anchor; a scoped model's trailing `fixAggregates()` requires an
+     * anchor (a diff can touch several trees, with no single anchor to
+     * stand for them all), so the call throws `ScopeViolationException`.
+     * Apply such diffs per-tree yourself: slice the before/after snapshots
+     * by scope, and after applying each, call `fixAggregates($root)` for
+     * that tree. Unscoped models — with or without aggregates — and scoped
+     * models without aggregates are unaffected.
+     *
      * @param  class-string<Model&HasNestedSet>  $modelClass
      * @param  Closure(mixed): (int|string|null)|null  $resolver  Custom identity → primary-key resolver. Defaults to a single `whereIn` lookup.
      */

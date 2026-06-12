@@ -162,3 +162,11 @@ $undo->apply(Category::class);
 - **Cross-environment identity.** Use `on:` (and a `resolver` at apply
   time) whenever primary keys differ between where the diff was built and
   where it's applied.
+- **Scoped models with aggregates aren't supported by `apply()`.** The
+  applier defers aggregate maintenance with a `null` anchor, but a scoped
+  model's trailing `fixAggregates()` needs an anchor — a diff can span
+  several trees with no single anchor — so it throws
+  `ScopeViolationException`. Apply per-tree instead: slice the snapshots by
+  scope, apply each, then `fixAggregates($root)` for that tree. Unscoped
+  models (with or without aggregates) and scoped models without aggregates
+  work normally.
