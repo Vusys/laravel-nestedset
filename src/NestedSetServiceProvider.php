@@ -140,18 +140,26 @@ final class NestedSetServiceProvider extends ServiceProvider
             NestedSetServiceProvider::addParentIdColumn($this, $parentId, $parentIdType);
             $this->unsignedInteger($depth)->default(0);
 
-            $this->index(NestedSetServiceProvider::nestedSetIndexColumns(
+            $primaryColumns = NestedSetServiceProvider::nestedSetIndexColumns(
                 lft: $lft,
                 rgt: $rgt,
                 parentId: $parentId,
                 scope: $scope,
                 cover: $cover,
-            ));
+            );
+            $this->index(
+                $primaryColumns,
+                NestedSetServiceProvider::boundedIndexName($this->getTable(), $primaryColumns),
+            );
 
-            $this->index(NestedSetServiceProvider::nestedSetParentIndexColumns(
+            $parentColumns = NestedSetServiceProvider::nestedSetParentIndexColumns(
                 parentId: $parentId,
                 scope: $scope,
-            ));
+            );
+            $this->index(
+                $parentColumns,
+                NestedSetServiceProvider::boundedIndexName($this->getTable(), $parentColumns),
+            );
         });
 
         Blueprint::macro('dropNestedSet', function (
@@ -164,17 +172,21 @@ final class NestedSetServiceProvider extends ServiceProvider
             $parentId = $col('parent_id', Columns::PARENT_ID);
             $depth = $col('depth', Columns::DEPTH);
 
-            $this->dropIndex(NestedSetServiceProvider::nestedSetIndexColumns(
+            $primaryColumns = NestedSetServiceProvider::nestedSetIndexColumns(
                 lft: $lft,
                 rgt: $rgt,
                 parentId: $parentId,
                 scope: $scope,
                 cover: $cover,
-            ));
-            $this->dropIndex(NestedSetServiceProvider::nestedSetParentIndexColumns(
+            );
+            $this->dropIndex(NestedSetServiceProvider::boundedIndexName($this->getTable(), $primaryColumns));
+
+            $parentColumns = NestedSetServiceProvider::nestedSetParentIndexColumns(
                 parentId: $parentId,
                 scope: $scope,
-            ));
+            );
+            $this->dropIndex(NestedSetServiceProvider::boundedIndexName($this->getTable(), $parentColumns));
+
             $this->dropColumn([$lft, $rgt, $parentId, $depth]);
         });
 
@@ -596,6 +608,40 @@ final class NestedSetServiceProvider extends ServiceProvider
             ...self::toColumnList($scope),
             $parentId,
         ];
+    }
+
+    /**
+     * Index name for a composite, bounded to 64 characters. Laravel's
+     * auto-generated `{table}_{cols…}_index` overruns MySQL/MariaDB's
+     * 64-char identifier cap once a table has long-ish scope columns plus
+     * the five structural columns (e.g. a two-column scope on a 23-char
+     * table is already 65) — the ALTER…ADD INDEX then fails *after* the
+     * CREATE TABLE has committed (DDL is non-transactional on MySQL),
+     * leaving a half-built table. When the default name fits we return it
+     * verbatim so existing schemas keep their index names; only when it
+     * would overrun do we fall back to a deterministic shortened name
+     * (table prefix + a hash of the column list, so the two nestedSet
+     * indexes never collide). The same name is used on create and drop.
+     *
+     * @param  list<string>  $columns
+     */
+    public static function boundedIndexName(string $table, array $columns, string $type = 'index'): string
+    {
+        $default = strtolower(str_replace(
+            ['-', '.'],
+            '_',
+            $table.'_'.implode('_', $columns).'_'.$type,
+        ));
+
+        if (strlen($default) <= 64) {
+            return $default;
+        }
+
+        $hash = substr(hash('xxh128', implode(',', $columns)), 0, 12);
+        $tail = '_'.$hash.'_'.$type;
+        $prefix = substr(strtolower(str_replace(['-', '.'], '_', $table)), 0, 64 - strlen($tail));
+
+        return $prefix.$tail;
     }
 
     /**
