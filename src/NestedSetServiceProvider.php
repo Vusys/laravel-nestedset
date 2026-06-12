@@ -147,6 +147,11 @@ final class NestedSetServiceProvider extends ServiceProvider
                 scope: $scope,
                 cover: $cover,
             ));
+
+            $this->index(NestedSetServiceProvider::nestedSetParentIndexColumns(
+                parentId: $parentId,
+                scope: $scope,
+            ));
         });
 
         Blueprint::macro('dropNestedSet', function (
@@ -165,6 +170,10 @@ final class NestedSetServiceProvider extends ServiceProvider
                 parentId: $parentId,
                 scope: $scope,
                 cover: $cover,
+            ));
+            $this->dropIndex(NestedSetServiceProvider::nestedSetParentIndexColumns(
+                parentId: $parentId,
+                scope: $scope,
             ));
             $this->dropColumn([$lft, $rgt, $parentId, $depth]);
         });
@@ -566,6 +575,26 @@ final class NestedSetServiceProvider extends ServiceProvider
             $rgt,
             $parentId,
             ...self::toColumnList($cover),
+        ];
+    }
+
+    /**
+     * Secondary index `[scope…, parent_id]`. The primary composite leads
+     * with lft/rgt, so a parent_id lookup (children(), whereIsRoot(),
+     * fixTree's parent walk, the adjacency source-of-truth) can't use it.
+     * MySQL gets a parent_id index for free off the FK it adds, but PG and
+     * SQLite don't — this gives every backend the same coverage.
+     *
+     * @param  string|array<int|string, string>  $scope
+     * @return list<string>
+     */
+    public static function nestedSetParentIndexColumns(
+        string $parentId,
+        string|array $scope = [],
+    ): array {
+        return [
+            ...self::toColumnList($scope),
+            $parentId,
         ];
     }
 
