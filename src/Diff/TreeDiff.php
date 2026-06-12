@@ -68,6 +68,19 @@ final readonly class TreeDiff implements JsonSerializable
      *   - list<array<string, mixed>> in nested form (each row carries `children`)
      *   - decoded JSON in either form
      *
+     * **Column-name assumption.** The diff identifies structural columns by
+     * their default names — `id` (primary key), `parent_id`, `lft`, `rgt`,
+     * `depth`, `children`. Models that rename any of these (a custom
+     * `$primaryKey`, a renamed `parent_id`, or remapped `lft`/`rgt`/`depth`
+     * via `config('nestedset.columns')`) are not auto-resolved here: a
+     * renamed structural column is treated as content (surfacing as spurious
+     * `Modified` rows) and a custom primary key reads as `null` (so every row
+     * looks like an unkeyed addition). Use the `$on` argument to supply the
+     * identity for a custom primary key, and avoid diffing models with
+     * renamed `parent_id`/`lft`/`rgt`/`depth` until that is resolved from the
+     * model (tracked as an open item). Default-named models, arrays, and JSON
+     * are unaffected.
+     *
      * @param  iterable<int|string, mixed>|array<int, mixed>  $before
      * @param  iterable<int|string, mixed>|array<int, mixed>  $after
      * @param  list<string>  $ignoreColumns

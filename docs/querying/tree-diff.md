@@ -49,6 +49,15 @@ Structural columns (`lft`, `rgt`, `depth`, `parent_id`, `children`, `id`)
 never count as content changes. Pass `ignoreColumns:` to exclude more
 (timestamps, computed columns):
 
+> [!WARNING]
+> Structural columns are matched by their **default** names. A model with a
+> custom primary key, a renamed `parent_id`, or `lft`/`rgt`/`depth` remapped
+> via `config('nestedset.columns')` is not auto-resolved: a renamed
+> structural column reads as content (spurious `Modified` rows) and a custom
+> primary key reads as `null` (every row looks like an addition). Pass `on:`
+> for a custom primary key; until full model-name resolution lands, avoid
+> diffing models with renamed `parent_id`/`lft`/`rgt`/`depth`.
+
 ```php
 $diff = TreeDiff::between($before, $after, ignoreColumns: ['updated_at']);
 ```
@@ -94,8 +103,17 @@ the delta applies cleanly:
   parent.
 
 Added and moved rows are placed at their recorded `siblingPosition`, so
-`apply()` reproduces the `after` snapshot exactly — sibling order
-included.
+`apply()` reproduces the `after` snapshot's **non-root** sibling order.
+Ordering *among roots* is not reconstructed — roots have no parent to
+anchor a `siblingPosition` against, so their relative order after apply
+follows insertion/`lft` order rather than the snapshot's. If root order
+matters, diff within a single synthetic parent, or re-assert it afterward.
+
+> [!NOTE]
+> Sibling positions are read from each row's `lft` when the snapshot
+> carries one (an Eloquent collection or a flat array with `lft`). A flat
+> snapshot **without** `lft` falls back to the order the rows are supplied
+> in — sort it the way you want the diff to see it.
 
 ### Dry run
 
