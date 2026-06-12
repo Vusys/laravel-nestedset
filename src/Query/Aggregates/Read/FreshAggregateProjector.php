@@ -243,6 +243,17 @@ final class FreshAggregateProjector
         $modelKey = $builder->getModel()->getKeyName();
         $userIdsQuery = clone $builder->getQuery();
         $userIdsQuery->columns = ["{$table}.{$modelKey}"];
+        // This clone becomes a set-membership subquery (`o.id IN (…)`).
+        // ORDER BY is meaningless inside IN, and MariaDB outright rejects
+        // LIMIT/OFFSET there (error 1235, "LIMIT & IN/ALL/ANY/SOME
+        // subquery"). The user's own limit/offset/order still applies to
+        // the OUTER query — and so to the final result set — so dropping
+        // them from the id projection only widens the (unused) membership
+        // set, never the returned rows. Without this, any fresh read with
+        // a `->limit()` errors hard on MariaDB.
+        $userIdsQuery->orders = null;
+        $userIdsQuery->limit = null;
+        $userIdsQuery->offset = null;
         $userIdsSql = $userIdsQuery->toSql();
         $userIdsBindings = $userIdsQuery->getBindings();
 
