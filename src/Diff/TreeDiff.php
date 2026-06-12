@@ -488,8 +488,25 @@ final readonly class TreeDiff implements JsonSerializable
             }
         }
 
+        // Assign sibling positions in the tree's real order. When every
+        // row carries a numeric `lft`, order siblings by it so a snapshot
+        // read `orderBy('id')` diffs identically to one read
+        // `orderBy('lft')` — without this the position is the arbitrary
+        // order the rows arrived in, so the same DB state reads as a sea
+        // of phantom `Moved` entries (and a genuine reorder that doesn't
+        // change the input order is missed entirely).
+        $order = array_keys($byIdentity);
+        $allHaveLft = $order !== [] && ! array_filter(
+            $byIdentity,
+            static fn (array $r): bool => ! isset($r['attrs']['lft']) || ! is_numeric($r['attrs']['lft']),
+        );
+        if ($allHaveLft) {
+            usort($order, static fn ($a, $b): int => self::lftOf($byIdentity[$a]) <=> self::lftOf($byIdentity[$b]));
+        }
+
         $positionByParent = [];
-        foreach ($byIdentity as $identity => $row) {
+        foreach ($order as $identity) {
+            $row = $byIdentity[$identity];
             $parentIdentity = null;
             if ($row['parentId'] !== null) {
                 $parentIdentity = $idToIdentity[$row['parentId']] ?? null;
@@ -580,6 +597,20 @@ final readonly class TreeDiff implements JsonSerializable
         }
 
         return $val;
+    }
+
+    /**
+     * Numeric `lft` of a normalised row, for sibling-order sorting. The
+     * caller only invokes this once every row is known to carry a numeric
+     * `lft`, so the cast is total.
+     *
+     * @param  NormalisedRow  $row
+     */
+    private static function lftOf(array $row): float
+    {
+        $lft = $row['attrs']['lft'] ?? 0;
+
+        return is_numeric($lft) ? (float) $lft : 0.0;
     }
 
     /**

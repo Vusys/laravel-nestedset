@@ -19,9 +19,9 @@ Legend: ✅ fixed · 🔶 open · 🧭 needs a decision before implementing.
 **§3 Medium**
 - ✅ create-hook cast-aware filters · ✅ float zero-delta no-op · ✅ scope snowflake collapse · ✅ missing-anchor `fixTree` guard · ✅ `immutable_datetime` cascade · ✅ `withFreshAggregates` alias injection · ✅ `withDepth`/`withFreshAggregates` narrowed-`select()` · ✅ static-trait-call deprecation
 - 🔶 forceDelete-after-restore drift · 🔶 lazy-aggregate read-writes / `aggregateErrors` lazy drift · 🔶 `withDeferredAggregateMaintenance` cross-scope · 🔶 BIGINT/decimal float precision in delta path · 🔶 MariaDB fresh-read `limit`/`orWhere` · 🔶 identifier-quoting consistency across write/repair/read · 🔶 unbounded structural UPDATEs · 🔶 deleting-hook unlocked re-read · 🔶 PG READ COMMITTED recompute window · 🔶 lock-ordering canonicalisation · 🔶 flat-snapshot spurious `Moved` · 🔶 diff hardcodes id/parent_id · 🔶 diff unusable on scoped+aggregates
-- 🧭 soft-delete visibility (reorderChildrenBy / up()/down() / placement onto trashed targets) — pick raw vs live visibility · 🧭 restoring a child under a still-trashed ancestor — allow+document / block / auto-restore · 🧭 `moveTo(int)` resolves target at queue time
+- ✅ soft-delete visibility (decision #11): `reorderChildrenBy()` reads raw · placement onto a trashed target throws `TrashedTargetException` · `up()`/`down()` documented as live-only (trashed neighbour walls the move). 🧭 restoring a child under a still-trashed ancestor — currently allowed+documented (cascade restore is stamp-matched) · 🧭 `moveTo(int)` resolves target at queue time (documented limitation)
 
-**§4 Pre-1.0 decisions** — ✅ #1 (= 2.8). 🧭 #2–#11 (see "Decisions still open" below).
+**§4 Pre-1.0 decisions** — ✅ **all 11 implemented** (#1 = 2.8; #2–#11 below). Full suite (2232 tests) + `composer check` green.
 
 **§5 Test/CI** — ✅ 5.1 (`top_k_areas` truncation) · ✅ 5.9 (deprecation surfacing). 🔶 backend fuzzing, new fuzzers (paths / diff-apply / clone / stale-instance pool), narrow class-level `allowBrokenTreeAtTearDown`, extend tearDown integrity to all fixtures, remaining targeted regressions, duplicate migration prefixes.
 
@@ -43,7 +43,7 @@ Each is "implement X *or* drop/document it" — I've put my default first.
 8. **`anchoredCountErrors` semantics** — `countErrors($anchor)` is whole-table on unscoped models while `fixTree($anchor)` bands to the subtree, so `hasErrors()` can stay true after a converged anchored repair. → *Band the post-fix count to the anchor*, or document the asymmetry.
 9. **Helpers assume the full framework** — `config()`/`event()`/`resolve()` come from `laravel/framework`, which `composer.json` doesn't require (only `illuminate/*`). → *Require `laravel/framework` honestly*, or guard the helpers.
 10. **MariaDB `SET STATEMENT` prefix has no version floor** — errors hard on MariaDB < 10.3 and is silently lost by `cursor()`/`lazy()`. → *Gate on the parsed server version + override `cursor()`.*
-11. **Soft-delete visibility model** (the §3 🧭 items) — decide once whether structural-slot operations see trashed rows (raw) or live rows, and the restore-under-trashed-ancestor semantic, then pin with tests.
+11. **Soft-delete visibility model** (the §3 🧭 items) — ✅ **DONE** (commit a15bcf7). Settled on the **raw-structural** model: trashed nodes keep their lft/rgt slot, so structural permutations reason over the raw sibling set. `reorderChildrenBy()` now reads raw (aligns with `reorderChildren()`'s raw validation); `appendTo`/`prependTo`/`insertBefore`/`insertAfter` onto a trashed target throw `TrashedTargetException` (no live-descendant-of-trashed); `up()`/`down()`/`prevSibling()`/`nextSibling()` are documented as live-only (a trashed adjacent slot walls the one-slot move — use `reorderChildren()` with the full raw list to cross it). Restore-under-trashed-ancestor stays allowed (cascade restore is stamp-matched). `moveTo(int)` queue-time target resolution noted as a known limitation. Pinned by `tests/Feature/SoftDelete/{ReorderWithTrashedChildren,PlacementOntoTrashedTarget,SiblingMoveWithTrashedNeighbour}Test`.
 
 ---
 
