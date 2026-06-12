@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Events\Aggregates;
 
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
 
 /**
@@ -27,7 +28,7 @@ use Vusys\NestedSet\Concerns\HasNestedSetAggregates;
  *
  * Queue-safe: payload is scalar.
  */
-final readonly class NodeAggregatesRecomputed
+final readonly class NodeAggregatesRecomputed implements ShouldDispatchAfterCommit
 {
     /**
      * @param  list<string>  $columns  user-facing aggregate columns declared on the model

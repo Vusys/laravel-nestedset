@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Events\Aggregates;
 
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Vusys\NestedSet\Events\EventDispatcher;
 
 /**
@@ -33,7 +34,7 @@ use Vusys\NestedSet\Events\EventDispatcher;
  *
  * Queue-safe: payload is scalar.
  */
-final readonly class NestedSetAggregateChanged
+final readonly class NestedSetAggregateChanged implements ShouldDispatchAfterCommit
 {
     /**
      * @param  int|float|bool|string|null  $oldValue  raw value read from the database before the
