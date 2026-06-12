@@ -193,6 +193,10 @@ final class SyncChunkedFixAggregatesTest extends TestCase
     #[Test]
     public function fix_aggregates_chunk_throws_when_anchor_row_is_missing(): void
     {
+        // Deliberately hard-deletes the root, leaving its children as
+        // orphans — exempt this test from the tearDown integrity net.
+        $this->allowBrokenTreeAtTearDown = true;
+
         // A queued chunk job picked up minutes after dispatch can find
         // its anchor gone (hard-delete between dispatch and execution).
         // The pre-fix code silently widened the chunk to every row in

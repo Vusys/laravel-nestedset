@@ -10,8 +10,16 @@ use stdClass;
 use Vusys\NestedSet\Aggregates\Registry\AggregateRegistry;
 use Vusys\NestedSet\MaterialisedPath\MaterialisedPathRegistry;
 use Vusys\NestedSet\NestedSetServiceProvider;
+use Vusys\NestedSet\Tests\Fixtures\Models\Area;
+use Vusys\NestedSet\Tests\Fixtures\Models\Branch;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
+use Vusys\NestedSet\Tests\Fixtures\Models\CustomColumnsBranch;
 use Vusys\NestedSet\Tests\Fixtures\Models\MenuItem;
+use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
+use Vusys\NestedSet\Tests\Fixtures\Models\ReservedAggregateNode;
+use Vusys\NestedSet\Tests\Fixtures\Models\ReservedColumnNode;
+use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
+use Vusys\NestedSet\Tests\Fixtures\Models\TypedArea;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidMenuItem;
 use Vusys\NestedSet\Tests\Fixtures\Models\UuidTag;
 
@@ -125,9 +133,53 @@ abstract class TestCase extends OrchestraTestCase
             $this->assertMenuItemsTreesIntact();
             $this->assertUuidTagsTreeIntact();
             $this->assertUuidMenuItemsTreesIntact();
+            $this->assertUnscopedFixturesIntact();
         }
 
         parent::tearDown();
+    }
+
+    /**
+     * Structural postcondition for the major *unscoped* nested-set
+     * fixtures — the aggregate, soft-delete, listener, custom-column, and
+     * reserved-word models that previously had no tearDown integrity net
+     * (only Category / MenuItem / UuidTag / UuidMenuItem did). Each
+     * `countErrors()` call goes through the model, so custom/renamed
+     * structural columns are handled. Skips fixtures whose table isn't
+     * migrated in the running test's connection.
+     *
+     * Closures keep each `countErrors()` on its concrete class so the
+     * static method resolves for the analyser (the contract doesn't
+     * declare it).
+     */
+    private function assertUnscopedFixturesIntact(): void
+    {
+        /** @var list<array{string, callable(): array<string, int>}> $checks */
+        $checks = [
+            ['areas', Area::countErrors(...)],
+            ['branches', Branch::countErrors(...)],
+            ['soft_branches', SoftBranch::countErrors(...)],
+            ['monsters', Monster::countErrors(...)],
+            ['typed_areas', TypedArea::countErrors(...)],
+            ['custom_column_branches', CustomColumnsBranch::countErrors(...)],
+            ['reserved_column_nodes', ReservedColumnNode::countErrors(...)],
+            ['reserved_aggregate_nodes', ReservedAggregateNode::countErrors(...)],
+        ];
+
+        $schema = DB::connection()->getSchemaBuilder();
+
+        foreach ($checks as [$table, $check]) {
+            if (! $schema->hasTable($table)) {
+                continue;
+            }
+
+            $errors = $check();
+            $total = array_sum($errors);
+
+            if ($total > 0) {
+                $this->fail("{$table} tree is broken at tearDown: ".json_encode($errors));
+            }
+        }
     }
 
     private function assertCategoriesTreeIntact(): void

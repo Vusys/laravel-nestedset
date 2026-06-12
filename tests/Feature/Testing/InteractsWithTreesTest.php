@@ -292,6 +292,10 @@ final class InteractsWithTreesTest extends TestCase
     #[Test]
     public function assert_tree_is_intact_fails_when_lft_rgt_corrupted(): void
     {
+        // Deliberately leaves the areas tree corrupt to prove the assertion
+        // helper catches it — exempt this one test from the tearDown net.
+        $this->allowBrokenTreeAtTearDown = true;
+
         $this->seedMotivatingTree();
         // invalid_bounds: rgt must be > lft. Setting lft=10, rgt=5 on A
         // violates that invariant and `countErrors()` will flag it.
