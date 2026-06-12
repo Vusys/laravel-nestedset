@@ -145,6 +145,75 @@ final class BlueprintMacroTest extends TestCase
         $this->assertFalse(Schema::hasColumn($this->table, 'rgt'));
     }
 
+    #[Test]
+    public function bounded_index_name_returns_the_default_when_it_fits(): void
+    {
+        // Short composites keep Laravel's native auto-name verbatim, so
+        // existing schemas' index names don't change.
+        $this->assertSame(
+            'categories_lft_rgt_parent_id_index',
+            NestedSetServiceProvider::boundedIndexName('categories', ['lft', 'rgt', 'parent_id']),
+        );
+    }
+
+    #[Test]
+    public function bounded_index_name_shortens_an_over_long_default(): void
+    {
+        // A two-column scope on a 23-char table pushes the native name to
+        // 65 chars — one over MySQL/MariaDB's cap. The bounded name fits,
+        // is deterministic, and differs between the two nestedSet indexes.
+        $primary = NestedSetServiceProvider::boundedIndexName(
+            'multi_scoped_path_items',
+            ['tenant_id', 'menu_id', 'lft', 'rgt', 'parent_id'],
+        );
+        $parent = NestedSetServiceProvider::boundedIndexName(
+            'multi_scoped_path_items',
+            ['tenant_id', 'menu_id', 'parent_id'],
+        );
+
+        $this->assertLessThanOrEqual(64, strlen($primary));
+        $this->assertLessThanOrEqual(64, strlen($parent));
+        $this->assertNotSame($primary, $parent, 'the two nestedSet indexes must not collide');
+        // Deterministic: same inputs → same name.
+        $this->assertSame(
+            $primary,
+            NestedSetServiceProvider::boundedIndexName(
+                'multi_scoped_path_items',
+                ['tenant_id', 'menu_id', 'lft', 'rgt', 'parent_id'],
+            ),
+        );
+    }
+
+    #[Test]
+    public function nested_set_macro_builds_a_long_named_scoped_table_end_to_end(): void
+    {
+        // Regression: the auto-generated composite-index name for a
+        // two-column scope on this table is 65 chars. On MySQL/MariaDB the
+        // CREATE TABLE commits but the ALTER…ADD INDEX then fails (1059),
+        // leaving a half-built table that breaks every later migration
+        // ("table already exists"). The bounded name must let the whole
+        // create — and the matching drop — round-trip on every backend.
+        $longTable = 'multi_scoped_path_items_macro_probe';
+
+        Schema::create($longTable, function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('tenant_id');
+            $table->unsignedBigInteger('menu_id');
+            $table->nestedSet(scope: ['tenant_id', 'menu_id']);
+        });
+
+        $this->assertTrue(Schema::hasColumn($longTable, 'lft'));
+        $this->assertTrue(Schema::hasColumn($longTable, 'parent_id'));
+
+        Schema::table($longTable, function (Blueprint $table): void {
+            $table->dropNestedSet(scope: ['tenant_id', 'menu_id']);
+        });
+
+        $this->assertFalse(Schema::hasColumn($longTable, 'lft'));
+
+        Schema::dropIfExists($longTable);
+    }
+
     // ----------------------------------------------------------------
     // nestedSetAggregate() — Phase C
     // ----------------------------------------------------------------
