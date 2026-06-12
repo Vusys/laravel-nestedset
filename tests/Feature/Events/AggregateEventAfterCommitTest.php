@@ -34,7 +34,7 @@ final class AggregateEventAfterCommitTest extends TestCase
 
         // Rolled-back mutation: the change-feed event must be dropped.
         try {
-            DB::transaction(function () use ($child): void {
+            DB::transaction(function () use ($child): never {
                 $child->tickets = 100;
                 $child->save();
 

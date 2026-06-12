@@ -21,6 +21,7 @@ use Vusys\NestedSet\Exceptions\InvalidSiblingOrderException;
 use Vusys\NestedSet\Exceptions\NestedSetLogicException;
 use Vusys\NestedSet\Exceptions\SaveCancelledException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
+use Vusys\NestedSet\Exceptions\TrashedTargetException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\NodeBounds;
 use Vusys\NestedSet\PendingOperation;
@@ -366,10 +367,23 @@ trait HasTreeMutation
             ));
         }
 
-        $children = $this->newQuery()
+        // Read the raw child set (including soft-deleted rows) so the id
+        // list we hand to reorderChildren() matches the rows it validates
+        // against — loadDirectChildBounds() bypasses the soft-delete scope
+        // because trashed nodes keep their lft/rgt slot and the reorder
+        // arithmetic must account for them. Building this list from a
+        // scoped (live-only) query would omit trashed children and
+        // reorderChildren() would then reject the order as "missing
+        // children".
+        $children = $this->newQueryWithoutScopes()
             ->where($this->getParentIdName(), $this->keyOf($this))
-            ->orderBy($this->getLftName())
-            ->get();
+            ->orderBy($this->getLftName());
+
+        foreach (NestedSetScopeResolver::valuesFor($this) as $col => $value) {
+            $children->where($col, $value);
+        }
+
+        $children = $children->get();
 
         if ($children->isEmpty()) {
             return $this;
@@ -613,6 +627,22 @@ trait HasTreeMutation
         }
 
         return $query->get()->values();
+    }
+
+    /**
+     * Whether $target is a soft-deleting model currently in the trashed
+     * state. Reads the model's own `trashed()` flag rather than issuing a
+     * `deleted_at` SELECT — re-reading would add a query to every placement
+     * on a soft-deleting model, and the trait already documents that it
+     * does not refresh the node the caller hands in (only the *target's*
+     * bounds are re-read before mutating). A caller holding a stale-live
+     * copy of a row trashed elsewhere should `->refresh()` it first, the
+     * same as for any other handed-in target. Non-soft-deleting targets
+     * have no `trashed()` method and always return false.
+     */
+    private function targetIsTrashed(Model&HasNestedSet $target): bool
+    {
+        return method_exists($target, 'trashed') && $target->trashed();
     }
 
     /**
@@ -942,6 +972,23 @@ trait HasTreeMutation
                 $targetKey = $target->getKey();
                 throw new UnplacedNodeException(sprintf(
                     '%s::%s target %s id=%s has no bounds — place it in a tree (saveAsRoot / appendToNode / …) first.',
+                    static::class,
+                    $op->action,
+                    $target::class,
+                    is_int($targetKey) || is_string($targetKey) ? (string) $targetKey : '?',
+                ));
+            }
+
+            // Refuse to place a live node relative to a soft-deleted
+            // anchor. The trashed node keeps its lft/rgt slot for restore,
+            // so the placement would otherwise succeed structurally and
+            // leave a live node parented under (or wedged against) a hidden
+            // one — an inconsistency restore can't reconcile. See decision
+            // #11 / docs/tree-operations/soft-deletes.md.
+            if ($target->exists && $this->targetIsTrashed($target)) {
+                $targetKey = $target->getKey();
+                throw new TrashedTargetException(sprintf(
+                    '%s::%s target %s id=%s is soft-deleted — restore it (or forceDelete it) before placing a node relative to it.',
                     static::class,
                     $op->action,
                     $target::class,

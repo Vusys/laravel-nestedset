@@ -100,6 +100,21 @@ Force-delete decrements the ancestor chain like a normal delete; the destroyed r
 
 See [Aggregates → Drift & Limitations](../aggregates/drift.html) for the full per-mutation accounting.
 
+## Structural operations and trashed nodes
+
+A soft-deleted node keeps its `lft`/`rgt` slot (see above), so it still occupies a position in its sibling group. Structural permutations therefore reason over the **raw** sibling set — live *and* trashed — because the `lft`/`rgt` arithmetic that re-slots the live rows has to account for the gaps the trashed rows hold.
+
+- **`reorderChildren()`** validates the supplied order against the full raw child set. You must include every child id — including trashed ones — or it throws `InvalidSiblingOrderException` ("missing children"). Inspect the raw set with `Model::withTrashed()->where('parent_id', $id)->orderBy('lft')->get()`.
+- **`reorderChildrenBy()`** builds its order from the same raw set, so a parent with trashed children reorders cleanly (the trashed slots are sorted alongside the live ones). The visible order is just that order minus the hidden rows.
+
+### Placement onto a trashed anchor throws
+
+`appendToNode()`, `prependToNode()`, `insertBeforeNode()`, and `insertAfterNode()` reject a **soft-deleted target** with `TrashedTargetException`. Placing a live node relative to a hidden anchor would either parent it under a trashed node or wedge it against an invisible reference — a live-descendant-of-trashed state that `restore()` can never reconcile (the new row carries no matching `deleted_at` stamp). The guard reads the target's own `trashed()` flag (no extra query per placement); as with any handed-in target, `->refresh()` a copy you suspect was trashed elsewhere before placing relative to it. Restore (or `forceDelete()`) the anchor first.
+
+### `up()` / `down()` move among live siblings
+
+`up()`, `down()`, `prevSibling()`, and `nextSibling()` resolve the **immediately adjacent** sibling through the soft-delete scope, so they see only live rows. When the structurally adjacent slot is held by a trashed node, `prevSibling()` / `nextSibling()` return `null` and `up()` / `down()` are a no-op (return `false`) — a trashed neighbour acts as a wall. This is intentional: swapping with a hidden node would be a visible no-op, and "skipping" it to swap with the next live sibling would be a non-adjacent rotation rather than a one-slot move. To reorder across a trashed slot, use `reorderChildren()` with the full raw list, or `restore()` / `forceDelete()` the trashed sibling first.
+
 ## Combining with scoped trees
 
 Scoped models work the same way — every cascade query is constrained by the same scope columns as the anchor, so cross-scope soft-deletes don't accidentally cascade outside the anchor's tree.
