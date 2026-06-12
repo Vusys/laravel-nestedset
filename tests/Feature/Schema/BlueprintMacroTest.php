@@ -590,4 +590,43 @@ final class BlueprintMacroTest extends TestCase
 
         return $byName;
     }
+
+    #[Test]
+    public function nested_set_macro_adds_a_parent_id_index(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->nestedSet();
+        });
+
+        $hasParentIndex = false;
+        foreach (Schema::getIndexes($this->table) as $index) {
+            if ($index['columns'] === ['parent_id']) {
+                $hasParentIndex = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasParentIndex, 'nestedSet() must add an index keyed on [parent_id]');
+    }
+
+    #[Test]
+    public function scoped_nested_set_macro_adds_a_scope_parent_id_index(): void
+    {
+        Schema::create($this->table, function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('menu_id');
+            $table->nestedSet(scope: 'menu_id');
+        });
+
+        $hasScopedParentIndex = false;
+        foreach (Schema::getIndexes($this->table) as $index) {
+            if ($index['columns'] === ['menu_id', 'parent_id']) {
+                $hasScopedParentIndex = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasScopedParentIndex, 'scoped nestedSet() must add an index keyed on [scope…, parent_id]');
+    }
 }
