@@ -432,7 +432,14 @@ final class MinMaxMaintenanceTest extends TestCase
             static fn (string $sql): bool => str_contains(strtolower($sql), 'for update'),
         );
 
-        $this->assertSame(0, $forUpdateCount);
+        // 'never' skips the AGGREGATE recompute's FOR UPDATE. It does not
+        // govern the structural deleting-hook re-read, which locks the
+        // node's own row for the rest of the delete transaction so a
+        // concurrent gap-shift can't slide its bounds before the cascade /
+        // closeGap (independent of aggregate_locking). That structural lock
+        // remains on a row-locking backend (exactly one); SQLite has none.
+        $expected = DB::connection()->getDriverName() === 'sqlite' ? 0 : 1;
+        $this->assertSame($expected, $forUpdateCount);
     }
 
     /**

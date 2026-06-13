@@ -38,6 +38,20 @@ final readonly class TreeRepairBuilder
         private string $idCol = 'id',
     ) {}
 
+    /**
+     * Grammar-quote a (possibly alias-qualified) column for raw SQL. The
+     * repair path interpolates structural column names into a `whereRaw`
+     * predicate and the chunked rebuild UPDATE; a model renaming lft/rgt/
+     * depth to a reserved word (`left`, `order`) would otherwise emit a
+     * backend-specific syntax error. Builder-method call sites (`->on`,
+     * `whereColumn`, `where`) already wrap their columns — this is only for
+     * the strings the builder can't see into.
+     */
+    private function q(string $column): string
+    {
+        return $this->connection->getQueryGrammar()->wrap($column);
+    }
+
     // ----------------------------------------------------------------
     // Validation
     // ----------------------------------------------------------------
@@ -101,7 +115,7 @@ final readonly class TreeRepairBuilder
         $evenBoundsWidth = (int) $this->scoped()
             ->whereColumn($this->rgt, '>', $this->lft)
             ->where($this->lft, '>=', 1)
-            ->whereRaw(new TreeExpression("({$this->rgt} - {$this->lft}) % 2 = 0"))
+            ->whereRaw(new TreeExpression('('.$this->q($this->rgt).' - '.$this->q($this->lft).') % 2 = 0'))
             ->count();
 
         return [
@@ -200,7 +214,7 @@ final readonly class TreeRepairBuilder
                         ->where("child.{$this->depth}", '!=', 0);
                 })->orWhere(function ($r): void {
                     $r->whereNotNull("parent.{$this->idCol}")
-                        ->whereRaw("child.{$this->depth} <> parent.{$this->depth} + 1");
+                        ->whereRaw($this->q("child.{$this->depth}").' <> '.$this->q("parent.{$this->depth}").' + 1');
                 });
             });
 
@@ -514,10 +528,17 @@ final readonly class TreeRepairBuilder
         /** @var list<int|string> $ids */
         $ids = array_keys($positions);
 
+        $grammar = $this->connection->getQueryGrammar();
+        $idCol = $this->q($this->idCol);
+        $lftCol = $this->q($this->lft);
+        $rgtCol = $this->q($this->rgt);
+        $depthCol = $this->q($this->depth);
+        $tableSql = $grammar->wrapTable($this->table);
+
         foreach (array_chunk($ids, $chunkSize) as $idChunk) {
-            $lftCase = "CASE {$this->idCol}";
-            $rgtCase = "CASE {$this->idCol}";
-            $depthCase = "CASE {$this->idCol}";
+            $lftCase = "CASE {$idCol}";
+            $rgtCase = "CASE {$idCol}";
+            $depthCase = "CASE {$idCol}";
             $lftBindings = [];
             $rgtBindings = [];
             $depthBindings = [];
@@ -534,9 +555,9 @@ final readonly class TreeRepairBuilder
                 $depthBindings[] = $id;
                 $depthBindings[] = $pos['depth'];
             }
-            $lftCase .= " ELSE {$this->lft} END";
-            $rgtCase .= " ELSE {$this->rgt} END";
-            $depthCase .= " ELSE {$this->depth} END";
+            $lftCase .= " ELSE {$lftCol} END";
+            $rgtCase .= " ELSE {$rgtCol} END";
+            $depthCase .= " ELSE {$depthCol} END";
 
             $idPlaceholders = implode(', ', array_fill(0, count($idChunk), '?'));
             $idBindings = $idChunk;
@@ -547,15 +568,15 @@ final readonly class TreeRepairBuilder
             $scopeClause = '';
             $scopeBindings = [];
             foreach ($this->scope as $col => $value) {
-                $scopeClause .= " AND {$col} = ?";
+                $scopeClause .= ' AND '.$this->q($col).' = ?';
                 $scopeBindings[] = $value;
             }
 
-            $sql = "UPDATE {$this->table} "
-                ."SET {$this->lft} = ({$lftCase}), "
-                ."{$this->rgt} = ({$rgtCase}), "
-                ."{$this->depth} = ({$depthCase}) "
-                ."WHERE {$this->idCol} IN ({$idPlaceholders}){$scopeClause}";
+            $sql = "UPDATE {$tableSql} "
+                ."SET {$lftCol} = ({$lftCase}), "
+                ."{$rgtCol} = ({$rgtCase}), "
+                ."{$depthCol} = ({$depthCase}) "
+                ."WHERE {$idCol} IN ({$idPlaceholders}){$scopeClause}";
 
             $bindings = [
                 ...$lftBindings,

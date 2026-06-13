@@ -424,7 +424,11 @@ trait HasMaterialisedPath
         $rgt = $this->getRgtName();
         $key = $this->getKey();
         $keyName = $this->getKeyName();
-        $oldLen = strlen($oldPrefix);
+        // SUBSTRING/SUBSTR is CHARACTER-indexed on every backend, so the
+        // start offset must be the character count of the old prefix, not
+        // its byte length — a multibyte prefix (e.g. a slug with accented
+        // characters) would otherwise cut the descendant paths mid-rune.
+        $oldLen = mb_strlen($oldPrefix);
 
         // Read fresh bounds from the DB — in-memory rgt grows as
         // descendants are added without refreshing this model, so the
@@ -486,11 +490,18 @@ trait HasMaterialisedPath
             default => '? || SUBSTR('.$colQ.', ?)',
         };
 
-        $where = $lftQ.' BETWEEN ? AND ? AND '.$keyQ.' <> ?';
-
+        // Scope predicates must appear in iteration order so their
+        // placeholders line up with the scope values, which
+        // emitSubtreeRewrite() appends in that same forward order before
+        // lft/rgt/key. Prepending each predicate (the previous approach)
+        // reversed the column order, so on a multi-column scope tenant_id
+        // bound to menu_id's value and vice versa — the rewrite then missed
+        // every descendant or hit another tenant's rows.
+        $where = '';
         foreach (array_keys($scope) as $scopeColumn) {
-            $where = $grammar->wrap($scopeColumn).' = ? AND '.$where;
+            $where .= $grammar->wrap($scopeColumn).' = ? AND ';
         }
+        $where .= $lftQ.' BETWEEN ? AND ? AND '.$keyQ.' <> ?';
 
         return 'UPDATE '.$tableQ.' SET '.$colQ.' = '.$concatExpr.' WHERE '.$where;
     }

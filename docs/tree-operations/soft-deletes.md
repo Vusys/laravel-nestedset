@@ -98,7 +98,25 @@ Soft-delete cascade **preserves stored aggregates on the soft-deleted subtree** 
 
 Force-delete decrements the ancestor chain like a normal delete; the destroyed rows take their stored aggregate values with them.
 
+> [!WARNING]
+> **Known limitation — force-deleting a trashed subtree that has an individually-restored live descendant.** If you soft-delete a parent (cascading to its children), then `restore()` one child on its own (so it's live again under the still-trashed parent), then `forceDelete()` the parent, the cascade hard-deletes that live child but its aggregate contribution is **not** subtracted from the ancestor chain — the parent's decrement was already taken at the original soft-delete, and the guard that prevents double-decrementing the parent also skips the live child. The ancestors are left counting a row that no longer exists. Until this is fixed, run `Model::fixAggregates($anchor)` on the affected root after such a sequence, or avoid force-deleting a trashed subtree that contains individually-restored descendants. (Reproduction pinned in `ForceDeleteAfterRestoreDriftTest`.)
+
 See [Aggregates → Drift & Limitations](../aggregates/drift.html) for the full per-mutation accounting.
+
+## Structural operations and trashed nodes
+
+A soft-deleted node keeps its `lft`/`rgt` slot (see above), so it still occupies a position in its sibling group. Structural permutations therefore reason over the **raw** sibling set — live *and* trashed — because the `lft`/`rgt` arithmetic that re-slots the live rows has to account for the gaps the trashed rows hold.
+
+- **`reorderChildren()`** validates the supplied order against the full raw child set. You must include every child id — including trashed ones — or it throws `InvalidSiblingOrderException` ("missing children"). Inspect the raw set with `Model::withTrashed()->where('parent_id', $id)->orderBy('lft')->get()`.
+- **`reorderChildrenBy()`** builds its order from the same raw set, so a parent with trashed children reorders cleanly (the trashed slots are sorted alongside the live ones). The visible order is just that order minus the hidden rows.
+
+### Placement onto a trashed anchor throws
+
+`appendToNode()`, `prependToNode()`, `insertBeforeNode()`, and `insertAfterNode()` reject a **soft-deleted target** with `TrashedTargetException`. Placing a live node relative to a hidden anchor would either parent it under a trashed node or wedge it against an invisible reference — a live-descendant-of-trashed state that `restore()` can never reconcile (the new row carries no matching `deleted_at` stamp). The guard reads the target's own `trashed()` flag (no extra query per placement); as with any handed-in target, `->refresh()` a copy you suspect was trashed elsewhere before placing relative to it. Restore (or `forceDelete()`) the anchor first.
+
+### `up()` / `down()` move among live siblings
+
+`up()`, `down()`, `prevSibling()`, and `nextSibling()` resolve the **immediately adjacent** sibling through the soft-delete scope, so they see only live rows. When the structurally adjacent slot is held by a trashed node, `prevSibling()` / `nextSibling()` return `null` and `up()` / `down()` are a no-op (return `false`) — a trashed neighbour acts as a wall. This is intentional: swapping with a hidden node would be a visible no-op, and "skipping" it to swap with the next live sibling would be a non-adjacent rotation rather than a one-slot move. To reorder across a trashed slot, use `reorderChildren()` with the full raw list, or `restore()` / `forceDelete()` the trashed sibling first.
 
 ## Combining with scoped trees
 
