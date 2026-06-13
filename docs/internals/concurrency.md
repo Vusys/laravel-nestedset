@@ -63,6 +63,12 @@ if ($lockForUpdate && $this->connection->getDriverName() !== 'sqlite') {
 }
 ```
 
+### Lock ordering and deadlocks
+
+A move locks both the **mover**'s bounds and the **target**'s bounds. The two locks are taken in the order the operation reaches them, which is **not** canonicalised across operations. Two *crossing* moves running concurrently — say, "move A under B" and "move B under A" — therefore acquire the same two rows in opposite orders and can deadlock. This is safe for data integrity: the engine detects the cycle and aborts one transaction (SQLSTATE `40001` / `40P01` on the supported backends), rolling its half-applied gap-shift back cleanly. It is *not* transparent to the caller — the aborted side surfaces a `QueryException`.
+
+Treat a move (or any contended tree write) the way you'd treat any other transaction that can deadlock: **retry on the serialization-failure SQLSTATEs.** The package's own fork-based concurrency tests do exactly this (`withDeadlockRetry()` in the test suite). A small bounded-retry wrapper around the write is the standard remedy; the package does not retry for you because the right backoff/attempt policy is application-specific.
+
 ### `makeRoot()` and the PostgreSQL aggregate-lock quirk
 
 Creating a root reads `max(rgt)` in the scope, which has its own concurrency hazard — two parallel `makeRoot()` calls could read the same max and collide. Locking that read is backend-sensitive, and `actMakeRoot()` handles three cases:
@@ -98,7 +104,7 @@ Delta-maintained aggregates (SUM/COUNT) update ancestors with a single self-rela
 
 | Value | Behaviour |
 |---|---|
-| `auto` (default) | Lock the ancestor chain only on the recompute path (MIN/MAX, `fixAggregates`). Delta-only updates rely on the engine's single-statement row locks — sufficient under default isolation on every supported backend. The right setting for nearly every app. |
+| `auto` (default) | Lock the ancestor chain only on the recompute path (MIN/MAX, `fixAggregates`). Delta-only updates rely on the engine's single-statement row locks — sufficient under default isolation on every supported backend. The right setting for nearly every app. **PG `READ COMMITTED` caveat:** the recompute `SELECT` computes the value and takes its `FOR UPDATE` lock in one statement, so the locked outer rows are re-fetched but the correlated descendant subqueries still read the statement snapshot — a descendant change committing in that window can leave a recomputed MIN/MAX value briefly stale until the next pass (`fixAggregates($anchor)` reconciles it). |
 | `always` | Lock the ancestor chain before *every* aggregate `UPDATE`, deltas included. Choose this under non-default isolation (e.g. PostgreSQL `REPEATABLE READ`) or if you've observed drift under concurrent load. |
 | `never` | No explicit locks. Marginally faster on the recompute path; can drift on PostgreSQL `READ COMMITTED` with concurrent recomputes against overlapping subtrees. |
 

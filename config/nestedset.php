@@ -46,6 +46,18 @@ return [
     |                        which are sufficient under default isolation
     |                        on all supported backends. This is the right
     |                        setting for nearly every application.
+    |                        Caveat (PostgreSQL READ COMMITTED): the
+    |                        recompute computes the new value and takes the
+    |                        FOR UPDATE lock in one statement, so the locked
+    |                        outer rows are re-fetched (EvalPlanQual) but the
+    |                        correlated descendant subqueries still read the
+    |                        statement snapshot. A descendant change that
+    |                        commits in that window can leave a recomputed
+    |                        MIN/MAX/exclusive value momentarily stale until
+    |                        the next maintenance pass over that subtree;
+    |                        `fixAggregates($anchor)` reconciles it. Other
+    |                        backends (and PG under REPEATABLE READ /
+    |                        SERIALIZABLE) don't exhibit this.
     |
     |   'always' — forward-compatible alias; today behaves identically
     |              to 'auto' (the recompute path locks, the pure-delta
