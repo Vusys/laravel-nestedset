@@ -115,7 +115,7 @@ final readonly class TreeRepairBuilder
         $evenBoundsWidth = (int) $this->scoped()
             ->whereColumn($this->rgt, '>', $this->lft)
             ->where($this->lft, '>=', 1)
-            ->whereRaw(new TreeExpression("({$this->rgt} - {$this->lft}) % 2 = 0"))
+            ->whereRaw(new TreeExpression('('.$this->q($this->rgt).' - '.$this->q($this->lft).') % 2 = 0'))
             ->count();
 
         return [
