@@ -9,6 +9,79 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-13
+
+Audit follow-ups on v0.23.0: cross-backend correctness (reserved-word
+columns, MariaDB fresh-reads, MySQL/MariaDB index-name limits), soft-delete
+structural semantics, concurrency hardening, and new coherence fuzzers.
+Validated across SQLite, MySQL, MariaDB and PostgreSQL.
+
+### Added
+
+- Secondary `[scope…, parent_id]` index in the `nestedSet()` Blueprint macro
+  (decision #6). The shipped composite index leads with `lft`/`rgt` and
+  can't serve a `parent_id` lookup — `children()`, `whereIsRoot()` and
+  `fixTree()`'s parent walk. MySQL gets one free off its FK; PostgreSQL and
+  SQLite did not. Dropped by `dropNestedSet()`.
+- `TrashedTargetException` — placing a live node relative to a soft-deleted
+  anchor now throws instead of stranding a live-descendant-of-trashed that
+  `restore()` can never reconcile.
+- Materialised-path coherence fuzzer and a stale-instance pool in the
+  aggregate fuzzer, both asserting incremental maintenance matches a full
+  recompute after random mutation sequences.
+
+### Changed
+
+- **`appendToNode` / `prependToNode` / `insertBeforeNode` / `insertAfterNode`
+  onto a soft-deleted target now throw `TrashedTargetException`** (was
+  silently allowed).
+- **`reorderChildrenBy()` now reasons over the raw sibling set** (live +
+  trashed), matching `reorderChildren()` — previously it built its id list
+  from a live-only query, which `reorderChildren()` then rejected as
+  "missing children".
+- `nestedSet()` index names are now bounded to 64 characters
+  (MySQL/MariaDB identifier cap) via `boundedIndexName()`: existing schemas
+  keep Laravel's native name verbatim; longer table+scope combinations get a
+  deterministic hashed name. Previously a long composite overran the limit,
+  the `ALTER … ADD INDEX` failed (error 1059), and the half-built table
+  survived (non-transactional DDL), breaking every subsequent migration.
+- `TreeDiff` orders flat-snapshot siblings by `lft` (not input arrival
+  order), so two snapshots of the same state read with different `orderBy`
+  no longer diff as a sea of phantom `Moved` entries. Falls back to input
+  order when `lft` is absent.
+
+### Fixed
+
+- Structural columns (`lft`/`rgt`/`depth`/`parent_id`) are now grammar-quoted
+  in the mutation engine, repair path, and the `even_bounds_width` corruption
+  check. A model renaming a structural column to a SQL reserved word
+  (`left`/`order`) no longer emits a syntax error on every mutation,
+  `fixTree()` or `countErrors()` on PostgreSQL/MySQL/MariaDB.
+- MariaDB: `withFreshAggregates()` combined with `->limit()` / `->offset()`
+  (pagination, top-N) no longer hard-errors (1235) — `LIMIT`/`OFFSET`/`ORDER`
+  are stripped from the id-membership subquery (the outer query still bounds
+  the result).
+- Soft-delete cascade now works under the `immutable_datetime` cast — the
+  timestamp matcher broadened from Carbon to `DateTimeInterface`, so the
+  cascade no longer silently no-ops and leaves descendants live.
+- Subtree materialised-path rewrite: scope predicates are now bound in
+  forward column order (a multi-column scope previously cross-bound its
+  columns and matched no rows), and the `SUBSTRING` offset uses `mb_strlen()`
+  so multibyte path prefixes aren't cut mid-character.
+- The soft-delete `deleting` hook re-reads structural bounds under
+  `FOR UPDATE`, matching every other stale-bounds path — closes a window
+  where a concurrent gap-shift could make the delete close the wrong gap
+  (skipped on SQLite / when no transaction is open).
+
+### Documentation
+
+- Documented that `aggregate_locking` `'auto'` is not fully race-free on
+  PostgreSQL `READ COMMITTED` (the recompute's correlated subqueries read the
+  statement snapshot), and that crossing moves lock in operation order and so
+  can deadlock — with the standard retry-on-deadlock remedy.
+- Pinned (skipped) and documented the force-delete-after-restore aggregate
+  drift limitation, with the `fixAggregates` workaround.
+
 ## [0.23.0] - 2026-06-11
 
 A correctness, concurrency and pre-1.0 hardening pass. Several
@@ -174,7 +247,8 @@ MySQL (full suite + every seeded fuzzer).
 - Subtree cloning (`cloneSubtreeTo`, `cloneSubtreeAsRoot`).
 - Sibling reorder primitive (one `CASE WHEN` UPDATE per reorder).
 
-[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/vusys/laravel-nestedset/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/vusys/laravel-nestedset/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/vusys/laravel-nestedset/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/vusys/laravel-nestedset/compare/v0.20.0...v0.21.0
