@@ -388,7 +388,6 @@ final class AggregateSqlFragmentsTest extends TestCase
             function: AggregateFunction::WeightedAvg,
             source: 'v',
             inclusive: true,
-            weight: null,
         );
 
         $this->expectException(AggregateConfigurationException::class);

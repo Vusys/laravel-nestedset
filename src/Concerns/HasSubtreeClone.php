@@ -249,7 +249,6 @@ trait HasSubtreeClone
             } elseif ($asRoot) {
                 $this->placeAsRootAtPosition($root, $position);
             } else {
-                \assert($narrowedParent !== null);
                 $this->placeAtPosition($root, $narrowedParent, $position);
             }
 

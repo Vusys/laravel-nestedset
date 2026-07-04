@@ -18,7 +18,7 @@ final readonly class MermaidOptions
     private const array VALID_DIRECTIONS = ['TD', 'LR', 'BT', 'RL'];
 
     /**
-     * @param  'TD'|'LR'|'BT'|'RL'  $direction
+     * @param  string  $direction  One of TD, LR, BT, RL — validated at runtime against self::VALID_DIRECTIONS.
      * @param  LabelClosure|null  $label
      * @param  list<string>  $showAggregates
      */
