@@ -24,6 +24,7 @@ use Vusys\NestedSet\Contracts\HasNestedSet;
 use Vusys\NestedSet\Contracts\MaintainsTreeAggregates;
 use Vusys\NestedSet\Events\Aggregates\AggregateMaintenanceFailed;
 use Vusys\NestedSet\Events\EventDispatcher;
+use Vusys\NestedSet\Exceptions\MisconfiguredNodeException;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Exceptions\UnplacedNodeException;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
@@ -42,6 +43,8 @@ use Vusys\NestedSet\Scope\NestedSetScopeResolver;
  * accessors below to point at non-default columns.
  *
  * @mixin Model
+ *
+ * @phpstan-require-implements MaintainsTreeAggregates
  */
 trait NodeTrait
 {
@@ -77,8 +80,28 @@ trait NodeTrait
     public static function bootNodeTrait(): void
     {
         static::saving(static function (Model $node): void {
+            // A NodeTrait model that reaches this listener must implement
+            // MaintainsTreeAggregates — the trait supplies every method
+            // the contract demands, so the only way to fail the check is
+            // to omit `implements MaintainsTreeAggregates` from the class.
+            // Historically this was a silent early-return, which meant the
+            // placement lifecycle (callPendingAction below) never ran and
+            // the node was inserted with lft = rgt = 0 (an invalid_bounds
+            // corruption) with no error. Throw instead so the
+            // misconfiguration surfaces at the first save rather than as
+            // mysterious zero-bounds rows. bulkInsertTree() masks the bug
+            // because it sets the bounds attributes directly.
             if (! $node instanceof MaintainsTreeAggregates) {
-                return;
+                throw new MisconfiguredNodeException(sprintf(
+                    '%s uses %s but does not implement %s. Add "implements '
+                    .'MaintainsTreeAggregates" to the class declaration — '
+                    .'without it the placement lifecycle '
+                    .'(appendToNode/makeRoot/saveAsRoot) silently does nothing '
+                    .'and nodes are saved with lft = rgt = 0.',
+                    $node::class,
+                    NodeTrait::class,
+                    MaintainsTreeAggregates::class,
+                ));
             }
             // Guard against silent cross-scope corruption: changing a
             // scope column on an existing node makes the scoped mutation
