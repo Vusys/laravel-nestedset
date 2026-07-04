@@ -136,7 +136,6 @@ final class DerivedAggregateFragmentsTest extends TestCase
             function: AggregateFunction::WeightedAvg,
             source: 'val',
             inclusive: true,
-            weight: null,
         );
 
         $this->expectException(AggregateConfigurationException::class);

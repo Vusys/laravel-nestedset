@@ -1004,7 +1004,7 @@ trait HasTreeMutation
         }
 
         $work = function () use ($op, $wasExisting, $from): void {
-            if ($wasExisting && $from !== null) {
+            if ($wasExisting) {
                 $this->onBeforePendingAction($from, $op->action);
             }
 
@@ -1016,7 +1016,7 @@ trait HasTreeMutation
                 default => throw new LogicException("Unknown pending action: {$op->action}"),
             };
 
-            if ($wasExisting && $from !== null) {
+            if ($wasExisting) {
                 $this->onAfterPendingAction($from, $this->getBounds(), $op->action);
             }
         };
@@ -1039,7 +1039,7 @@ trait HasTreeMutation
         // emitting our own NodeMoved for them would duplicate that
         // surface and confuse the "this was a move, not an insert"
         // intent of the event.
-        if ($wasExisting && $from !== null) {
+        if ($wasExisting) {
             $toBounds = $this->getBounds();
 
             EventDispatcher::dispatch(new NodeMoved(

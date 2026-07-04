@@ -18,7 +18,7 @@ final readonly class DotOptions
     private const array VALID_DIRECTIONS = ['TB', 'LR', 'BT', 'RL'];
 
     /**
-     * @param  'TB'|'LR'|'BT'|'RL'  $direction
+     * @param  string  $direction  One of TB, LR, BT, RL — validated at runtime against self::VALID_DIRECTIONS.
      * @param  LabelClosure|null  $label
      * @param  list<string>  $showAggregates
      */

@@ -42,7 +42,6 @@ final class TreeChangeJsonSerializeTest extends TestCase
     {
         $removed = new Removed(
             key: 7,
-            parentKey: null,
             attributes: ['name' => 'X'],
             siblingPosition: 2,
         );

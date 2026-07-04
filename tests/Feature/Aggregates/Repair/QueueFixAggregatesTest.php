@@ -61,7 +61,6 @@ final class QueueFixAggregatesTest extends TestCase
         Queue::fake();
 
         Area::queueFixAggregates(
-            anchor: null,
             onConnection: 'redis-custom',
             onQueue: 'aggregates-low',
         );
