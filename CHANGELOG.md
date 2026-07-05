@@ -9,6 +9,28 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-07-05
+
+Patch: fail loud on a misconfigured `NodeTrait` model instead of silently
+corrupting the tree.
+
+### Added
+
+- `MisconfiguredNodeException`, plus a `@phpstan-require-implements
+  MaintainsTreeAggregates` constraint on `NodeTrait`. A model that composes
+  the trait but omits `implements MaintainsTreeAggregates` is now caught both
+  statically (`composer analyse`) and at runtime on the first `save()`.
+
+### Fixed
+
+- **A `NodeTrait` model missing `implements MaintainsTreeAggregates` used to
+  insert rows with `lft = rgt = 0` and no error.** Every lifecycle listener
+  gated on that interface, so `saveAsRoot()` / `appendToNode()->save()`
+  placed nothing while appearing to succeed (`bulkInsertTree()` masked it by
+  writing the bounds attributes directly). The `saving` listener now throws
+  `MisconfiguredNodeException` instead of silently producing an
+  `invalid_bounds` row.
+
 ## [0.24.0] - 2026-06-13
 
 Audit follow-ups on v0.23.0: cross-backend correctness (reserved-word
@@ -247,7 +269,8 @@ MySQL (full suite + every seeded fuzzer).
 - Subtree cloning (`cloneSubtreeTo`, `cloneSubtreeAsRoot`).
 - Sibling reorder primitive (one `CASE WHEN` UPDATE per reorder).
 
-[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.1...HEAD
+[0.24.1]: https://github.com/vusys/laravel-nestedset/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/vusys/laravel-nestedset/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/vusys/laravel-nestedset/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/vusys/laravel-nestedset/compare/v0.21.0...v0.22.0
