@@ -8,6 +8,13 @@ parameters:
     level: 9
     bootstrapFiles:
         - phpstan-bootstrap.php
+    excludePaths:
+        analyse:
+            # Deliberately misconfigured fixture — uses NodeTrait without
+            # `implements MaintainsTreeAggregates` on purpose, so the trait's
+            # @phpstan-require-implements constraint would (rightly) flag it.
+            # Still scanned so MissingContractGuardTest can reference it.
+            - tests/Fixtures/Models/BareNodeWithoutContract.php
     ignoreErrors:
         # env() is legitimate in test bootstrap code — config caching does not apply to tests.
         - identifier: larastan.noEnvCallsOutsideOfConfig

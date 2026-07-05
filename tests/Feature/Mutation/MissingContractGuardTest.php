@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Vusys\NestedSet\Tests\Feature\Mutation;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\Exceptions\MisconfiguredNodeException;
+use Vusys\NestedSet\Tests\Fixtures\Models\BareNodeWithoutContract;
 use Vusys\NestedSet\Tests\TestCase;
 
 /**
@@ -19,42 +19,20 @@ use Vusys\NestedSet\Tests\TestCase;
  * `bulkInsertTree()` masked it (it sets the bounds attributes directly).
  * The listener now throws {@see MisconfiguredNodeException} instead.
  *
- * The broken model is defined via `eval` so the trait's
- * `@phpstan-require-implements` constraint (which catches the same
- * mistake statically) doesn't flag the deliberately-misconfigured
- * fixture during `composer analyse`. Saving through the real `Model`
- * `save()` method exercises the exact `saving` listener the reported
- * `saveAsRoot()` path routes through.
+ * The broken model lives in {@see BareNodeWithoutContract} (excluded from
+ * PHPStan so the trait's `@phpstan-require-implements` constraint — which
+ * catches the same mistake statically — doesn't flag the deliberately
+ * misconfigured fixture). Saving through the real `Model::save()` method
+ * exercises the exact `saving` listener the reported `saveAsRoot()` path
+ * routes through.
  */
 final class MissingContractGuardTest extends TestCase
 {
     protected bool $allowBrokenTreeAtTearDown = true;
 
-    /** Held on a typed property so PHPStan reads it as a general string
-     *  (not a foldable literal) and doesn't try to resolve the eval'd class. */
-    private string $shortName = 'BareNodeWithoutContract';
-
-    private function bareNodeWithoutContract(): Model
+    private function bareNodeWithoutContract(): BareNodeWithoutContract
     {
-        $fqcn = __NAMESPACE__.'\\'.$this->shortName;
-
-        if (! class_exists($fqcn, false)) {
-            eval(sprintf(
-                'namespace %s; final class %s extends \Illuminate\Database\Eloquent\Model {'
-                .' use \Vusys\NestedSet\NodeTrait;'
-                .' protected $table = "categories";'
-                .' public $timestamps = false;'
-                .' protected $guarded = [];'
-                .' }',
-                __NAMESPACE__,
-                $this->shortName,
-            ));
-        }
-
-        $model = new $fqcn(['name' => 'Root']);
-        self::assertInstanceOf(Model::class, $model);
-
-        return $model;
+        return new BareNodeWithoutContract(['name' => 'Root']);
     }
 
     #[Test]
