@@ -135,6 +135,6 @@ final readonly class WalkFilter
             return false;
         }
 
-        return ! ($this->visitable instanceof Closure && ! ($this->visitable)($node, $ctx));
+        return ! $this->visitable instanceof Closure || ($this->visitable)($node, $ctx);
     }
 }

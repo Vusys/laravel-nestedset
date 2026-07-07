@@ -88,6 +88,36 @@ final class StaleInstanceAggregateTest extends TestCase
     }
 
     #[Test]
+    public function updating_a_source_column_on_a_bounds_stale_instance_bands_onto_the_current_ancestors(): void
+    {
+        // root ⊃ {A(10), B(20)}. Hold a freshly-loaded copy of A, then
+        // prepend a new node to root. That shifts A (and B) rightward, so
+        // $staleA's in-memory lft/rgt no longer match its DB row.
+        $tree = $this->seedTree();
+        $a = $tree['a'];
+
+        $staleA = Area::query()->whereKey($a->getKey())->firstOrFail();
+
+        (new Area(['name' => 'X', 'tickets' => 0]))
+            ->prependToNode($tree['root']->refresh())
+            ->save();
+
+        // Mutate only the source column and save. `tickets` is the sole
+        // dirty attribute, so the UPDATE never rewrites lft/rgt — the DB
+        // row keeps its true (post-prepend) bounds while $staleA's memory
+        // is stale. The captured +30 delta must band onto A's CURRENT
+        // ancestor chain (A + root); using the stale bounds would miss A
+        // entirely and spill the delta onto the freshly-prepended X.
+        $staleA->tickets = 40; // was 10 → delta +30
+        $staleA->save();
+
+        $this->assertAggregatesAreIntact(Area::class);
+
+        $this->assertSame(40, $a->refresh()->tickets_total, 'A holds its own 40');
+        $this->assertSame(60, $tree['root']->refresh()->tickets_total, 'root: X(0) + A(40) + B(20) = 60');
+    }
+
+    #[Test]
     public function creating_a_leaf_then_immediately_moving_the_same_instance_does_not_drift(): void
     {
         $tree = $this->seedTree();

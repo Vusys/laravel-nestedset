@@ -433,6 +433,15 @@ final class DeltaCapture
         }
 
         $modelClass = $node::class;
+        // Re-read the current lft/rgt/depth before banding the delta onto
+        // the ancestor chain. A source-column save touches only the dirty
+        // source column, so the DB row keeps its true bounds — but the
+        // in-memory instance may be stale (an earlier move/append shifted
+        // this row after it was loaded). Using the stale bounds would apply
+        // the delta to the wrong ancestor set, permanently drifting the
+        // aggregates. Mirrors the same FOR UPDATE re-read the `deleting`
+        // hook performs before subtracting a node's stored subtotal.
+        self::refreshBoundsFromDatabase($node);
         $bounds = $node->getBounds();
         $softDeletedColumn = AggregateAnchor::softDeleteColumn($node);
 
@@ -493,6 +502,45 @@ final class DeltaCapture
 
         ChangeFeedRecorder::dispatch($node, $state->changeFeedPreSnapshot);
         $state->changeFeedPreSnapshot = null;
+    }
+
+    /**
+     * Re-reads lft/rgt/depth from the DB into $node so the delta UPDATE
+     * bands on the row's current bounds, not a stale in-memory snapshot.
+     * No-op if the row can't be located. Locks the row for the rest of
+     * the transaction (non-SQLite, when one is open) so a concurrent
+     * gap-shift can't slide the bounds between this re-read and the
+     * delta UPDATE that follows — matching the discipline used elsewhere
+     * on every stale-bounds re-read.
+     *
+     * @param  Model&MaintainsTreeAggregates  $node
+     */
+    private static function refreshBoundsFromDatabase(Model $node): void
+    {
+        $key = $node->getKey();
+        if ($key === null) {
+            return;
+        }
+
+        $columns = [$node->getLftName(), $node->getRgtName(), $node->getDepthName()];
+
+        $connection = $node->getConnection();
+        $query = $connection->table($node->getTable())
+            ->where($node->getKeyName(), $key);
+
+        if ($connection->getDriverName() !== 'sqlite' && $connection->transactionLevel() > 0) {
+            $query->lockForUpdate();
+        }
+
+        $row = $query->first($columns);
+        if ($row === null) {
+            return;
+        }
+
+        foreach ($columns as $column) {
+            $node->setAttribute($column, $row->{$column});
+            $node->syncOriginalAttribute($column);
+        }
     }
 
     /**
