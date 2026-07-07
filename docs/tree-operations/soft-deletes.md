@@ -66,6 +66,9 @@ The stamp is at **seconds** precision — exactly the form Eloquent's `fromDateT
 
 The marker capture happens inside Eloquent's `restoring` event hook, before the anchor's own row is cleared, so the value is read while it's still in the database. This is how the cascade survives the round-trip: Eloquent doesn't let observers reach into model state mid-restore, but the package's `SoftDeleteMarkerCaptured` event signals the buffered value and `applyRestoreCascade` consumes it.
 
+> [!IMPORTANT]
+> **Restore top-down: a node whose parent is still trashed can't be restored.** The cascade only walks *down* — it never restores ancestors — so `restore()` on a node whose parent is still soft-deleted throws `TrashedAncestorException`. Bringing that node back on its own would leave a live child parented under a trashed one, the same "live child under a trashed parent" state the insert / factory path already refuses (`TrashedTargetException`). Restore the parent first (or `forceDelete()` it). Restoring from the **top** of a trashed subtree (parent live, or the node is a root) is always allowed, and a trashed child under a *live* parent is fine — only a still-trashed parent trips the guard. So when levels were trashed independently at different timestamps, restore them **outward-in**: parent before child. The guard reads only the parent's `deleted_at` (one indexed lookup) and runs before any write, so a rejected restore leaves the tree and its aggregates untouched.
+
 ## Force-delete cascade
 
 `forceDelete()` on an interior node hard-deletes every descendant in a single raw query-builder `DELETE` (no per-row Eloquent `deleted` events for descendants), then closes the gap in `lft` / `rgt` like a normal mutation. This mirrors the soft-delete shape — both cascades issue exactly one descendant-touching SQL statement regardless of subtree size — so it's safe on multi-thousand-row subtrees without exploding the round-trip count.
@@ -98,8 +101,8 @@ Soft-delete cascade **preserves stored aggregates on the soft-deleted subtree** 
 
 Force-delete decrements the ancestor chain like a normal delete; the destroyed rows take their stored aggregate values with them.
 
-> [!WARNING]
-> **Known limitation — force-deleting a trashed subtree that has an individually-restored live descendant.** If you soft-delete a parent (cascading to its children), then `restore()` one child on its own (so it's live again under the still-trashed parent), then `forceDelete()` the parent, the cascade hard-deletes that live child but its aggregate contribution is **not** subtracted from the ancestor chain — the parent's decrement was already taken at the original soft-delete, and the guard that prevents double-decrementing the parent also skips the live child. The ancestors are left counting a row that no longer exists. Until this is fixed, run `Model::fixAggregates($anchor)` on the affected root after such a sequence, or avoid force-deleting a trashed subtree that contains individually-restored descendants. (Reproduction pinned in `ForceDeleteAfterRestoreDriftTest`.)
+> [!NOTE]
+> **Former aggregate-drift limitation — now closed at the source.** There used to be an aggregate-drift hole here: soft-delete a parent (cascading to its children), `restore()` one child on its own so it's live under the still-trashed parent, then `forceDelete()` the parent — the cascade hard-deleted the live child but never subtracted its contribution, leaving the ancestor chain counting a row that no longer existed. Its precondition — a live child under a trashed parent — can no longer be constructed: the individual `restore()` in the middle now throws `TrashedAncestorException` (see the restore-top-down note above). With that state unreachable through the public API, the downstream drift can't occur. (`ForceDeleteAfterRestoreDriftTest` now pins the guard closing the hole.)
 
 See [Aggregates → Drift & Limitations](../aggregates/drift.html) for the full per-mutation accounting.
 

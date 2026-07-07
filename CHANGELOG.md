@@ -9,6 +9,32 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+### Changed
+
+- **`restore()` now rejects a node whose parent is still soft-deleted**,
+  throwing the new `TrashedAncestorException`. The restore cascade only
+  walks *down* (it brings back the anchor plus its same-stamp
+  descendants but never restores ancestors), so restoring a mid-subtree
+  node left a live child parented under a trashed one — the exact "live
+  child under a trashed parent" state the insert / factory path already
+  refuses with `TrashedTargetException`. The guard keeps that invariant
+  total in both directions: restore **outward-in** (parent before
+  child). Restoring from the top of a trashed subtree (parent live, or a
+  root) is unchanged, and a trashed child under a *live* parent is still
+  fine. The check is a single indexed lookup on the parent's
+  `deleted_at` and runs before any write, so a rejected restore leaves
+  the tree and its aggregates untouched. Closes #218; surfaced by the
+  soft-delete Runabout journey.
+
+### Fixed
+
+- **The former force-delete-after-partial-restore aggregate drift is now
+  unreachable.** Force-deleting a trashed parent that had an
+  individually-restored live child used to leave the ancestor chain
+  counting a destroyed row. Its precondition — a live child under a
+  trashed parent — can no longer be constructed now that the mid-sequence
+  `restore()` throws, so the downstream drift can't occur.
+
 ## [0.24.2] - 2026-07-07
 
 Patch: stop a bounds-stale instance from drifting aggregates on a

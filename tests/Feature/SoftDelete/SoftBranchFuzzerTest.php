@@ -218,7 +218,13 @@ final class SoftBranchFuzzerTest extends TestCase
                 return;
 
             case 'restore':
-                $target = $this->randomTrashedNode();
+                // Restore only from the top of a trashed subtree (parent
+                // live or null). restore() rejects a deeper node whose
+                // parent is still trashed (TrashedAncestorException) — the
+                // cascade never walks up, so it would leave a live child
+                // under a trashed parent. The guard is pinned directly in
+                // RestoreUnderTrashedParentTest.
+                $target = $this->randomRestorableNode();
                 if (! $target instanceof SoftBranch) {
                     return;
                 }
@@ -373,6 +379,34 @@ final class SoftBranchFuzzerTest extends TestCase
         }
 
         return $trashed[mt_rand(0, count($trashed) - 1)];
+    }
+
+    /**
+     * A trashed node whose parent is live (or null) — the top of a
+     * trashed subtree. restore() rejects any deeper node whose parent is
+     * still trashed (TrashedAncestorException), so this is the set the
+     * fuzzer can safely restore.
+     */
+    private function randomRestorableNode(): ?SoftBranch
+    {
+        $restorable = array_values(array_filter(
+            SoftBranch::onlyTrashed()->get()->all(),
+            static function (SoftBranch $node): bool {
+                if ($node->parent_id === null) {
+                    return true;
+                }
+
+                $parent = SoftBranch::withTrashed()->find($node->parent_id);
+
+                return $parent instanceof SoftBranch && ! $parent->trashed();
+            },
+        ));
+
+        if ($restorable === []) {
+            return null;
+        }
+
+        return $restorable[mt_rand(0, count($restorable) - 1)];
     }
 
     private function assertInvariants(string $stage): void

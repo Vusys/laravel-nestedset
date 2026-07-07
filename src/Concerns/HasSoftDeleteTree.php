@@ -14,8 +14,11 @@ use Vusys\NestedSet\Events\SoftDelete\SubtreeRestored;
 use Vusys\NestedSet\Events\SoftDelete\SubtreeRestoring;
 use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleted;
 use Vusys\NestedSet\Events\SoftDelete\SubtreeSoftDeleting;
+use Vusys\NestedSet\Exceptions\TrashedAncestorException;
+use Vusys\NestedSet\Exceptions\TrashedTargetException;
 use Vusys\NestedSet\Query\Aggregates\Read\FreshAggregateProjector;
 use Vusys\NestedSet\Scope\NestedSetScopeResolver;
+use Vusys\NestedSet\Testing\BuildsNestedSetTrees;
 
 /**
  * Cascades soft-delete and restore through a subtree.
@@ -46,6 +49,7 @@ trait HasSoftDeleteTree
         // descendants as trashed instead of stale-live.
         //
         static::registerModelEvent('restoring', static function (Model $node): void {
+            self::guardRestoreParentIsLive($node);
             self::captureRestoreMarker($node);
         });
 
@@ -139,6 +143,55 @@ trait HasSoftDeleteTree
             anchor: $node,
             marker: $deletedAt,
         ));
+    }
+
+    /**
+     * Reject `restore()` on a node whose parent is still soft-deleted.
+     *
+     * The restore cascade brings back the anchor plus its same-stamp
+     * descendants but never walks *up*, so restoring a mid-subtree node
+     * would leave a live child parented under a trashed one — the same
+     * "live child under a trashed parent" state the insert/factory path
+     * already forbids ({@see TrashedTargetException},
+     * {@see BuildsNestedSetTrees}). Restoring
+     * from the top of a trashed subtree (parent live or null) is always
+     * allowed; only a still-trashed parent trips the guard.
+     *
+     * Reads the parent's `deleted_at` off the base table — the row is in
+     * the same scope by construction and this bypasses the SoftDeletes
+     * global scope so a trashed parent is actually visible.
+     */
+    private static function guardRestoreParentIsLive(Model $node): void
+    {
+        if (! $node instanceof HasNestedSet) {
+            return;
+        }
+
+        $deletedAtColumn = self::deletedAtColumnFor($node);
+        $parentId = $node->getParentId();
+
+        // A root has no parent to be trashed under, and a non-soft-delete
+        // model has no column to read — either way there's nothing to
+        // guard. Nested (rather than early-return) so the trashed-parent
+        // path is the method's only exit that isn't a plain fall-through.
+        if ($deletedAtColumn !== null && $parentId !== null) {
+            $parentDeletedAt = $node->getConnection()
+                ->table($node->getTable())
+                ->where($node->getKeyName(), $parentId)
+                ->value($deletedAtColumn);
+
+            if ($parentDeletedAt !== null) {
+                $key = $node->getKey();
+                \assert(is_int($key) || is_string($key));
+
+                throw new TrashedAncestorException(sprintf(
+                    '%s::restore() target id=%s has a soft-deleted parent id=%s — restore the parent (or forceDelete it) before restoring this node; the cascade never walks up, so a partial restore would leave a live child under a trashed parent.',
+                    $node::class,
+                    $key,
+                    $parentId,
+                ));
+            }
+        }
     }
 
     /** @internal Called from NodeTrait's restored listener to keep ordering deterministic. */

@@ -142,7 +142,14 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
                 return;
 
             case 'restore':
-                $target = $this->randomTrashedNode();
+                // Only restore from the top of a trashed subtree (parent
+                // live or null). Restoring a node whose parent is still
+                // trashed throws TrashedAncestorException by design — the
+                // cascade never walks up, so it would leave a live child
+                // under a trashed parent. Top-down restore is the
+                // guaranteed path; the guard itself is pinned in
+                // RestoreUnderTrashedParentTest.
+                $target = $this->randomRestorableNode();
                 if (! $target instanceof Monster) {
                     return;
                 }
@@ -272,6 +279,34 @@ final class SoftDeleteCascadeFuzzerTest extends TestCase
         }
 
         return $trashed[mt_rand(0, count($trashed) - 1)];
+    }
+
+    /**
+     * A trashed node whose parent is live (or null) — i.e. the top of a
+     * trashed subtree. restore() rejects any deeper node whose parent is
+     * still trashed (TrashedAncestorException), so this is the set of
+     * nodes the fuzzer can safely restore.
+     */
+    private function randomRestorableNode(): ?Monster
+    {
+        $restorable = array_values(array_filter(
+            Monster::onlyTrashed()->get()->all(),
+            static function (Monster $node): bool {
+                if ($node->parent_id === null) {
+                    return true;
+                }
+
+                $parent = Monster::withTrashed()->find($node->parent_id);
+
+                return $parent instanceof Monster && ! $parent->trashed();
+            },
+        ));
+
+        if ($restorable === []) {
+            return null;
+        }
+
+        return $restorable[mt_rand(0, count($restorable) - 1)];
     }
 
     private function assertAggregatesAgreeWithFresh(string $stage): void
