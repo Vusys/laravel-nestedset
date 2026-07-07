@@ -1,0 +1,99 @@
+name: PHP setup
+description: >-
+  Shared PHP + Composer setup for the test / runabout / fuzz jobs:
+  PHP, Composer auth + cache, optional Laravel version pin, install.
+  The caller must run actions/checkout first — a local composite action
+  is read from the already-checked-out workspace.
+
+inputs:
+  php:
+    description: PHP version to install.
+    required: true
+  laravel:
+    description: >-
+      Laravel major to pin (e.g. "11.0"). Empty (default) uses whatever
+      composer.json resolves to — i.e. the latest supported Laravel.
+    required: false
+    default: ''
+  testbench:
+    description: Testbench major to pin alongside Laravel (only used when laravel is set).
+    required: false
+    default: ''
+  coverage:
+    description: setup-php coverage driver — "pcov" to enable, "none" to disable.
+    required: false
+    default: none
+  github-token:
+    description: Token for Composer's GitHub auth (avoids the setup-php masking race).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup PHP
+      uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      with:
+        php-version: ${{ inputs.php }}
+        extensions: mbstring, pdo_mysql, pdo_pgsql, pdo_sqlite
+        coverage: ${{ inputs.coverage }}
+        tools: composer:v2
+
+    # shivammathur/setup-php's internal handoff of GITHUB_TOKEN to
+    # Composer's auth.json sometimes writes the runner-masked `***`
+    # literal instead of the real value (the token's line-wrap defeats
+    # Actions' per-line masker, typically on a Composer cache-miss).
+    # Overwrite auth.json ourselves so Composer sees the real token
+    # regardless. `composer config` writes the file directly without
+    # echoing the value through the runner's logging layer.
+    - name: Configure Composer authentication
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
+
+    - name: Cache Composer dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+      with:
+        path: ~/.composer/cache/files
+        key: composer-php${{ inputs.php }}-laravel${{ inputs.laravel }}-${{ hashFiles('composer.json') }}
+        restore-keys: |
+          composer-php${{ inputs.php }}-laravel${{ inputs.laravel }}-
+
+    - name: Pin matrix versions
+      if: inputs.laravel != ''
+      shell: bash
+      run: |
+        composer remove --dev --no-update larastan/larastan rector/rector driftingly/rector-laravel laravel/pint
+        composer require --dev --no-update \
+          "laravel/framework:^${{ inputs.laravel }}" \
+          "orchestra/testbench:^${{ inputs.testbench }}"
+
+    # Laravel 11's security-support window closed (~March 2026), so
+    # advisories filed against it are never patched on the 11.x line and
+    # Composer 2.10's resolver blocks every affected version — the cell
+    # can't install at all. We keep an 11.x cell for coverage of the
+    # oldest supported framework, so every such advisory must be ignored
+    # explicitly here as it lands. All of these are app-level vulns
+    # (email-rule CRLF injection, etc.) unrelated to the nested-set code
+    # under test. 12.x/13.x stay strict.
+    #   PKSA-mdq4-51ck-6kdq — CVE-2026-48019 default email-rule CRLF
+    #   PKSA-8qx3-n5y5-vvnd, PKSA-q46n-4fdk-zjr4,
+    #   PKSA-qzrn-rnz3-85w1, PKSA-w7xr-vk7n-rstm
+    #   PKSA-3r5d-mb8f-1qw9 — CRLF injection in default email rule
+    #   PKSA-m5cs-t1y6-qpcs — temporary signed URL path confusion
+    - name: Allow EOL Laravel 11 (ignore unpatched advisories)
+      if: inputs.laravel == '11.0'
+      shell: bash
+      run: >-
+        composer config policy.advisories.ignore-id
+        PKSA-mdq4-51ck-6kdq
+        PKSA-8qx3-n5y5-vvnd
+        PKSA-q46n-4fdk-zjr4
+        PKSA-qzrn-rnz3-85w1
+        PKSA-w7xr-vk7n-rstm
+        PKSA-3r5d-mb8f-1qw9
+        PKSA-m5cs-t1y6-qpcs
+
+    - name: Install dependencies
+      shell: bash
+      run: composer update --prefer-dist --no-interaction --no-progress
