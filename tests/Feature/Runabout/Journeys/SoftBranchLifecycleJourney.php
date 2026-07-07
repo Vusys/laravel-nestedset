@@ -24,8 +24,9 @@ use Vusys\Runabout\Step;
  * missed filter on either side of the recompute leaks.
  *
  * Invariants lean on the library's own trashed-aware detectors
- * ({@see SoftBranch::aggregatesAreBroken()} / `isBroken()`), matching
- * the existing cascade fuzzer, plus the built-in soft-delete leak check.
+ * ({@see SoftBranch::aggregateErrors()} / {@see SoftBranch::isBroken()}),
+ * in the spirit of the existing cascade fuzzer, plus the built-in
+ * soft-delete leak check.
  */
 final class SoftBranchLifecycleJourney extends Journey
 {
