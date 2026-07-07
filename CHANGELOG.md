@@ -9,6 +9,27 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-07-07
+
+Patch: stop a bounds-stale instance from drifting aggregates on a
+source-column update.
+
+### Fixed
+
+- **Updating an aggregate source column on a held instance whose
+  `lft`/`rgt` had gone stale banded the delta onto the wrong ancestor
+  chain.** A source-column save rewrites only the dirty column, never
+  the structural bounds, so an instance shifted by an earlier
+  move/append (but not refreshed) still carried its old bounds while the
+  DB row held the current ones. The `saved`-hook delta pass keyed its
+  ancestor `UPDATE` off those stale bounds — missing the node itself and
+  spilling the delta onto whatever now occupied the old position,
+  producing permanent silent drift. The delta pass now re-reads
+  `lft`/`rgt`/`depth` from the database before banding (locking the row
+  when a transaction is open), matching the discipline already used on
+  the delete, move and restore paths. Found by the scheduled aggregate
+  stale-instance fuzzer.
+
 ## [0.24.1] - 2026-07-05
 
 Patch: fail loud on a misconfigured `NodeTrait` model instead of silently
@@ -269,7 +290,8 @@ MySQL (full suite + every seeded fuzzer).
 - Subtree cloning (`cloneSubtreeTo`, `cloneSubtreeAsRoot`).
 - Sibling reorder primitive (one `CASE WHEN` UPDATE per reorder).
 
-[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.1...HEAD
+[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.2...HEAD
+[0.24.2]: https://github.com/vusys/laravel-nestedset/compare/v0.24.1...v0.24.2
 [0.24.1]: https://github.com/vusys/laravel-nestedset/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/vusys/laravel-nestedset/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/vusys/laravel-nestedset/compare/v0.22.0...v0.23.0
