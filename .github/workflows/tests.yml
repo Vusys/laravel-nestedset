@@ -31,6 +31,7 @@ concurrency:
 #     ▼
 #   tier 1  test-13  ‖  runabout  ‖  fuzz-pinned     (primary + deterministic
 #     │                                               property checks, all DBs)
+#     │        test-newest (allow-failure, non-gating — newest-stable engines)
 #     ▼
 #   tier 2  test-legacy                              (Laravel 11 + 12 matrix)
 #
@@ -40,6 +41,13 @@ concurrency:
 # They sit in tier 1 alongside test-13 because they finish (~1–2 min) well
 # inside test-13's cross-backend wall, so they cost ~zero extra wall-clock
 # yet block the expensive Laravel 11/12 matrix the moment they go red.
+#
+# The DB service images are pinned to an explicit floor — the oldest
+# supported engine per backend (mysql:8.4, mariadb:11.4, postgres:15); if
+# the suite is green there it is green on everything newer. test-newest
+# runs the same suite on the newest GA images (mysql:9, mariadb:11.8,
+# postgres:18) behind `continue-on-error`, purely as a forward-breakage
+# heads-up — it never gates a merge.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -108,7 +116,7 @@ jobs:
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -121,7 +129,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -135,7 +143,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -198,7 +206,7 @@ jobs:
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -211,7 +219,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -225,7 +233,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -274,7 +282,7 @@ jobs:
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -287,7 +295,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -301,7 +309,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -334,6 +342,91 @@ jobs:
           DB_PASSWORD: ${{ matrix.db_password }}
         run: composer fuzz
 
+  # Newest-stable early warning. One lane per networked engine on the
+  # newest GA image, so forward-breakage (a dialect change in an upcoming
+  # release) shows up here before it becomes the pinned floor — without
+  # doubling every matrix cell. `continue-on-error` keeps it non-gating:
+  # a red here is a heads-up to investigate, never a merge blocker. It
+  # deliberately sits outside test-legacy's `needs` so it can never gate.
+  # SQLite is excluded — setup-php already tracks a recent build.
+  test-newest:
+    needs: [static-analysis, actionlint]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [mysql, mariadb, pgsql]
+        include:
+          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+
+    name: "Newest / PHP 8.4 / Laravel 13 / ${{ matrix.db }}"
+
+    services:
+      mysql:
+        image: mysql:9
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./.github/actions/php-setup
+        with:
+          php: '8.4'
+          laravel: '13.0'
+          testbench: '11.0'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tests
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+        run: vendor/bin/phpunit
+
   test-legacy:
     needs: [test-13, runabout, fuzz-pinned]
     runs-on: ubuntu-latest
@@ -357,7 +450,7 @@ jobs:
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -370,7 +463,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -384,7 +477,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
