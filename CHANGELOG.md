@@ -9,6 +9,14 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-07-08
+
+Patch: three tree-correctness fixes, all surfaced by the new Runabout
+journey suite (seeded, shuffled, shrinking property tests for
+order-dependent invariants) — two `TreeDiff::apply()` corruptions on
+add/remove diffs, and a soft-delete `restore()` that could leave a live
+child under a trashed parent.
+
 ### Changed
 
 - **`restore()` now rejects a node whose parent is still soft-deleted**,
@@ -34,6 +42,24 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
   counting a destroyed row. Its precondition — a live child under a
   trashed parent — can no longer be constructed now that the mid-sequence
   `restore()` throws, so the downstream drift can't occur.
+- **`TreeDiff::apply()` corrupted the tree when a diff's removed set
+  contained both a node and one of its descendants, on a hard-delete
+  model.** `TreeDiffApplier::doRemoves()` loaded every removed row up
+  front, then deleted each using stale in-memory bounds. Deleting an
+  ancestor cascade-removes its descendants and closes their gaps, so the
+  loop then re-deleted an already-gone descendant with stale bounds,
+  double-closing an ancestor's `rgt`. Each removed row is now reloaded
+  against the live tree immediately before its delete: rows a prior
+  cascade already took are skipped, and survivors close their gap with
+  current bounds. Soft-delete models were unaffected.
+- **`TreeDiff::apply()` threw `moveToSiblingPosition(): position must be
+  in [0, N]` when a diff added a node at a sibling position that a later
+  move would fill.** `apply()` runs its phases add → move → remove →
+  modify, so when a parent's final children come from a mix of added and
+  moved-in nodes, an added node's recorded position could exceed the
+  child count present during the adds phase. The applier now clamps the
+  add-time position to the current tail and lets the moves phase settle
+  the final sibling order.
 
 ## [0.24.2] - 2026-07-07
 
