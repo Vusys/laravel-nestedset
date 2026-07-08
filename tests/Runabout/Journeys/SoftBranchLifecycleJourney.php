@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Runabout\Journeys;
 
 use PHPUnit\Framework\Assert;
+use Vusys\NestedSet\Exceptions\TrashedAncestorException;
 use Vusys\NestedSet\Tests\Fixtures\Models\SoftBranch;
 use Vusys\Runabout\Context;
 use Vusys\Runabout\Invariant;
@@ -22,6 +23,12 @@ use Vusys\Runabout\Step;
  * ancestors, and the raw-filter column recomputes when `active` flips.
  * Trashing a parent and restoring it in a shuffled order is where a
  * missed filter on either side of the recompute leaks.
+ *
+ * The restore step covers both sides of the restore guard: restoring a
+ * subtree-top succeeds, while restoring a node whose parent is still
+ * trashed must throw {@see TrashedAncestorException} (v0.24.3) — the
+ * cascade never walks up, so a partial restore would leave a live child
+ * under a trashed parent.
  *
  * Invariants lean on the library's own trashed-aware detectors
  * ({@see SoftBranch::aggregateErrors()} / {@see SoftBranch::isBroken()}),
@@ -102,39 +109,53 @@ final class SoftBranchLifecycleJourney extends Journey
                     $candidates[$ctx->randomInt(0, count($candidates) - 1)]->delete();
                 }),
 
-            Step::make('restore subtree')
+            Step::make('restore node')
                 ->after('trash subtree')
                 ->repeatable()
                 ->act(function (Context $ctx): void {
-                    // Only restore from the *top* of a trashed subtree — a node
-                    // whose parent is live (or null). Restoring a node whose
-                    // ancestor is still trashed is a different operation: the
-                    // package's stamp-matched cascade restores the node and its
-                    // same-stamp descendants but never walks up, so it would
-                    // leave a live child under a trashed parent — the very state
-                    // the factory guard forbids at insert time. That asymmetry
-                    // is tracked separately; this journey exercises the
-                    // guaranteed flow.
-                    $restorable = SoftBranch::onlyTrashed()
-                        ->orderBy('id')
-                        ->get()
-                        ->filter(function (SoftBranch $node): bool {
-                            if ($node->parent_id === null) {
-                                return true;
-                            }
-
-                            $parent = SoftBranch::withTrashed()->find($node->parent_id);
-
-                            return $parent !== null && ! $parent->trashed();
-                        })
-                        ->values()
-                        ->all();
-
-                    if ($restorable === []) {
+                    // Restore ANY trashed node, not just subtree-tops, so both
+                    // sides of the restore guard are exercised under shuffling:
+                    //
+                    //  - parent live (or a root)  -> restore succeeds, bringing
+                    //    the node plus its same-stamp descendants back.
+                    //  - parent still trashed     -> restore() must refuse with
+                    //    TrashedAncestorException. The cascade never walks up, so
+                    //    bringing the node back would leave a live child under a
+                    //    trashed parent; the guard reads the parent's deleted_at
+                    //    before any write, so a rejected restore is a no-op.
+                    //
+                    // A cascade delete stamps the whole subtree, so a live parent
+                    // implies live ancestors — "parent live" is the clean case.
+                    $trashed = SoftBranch::onlyTrashed()->orderBy('id')->get()->all();
+                    if ($trashed === []) {
                         return;
                     }
 
-                    $restorable[$ctx->randomInt(0, count($restorable) - 1)]->restore();
+                    $node = $trashed[$ctx->randomInt(0, count($trashed) - 1)];
+
+                    $parentTrashed = false;
+                    if ($node->parent_id !== null) {
+                        $parent = SoftBranch::withTrashed()->find($node->parent_id);
+                        $parentTrashed = $parent !== null && $parent->trashed();
+                    }
+
+                    if (! $parentTrashed) {
+                        $node->restore();
+
+                        return;
+                    }
+
+                    try {
+                        $node->restore();
+                        Assert::fail('restore() of a node under a trashed parent must throw TrashedAncestorException.');
+                    } catch (TrashedAncestorException) {
+                        // Expected — the guard rejected the partial restore.
+                    }
+
+                    Assert::assertTrue(
+                        SoftBranch::withTrashed()->whereKey($node->getKey())->first()?->trashed() ?? false,
+                        'A rejected restore must leave the node trashed and the tree untouched.',
+                    );
                 }),
         ];
     }
