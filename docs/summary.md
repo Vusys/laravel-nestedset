@@ -81,3 +81,4 @@ Format:
 - [Aggregate Maintenance](internals/aggregate-maintenance.md)
 - [Integrity & Repair](internals/repair.md)
 - [Concurrency & Transactions](internals/concurrency.md)
+- [The Test Suite](internals/test-suite.md)

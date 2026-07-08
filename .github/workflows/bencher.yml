@@ -21,6 +21,9 @@ on:
   push:
     branches: [master]
   pull_request:
+    # Held quiet while the PR is a draft (see the job `if`); the
+    # draft→ready flip re-triggers via `ready_for_review`.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -34,7 +37,7 @@ jobs:
     # repo's Actions secrets, so BENCHER_API_KEY is empty and the
     # comparison step always errors. Skip on Dependabot PRs (any
     # ecosystem); the master-push baseline keeps real secrets and runs.
-    if: ${{ github.event_name != 'pull_request' || github.actor != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && github.actor != 'dependabot[bot]' }}
     # `pull-requests` + `checks` are only exercised on PR runs (the
     # `--github-actions` step that posts the comparison comment).
     # Job-level scoping keeps push/master runs at read-only.

@@ -20,6 +20,9 @@ name: Infection
 on:
   pull_request:
     branches: [master]
+    # Held quiet while the PR is a draft (see the `pr` job `if`); the
+    # draft→ready flip re-triggers via `ready_for_review`.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [master]
   schedule:
@@ -39,7 +42,7 @@ jobs:
     name: Mutation testing (PR diff)
     # Skip github-actions Dependabot bumps — no PHP changed, so the
     # diff-mode mutation run has nothing to mutate.
-    if: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

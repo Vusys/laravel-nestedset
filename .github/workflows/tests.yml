@@ -4,51 +4,354 @@ on:
   push:
     branches: [master]
   pull_request:
+    # `ready_for_review` lets flipping a draft PR to ready trigger the
+    # whole pipeline; while the PR is a draft the per-job draft guard
+    # (`github.event.pull_request.draft == false`) holds every job quiet,
+    # so no CI minutes burn until the PR is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
 
-# Workflow-wide minimal token. Jobs that genuinely need more scope can
-# override on a per-job basis. Restricting at the top keeps the
-# auto-issued GITHUB_TOKEN harmless even if its value leaks (the
-# shivammathur/setup-php → composer auth-error path has been seen to
-# wrap the token across log lines, bypassing Actions' single-line
-# masker). A read-only contents token cannot rewrite the repo, comment
-# on PRs, or interact with packages.
+# Workflow-wide minimal token. A read-only contents token cannot rewrite
+# the repo, comment on PRs, or interact with packages — keeps the
+# auto-issued GITHUB_TOKEN harmless even if its value leaks.
 permissions:
   contents: read
 
+# A new push (or the draft→ready flip) supersedes the in-flight pipeline
+# for the same ref instead of stacking a long serial chain behind it.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# Staged, fail-fast pipeline. Cheap deterministic checks gate the expensive
+# ones:
+#
+#   tier 0  static-analysis + actionlint            (style / linters)
+#     │
+#     ▼
+#   tier 1  test-13  ‖  runabout  ‖  fuzz-pinned     (primary + deterministic
+#     │                                               property checks, all DBs)
+#     ▼
+#   tier 2  test-legacy                              (Laravel 11 + 12 matrix)
+#
+# runabout and fuzz-pinned use *pinned* seeds, so they are deterministic and
+# safe as required gates — a red is a real regression, never flake. The
+# random-seed exploration stays on fuzz.yml's weekly cron (non-gating).
+# They sit in tier 1 alongside test-13 because they finish (~1–2 min) well
+# inside test-13's cross-backend wall, so they cost ~zero extra wall-clock
+# yet block the expensive Laravel 11/12 matrix the moment they go red.
+# ---------------------------------------------------------------------------
+
 jobs:
-  test:
+  static-analysis:
+    runs-on: ubuntu-latest
+    name: Static analysis & code style
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./.github/actions/php-setup
+        with:
+          php: '8.3'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Larastan
+        run: vendor/bin/phpstan analyse --no-progress --error-format=github
+
+      - name: Run Rector (dry-run)
+        run: vendor/bin/rector process --dry-run --no-progress-bar
+
+      - name: Run Pint (test mode)
+        run: vendor/bin/pint --test
+
+  actionlint:
+    runs-on: ubuntu-latest
+    name: Lint workflows
+    # Cheap on every PR, and the only meaningful check on a github-actions
+    # Dependabot bump (which skips the PHP matrix below).
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+  test-13:
+    needs: [static-analysis, actionlint]
     runs-on: ubuntu-latest
     # A github-actions Dependabot bump (an action SHA) changes zero PHP,
-    # so the whole PHP matrix is irrelevant — actionlint covers it
-    # instead. Composer bumps (the `composer-dev-tools` group) DO affect
-    # dependencies, so they still run the full matrix.
-    if: ${{ !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+    # so the whole PHP matrix is irrelevant — actionlint covers it instead.
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
 
     strategy:
       fail-fast: false
       matrix:
         php: ['8.3', '8.4', '8.5']
-        laravel: ['11.0', '12.0', '13.0']
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          # Map Laravel version → Testbench version
-          - { laravel: '11.0', testbench: '9.0' }
-          - { laravel: '12.0', testbench: '10.0' }
-          - { laravel: '13.0', testbench: '11.0' }
-          # Map db → connection params
           - { db: sqlite,  db_connection: sqlite }
           - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
           - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
-          # Coverage on one cell per backend so backend-specific code
-          # paths (LATERAL on PG/MySQL, STRAIGHT_JOIN on MySQL, derived
-          # shape on MariaDB, correlated fallback on SQLite) all appear
-          # covered. Codecov merges per-flag uploads from the same
-          # commit.
-          - { laravel: '13.0', php: '8.4', db: sqlite,  coverage: true }
-          - { laravel: '13.0', php: '8.4', db: pgsql,   coverage: true }
-          - { laravel: '13.0', php: '8.4', db: mariadb, coverage: true }
-          - { laravel: '13.0', php: '8.4', db: mysql,   coverage: true }
+          # Coverage on one cell per backend so backend-specific code paths
+          # (LATERAL on PG/MySQL, STRAIGHT_JOIN on MySQL, derived shape on
+          # MariaDB, correlated fallback on SQLite) all appear covered.
+          # Codecov merges per-flag uploads from the same commit.
+          - { php: '8.4', db: sqlite,  coverage: true }
+          - { php: '8.4', db: pgsql,   coverage: true }
+          - { php: '8.4', db: mariadb, coverage: true }
+          - { php: '8.4', db: mysql,   coverage: true }
+
+    name: "PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.db }}"
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:lts
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./.github/actions/php-setup
+        with:
+          php: ${{ matrix.php }}
+          laravel: '13.0'
+          testbench: '11.0'
+          coverage: ${{ matrix.coverage && 'pcov' || 'none' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tests
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+        run: vendor/bin/phpunit ${{ matrix.coverage && '--coverage-clover=coverage.xml' || '' }}
+
+      - name: Upload coverage to Codecov
+        if: matrix.coverage
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
+        with:
+          files: coverage.xml
+          # Tag each backend's upload so Codecov merges them per-flag
+          # rather than the last-uploaded report overwriting the rest.
+          flags: ${{ matrix.db }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  runabout:
+    needs: [static-analysis, actionlint]
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, mysql, mariadb, pgsql]
+        include:
+          - { db: sqlite,  db_connection: sqlite }
+          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+
+    name: "Runabout / ${{ matrix.db }}"
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:lts
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./.github/actions/php-setup
+        with:
+          php: '8.4'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Runabout journeys (pinned seeds)
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+        run: vendor/bin/phpunit --group runabout
+
+  fuzz-pinned:
+    needs: [static-analysis, actionlint]
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, mysql, mariadb, pgsql]
+        include:
+          - { db: sqlite,  db_connection: sqlite }
+          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+
+    name: "Fuzz (pinned) / ${{ matrix.db }}"
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:lts
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./.github/actions/php-setup
+        with:
+          php: '8.4'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Default (pinned) seeds — deterministic. FuzzerConfig's pinned seeds
+      # catch known regressions; the weekly fuzz.yml cron does random-seed
+      # exploration separately.
+      - name: Run fuzzers (pinned seeds)
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+        run: composer fuzz
+
+  test-legacy:
+    needs: [test-13, runabout, fuzz-pinned]
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+        laravel: ['11.0', '12.0']
+        db: [sqlite, mysql, mariadb, pgsql]
+        include:
+          - { laravel: '11.0', testbench: '9.0' }
+          - { laravel: '12.0', testbench: '10.0' }
+          - { db: sqlite,  db_connection: sqlite }
+          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
     name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.db }}"
 
@@ -96,69 +399,12 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      - uses: ./.github/actions/php-setup
         with:
-          php-version: ${{ matrix.php }}
-          extensions: mbstring, pdo_mysql, pdo_pgsql, pdo_sqlite
-          coverage: ${{ matrix.coverage && 'pcov' || 'none' }}
-          tools: composer:v2
-
-      # shivammathur/setup-php's internal handoff of GITHUB_TOKEN to
-      # Composer's auth.json sometimes writes the runner-masked `***`
-      # literal instead of the real value (the token's line-wrap defeats
-      # Actions' per-line masker, typically on a Composer cache-miss).
-      # Overwrite auth.json ourselves so Composer sees the real token
-      # regardless. `secrets.GITHUB_TOKEN` is a known secret with reliable
-      # masking; `composer config` writes the file directly without
-      # echoing the value through the runner's logging layer.
-      - name: Configure Composer authentication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: ~/.composer/cache/files
-          key: composer-php${{ matrix.php }}-laravel${{ matrix.laravel }}-${{ hashFiles('composer.json') }}
-          restore-keys: |
-            composer-php${{ matrix.php }}-laravel${{ matrix.laravel }}-
-
-      - name: Pin matrix versions
-        run: |
-          composer remove --dev --no-update larastan/larastan rector/rector driftingly/rector-laravel laravel/pint
-          composer require --dev --no-update \
-            "laravel/framework:^${{ matrix.laravel }}" \
-            "orchestra/testbench:^${{ matrix.testbench }}"
-
-      # Laravel 11's security-support window closed (~March 2026), so
-      # advisories filed against it are never patched on the 11.x line
-      # and Composer 2.10's resolver blocks every affected version —
-      # the cell can't install at all. We keep an 11.x cell for coverage
-      # of the oldest supported framework, so every such advisory must be
-      # ignored explicitly here as it lands. All of these are app-level
-      # vulns (email-rule CRLF injection, etc.) unrelated to the
-      # nested-set code under test. 12.x/13.x stay strict.
-      #   PKSA-mdq4-51ck-6kdq — CVE-2026-48019 default email-rule CRLF
-      #   PKSA-8qx3-n5y5-vvnd, PKSA-q46n-4fdk-zjr4,
-      #   PKSA-qzrn-rnz3-85w1, PKSA-w7xr-vk7n-rstm
-      #   PKSA-3r5d-mb8f-1qw9 — CRLF injection in default email rule
-      #   PKSA-m5cs-t1y6-qpcs — temporary signed URL path confusion
-      - name: Allow EOL Laravel 11 (ignore unpatched advisories)
-        if: matrix.laravel == '11.0'
-        run: >-
-          composer config policy.advisories.ignore-id
-          PKSA-mdq4-51ck-6kdq
-          PKSA-8qx3-n5y5-vvnd
-          PKSA-q46n-4fdk-zjr4
-          PKSA-qzrn-rnz3-85w1
-          PKSA-w7xr-vk7n-rstm
-          PKSA-3r5d-mb8f-1qw9
-          PKSA-m5cs-t1y6-qpcs
-
-      - name: Install dependencies
-        run: composer update --prefer-dist --no-interaction --no-progress
+          php: ${{ matrix.php }}
+          laravel: ${{ matrix.laravel }}
+          testbench: ${{ matrix.testbench }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run tests
         env:
@@ -168,71 +414,4 @@ jobs:
           DB_DATABASE: ${{ matrix.db_database }}
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
-        run: vendor/bin/phpunit ${{ matrix.coverage && '--coverage-clover=coverage.xml' || '' }}
-
-      - name: Upload coverage to Codecov
-        if: matrix.coverage
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
-        with:
-          files: coverage.xml
-          # Tag each backend's upload so Codecov merges them per-flag
-          # rather than overwriting. Without this, the last-uploaded
-          # report wins and backend-specific code (LATERAL on PG/MySQL,
-          # derived shape on MariaDB) shows as uncovered.
-          flags: ${{ matrix.db }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
-  static-analysis:
-    runs-on: ubuntu-latest
-    name: Static analysis & code style
-
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          extensions: mbstring
-          coverage: none
-          tools: composer:v2
-
-      # See "Configure Composer authentication" note in the test job —
-      # same setup-php token-masking workaround applies here.
-      - name: Configure Composer authentication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: composer config --global --auth github-oauth.github.com "$GH_TOKEN"
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: ~/.composer/cache/files
-          key: composer-static-${{ hashFiles('composer.json') }}
-          restore-keys: |
-            composer-static-
-
-      - name: Install dependencies
-        run: composer update --prefer-dist --no-interaction --no-progress
-
-      - name: Run Larastan
-        run: vendor/bin/phpstan analyse --no-progress --error-format=github
-
-      - name: Run Rector (dry-run)
-        run: vendor/bin/rector process --dry-run --no-progress-bar
-
-      - name: Run Pint (test mode)
-        run: vendor/bin/pint --test
-
-  actionlint:
-    runs-on: ubuntu-latest
-    name: Lint workflows
-    # Cheap on every PR, and the only meaningful check on a
-    # github-actions Dependabot bump (which skips the PHP matrix).
-
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Run actionlint
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        run: vendor/bin/phpunit
