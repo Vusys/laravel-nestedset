@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Vusys\NestedSet\Tests\Feature\Runabout\Journeys;
+namespace Vusys\NestedSet\Tests\Runabout\Journeys;
 
 use PHPUnit\Framework\Assert;
 use Vusys\NestedSet\Diff\TreeDiff;
