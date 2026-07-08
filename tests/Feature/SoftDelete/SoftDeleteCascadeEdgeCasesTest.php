@@ -7,6 +7,7 @@ namespace Vusys\NestedSet\Tests\Feature\SoftDelete;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use PHPUnit\Framework\Attributes\Test;
+use Vusys\NestedSet\Exceptions\TrashedAncestorException;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Monster;
 use Vusys\NestedSet\Tests\TestCase;
@@ -154,16 +155,18 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
     }
 
     #[Test]
-    public function inner_restore_unwinds_only_its_own_level(): void
+    public function restore_must_proceed_top_down_and_unwinds_only_its_own_level(): void
     {
-        // Mirrors the README claim: "only descendants trashed in the
-        // same operation are restored". Trash three levels in three
-        // operations, then restore from the innermost back outward.
+        // Trash three levels (A > AA > AAA) in three operations, each with
+        // a distinct timestamp. restore() only walks *down*, so a node may
+        // be restored only once its parent is live (or it's a root) — a
+        // deeper node whose parent is still trashed is rejected
+        // (TrashedAncestorException). Restoring must therefore go
+        // outward-in, and each level unwinds only its own timestamp.
         $this->seedThreeLevelChain();
 
         $aaa = Category::query()->findOrFail(4);
         $aaa->delete();
-        $aaaTs = $aaa->refresh()->deleted_at;
 
         Sleep::sleep(1);
         $aa = Category::query()->findOrFail(3);
@@ -173,34 +176,46 @@ final class SoftDeleteCascadeEdgeCasesTest extends TestCase
         $a = Category::query()->findOrFail(2);
         $a->delete();
 
-        // Restore innermost first: AAA. It has no descendants.
-        $aaa = Category::withTrashed()->findOrFail(4);
-        $aaa->restore();
-        $this->assertNull(Category::query()->findOrFail(4)->deleted_at);
+        // Innermost-first is rejected: AAA's parent AA is still trashed,
+        // so restoring AAA would leave a live child under a trashed parent.
+        $this->expectException(TrashedAncestorException::class);
+        Category::withTrashed()->findOrFail(4)->restore();
+    }
 
-        // Restoring AAA shouldn't unmark AA (different timestamp) — it
-        // already wasn't touched by this restore, but verify.
-        $this->assertNotNull(Category::withTrashed()->findOrFail(3)->deleted_at);
+    #[Test]
+    public function top_down_restore_brings_back_one_level_at_a_time(): void
+    {
+        $this->seedThreeLevelChain();
 
-        // Re-trash AAA to set the stage for restoring AA next.
         $aaa = Category::query()->findOrFail(4);
         $aaa->delete();
 
-        // Now restore AA. Marker = AA's timestamp. AAA has its NEW
-        // timestamp (set in the line above), which is different. So
-        // AAA must NOT come back when AA is restored.
-        $aa = Category::withTrashed()->findOrFail(3);
-        $aa->restore();
+        Sleep::sleep(1);
+        $aa = Category::query()->findOrFail(3);
+        $aa->delete();
 
+        Sleep::sleep(1);
+        $a = Category::query()->findOrFail(2);
+        $a->delete();
+
+        // Restore A (parent Root is live). Marker = A's timestamp, which
+        // only A carries — AA and AAA kept their earlier stamps, so they
+        // stay trashed (a trashed child under a live parent is allowed).
+        Category::withTrashed()->findOrFail(2)->restore();
+        $this->assertNull(Category::query()->findOrFail(2)->deleted_at, 'A restored');
+        $this->assertNotNull(Category::withTrashed()->findOrFail(3)->deleted_at, 'AA stays trashed');
+        $this->assertNotNull(Category::withTrashed()->findOrFail(4)->deleted_at, 'AAA stays trashed');
+
+        // Now AA's parent (A) is live, so AA can be restored — unwinding
+        // only AA's own timestamp; AAA (earlier stamp) stays trashed.
+        Category::withTrashed()->findOrFail(3)->restore();
         $this->assertNull(Category::query()->findOrFail(3)->deleted_at, 'AA restored');
-        $this->assertNotNull(
-            Category::withTrashed()->findOrFail(4)->deleted_at,
-            'AAA stays trashed — its timestamp does not match AA\'s',
-        );
-        // AAA's new timestamp was overwritten only if cascade had a
-        // bug — confirm it's later than AAA's original timestamp.
-        $aaaNewTs = Category::withTrashed()->findOrFail(4)->deleted_at;
-        $this->assertNotSame((string) $aaaTs, (string) $aaaNewTs);
+        $this->assertNotNull(Category::withTrashed()->findOrFail(4)->deleted_at, 'AAA stays trashed');
+
+        // Finally AAA's parent (AA) is live — AAA restores.
+        Category::withTrashed()->findOrFail(4)->restore();
+        $this->assertNull(Category::query()->findOrFail(4)->deleted_at, 'AAA restored');
+        $this->assertSame(0, array_sum(Category::countErrors()));
     }
 
     // ================================================================
