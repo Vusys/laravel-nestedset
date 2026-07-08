@@ -358,12 +358,23 @@ final class TreeDiffApplier
             return;
         }
 
-        $rows = $modelClass::query()->whereIn((new $modelClass)->getKeyName(), $pks)->get();
+        // Delete each removed row against the LIVE tree, reloading it
+        // immediately before its own delete(). When the removed set holds
+        // both a node and one of its descendants, deleting the ancestor
+        // cascade-removes the descendant and closes its gap; reloading
+        // then returns null for that descendant so we skip it instead of
+        // re-closing an already-closed gap with stale bounds (which would
+        // corrupt an ancestor's rgt). Survivors are reloaded so their
+        // gap-close reads bounds current as of earlier deletes in this
+        // pass, not the bounds captured before any of them ran.
+        foreach ($pks as $pk) {
+            $applied = $byPk[self::keyHash($pk)] ?? $pk;
 
-        foreach ($rows as $row) {
-            $row->delete();
-            $key = $row->getKey();
-            $applied = $byPk[self::keyHash($key)] ?? $key;
+            $row = $modelClass::query()->whereKey($pk)->first();
+            if ($row !== null) {
+                $row->delete();
+            }
+
             if (is_int($applied) || is_string($applied)) {
                 $accumulator->removed[] = $applied;
             }
@@ -498,13 +509,28 @@ final class TreeDiffApplier
      * and `moveToSiblingPosition()` is also 0-indexed. Skipped for
      * roots, which have no sibling group to reorder within.
      *
-     * Processing adds/moves in the diff's DFS order means every sibling
-     * ranked below this one is already present, so the target never
-     * exceeds the current child count.
+     * The recorded position is the node's rank in the FINAL tree, but
+     * apply() runs adds before moves: a lower-ranked sibling that arrives
+     * via a later move isn't present yet, so the target can exceed the
+     * current child count. Clamp to the current tail (where the node was
+     * just appended) and let the moves phase settle the final order —
+     * otherwise `moveToSiblingPosition()` throws on the out-of-range slot.
      */
     private static function reorderToSiblingPosition(Model $node, int $zeroBasedPosition): void
     {
-        self::callInstance($node, 'moveToSiblingPosition', [$zeroBasedPosition]);
+        $parentId = self::callInstance($node, 'getParentId', []);
+        $parentIdName = self::callInstance($node, 'getParentIdName', []);
+
+        if ($parentId === null || ! is_string($parentIdName)) {
+            self::callInstance($node, 'moveToSiblingPosition', [$zeroBasedPosition]);
+
+            return;
+        }
+
+        $siblingCount = $node->newQuery()->where($parentIdName, $parentId)->count();
+        $clamped = max(0, min($zeroBasedPosition, $siblingCount - 1));
+
+        self::callInstance($node, 'moveToSiblingPosition', [$clamped]);
     }
 
     /**
