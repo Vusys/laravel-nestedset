@@ -99,10 +99,10 @@ jobs:
         php: ['8.3', '8.4', '8.5']
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',        db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
           # Coverage on one cell per backend so backend-specific code paths
           # (LATERAL on PG/MySQL, STRAIGHT_JOIN on MySQL, derived shape on
           # MariaDB, correlated fallback on SQLite) all appear covered.
@@ -112,7 +112,7 @@ jobs:
           - { php: '8.4', db: mariadb, coverage: true }
           - { php: '8.4', db: mysql,   coverage: true }
 
-    name: "PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.db }}"
+    name: "PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -197,12 +197,12 @@ jobs:
       matrix:
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',        db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Runabout / ${{ matrix.db }}"
+    name: "Runabout / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -273,12 +273,12 @@ jobs:
       matrix:
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',        db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Fuzz (pinned) / ${{ matrix.db }}"
+    name: "Fuzz (pinned) / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -359,12 +359,15 @@ jobs:
       fail-fast: false
       matrix:
         db: [mysql, mariadb, pgsql]
+        # `label` names the engine + its newest-stable version so the check
+        # title says exactly what it exercises (e.g. "MySQL 9") rather than a
+        # bare "newest" that drifts meaning as the pins move.
         include:
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: mysql,   label: 'MySQL 9',       db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.8',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 18', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Newest / PHP 8.4 / Laravel 13 / ${{ matrix.db }}"
+    name: "PHP 8.4 / Laravel 13 / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -441,12 +444,12 @@ jobs:
         include:
           - { laravel: '11.0', testbench: '9.0' }
           - { laravel: '12.0', testbench: '10.0' }
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',        db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.db }}"
+    name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.label }}"
 
     services:
       mysql:
