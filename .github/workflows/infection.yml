@@ -175,10 +175,10 @@ jobs:
           # `threads`, so this leaves the other 3 testing cells at 2
           # threads (each passes comfortably).
           - { shard: testing, db: pgsql, threads: '1' }
-          - { db: sqlite,  label: 'SQLite',        db_connection: sqlite }
-          - { db: mysql,   label: 'MySQL 8.4',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, label: 'MariaDB 11.4',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   label: 'PostgreSQL 15', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',          db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4.x',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
     services:
       mysql:
