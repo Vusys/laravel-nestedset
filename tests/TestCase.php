@@ -222,12 +222,23 @@ abstract class TestCase extends OrchestraTestCase
 
         $app['config']->set('database.default', $connection);
 
+        // Under ParaTest each worker exports a distinct TEST_TOKEN (1..N).
+        // Networked engines share one server, so give every worker its own
+        // database (`testing_1`, `testing_2`, …) — the fixed-table truncate
+        // in setUp() and the tearDown integrity check both assume a single
+        // process owns the schema, which is false the moment workers share
+        // one database. SQLite is untouched: `:memory:` is per-connection,
+        // so workers are already isolated. Plain phpunit sets no TEST_TOKEN
+        // and keeps the bare `testing` name.
+        $token = env('TEST_TOKEN');
+        $database = env('DB_DATABASE', 'testing').($token !== null ? "_{$token}" : '');
+
         $app['config']->set("database.connections.{$connection}", match ($connection) {
             'pgsql' => [
                 'driver' => 'pgsql',
                 'host' => env('DB_HOST', '127.0.0.1'),
                 'port' => env('DB_PORT', '5432'),
-                'database' => env('DB_DATABASE', 'testing'),
+                'database' => $database,
                 'username' => env('DB_USERNAME', 'postgres'),
                 'password' => env('DB_PASSWORD', 'password'),
                 'charset' => 'utf8',
@@ -241,7 +252,7 @@ abstract class TestCase extends OrchestraTestCase
                 'driver' => 'mysql',
                 'host' => env('DB_HOST', '127.0.0.1'),
                 'port' => env('DB_PORT', '3306'),
-                'database' => env('DB_DATABASE', 'testing'),
+                'database' => $database,
                 'username' => env('DB_USERNAME', 'root'),
                 'password' => env('DB_PASSWORD', 'password'),
                 'charset' => 'utf8mb4',
