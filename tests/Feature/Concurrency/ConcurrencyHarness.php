@@ -135,11 +135,23 @@ trait ConcurrencyHarness
                 if ($attempt >= $maxAttempts || ! $this->isDeadlockOrLockTimeout($e)) {
                     throw $e;
                 }
-                // Exponential backoff with jitter, capped at ~256 ms
-                // so deep retry tails don't push a test into multi-
-                // second sleeps. Uncapped, attempt=16 would sleep 65s.
-                $base = min(1_000 * (2 ** $attempt), 256_000);
-                Sleep::usleep($base + random_int(0, 5_000));
+                // Full-jitter backoff (AWS "Exponential Backoff And
+                // Jitter"): sleep a uniform random duration in
+                // [0, cap], where cap grows exponentially and is
+                // capped at ~256 ms so deep retry tails don't push a
+                // test into multi-second sleeps.
+                //
+                // The jitter must span the WHOLE window, not sit as a
+                // few ms on top of a fixed exponential base. With
+                // additive jitter every contending worker backs off to
+                // ~the same capped instant and wakes in lockstep, so
+                // they re-collide and re-deadlock as a herd — on a
+                // small tree that storms PostgreSQL's deadlock detector
+                // until the unluckiest worker exhausts maxAttempts.
+                // Sampling [0, cap] decorrelates the retries so the
+                // herd disperses instead of resynchronising.
+                $cap = min(1_000 * (2 ** $attempt), 256_000);
+                Sleep::usleep(random_int(0, $cap));
             }
         }
     }
