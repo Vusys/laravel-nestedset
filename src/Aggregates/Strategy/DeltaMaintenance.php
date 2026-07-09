@@ -32,6 +32,27 @@ use Vusys\NestedSet\Query\TreeExpression;
 final class DeltaMaintenance
 {
     /**
+     * Decimal-coercion multiplier for the AVG display column, stored as
+     * `sum / count`.
+     *
+     * A bare `1.0 *` (scale 1) is enough to stop SQLite/PostgreSQL doing
+     * integer division, but it makes the quotient's scale only
+     * `1 + div_precision_increment` (= 5 on MySQL/MariaDB by default).
+     * A scale-5 intermediate is then rounded a SECOND time when written
+     * into a `DECIMAL(_, 4)` column — and the two roundings disagree at
+     * the 4th-decimal half-boundary. MySQL 8 masked it (round-half-down
+     * at that boundary), MySQL 9 flipped to round-half-up and exposed the
+     * double-round: `1160/11 = 105.454545…` stored as `105.4546` while a
+     * fresh `AVG()` read (single-rounded to scale 4) returned `105.4545`.
+     *
+     * Widening the multiplier to scale 6 lifts the quotient to at least
+     * scale 6 (10 with the default increment), so rounding once more to
+     * the column scale agrees with the fresh single-rounded value on
+     * every backend. Harmless on SQLite/PostgreSQL, which already widen.
+     */
+    private const string DECIMAL_COERCION = '1.000000';
+
+    /**
      * Applies a set of deltas to the ancestor chain (and optionally
      * self) of $bounds inside $scope. Negative deltas are supported.
      *
@@ -177,12 +198,14 @@ final class DeltaMaintenance
             $sumExpression = self::columnPlusDelta($sumCol, $deltas[$sumCol] ?? 0);
             $countExpression = self::columnPlusDelta($countCol, $deltas[$countCol] ?? 0);
 
-            // `1.0 *` forces decimal arithmetic. Without it SQLite and
-            // PostgreSQL truncate integer/integer division to integer
-            // (so SUM=175 / COUNT=3 yields 58 instead of 58.333…).
-            // MySQL/MariaDB already widen but the multiplier is harmless.
+            // The multiplier forces decimal arithmetic (without it SQLite
+            // and PostgreSQL truncate integer/integer division to integer,
+            // so SUM=175 / COUNT=3 yields 58 instead of 58.333…) and
+            // carries enough scale to avoid a double-round when the
+            // quotient lands in a lower-scale DECIMAL column — see
+            // {@see self::DECIMAL_COERCION}.
             $clauses[$avgCol] = new TreeExpression(
-                "(1.0 * ({$sumExpression})) / NULLIF(({$countExpression}), 0)",
+                '('.self::DECIMAL_COERCION." * ({$sumExpression})) / NULLIF(({$countExpression}), 0)",
             );
         }
 
@@ -238,6 +261,13 @@ final class DeltaMaintenance
             $sumWxExpression = self::columnPlusDelta($companions['sum_wx'], $deltas[$companions['sum_wx']] ?? 0);
             $sumWExpression = self::columnPlusDelta($companions['sum_w'], $deltas[$companions['sum_w']] ?? 0);
 
+            // NB: kept at `1.0 *` (not DECIMAL_COERCION) deliberately —
+            // the weighted-avg FRESH read (DerivedAggregateFragments +
+            // the leaf-inline read fragment) uses the same scale-1 shape,
+            // so both sides round identically and agree. Widening only
+            // this side would reintroduce the store-vs-fresh mismatch it
+            // is meant to avoid. If weighted-avg accuracy is revisited,
+            // widen all three sites together.
             $clauses[$displayCol] = new TreeExpression(
                 "(1.0 * ({$sumWxExpression})) / NULLIF(({$sumWExpression}), 0)",
             );
