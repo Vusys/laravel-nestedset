@@ -168,6 +168,25 @@ jobs:
           coverage: ${{ matrix.coverage && 'pcov' || 'none' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # ParaTest cuts each networked cell ~2.6x on the 4-vCPU runner (4
+      # workers, each with its own `testing_N` database — see
+      # tests/TestCase.php's TEST_TOKEN handling). Coverage cells run under
+      # ParaTest too (it merges per-worker clover into one report Codecov
+      # accepts; it just needs an explicit --cache-directory). SQLite skips
+      # ParaTest — `:memory:` is already per-worker and the suite is fast
+      # there anyway.
+      - name: Create ParaTest worker databases
+        if: matrix.db != 'sqlite'
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+          PARATEST_WORKERS: '4'
+        run: php tooling/create-worker-databases.php
+
       - name: Run tests
         env:
           DB_CONNECTION: ${{ matrix.db_connection }}
@@ -176,7 +195,19 @@ jobs:
           DB_DATABASE: ${{ matrix.db_database }}
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
-        run: vendor/bin/phpunit ${{ matrix.coverage && '--coverage-clover=coverage.xml' || '' }}
+          RUN_PARATEST: ${{ (matrix.db != 'sqlite') && '1' || '' }}
+          COVERAGE: ${{ matrix.coverage && '1' || '' }}
+        run: |
+          if [ -n "$RUN_PARATEST" ]; then
+            if [ -n "$COVERAGE" ]; then
+              mkdir -p build/paratest-cache
+              vendor/bin/paratest -p4 --runner=WrapperRunner --cache-directory=build/paratest-cache --coverage-clover=coverage.xml
+            else
+              vendor/bin/paratest -p4 --runner=WrapperRunner
+            fi
+          else
+            vendor/bin/phpunit ${{ matrix.coverage && '--coverage-clover=coverage.xml' || '' }}
+          fi
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
@@ -423,6 +454,19 @@ jobs:
           testbench: '11.0'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Every test-newest cell is a networked engine (no sqlite, no
+      # coverage), so ParaTest applies unconditionally here.
+      - name: Create ParaTest worker databases
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+          PARATEST_WORKERS: '4'
+        run: php tooling/create-worker-databases.php
+
       - name: Run tests
         env:
           DB_CONNECTION: ${{ matrix.db_connection }}
@@ -431,7 +475,7 @@ jobs:
           DB_DATABASE: ${{ matrix.db_database }}
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
-        run: vendor/bin/phpunit
+        run: vendor/bin/paratest -p4 --runner=WrapperRunner
 
   test-legacy:
     needs: [test-13, runabout, fuzz-pinned]
@@ -505,6 +549,20 @@ jobs:
           testbench: ${{ matrix.testbench }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Networked cells run under ParaTest (~2.6x); SQLite stays on plain
+      # phpunit (`:memory:` is already per-worker and it's fast).
+      - name: Create ParaTest worker databases
+        if: matrix.db != 'sqlite'
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+          PARATEST_WORKERS: '4'
+        run: php tooling/create-worker-databases.php
+
       - name: Run tests
         env:
           DB_CONNECTION: ${{ matrix.db_connection }}
@@ -513,7 +571,13 @@ jobs:
           DB_DATABASE: ${{ matrix.db_database }}
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
-        run: vendor/bin/phpunit
+          RUN_PARATEST: ${{ (matrix.db != 'sqlite') && '1' || '' }}
+        run: |
+          if [ -n "$RUN_PARATEST" ]; then
+            vendor/bin/paratest -p4 --runner=WrapperRunner
+          else
+            vendor/bin/phpunit
+          fi
 
   # Single aggregation gate. Branch protection requires this one stable
   # context instead of every version-labelled matrix cell (whose names

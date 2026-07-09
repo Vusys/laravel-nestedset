@@ -20,6 +20,7 @@ Key non-obvious properties:
 ```bash
 composer check           # Pint --test → Rector --dry-run → PHPStan, halt on first failure. Run before pushing.
 composer test            # PHPUnit, default suite (Package) — excludes Performance + fuzzer group
+composer test:parallel   # Same suite under ParaTest (4 workers, ~2.6x on networked engines). Create per-worker DBs first: `DB_CONNECTION=… php tooling/create-worker-databases.php`
 composer analyse         # PHPStan / Larastan level 9, NO baseline allowed
 composer pint:check      # Laravel Pint, --test mode (style check)
 composer rector:check    # Rector --dry-run
