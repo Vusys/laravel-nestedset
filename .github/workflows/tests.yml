@@ -31,6 +31,7 @@ concurrency:
 #     ▼
 #   tier 1  test-13  ‖  runabout  ‖  fuzz-pinned     (primary + deterministic
 #     │                                               property checks, all DBs)
+#     │        test-newest (gating — newest-stable engines)
 #     ▼
 #   tier 2  test-legacy                              (Laravel 11 + 12 matrix)
 #
@@ -40,6 +41,15 @@ concurrency:
 # They sit in tier 1 alongside test-13 because they finish (~1–2 min) well
 # inside test-13's cross-backend wall, so they cost ~zero extra wall-clock
 # yet block the expensive Laravel 11/12 matrix the moment they go red.
+#
+# The DB service images are pinned to an explicit floor — the oldest
+# supported engine per backend (mysql:8.4, mariadb:11.4, postgres:15); if
+# the suite is green there it is green on everything newer. test-newest
+# runs the same suite on the newest GA images (mysql:9, mariadb:11.8,
+# postgres:18) and gates like the rest — a red here is a forward-breakage
+# to fix (or a floor bump), not a heads-up to wave through. Its failures
+# must be deterministic to be a fair gate; the fork-based concurrency
+# retries use full-jitter backoff so contended lanes don't flake.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -91,10 +101,10 @@ jobs:
         php: ['8.3', '8.4', '8.5']
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',          db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4.x',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
           # Coverage on one cell per backend so backend-specific code paths
           # (LATERAL on PG/MySQL, STRAIGHT_JOIN on MySQL, derived shape on
           # MariaDB, correlated fallback on SQLite) all appear covered.
@@ -104,11 +114,11 @@ jobs:
           - { php: '8.4', db: mariadb, coverage: true }
           - { php: '8.4', db: mysql,   coverage: true }
 
-    name: "PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.db }}"
+    name: "PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.label }}"
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -121,7 +131,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -135,7 +145,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -189,16 +199,16 @@ jobs:
       matrix:
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',          db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4.x',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Runabout / ${{ matrix.db }}"
+    name: "Runabout / ${{ matrix.label }}"
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -211,7 +221,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -225,7 +235,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -265,16 +275,16 @@ jobs:
       matrix:
         db: [sqlite, mysql, mariadb, pgsql]
         include:
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',          db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4.x',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Fuzz (pinned) / ${{ matrix.db }}"
+    name: "Fuzz (pinned) / ${{ matrix.label }}"
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -287,7 +297,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -301,7 +311,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -334,6 +344,95 @@ jobs:
           DB_PASSWORD: ${{ matrix.db_password }}
         run: composer fuzz
 
+  # Newest-stable forward gate. One lane per networked engine on the
+  # newest GA image, so forward-breakage (a dialect change in an upcoming
+  # release) shows up here before it becomes the pinned floor — without
+  # doubling every matrix cell. A red fails the run like any other job: it
+  # is a real forward-incompatibility to fix (or a signal to bump the
+  # floor), not a heads-up to merge over. It runs in parallel with tier 1
+  # rather than inside test-legacy's `needs` only to save wall-clock — a
+  # failed job still fails the workflow regardless of DAG position.
+  # SQLite is excluded — setup-php already tracks a recent build.
+  test-newest:
+    needs: [static-analysis, actionlint]
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [mysql, mariadb, pgsql]
+        # `label` names the engine + its newest-stable version so the check
+        # title says exactly what it exercises (e.g. "MySQL 9") rather than a
+        # bare "newest" that drifts meaning as the pins move.
+        include:
+          - { db: mysql,   label: 'MySQL 9.x',       db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.8.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 18.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+
+    name: "PHP 8.4 / Laravel 13 / ${{ matrix.label }}"
+
+    services:
+      mysql:
+        image: mysql:9
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./.github/actions/php-setup
+        with:
+          php: '8.4'
+          laravel: '13.0'
+          testbench: '11.0'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tests
+        env:
+          DB_CONNECTION: ${{ matrix.db_connection }}
+          DB_HOST: ${{ matrix.db_host }}
+          DB_PORT: ${{ matrix.db_port }}
+          DB_DATABASE: ${{ matrix.db_database }}
+          DB_USERNAME: ${{ matrix.db_username }}
+          DB_PASSWORD: ${{ matrix.db_password }}
+        run: vendor/bin/phpunit
+
   test-legacy:
     needs: [test-13, runabout, fuzz-pinned]
     runs-on: ubuntu-latest
@@ -348,16 +447,16 @@ jobs:
         include:
           - { laravel: '11.0', testbench: '9.0' }
           - { laravel: '12.0', testbench: '10.0' }
-          - { db: sqlite,  db_connection: sqlite }
-          - { db: mysql,   db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
-          - { db: mariadb, db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
-          - { db: pgsql,   db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
+          - { db: sqlite,  label: 'SQLite',          db_connection: sqlite }
+          - { db: mysql,   label: 'MySQL 8.4.x',     db_connection: mysql,   db_host: '127.0.0.1', db_port: '3306', db_database: testing, db_username: root,     db_password: password }
+          - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
+          - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.db }}"
+    name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.label }}"
 
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testing
@@ -370,7 +469,7 @@ jobs:
           --health-retries=5
 
       mariadb:
-        image: mariadb:lts
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: password
           MARIADB_DATABASE: testing
@@ -384,7 +483,7 @@ jobs:
           --health-start-period=30s
 
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testing
@@ -415,3 +514,29 @@ jobs:
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
         run: vendor/bin/phpunit
+
+  # Single aggregation gate. Branch protection requires this one stable
+  # context instead of every version-labelled matrix cell (whose names
+  # churn as engine pins move) — and a required check that is legitimately
+  # skipped (draft / github_actions Dependabot guards) would otherwise
+  # wedge merges. `always()` makes it report even when an upstream job
+  # fails; it passes only if none of the needed jobs failed or were
+  # cancelled (skipped is fine — those guards skip lanes by design).
+  gate:
+    needs: [static-analysis, actionlint, test-13, runabout, fuzz-pinned, test-newest, test-legacy]
+    runs-on: ubuntu-latest
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    name: CI gate
+
+    steps:
+      - name: Require every upstream job to have passed or been skipped
+        run: |
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "upstream results: ${results}"
+          for r in ${results}; do
+            if [ "${r}" = "failure" ] || [ "${r}" = "cancelled" ]; then
+              echo "::error::a required job did not pass (result=${r})"
+              exit 1
+            fi
+          done
+          echo "all required jobs passed (or were legitimately skipped)"
