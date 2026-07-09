@@ -514,3 +514,29 @@ jobs:
           DB_USERNAME: ${{ matrix.db_username }}
           DB_PASSWORD: ${{ matrix.db_password }}
         run: vendor/bin/phpunit
+
+  # Single aggregation gate. Branch protection requires this one stable
+  # context instead of every version-labelled matrix cell (whose names
+  # churn as engine pins move) — and a required check that is legitimately
+  # skipped (draft / github_actions Dependabot guards) would otherwise
+  # wedge merges. `always()` makes it report even when an upstream job
+  # fails; it passes only if none of the needed jobs failed or were
+  # cancelled (skipped is fine — those guards skip lanes by design).
+  gate:
+    needs: [static-analysis, actionlint, test-13, runabout, fuzz-pinned, test-newest, test-legacy]
+    runs-on: ubuntu-latest
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    name: CI gate
+
+    steps:
+      - name: Require every upstream job to have passed or been skipped
+        run: |
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "upstream results: ${results}"
+          for r in ${results}; do
+            if [ "${r}" = "failure" ] || [ "${r}" = "cancelled" ]; then
+              echo "::error::a required job did not pass (result=${r})"
+              exit 1
+            fi
+          done
+          echo "all required jobs passed (or were legitimately skipped)"
