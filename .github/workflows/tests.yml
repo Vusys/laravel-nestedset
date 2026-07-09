@@ -31,7 +31,7 @@ concurrency:
 #     ▼
 #   tier 1  test-13  ‖  runabout  ‖  fuzz-pinned     (primary + deterministic
 #     │                                               property checks, all DBs)
-#     │        test-newest (allow-failure, non-gating — newest-stable engines)
+#     │        test-newest (gating — newest-stable engines)
 #     ▼
 #   tier 2  test-legacy                              (Laravel 11 + 12 matrix)
 #
@@ -46,8 +46,10 @@ concurrency:
 # supported engine per backend (mysql:8.4, mariadb:11.4, postgres:15); if
 # the suite is green there it is green on everything newer. test-newest
 # runs the same suite on the newest GA images (mysql:9, mariadb:11.8,
-# postgres:18) behind `continue-on-error`, purely as a forward-breakage
-# heads-up — it never gates a merge.
+# postgres:18) and gates like the rest — a red here is a forward-breakage
+# to fix (or a floor bump), not a heads-up to wave through. Its failures
+# must be deterministic to be a fair gate; the fork-based concurrency
+# retries use full-jitter backoff so contended lanes don't flake.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -342,17 +344,18 @@ jobs:
           DB_PASSWORD: ${{ matrix.db_password }}
         run: composer fuzz
 
-  # Newest-stable early warning. One lane per networked engine on the
+  # Newest-stable forward gate. One lane per networked engine on the
   # newest GA image, so forward-breakage (a dialect change in an upcoming
   # release) shows up here before it becomes the pinned floor — without
-  # doubling every matrix cell. `continue-on-error` keeps it non-gating:
-  # a red here is a heads-up to investigate, never a merge blocker. It
-  # deliberately sits outside test-legacy's `needs` so it can never gate.
+  # doubling every matrix cell. A red fails the run like any other job: it
+  # is a real forward-incompatibility to fix (or a signal to bump the
+  # floor), not a heads-up to merge over. It runs in parallel with tier 1
+  # rather than inside test-legacy's `needs` only to save wall-clock — a
+  # failed job still fails the workflow regardless of DAG position.
   # SQLite is excluded — setup-php already tracks a recent build.
   test-newest:
     needs: [static-analysis, actionlint]
     runs-on: ubuntu-latest
-    continue-on-error: true
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && !startsWith(github.head_ref, 'dependabot/github_actions/') }}
 
     strategy:
