@@ -227,6 +227,41 @@ final class AvgMaintenanceTest extends TestCase
     }
 
     // ----------------------------------------------------------------
+    // Rounding-boundary regression: the maintained AVG must round the
+    // SAME way as a fresh AVG() read, right on a 4th-decimal half-
+    // boundary. Regression for a double-round bug: the delta clause used
+    // `1.0 * sum / count`, whose scale-(1 + div_precision_increment)
+    // quotient was rounded a second time into the DECIMAL(_, 4) column.
+    // On MySQL 9 (round-half-up) that stored 105.4546 for 1160/11 while
+    // a fresh AVG() returned 105.4545. The float delta between the two
+    // is 0.0001000000000033 — just OVER a 1e-4 tolerance, so only an
+    // exact-match assertion catches it. See DeltaMaintenance::DECIMAL_COERCION.
+    // ----------------------------------------------------------------
+
+    #[Test]
+    public function stored_avg_matches_fresh_on_rounding_boundary(): void
+    {
+        // Root(100) + 10 children of 106 → inclusive sum 1160 over 11
+        // rows → 1160 / 11 = 105.454545…, whose correct 4-dp value is
+        // 105.4545 (the 5th decimal is 4, so it rounds down).
+        $root = new Area(['name' => 'Root', 'tickets' => 100]);
+        $root->saveAsRoot();
+
+        for ($i = 0; $i < 10; $i++) {
+            $child = new Area(['name' => "c{$i}", 'tickets' => 106]);
+            $child->appendToNode($root->refresh())->save();
+        }
+
+        $root->refresh();
+
+        $stored = number_format($this->asFloat($root->tickets_avg), 4, '.', '');
+        $fresh = number_format($this->asFloat($root->freshAggregate('tickets_avg')), 4, '.', '');
+
+        $this->assertSame('105.4545', $fresh, 'fresh AVG() should single-round 1160/11 down to 105.4545');
+        $this->assertSame($fresh, $stored, 'maintained AVG must round identically to the fresh read (no double-round)');
+    }
+
+    // ----------------------------------------------------------------
     // Single-UPDATE invariant (Phase D promise still holds)
     // ----------------------------------------------------------------
 
