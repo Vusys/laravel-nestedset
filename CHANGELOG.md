@@ -9,6 +9,27 @@ Pre-1.0, backwards-compatibility breaks are allowed when called out under
 
 ## [Unreleased]
 
+## [0.24.4] - 2026-07-10
+
+Patch: one aggregate-correctness fix for a display-rounding drift that
+only surfaced on MySQL 9.
+
+### Fixed
+
+- **The delta-maintained `AVG` display column no longer drifts by one
+  unit in the last decimal on MySQL 9.** The column was written as
+  `1.0 * sum / NULLIF(count, 0)`; the scale-1 multiplier gave the
+  quotient scale `1 + div_precision_increment`, which was then rounded a
+  *second* time when stored into the `DECIMAL(_, 4)` column. The two
+  roundings disagree at a 4th-decimal half-boundary — MySQL 8 rounded
+  half-down (matching a fresh `AVG()` read) but MySQL 9 rounds half-up,
+  so e.g. `1160/11` stored as `105.4546` while a fresh single-rounded
+  `AVG()` returned `105.4545`, reported as aggregate drift. The coercion
+  multiplier is now scale 6 so the quotient carries enough scale that the
+  single final round into the column matches the fresh value on every
+  backend. Weighted-avg is unchanged (its store and fresh sides already
+  share the same shape). Surfaced by the non-gating MySQL 9 ceiling lane.
+
 ## [0.24.3] - 2026-07-08
 
 Patch: three tree-correctness fixes, all surfaced by the new Runabout
@@ -342,7 +363,9 @@ MySQL (full suite + every seeded fuzzer).
 - Subtree cloning (`cloneSubtreeTo`, `cloneSubtreeAsRoot`).
 - Sibling reorder primitive (one `CASE WHEN` UPDATE per reorder).
 
-[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.2...HEAD
+[Unreleased]: https://github.com/vusys/laravel-nestedset/compare/v0.24.4...HEAD
+[0.24.4]: https://github.com/vusys/laravel-nestedset/compare/v0.24.3...v0.24.4
+[0.24.3]: https://github.com/vusys/laravel-nestedset/compare/v0.24.2...v0.24.3
 [0.24.2]: https://github.com/vusys/laravel-nestedset/compare/v0.24.1...v0.24.2
 [0.24.1]: https://github.com/vusys/laravel-nestedset/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/vusys/laravel-nestedset/compare/v0.23.0...v0.24.0
