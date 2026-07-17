@@ -99,6 +99,7 @@
             "@test"
         ],
         "fuzz": "phpunit --group fuzzer",
+        "runabout": "phpunit --group runabout",
         "infection": "infection --threads=max"
     },
     "scripts-descriptions": {
@@ -106,6 +107,7 @@
         "test:matrix": "Run the default test suite against each supported backend (sqlite, mysql, mariadb, pgsql) sequentially, halting on the first red cell. Requires running mysql/mariadb/pgsql servers matching the defaults in tests/TestCase.php::defineEnvironment(); sqlite needs nothing. See CONTRIBUTING.md.",
         "test:parallel": "Run the default suite under ParaTest (4 workers). ~2.6x faster than `test` on the networked engines. Each worker gets its own database via TEST_TOKEN — on mysql/mariadb/pgsql create them first with `DB_CONNECTION=... php tooling/create-worker-databases.php` (sqlite needs nothing, `:memory:` is per-worker).",
         "fuzz": "Run the seeded fuzzers (skipped by default). Configure via FUZZER_SEEDS / FUZZER_STEPS / FUZZER_RUNS env vars; set FUZZER_SEEDS=random for non-deterministic exploration.",
+        "runabout": "Run the Runabout order-dependent property journeys (the `runabout` group, skipped by default). Pinned seeds by default; CI runs the same binary across the backend matrix — see .github/workflows/tests.yml.",
         "infection": "Run mutation testing locally against the current backend (DB_CONNECTION). Defaults to all cores; pass `--threads=N` to limit. CI runs the same binary in a shard×backend matrix — see .github/workflows/infection.yml."
     }
 }

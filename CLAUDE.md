@@ -25,6 +25,7 @@ composer analyse         # PHPStan / Larastan level 9, NO baseline allowed
 composer pint:check      # Laravel Pint, --test mode (style check)
 composer rector:check    # Rector --dry-run
 composer fuzz            # opt-in seeded fuzzers (PHPUnit --group fuzzer)
+composer runabout        # opt-in order-dependent property journeys (PHPUnit --group runabout)
 composer test:coverage   # XDEBUG_MODE=coverage phpunit --coverage-text
 ```
 
