@@ -114,7 +114,7 @@ jobs:
           - { php: '8.4', db: mariadb, coverage: true }
           - { php: '8.4', db: mysql,   coverage: true }
 
-    name: "PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.label }}"
+    name: "Unit+Feature / ${{ matrix.php }} / 13 / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -235,7 +235,7 @@ jobs:
           - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Runabout / ${{ matrix.label }}"
+    name: "Runabout / 8.4 / 13 / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -311,7 +311,7 @@ jobs:
           - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "Fuzz (pinned) / ${{ matrix.label }}"
+    name: "Fuzz / 8.4 / 13 / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -401,7 +401,7 @@ jobs:
           - { db: mariadb, label: 'MariaDB 11.8.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   label: 'PostgreSQL 18.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "PHP 8.4 / Laravel 13 / ${{ matrix.label }}"
+    name: "Unit+Feature / 8.4 / 13 / ${{ matrix.label }}"
 
     services:
       mysql:
@@ -496,7 +496,7 @@ jobs:
           - { db: mariadb, label: 'MariaDB 11.4.x',  db_connection: mariadb, db_host: '127.0.0.1', db_port: '3307', db_database: testing, db_username: root,     db_password: password }
           - { db: pgsql,   label: 'PostgreSQL 15.x', db_connection: pgsql,   db_host: '127.0.0.1', db_port: '5432', db_database: testing, db_username: postgres, db_password: password }
 
-    name: "PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.label }}"
+    name: "Unit+Feature / ${{ matrix.php }} / ${{ matrix.laravel }} / ${{ matrix.label }}"
 
     services:
       mysql:

@@ -80,8 +80,8 @@ User-facing assertion helpers (`assertIsRoot`, `assertIsLeaf`, `assertTreeIsInta
 | `composer test:coverage` | Package suite with text coverage (`XDEBUG_MODE=coverage`) |
 | `composer test:matrix` | Package suite once per backend (sqlite → mysql → mariadb → pgsql) |
 | `composer fuzz` | The `fuzzer` group only |
+| `composer runabout` | The `runabout` group only (order-dependent property journeys) |
 | `composer infection` | Mutation testing (Infection) |
-| `vendor/bin/phpunit --group runabout` | The runabout journeys |
 | `vendor/bin/phpunit --testsuite Performance` | The benchmark suite |
 | `vendor/bin/phpunit --filter test_method_name` | A single test |
 | `vendor/bin/phpunit tests/Feature/Diff` | One directory |
