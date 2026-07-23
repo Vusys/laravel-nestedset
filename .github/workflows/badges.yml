@@ -53,12 +53,26 @@ jobs:
       - name: Compute matrix size from tests.yml
         id: matrix
         run: |
-          PHP_COUNT=$(yq '.jobs.test.strategy.matrix.php | length' .github/workflows/tests.yml)
-          LARAVEL_COUNT=$(yq '.jobs.test.strategy.matrix.laravel | length' .github/workflows/tests.yml)
-          DB_COUNT=$(yq '.jobs.test.strategy.matrix.db | length' .github/workflows/tests.yml)
-          CELLS=$((PHP_COUNT * LARAVEL_COUNT * DB_COUNT))
+          # Sum every Unit+Feature cell that actually runs, across all three
+          # test jobs: `test-13` (Laravel 13 × PHP × DB), `test-legacy`
+          # (Laravel 11/12 × PHP × DB), and `test-newest` (newest DB engines
+          # on 8.4/13). Keep keys quoted — bare `test-13` parses as subtraction.
+          L13_PHP=$(yq '.jobs["test-13"].strategy.matrix.php | length' .github/workflows/tests.yml)
+          L13_DB=$(yq '.jobs["test-13"].strategy.matrix.db | length' .github/workflows/tests.yml)
+          LEGACY_PHP=$(yq '.jobs["test-legacy"].strategy.matrix.php | length' .github/workflows/tests.yml)
+          LEGACY_LARAVEL=$(yq '.jobs["test-legacy"].strategy.matrix.laravel | length' .github/workflows/tests.yml)
+          LEGACY_DB=$(yq '.jobs["test-legacy"].strategy.matrix.db | length' .github/workflows/tests.yml)
+          NEWEST_DB=$(yq '.jobs["test-newest"].strategy.matrix.db | length' .github/workflows/tests.yml)
+          L13_CELLS=$((L13_PHP * L13_DB))
+          LEGACY_CELLS=$((LEGACY_PHP * LEGACY_LARAVEL * LEGACY_DB))
+          NEWEST_CELLS=$((NEWEST_DB))
+          CELLS=$((L13_CELLS + LEGACY_CELLS + NEWEST_CELLS))
+          if [ "$CELLS" -eq 0 ]; then
+            echo "::error::Matrix cell count is 0 — the test-job structure in tests.yml likely changed. Update the yq paths in this step." >&2
+            exit 1
+          fi
           echo "cells=$CELLS" >> "$GITHUB_OUTPUT"
-          echo "Matrix size: $PHP_COUNT × $LARAVEL_COUNT × $DB_COUNT = $CELLS"
+          echo "Matrix size: test-13 ${L13_PHP}×${L13_DB}=${L13_CELLS} + test-legacy ${LEGACY_PHP}×${LEGACY_LARAVEL}×${LEGACY_DB}=${LEGACY_CELLS} + test-newest ${NEWEST_DB}=${NEWEST_CELLS} = $CELLS"
 
       - name: Compute badge JSON
         run: php .github/scripts/compute-badge-metrics.php junit.xml badges-out "${{ steps.matrix.outputs.cells }}"
