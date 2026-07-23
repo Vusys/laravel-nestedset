@@ -1,0 +1,51 @@
+name: Dependabot auto-merge
+
+# Enables GitHub's *native* auto-merge on Dependabot PRs so a green
+# bump merges itself instead of waiting for a manual click. This does
+# NOT bypass CI: `gh pr merge --auto` only queues the merge, which
+# GitHub performs once the required `CI gate` check (see tests.yml)
+# passes. If the gate goes red the PR stays open.
+#
+# Scope (low-risk only — everything else is left for manual review):
+#   - every github-actions bump (SHA/version pins, no runtime code)
+#   - composer patch + minor bumps
+#   - composer *major* bumps are deliberately excluded
+#
+# Requires the repo-level "Allow auto-merge" setting to be enabled
+# (Settings → General → Pull Requests).
+
+on: pull_request_target
+
+# Read-only by default; the single job widens to what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    # `pull_request_target` runs with a write-capable token against the
+    # base ref, so gate hard on the actor. No PR code is checked out.
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for low-risk bumps
+        if: >-
+          ${{ steps.meta.outputs.package-ecosystem == 'github_actions' ||
+              steps.meta.outputs.update-type != 'version-update:semver-major' }}
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
