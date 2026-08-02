@@ -1,23 +1,47 @@
 version: 2
-
 updates:
   - package-ecosystem: composer
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
     open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - composer
     groups:
-      composer-dev-tools:
-        patterns:
-          - "phpunit/phpunit"
-          - "larastan/larastan"
-          - "rector/*"
-          - "driftingly/rector-laravel"
-          - "laravel/pint"
-          - "orchestra/testbench"
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "illuminate/*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "orchestra/testbench"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch
