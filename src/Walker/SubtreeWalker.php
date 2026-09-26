@@ -74,9 +74,7 @@ final class SubtreeWalker implements Countable
 
         // Caller may have loaded only descendants; the root anchor still
         // needs to exist in the index for the walk to start.
-        if (! isset($this->byKey[$rootKey])) {
-            $this->byKey[$rootKey] = $root;
-        }
+        $this->byKey[$rootKey] ??= $root;
 
         $this->buildChildrenIndex();
     }
