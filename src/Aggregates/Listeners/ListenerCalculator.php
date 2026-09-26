@@ -254,9 +254,6 @@ final class ListenerCalculator
             }
         }
 
-        $eLft = $excludeBounds instanceof NodeBounds ? $excludeBounds->lft : null;
-        $eRgt = $excludeBounds instanceof NodeBounds ? $excludeBounds->rgt : null;
-
         foreach ($ancestors as $ancestor) {
             $aLft = Numeric::asIntOrZero($ancestor->getAttribute($lftCol));
             $aRgt = Numeric::asIntOrZero($ancestor->getAttribute($rgtCol));
@@ -280,8 +277,8 @@ final class ListenerCalculator
                         continue;
                     }
 
-                    if ($eLft !== null && $eRgt !== null
-                        && $nLft >= $eLft && $nRgt <= $eRgt) {
+                    if ($excludeBounds instanceof NodeBounds
+                        && $nLft >= $excludeBounds->lft && $nRgt <= $excludeBounds->rgt) {
                         continue;
                     }
 
