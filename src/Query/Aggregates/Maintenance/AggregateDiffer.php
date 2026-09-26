@@ -576,9 +576,7 @@ final class AggregateDiffer
 
                 $computedValue = $definition->inclusive ? $currentInclusive : $previousInclusive;
 
-                if (! isset($output[$id])) {
-                    $output[$id] = ['id' => $id];
-                }
+                $output[$id] ??= ['id' => $id];
                 $output[$id][self::storedAlias($definition->column)] = $row[$definition->column] ?? null;
                 $output[$id][self::computedAlias($definition->column)] = $computedValue;
             }
