@@ -123,7 +123,7 @@ final class RestoreUnderTrashedParentTest extends TestCase
 
         // No partial write happened — stored aggregates still agree with a
         // fresh recompute and the total is unchanged.
-        $this->assertSame(0, (int) $root->refresh()->tickets_total);
+        $this->assertSame(0, (int) SoftBranch::query()->whereKey($root->getKey())->firstOrFail()->tickets_total);
         $this->assertAggregatesAreIntact(SoftBranch::class);
     }
 }
