@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.4'
           extensions: mbstring, pdo_sqlite
@@ -73,7 +73,7 @@ jobs:
         run: composer update --prefer-dist --no-interaction --no-progress
 
       - name: Setup Bencher CLI
-        uses: bencherdev/bencher@f80847436d7157936b40525db4c2a1064124f04a # main
+        uses: bencherdev/bencher@24c333d7030390d2f3e130569386f4f1f8577113 # main
 
       - name: Run Performance suite
         env:
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload raw perf output
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: perf-output-${{ github.run_id }}
           path: |
