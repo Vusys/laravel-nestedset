@@ -389,6 +389,7 @@ final class FactoryTreeTest extends TestCase
         Category::factory()->tree(
             depth: 0,
             branching: 0,
+            // @phpstan-ignore argument.type (a deliberately invalid closure: the runtime check is the test)
             per: fn (): string => 'not an array',
         )->create();
     }
@@ -637,7 +638,9 @@ final class FactoryTreeTest extends TestCase
 
         $this->assertSame(0, Category::query()->count());
         $this->assertCount(1, $payload);
-        $this->assertCount(2, $payload[0]['children']);
+        $children = $payload[0]['children'];
+        $this->assertIsArray($children);
+        $this->assertCount(2, $children);
     }
 
     #[Test]
