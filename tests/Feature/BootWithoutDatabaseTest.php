@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vusys\NestedSet\Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use PHPUnit\Framework\Attributes\Test;
 use Vusys\NestedSet\NestedSetServiceProvider;
@@ -49,5 +50,19 @@ final class BootWithoutDatabaseTest extends OrchestraTestCase
         $value = DB::connection('memory')->scalar('select bit_or(x) from (select 1 as x union all select 4)');
 
         $this->assertEquals(5, $value);
+    }
+
+    #[Test]
+    public function a_disconnected_connection_reconnects_before_installing(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'nestedset-');
+        config(['database.connections.file' => ['driver' => 'sqlite', 'database' => $file]]);
+        $connection = DB::connection('file');
+        $connection->scalar('select 1');
+
+        $connection->disconnect();
+
+        $this->assertEquals(5, $connection->scalar('select bit_or(x) from (select 1 as x union all select 4)'));
+        File::delete((string) $file);
     }
 }

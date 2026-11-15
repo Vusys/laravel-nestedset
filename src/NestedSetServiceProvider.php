@@ -119,9 +119,12 @@ final class NestedSetServiceProvider extends ServiceProvider
         $dispatcher->listen(
             ConnectionEstablished::class,
             static function (ConnectionEstablished $event): void {
-                $event->connection->beforeExecuting(
-                    static fn (string $query, array $bindings, Connection $connection) => SqliteBitwiseAggregates::ensureInstalled($connection),
-                );
+                $event->connection->beforeExecuting(static function (string $query, array $bindings, Connection $connection): void {
+                    // These callbacks run before Laravel reconnects a
+                    // disconnect()ed connection, so reconnect first.
+                    $connection->reconnectIfMissingConnection();
+                    SqliteBitwiseAggregates::ensureInstalled($connection);
+                });
             },
         );
 
