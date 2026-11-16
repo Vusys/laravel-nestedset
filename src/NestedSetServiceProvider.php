@@ -6,6 +6,7 @@ namespace Vusys\NestedSet;
 
 use Closure;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\ServiceProvider;
@@ -108,11 +109,22 @@ final class NestedSetServiceProvider extends ServiceProvider
         // boots. {@see SqliteBitwiseAggregates::ensureInstalled()} is
         // also called defensively at every bitwise-SQL emission site
         // so connections established before boot still get covered.
+        //
+        // ConnectionEstablished fires as soon as a connection object is
+        // resolved, before any query, so installing straight away would open
+        // the PDO then — and fail `artisan package:discover` wherever the
+        // database doesn't exist yet. Install just before the first query
+        // instead; ensureInstalled() is a no-op after the first time.
         $dispatcher = $this->app->make(Dispatcher::class);
         $dispatcher->listen(
             ConnectionEstablished::class,
             static function (ConnectionEstablished $event): void {
-                SqliteBitwiseAggregates::ensureInstalled($event->connection);
+                $event->connection->beforeExecuting(static function (string $query, array $bindings, Connection $connection): void {
+                    // These callbacks run before Laravel reconnects a
+                    // disconnect()ed connection, so reconnect first.
+                    $connection->reconnectIfMissingConnection();
+                    SqliteBitwiseAggregates::ensureInstalled($connection);
+                });
             },
         );
 

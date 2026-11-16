@@ -134,7 +134,7 @@ final class DeferredMaintenanceRunner
                 EventDispatcher::dispatch(new DeferredAggregateMaintenanceCompleted(
                     modelClass: $modelClass,
                     anchorId: AggregateAnchor::rootIdOf($anchor),
-                    rowsFixed: $repairResult === null ? 0 : $repairResult->totalRowsUpdated,
+                    rowsFixed: $repairResult->totalRowsUpdated ?? 0,
                     closureDurationMs: $closureMs,
                     repairDurationMs: $repairMs,
                 ));
