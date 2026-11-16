@@ -691,7 +691,7 @@ trait HasTreeMutation
      * Laravel handles nested calls via savepoints, so wrapping inside
      * an outer `DB::transaction()` is safe.
      *
-     * @param  array<string, mixed>  $options
+     * @param  array{touch?: bool|null}  $options
      */
     public function save(array $options = []): bool
     {

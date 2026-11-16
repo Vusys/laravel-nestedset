@@ -9,8 +9,10 @@ use Illuminate\Database\Eloquent\Factories\Sequence;
 use InvalidArgumentException;
 use LogicException;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionMethod;
 use Vusys\NestedSet\Exceptions\ScopeViolationException;
 use Vusys\NestedSet\Testing\InteractsWithTrees;
+use Vusys\NestedSet\Tests\Fixtures\Factories\CategoryFactory;
 use Vusys\NestedSet\Tests\Fixtures\Models\Area;
 use Vusys\NestedSet\Tests\Fixtures\Models\Category;
 use Vusys\NestedSet\Tests\Fixtures\Models\Menu;
@@ -386,11 +388,12 @@ final class FactoryTreeTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        Category::factory()->tree(
-            depth: 0,
-            branching: 0,
-            per: fn (): string => 'not an array',
-        )->create();
+        // Invoked by reflection: the closure breaks tree()'s declared
+        // signature on purpose, and that runtime check is what's under test.
+        $factory = (new ReflectionMethod(CategoryFactory::class, 'tree'))
+            ->invokeArgs(Category::factory(), ['depth' => 0, 'branching' => 0, 'per' => fn (): string => 'not an array']);
+        $this->assertInstanceOf(CategoryFactory::class, $factory);
+        $factory->create();
     }
 
     // ----------------------------------------------------------------
@@ -637,7 +640,9 @@ final class FactoryTreeTest extends TestCase
 
         $this->assertSame(0, Category::query()->count());
         $this->assertCount(1, $payload);
-        $this->assertCount(2, $payload[0]['children']);
+        $children = $payload[0]['children'];
+        $this->assertIsArray($children);
+        $this->assertCount(2, $children);
     }
 
     #[Test]

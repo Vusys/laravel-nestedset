@@ -21,9 +21,15 @@
         <testsuite name="Package">
             <directory>tests</directory>
             <exclude>tests/Performance</exclude>
+            <exclude>tests/PHPStan</exclude>
         </testsuite>
         <testsuite name="Performance">
             <directory>tests/Performance</directory>
+        </testsuite>
+        <!-- Needs PHPStan installed, which the framework-matrix cells remove;
+             run by the static-analysis job instead. -->
+        <testsuite name="PHPStan">
+            <directory>tests/PHPStan</directory>
         </testsuite>
     </testsuites>
     <groups>

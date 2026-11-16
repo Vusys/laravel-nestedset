@@ -81,6 +81,9 @@ runs:
     #   PKSA-qzrn-rnz3-85w1, PKSA-w7xr-vk7n-rstm
     #   PKSA-3r5d-mb8f-1qw9 — CRLF injection in default email rule
     #   PKSA-m5cs-t1y6-qpcs — temporary signed URL path confusion
+    #   PKSA-yxbx-3c9s-cjt9 — CVE-2026-128083 concurrency process output injection
+    #   PKSA-b41t-wbzk-9q51 — CVE-2026-114509 TokenGuard non-string credentials
+    #   PKSA-d5tc-s1qs-h781 — CVE-2026-102279 XSS in the debug page
     - name: Allow EOL Laravel 11 (ignore unpatched advisories)
       if: inputs.laravel == '11.0'
       shell: bash
@@ -93,6 +96,9 @@ runs:
         PKSA-w7xr-vk7n-rstm
         PKSA-3r5d-mb8f-1qw9
         PKSA-m5cs-t1y6-qpcs
+        PKSA-yxbx-3c9s-cjt9
+        PKSA-b41t-wbzk-9q51
+        PKSA-d5tc-s1qs-h781
 
     - name: Install dependencies
       shell: bash

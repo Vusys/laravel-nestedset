@@ -36,6 +36,23 @@ The trait satisfies the `HasNestedSet` interface (and the `MaintainsTreeAggregat
 - Optional aggregate maintenance when you declare `#[NestedSetAggregate]` attributes. See [Aggregates Overview](../aggregates/overview.html).
 - Typed events fired on Laravel's event bus around every meaningful operation — moves, cascades, repairs, aggregate maintenance, plus model-carrying events for in-process indexing and cache priming. See [Events](../reference/events.html).
 
+## Static analysis
+
+Larastan infers model properties from your migrations, but it can't see the columns `$table->nestedSet()` adds. The package ships a PHPStan extension that declares them on every `NodeTrait` model: `lft`, `rgt` and `depth` as `int`, and `parent_id` as `int|null`. With [phpstan/extension-installer](https://github.com/phpstan/extension-installer) it loads by itself; otherwise include it:
+
+```neon
+includes:
+    - vendor/vusys/laravel-nestedset/extension.neon
+```
+
+If you renamed the columns in `nestedset.columns`, tell the extension too:
+
+```neon
+parameters:
+    nestedset:
+        columns: {lft: _lft, rgt: _rgt, parent_id: parent_id, depth: depth}
+```
+
 ## Refresh after mutating a child
 
 > [!WARNING]

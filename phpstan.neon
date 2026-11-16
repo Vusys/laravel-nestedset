@@ -15,6 +15,9 @@ parameters:
             # @phpstan-require-implements constraint would (rightly) flag it.
             # Still scanned so MissingContractGuardTest can reference it.
             - tests/Fixtures/Models/BareNodeWithoutContract.php
+            # PHPStan type-inference fixtures, checked by NodeColumnsExtensionTest
+            # with the shipped extension loaded rather than analysed as code.
+            - tests/PHPStan/data
     ignoreErrors:
         # env() is legitimate in test bootstrap code — config caching does not apply to tests.
         - identifier: larastan.noEnvCallsOutsideOfConfig
