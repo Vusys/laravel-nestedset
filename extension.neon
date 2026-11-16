@@ -1,0 +1,16 @@
+parametersSchema:
+    nestedset: structure([
+        columns: arrayOf(string(), string())
+    ])
+
+parameters:
+    nestedset:
+        columns: []
+
+services:
+    -
+        class: Vusys\NestedSet\PHPStan\NodeColumnsExtension
+        arguments:
+            columns: %nestedset.columns%
+        tags:
+            - phpstan.broker.propertiesClassReflectionExtension
