@@ -232,7 +232,7 @@ jobs:
       # tooling up front eliminates disk as a variable. See runs
       # 26687996851, 26689964992, 26691533334 for the failure mode.
       - name: Free disk space on runner
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           # `tool-cache: false` is mandatory: setup-php caches the PHP
           # install under /opt/hostedtoolcache, which `tool-cache: true`
