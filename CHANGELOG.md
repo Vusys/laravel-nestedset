@@ -4,7 +4,19 @@ All notable changes to `vusys/laravel-nestedset` are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0, backwards-compatibility breaks are allowed when called out under **Changed** / **Removed**.
 
-## [Unreleased](https://github.com/vusys/laravel-nestedset/compare/v0.24.4...HEAD)
+## [Unreleased](https://github.com/vusys/laravel-nestedset/compare/v0.25.0...HEAD)
+
+## [0.25.0](https://github.com/vusys/laravel-nestedset/compare/v0.24.4...v0.25.0) - 2026-11-17
+
+Static analysis for consumers, a fix for booting without a database, and tree predicates that take the node itself.
+
+### Added
+
+- **A PHPStan extension that types the `nestedSet()` columns** (#261, #263). It's loaded automatically by phpstan/extension-installer: `lft`, `rgt` and `depth` as `int`, and `parent_id` as `int|null`, on every model using `NodeTrait`. Renamed columns are set with the `nestedset.columns` PHPStan parameter.
+
+### Fixed
+
+- **Booting no longer opens the database connection** (#260, #262). The SQLite bitwise aggregates were installed on `ConnectionEstablished`, which resolved the PDO eagerly, so `artisan` commands and app boot failed without a reachable database. They are now installed just before the first query, after reconnecting a connection that was `disconnect()`ed.
 
 ### Changed
 
