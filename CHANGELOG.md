@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased](https://github.com/vusys/laravel-nestedset/compare/v0.24.4...HEAD)
 
+### Changed
+
+- The tree query predicates (`whereDescendantOf`, `whereDescendantOrSelf`, `descendantsOf`, `whereAncestorOf`, `whereAncestorOrSelf`, `ancestorsOf`, `whereIsAfter`, `whereIsBefore`) accept the node itself as well as its `NodeBounds` (#264). `Category::query()->whereDescendantOrSelf($node)` used to be a `TypeError`; passing `$node->getBounds()` still works.
+
 ## [0.24.4](https://github.com/vusys/laravel-nestedset/compare/v0.24.3...v0.24.4) - 2026-07-10
 
 Patch: one aggregate-correctness fix for a display-rounding drift that only surfaced on MySQL 9.

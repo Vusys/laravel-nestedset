@@ -90,8 +90,9 @@ class TreeQueryBuilder extends Builder
     // are typed against the parent class, not the subclass).
     // ----------------------------------------------------------------
 
-    public function whereDescendantOf(NodeBounds $bounds, bool $andSelf = false): static
+    public function whereDescendantOf(HasNestedSet|NodeBounds $bounds, bool $andSelf = false): static
     {
+        $bounds = $this->bounds($bounds);
         $lft = $this->qualifyColumn($this->lftColumn());
         $rgt = $this->qualifyColumn($this->rgtColumn());
 
@@ -107,13 +108,14 @@ class TreeQueryBuilder extends Builder
         return $this;
     }
 
-    public function whereDescendantOrSelf(NodeBounds $bounds): static
+    public function whereDescendantOrSelf(HasNestedSet|NodeBounds $bounds): static
     {
         return $this->whereDescendantOf($bounds, andSelf: true);
     }
 
-    public function whereAncestorOf(NodeBounds $bounds, bool $andSelf = false): static
+    public function whereAncestorOf(HasNestedSet|NodeBounds $bounds, bool $andSelf = false): static
     {
+        $bounds = $this->bounds($bounds);
         $lft = $this->qualifyColumn($this->lftColumn());
         $rgt = $this->qualifyColumn($this->rgtColumn());
 
@@ -130,7 +132,7 @@ class TreeQueryBuilder extends Builder
         return $this;
     }
 
-    public function whereAncestorOrSelf(NodeBounds $bounds): static
+    public function whereAncestorOrSelf(HasNestedSet|NodeBounds $bounds): static
     {
         return $this->whereAncestorOf($bounds, andSelf: true);
     }
@@ -153,8 +155,9 @@ class TreeQueryBuilder extends Builder
         return $this;
     }
 
-    public function whereIsAfter(NodeBounds $bounds): static
+    public function whereIsAfter(HasNestedSet|NodeBounds $bounds): static
     {
+        $bounds = $this->bounds($bounds);
         $this->where(
             $this->qualifyColumn($this->lftColumn()),
             '>',
@@ -164,8 +167,9 @@ class TreeQueryBuilder extends Builder
         return $this;
     }
 
-    public function whereIsBefore(NodeBounds $bounds): static
+    public function whereIsBefore(HasNestedSet|NodeBounds $bounds): static
     {
+        $bounds = $this->bounds($bounds);
         $this->where(
             $this->qualifyColumn($this->rgtColumn()),
             '<',
@@ -218,12 +222,18 @@ class TreeQueryBuilder extends Builder
         return $this->whereIsRoot()->first();
     }
 
-    public function ancestorsOf(NodeBounds $bounds): static
+    /** A node's bounds, or the bounds as given. */
+    private function bounds(HasNestedSet|NodeBounds $bounds): NodeBounds
+    {
+        return $bounds instanceof NodeBounds ? $bounds : $bounds->getBounds();
+    }
+
+    public function ancestorsOf(HasNestedSet|NodeBounds $bounds): static
     {
         return $this->whereAncestorOf($bounds);
     }
 
-    public function descendantsOf(NodeBounds $bounds): static
+    public function descendantsOf(HasNestedSet|NodeBounds $bounds): static
     {
         return $this->whereDescendantOf($bounds);
     }
