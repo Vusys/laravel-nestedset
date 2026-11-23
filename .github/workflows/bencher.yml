@@ -73,7 +73,7 @@ jobs:
         run: composer update --prefer-dist --no-interaction --no-progress
 
       - name: Setup Bencher CLI
-        uses: bencherdev/bencher@7de3c69a85380826613050826b4bce062be2f07d # main
+        uses: bencherdev/bencher@b2484bc6734c8e6da4fad141bd13527a11da3988 # main
 
       - name: Run Performance suite
         env:
